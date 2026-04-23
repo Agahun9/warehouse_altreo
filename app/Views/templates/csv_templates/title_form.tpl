@@ -41,6 +41,8 @@
               <label class="form-label">Wzor tytulu</label>
               <textarea name="template_body" id="templateBody" class="form-control" rows="5" required>{$titleTemplate.template_body|default:''|escape}</textarea>
               <div class="form-text">Przyklad: <code>Etui na Telefon {{ldelim}}field:product.allegro_parameter.123{rdelim} {{ldelim}}field:product.allegro_parameter.456{rdelim} wzory {{ldelim}}option:collection_name{rdelim}</code></div>
+              <div class="form-text">Znajdz i zamien w tokenie: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}</code> zamieni <code>Czarny</code> na <code>Czarna</code> w wartosci tego pola.</div>
+              <div class="form-text">Wiele zamian naraz: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska{rdelim}</code>.</div>
             </div>
           </div>
         </div>
@@ -50,6 +52,8 @@
           <div class="card-body">
             <div class="row g-2 align-items-end">
               <div class="col-md-8">
+                <label class="form-label">Szukaj tokenu</label>
+                <input type="text" id="tokenSearch" class="form-control mb-2" placeholder="Wpisz fragment nazwy albo tokenu">
                 <label class="form-label">Dostepne tokeny</label>
                 <select id="tokenSelect" class="form-select">
                   <option value="">Wybierz token do wstawienia</option>
@@ -85,6 +89,7 @@
 (function () {
   var textarea = document.getElementById('templateBody');
   var select = document.getElementById('tokenSelect');
+  var tokenSearch = document.getElementById('tokenSearch');
   var insertButton = document.getElementById('insertTokenBtn');
   var quickButtons = document.querySelectorAll('.js-quick-token');
 
@@ -113,6 +118,22 @@
   for (var i = 0; i < quickButtons.length; i++) {
     quickButtons[i].addEventListener('click', function () {
       insertAtCursor(this.getAttribute('data-token') || '');
+    });
+  }
+
+  if (tokenSearch && select) {
+    tokenSearch.addEventListener('input', function () {
+      var query = String(tokenSearch.value || '').toLowerCase().trim();
+      var options = select.querySelectorAll('option');
+      for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+        if (optionIndex === 0) {
+          options[optionIndex].hidden = false;
+          continue;
+        }
+
+        var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+        options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+      }
     });
   }
 })();

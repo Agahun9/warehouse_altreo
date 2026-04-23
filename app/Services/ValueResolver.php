@@ -52,6 +52,10 @@ class ValueResolver
             return $this->formatAllegroParameters($product);
         }
 
+        if (in_array($normalized, array('allegro_parameters_eu', 'allegro_parameters_raw_eu'), true)) {
+            return $this->formatAllegroParametersEu($product);
+        }
+
         if (strpos($normalized, 'allegro_parameter.') === 0) {
             return $this->singleAllegroParameterValue($product, substr($normalized, 18));
         }
@@ -132,6 +136,7 @@ class ValueResolver
             'generated_title' => 'generated_title',
             'csv_title' => 'generated_title',
             'allegro_parameters' => 'allegro_parameters',
+            'allegro_parameters_eu' => 'allegro_parameters_eu',
             'categories.name' => 'category_name',
             'categories.slug' => 'category_slug',
             'categories.allegro_id' => 'allegro_category_id',
@@ -239,6 +244,74 @@ class ValueResolver
 
         $categoryAllegroId = isset($product['category_allegro_id']) ? (string) $product['category_allegro_id'] : '';
         return $this->formatAllegroParameterValue($raw[$parameterId], $this->allegroParameterDefinition($categoryAllegroId, $parameterId));
+    }
+
+    private function formatAllegroParametersEu(array $product): string
+    {
+        $raw = isset($product['allegro_parameters_raw']) && is_array($product['allegro_parameters_raw']) ? $product['allegro_parameters_raw'] : array();
+        if ($raw === array()) {
+            return '';
+        }
+
+        $lines = array();
+        foreach ($raw as $parameterId => $value) {
+            $parameterId = trim((string) $parameterId);
+            if ($parameterId === '') {
+                continue;
+            }
+
+            $normalizedValue = $this->normalizeAllegroEuParameterValue($value);
+            if ($normalizedValue === '') {
+                continue;
+            }
+
+            $lines[] = $parameterId . '|' . $this->allegroEuParameterType($parameterId, $value) . '|' . $normalizedValue . '|';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function normalizeAllegroEuParameterValue($value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $parts[] = $item;
+                }
+            }
+
+            return implode('[rn]', $parts);
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        return trim((string) $value);
+    }
+
+    private function allegroEuParameterType(string $parameterId, $value): string
+    {
+        if (is_array($value)) {
+            return '3';
+        }
+
+        if (is_bool($value)) {
+            return '1';
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '0' || $normalized === '1') {
+            return '1';
+        }
+
+        if ($normalized !== '' && strpos($normalized, $parameterId . '_') === 0) {
+            return '3';
+        }
+
+        return '0';
     }
 
     private function allegroParameterNameMap(string $categoryAllegroId): array
@@ -366,13 +439,60 @@ class ValueResolver
             $value = trim((string) $matches[2]);
 
             if ($type === 'field') {
-                return $this->resolveField($product, $value, '|', $exportOptions);
+                return $this->resolveTitleFieldExpression($product, $value, $exportOptions);
             }
 
             return isset($exportOptions[$value]) ? (string) $exportOptions[$value] : '';
         }, $pattern);
 
         return $this->cleanGeneratedTitle((string) $resolved);
+    }
+
+    private function resolveTitleFieldExpression(array $product, string $expression, array $exportOptions): string
+    {
+        $expression = trim($expression);
+        if ($expression === '') {
+            return '';
+        }
+
+        $fieldPath = $expression;
+        $operationPos = strpos($expression, '+');
+        $replacements = array();
+
+        if ($operationPos !== false) {
+            $fieldPath = trim(substr($expression, 0, $operationPos));
+            $operation = trim(substr($expression, $operationPos + 1));
+            if ($operation !== '') {
+                foreach (explode('+', $operation) as $rule) {
+                    $rule = trim((string) $rule);
+                    if ($rule === '') {
+                        continue;
+                    }
+
+                    $replaceParts = explode('-', $rule, 2);
+                    $find = trim((string) ($replaceParts[0] ?? ''));
+                    if ($find === '') {
+                        continue;
+                    }
+
+                    $replacements[] = array(
+                        'find' => $find,
+                        'replace' => trim((string) ($replaceParts[1] ?? '')),
+                    );
+                }
+            }
+        }
+
+        $resolved = $this->resolveField($product, $fieldPath, '|', $exportOptions);
+        if ($replacements === array()) {
+            return $resolved;
+        }
+
+        foreach ($replacements as $replacement) {
+            $resolved = str_replace($replacement['find'], $replacement['replace'], $resolved);
+        }
+
+        return $resolved;
     }
 
     private function allegroParameterValueByNames(array $product, array $candidateNames): string
@@ -435,45 +555,175 @@ class ValueResolver
         return trim((string) $value);
     }
 
+    public function generateImageExportRows(array $product, array $exportOptions, array $settings = array()): array
+    {
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
+        $productName = isset($product['product_name']) ? (string) $product['product_name'] : '';
+        $collectionCode = strtoupper(trim((string) ($exportOptions['image_collection_code'] ?? ($imageOptions['image_collection_code'] ?? ''))));
+        $collectionName = trim((string) ($exportOptions['collection_name'] ?? ''));
+        $imageCount = max(0, (int) ($exportOptions['image_count'] ?? ($imageOptions['image_count'] ?? 0)));
+        $thumbnailCount = max(0, (int) ($exportOptions['thumbnail_count'] ?? ($imageOptions['thumbnail_count'] ?? 0)));
+        $mockupCount = max(0, (int) ($exportOptions['mockup_count'] ?? ($exportOptions['grid_count'] ?? ($imageOptions['mockup_count'] ?? 0))));
+        $baseDirectory = trim((string) ($exportOptions['image_base_directory'] ?? ($imageOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU')));
+        $thumbnailMacro = trim((string) ($imageOptions['thumbnail_macro'] ?? ($exportOptions['thumbnail_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')));
+        $mockupMacro = trim((string) ($imageOptions['mockup_macro'] ?? ($exportOptions['mockup_macro'] ?? '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')));
+        $imageMacro = trim((string) ($imageOptions['image_macro'] ?? ($exportOptions['image_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')));
+        $thumbnailLines = array();
+        $mockupLines = array();
+        $imageLines = array();
+
+        for ($i = 1; $i <= $thumbnailCount; $i++) {
+            $path = $this->renderImageExportMacro($thumbnailMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $thumbnailLines[] = $path;
+            }
+        }
+
+        for ($i = 1; $i <= $mockupCount; $i++) {
+            $path = $this->renderImageExportMacro($mockupMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $mockupLines[] = $path;
+            }
+        }
+
+        for ($i = 1; $i <= $imageCount; $i++) {
+            $path = $this->renderImageExportMacro($imageMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $imageLines[] = $path;
+            }
+        }
+
+        $sharedLines = array_merge($mockupLines, $imageLines);
+        $rows = array();
+        $layout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
+
+        if ($layout === array()) {
+            $layout = array(
+                array('type' => 'thumbnail', 'value' => ''),
+                array('type' => 'mockup', 'value' => ''),
+                array('type' => 'image', 'value' => ''),
+            );
+        }
+
+        if ($thumbnailLines !== array()) {
+            foreach ($thumbnailLines as $thumbnailLine) {
+                $rowLines = array();
+                foreach ($layout as $layoutItem) {
+                    $type = trim((string) ($layoutItem['type'] ?? ''));
+                    if ($type === 'thumbnail') {
+                        $rowLines[] = $thumbnailLine;
+                        continue;
+                    }
+
+                    if ($type === 'mockup') {
+                        $rowLines = array_merge($rowLines, $mockupLines);
+                        continue;
+                    }
+
+                    if ($type === 'image') {
+                        $rowLines = array_merge($rowLines, $imageLines);
+                        continue;
+                    }
+
+                    if ($type === 'static') {
+                        $staticValue = trim((string) ($layoutItem['value'] ?? ''));
+                        if ($staticValue !== '') {
+                            $rowLines[] = $staticValue;
+                        }
+                    }
+                }
+
+                $rowLines = array_values(array_filter($rowLines, static function (string $line): bool {
+                    return trim($line) !== '';
+                }));
+                $rows[] = implode("\n", $rowLines);
+            }
+
+            return $rows;
+        }
+
+        if ($layout !== array()) {
+            $rowLines = array();
+            foreach ($layout as $layoutItem) {
+                $type = trim((string) ($layoutItem['type'] ?? ''));
+                if ($type === 'mockup') {
+                    $rowLines = array_merge($rowLines, $mockupLines);
+                    continue;
+                }
+
+                if ($type === 'image') {
+                    $rowLines = array_merge($rowLines, $imageLines);
+                    continue;
+                }
+
+                if ($type === 'static') {
+                    $staticValue = trim((string) ($layoutItem['value'] ?? ''));
+                    if ($staticValue !== '') {
+                        $rowLines[] = $staticValue;
+                    }
+                }
+            }
+
+            $rowLines = array_values(array_filter($rowLines, static function (string $line): bool {
+                return trim($line) !== '';
+            }));
+            if ($rowLines !== array()) {
+                return array(implode("\n", $rowLines));
+            }
+        }
+
+        if ($sharedLines !== array()) {
+            return array(implode("\n", $sharedLines));
+        }
+
+        return array('');
+    }
+
     private function generateImageExportLines(array $product, array $exportOptions): string
     {
-       
-        $productName = isset($product['product_name']) ? (string) $product['product_name'] : '';
-        $titleSuffix = trim((string) ($exportOptions['image_title_suffix'] ?? ''));
-        $collectionCode = strtoupper(trim((string) ($exportOptions['image_collection_code'] ?? '')));
-        $collectionName = trim((string) ($exportOptions['image_collection_name'] ?? ''));
-        $mockupCount = max(0, (int) ($exportOptions['image_count'] ?? 0));
-        $thumbnailCount = max(0, (int) ($exportOptions['thumbnail_count'] ?? 0));
-        $gridCount = max(0, (int) ($exportOptions['grid_count'] ?? 0));
-        $baseDirectory = trim((string) ($exportOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU'));
+        return implode("\n", $this->generateImageExportRows($product, $exportOptions));
+    }
 
-        $folderName = $this->slugForImagePath(trim($productName . ' ' . $titleSuffix));
-        $lines = array();
+    private function renderImageExportMacro(
+        string $macro,
+        array $product,
+        array $exportOptions,
+        string $baseDirectory,
+        string $collectionCode,
+        string $collectionName,
+        string $productName,
+        int $index
+    ): string {
+        $macro = trim($macro);
+        if ($macro === '') {
+            return '';
+        }
 
-     
+        $contours = trim((string) ($product['contours'] ?? ''));
+        $sku = trim((string) ($product['sku'] ?? ''));
+        $oldSku = trim((string) (($product['custom_fields']['old_sku'] ?? '') ?: ($product['old_sku'] ?? '')));
+        $price = trim((string) ($exportOptions['price_to_csv'] ?? ''));
+        $slug = $this->slugForImagePath($productName);
 
-        $productDirectory = rtrim($baseDirectory . $collectionCode, '\\/');
-        if ($folderName !== '') {
-            $productDirectory .= '\\' . $folderName;
-        }
-        for ($i = 1; $i <= $thumbnailCount; $i++) {
-            $fileName = 'miniatura_t_'. $i . '.png';
-            $lines[] = $baseDirectory . '' . $product['contours'] . '\\' . $collectionCode . '\\' . $fileName;
-            
-        }
-        for ($i = 1; $i <= $mockupCount; $i++) {
-            $lines[] = $baseDirectory . '' . $product['contours'] . '\\mockup_' . $i . '.jpg';
-        }
-        for ($i = 1; $i <= $gridCount; $i++) {
-            $lines[] = $baseDirectory . '' . $product['contours'] . '\\' . $collectionCode . '\\' . $i . '.jpg';
-        }
-           
-      
-        // for ($i = 1; $i <= $thumbnailCount; $i++) {
-        //     $lines[] = $productDirectory . '\\miniatura' . $i . '.jpg';
-        // }
+        $rendered = strtr($macro, array(
+            '{{base_directory}}' => rtrim($baseDirectory, '\\/'),
+            '{{contours}}' => $contours,
+            '{{collection_code}}' => $collectionCode,
+            '{{collection_name}}' => $collectionName,
+            '{{product_name}}' => $productName,
+            '{{product_slug}}' => $slug,
+            '{{sku}}' => $sku,
+            '{{old_sku}}' => $oldSku,
+            '{{price}}' => $price,
+            '{{index}}' => (string) $index,
+            '{{index0}}' => (string) max(0, $index - 1),
+        ));
 
-        return implode("\n", $lines);
+        $rendered = str_replace('/', '\\', $rendered);
+        $rendered = preg_replace_callback('/\\\\+/', static function (): string {
+            return '\\';
+        }, $rendered);
+        return trim((string) $rendered);
     }
 
     private function slugForImagePath(string $value): string

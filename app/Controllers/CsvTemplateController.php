@@ -1366,6 +1366,7 @@ class CsvTemplateController extends Controller
                     $productData['updated_at'] = $this->normalizeImportedDateTime($value);
                     break;
                 case 'product.allegro_parameters':
+                case 'product.allegro_parameters_eu':
                 case 'product.generated_title':
                 case 'product.generated_images':
                 case 'product.price_to_csv':
@@ -1978,6 +1979,7 @@ class CsvTemplateController extends Controller
             'product.images[0].url' => 'Pierwsze zdjecie URL',
             'product.images' => 'Wszystkie zdjecia',
             'product.allegro_parameters' => 'Parametry Allegro (nazwa: wartosc)',
+            'product.allegro_parameters_eu' => 'Parametry ALLEGRO EU (parameter_id|type|value|)',
             'product.generated_title' => 'Generowany tytul CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
             'product.price_net' => 'Cena netto',
@@ -2042,12 +2044,52 @@ class CsvTemplateController extends Controller
     {
         $args = isset($settings['args']) && is_array($settings['args']) ? $settings['args'] : array();
         $condition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : array();
+        $imageLayout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
+        $normalizedImageLayout = array();
+
+        foreach ($imageLayout as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $type = trim((string) ($item['type'] ?? ''));
+            if (!in_array($type, array('thumbnail', 'mockup', 'image', 'static'), true)) {
+                continue;
+            }
+
+            $normalizedImageLayout[] = array(
+                'type' => $type,
+                'value' => (string) ($item['value'] ?? ''),
+            );
+        }
+
+        if ($normalizedImageLayout === array()) {
+            $normalizedImageLayout = array(
+                array('type' => 'thumbnail', 'value' => ''),
+                array('type' => 'mockup', 'value' => ''),
+                array('type' => 'image', 'value' => ''),
+            );
+        }
+
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
 
         return array(
             'function' => trim((string) ($settings['function'] ?? '')),
             'args' => $args,
             'format' => trim((string) ($settings['format'] ?? '')),
             'array_separator' => trim((string) ($settings['array_separator'] ?? '')),
+            'image_layout' => $normalizedImageLayout,
+            'image_options' => array(
+                'image_collection_code' => trim((string) ($imageOptions['image_collection_code'] ?? '')),
+                'price_to_csv' => trim((string) ($imageOptions['price_to_csv'] ?? '')),
+                'image_count' => max(0, (int) ($imageOptions['image_count'] ?? 0)),
+                'thumbnail_count' => max(0, (int) ($imageOptions['thumbnail_count'] ?? 0)),
+                'mockup_count' => max(0, (int) ($imageOptions['mockup_count'] ?? 0)),
+                'image_base_directory' => trim((string) ($imageOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU')),
+                'thumbnail_macro' => trim((string) ($imageOptions['thumbnail_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')),
+                'mockup_macro' => trim((string) ($imageOptions['mockup_macro'] ?? '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')),
+                'image_macro' => trim((string) ($imageOptions['image_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')),
+            ),
             'condition' => array(
                 'field' => trim((string) ($condition['field'] ?? '')),
                 'operator' => trim((string) ($condition['operator'] ?? 'eq')),
@@ -2074,11 +2116,21 @@ class CsvTemplateController extends Controller
         $ids = isset($requestData['product_ids']) ? $requestData['product_ids'] : $this->input('product_ids', array());
         $productIds = $this->normalizeProductIds($ids);
 
-        if ($mode !== 'all' && $productIds === array()) {
-            throw new RuntimeException('Zaznacz produkty lub wybierz eksport wszystkich.');
+        if (!in_array($mode, array('selected', 'all', 'filtered'), true)) {
+            $mode = 'selected';
         }
 
-        $rows = $mode === 'all' ? $this->products->exportRows(array()) : $this->products->exportRows($productIds);
+        if ($mode === 'selected' && $productIds === array()) {
+            throw new RuntimeException('Zaznacz produkty albo wybierz eksport wyfiltrowanych lub wszystkich.');
+        }
+
+        if ($mode === 'all') {
+            $rows = $this->products->exportRows(array());
+        } elseif ($mode === 'filtered') {
+            $rows = $this->products->exportRowsFiltered($this->exportProductFiltersFromInput($requestData));
+        } else {
+            $rows = $this->products->exportRows($productIds);
+        }
 
         if ($rows === array()) {
             $debugContext = array(
@@ -2109,6 +2161,28 @@ class CsvTemplateController extends Controller
 
         $decoded = json_decode($raw, true);
         return is_array($decoded) ? $decoded : array();
+    }
+
+    private function exportProductFiltersFromInput(array $requestData = array()): array
+    {
+        $source = function (string $key, $default = '') use ($requestData) {
+            if (array_key_exists($key, $requestData)) {
+                return $requestData[$key];
+            }
+
+            return $this->input($key, $default);
+        };
+
+        return array(
+            'id' => trim((string) $source('filter_id', '')),
+            'global' => trim((string) $source('filter_global', '')),
+            'sku' => trim((string) $source('filter_sku', '')),
+            'product_name' => trim((string) $source('filter_product_name', '')),
+            'category_id' => trim((string) $source('filter_category_id', '')),
+            'quantity' => trim((string) $source('filter_quantity', '')),
+            'localization' => trim((string) $source('filter_localization', '')),
+            'with_glass' => trim((string) $source('filter_with_glass', '')),
+        );
     }
 
     private function normalizeProductIds($ids): array
@@ -2156,15 +2230,17 @@ class CsvTemplateController extends Controller
 
         return array(
             'title_template_id' => max(0, (int) $source('title_template_id', 0)),
-            'collection_name' => trim((string) $source('collection_name', $source('image_collection_name', ''))),
+            'collection_name' => trim((string) $source('collection_name', '')),
             'image_collection_code' => trim((string) $source('image_collection_code', '')),
-            'image_collection_name' => trim((string) $source('image_collection_name', '')),
-            'image_title_suffix' => trim((string) $source('image_title_suffix', '')),
             'price_to_csv' => trim((string) $source('price_to_csv', '')),
             'image_count' => max(0, (int) $source('image_count', 0)),
             'thumbnail_count' => max(0, (int) $source('thumbnail_count', 0)),
-            'grid_count' => max(0, (int) $source('grid_count', 0)),
+            'mockup_count' => max(0, (int) $source('mockup_count', $source('grid_count', 0))),
+            'grid_count' => max(0, (int) $source('grid_count', $source('mockup_count', 0))),
             'image_base_directory' => trim((string) $source('image_base_directory', 'T:\\wygnerowane_do_EU')),
+            'thumbnail_macro' => trim((string) $source('thumbnail_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')),
+            'mockup_macro' => trim((string) $source('mockup_macro', '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')),
+            'image_macro' => trim((string) $source('image_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')),
         ) + $this->titleTemplateExportOptions(max(0, (int) $source('title_template_id', 0)));
     }
 

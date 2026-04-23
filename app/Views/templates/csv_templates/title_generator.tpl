@@ -19,6 +19,22 @@
 
   <div class="app-content">
     <div class="container-fluid">
+      {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
+      {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+
+      <div class="card mb-4">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h3 class="card-title mb-1">Szablony tytulow</h3>
+            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> używanego podczas eksportu CSV.</div>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Szablony CSV</a>
+            <a href="{$baseUrl}?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb-4">
         <div class="card-body">
           <h3 class="card-title mb-2">Jak tego uzyc</h3>
@@ -28,55 +44,48 @@
             <li>Na liscie produktow, przy eksporcie CSV, wybierz szablon tytulu i wpisz <code>Kolekcje do tytulu</code>.</li>
             <li>Generator sam pobierze z rozszyfrowanych parametrow Allegro dedykowany model i dedykowana marke.</li>
           </ol>
-          <div class="mt-3">
-            <a href="{$baseUrl}?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
-          </div>
         </div>
       </div>
 
-      <div class="row g-3">
-        {foreach $titleTemplates as $templateKey => $titleTemplate}
-          <div class="col-lg-6">
-            <div class="card h-100">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <h3 class="card-title mb-0">{$titleTemplate.name|escape}</h3>
-                <span class="badge text-bg-secondary">{$templateKey|escape}</span>
-              </div>
-              <div class="card-body">
-                <p class="mb-2">{$titleTemplate.description|escape}</p>
-                <div class="mb-3">
-                  <div class="small fw-semibold mb-1">Wzor:</div>
-                  <pre class="bg-light border rounded p-2 small mb-0"><code>{$titleTemplate.template_body|default:$titleTemplate.pattern|escape}</code></pre>
-                </div>
-                <div class="mb-3">
-                  <div class="small fw-semibold mb-1">Przyklad:</div>
-                  <div class="border rounded p-2 bg-light">{$titleTemplate.example|default:'Ustalany dynamicznie podczas eksportu'|escape}</div>
-                </div>
-                <div class="d-flex gap-2">
-                  <a href="{$baseUrl}?controller=csvtemplates&action=edittitle&id={$titleTemplate.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
-                  <form method="post" action="{$baseUrl}?controller=csvtemplates&action=deletetitle" class="d-inline" onsubmit="return confirm('Usunac szablon tytulu {$titleTemplate.name|escape:'javascript'}?');">
-                    <input type="hidden" name="id" value="{$titleTemplate.id}">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        {/foreach}
-      </div>
-
-      <div class="card mt-4">
-        <div class="card-header"><h3 class="card-title mb-0">Dostepne tokeny</h3></div>
-        <div class="card-body">
-          <div class="row g-2">
-            {foreach $availableTitleTokens as $token => $label}
-              <div class="col-lg-6">
-                <div class="border rounded p-2 small">
-                  <code>{$token|escape}</code><br>
-                  <span class="text-secondary">{$label|escape}</span>
-                </div>
-              </div>
-            {/foreach}
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Nazwa</th>
+                  <th>Opis</th>
+                  <th>Wzor</th>
+                  <th>Utworzono</th>
+                  <th>Zmieniono</th>
+                  <th class="text-end">Akcje</th>
+                </tr>
+              </thead>
+              <tbody>
+                {if $titleTemplates}
+                  {foreach $titleTemplates as $titleTemplate}
+                    <tr>
+                      <td class="fw-semibold">{$titleTemplate.name|escape}</td>
+                      <td>{$titleTemplate.description|default:'-'|truncate:120|escape}</td>
+                      <td>
+                        <pre class="bg-light border rounded p-2 small mb-0"><code>{$titleTemplate.template_body|default:$titleTemplate.pattern|escape}</code></pre>
+                      </td>
+                      <td>{$titleTemplate.created_at|default:'-'|escape}</td>
+                      <td>{$titleTemplate.updated_at|default:'-'|escape}</td>
+                      <td class="text-end">
+                        <a href="{$baseUrl}?controller=csvtemplates&action=edittitle&id={$titleTemplate.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
+                        <form method="post" action="{$baseUrl}?controller=csvtemplates&action=deletetitle" class="d-inline" onsubmit="return confirm('Usunac szablon tytulu {$titleTemplate.name|escape:'javascript'}?');">
+                          <input type="hidden" name="id" value="{$titleTemplate.id}">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {/foreach}
+                {else}
+                  <tr><td colspan="6" class="text-center py-4">Brak szablonow tytulow.</td></tr>
+                {/if}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

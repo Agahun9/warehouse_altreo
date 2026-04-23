@@ -15,6 +15,7 @@ use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
+use App\Services\ValueResolver;
 use Throwable;
 
 class ProductController extends Controller
@@ -174,6 +175,44 @@ class ProductController extends Controller
         } catch (Throwable $exception) {
             $this->jsonResponse(array('items' => array(), 'error' => $exception->getMessage()), 500);
         }
+    }
+
+    public function previewgeneratedtitle(): void
+    {
+        $this->requireModule('products');
+
+        $productId = (int) $this->input('product_id', 0);
+        if ($productId <= 0) {
+            $this->jsonResponse(array('title' => '', 'length' => 0, 'message' => 'Zaznacz produkt do podgladu.'), 400);
+            return;
+        }
+
+        $products = $this->products->exportRows(array($productId), 1);
+        $product = isset($products[0]) && is_array($products[0]) ? $products[0] : null;
+        if ($product === null) {
+            $this->jsonResponse(array('title' => '', 'length' => 0, 'message' => 'Nie znaleziono produktu do podgladu.'), 404);
+            return;
+        }
+
+        $titleTemplateId = (int) $this->input('title_template_id', 0);
+        $titleTemplate = $titleTemplateId > 0 ? $this->csvTitleTemplates->findById($titleTemplateId) : null;
+        $exportOptions = array(
+            'title_template_id' => $titleTemplateId,
+            'title_template_pattern' => is_array($titleTemplate) ? (string) ($titleTemplate['template_body'] ?? '') : '',
+            'title_template_name' => is_array($titleTemplate) ? (string) ($titleTemplate['name'] ?? '') : '',
+            'collection_name' => trim((string) $this->input('collection_name', '')),
+        );
+
+        $resolver = new ValueResolver();
+        $title = trim($resolver->resolveField($product, 'product.generated_title', '|', $exportOptions));
+
+        $this->jsonResponse(array(
+            'title' => $title,
+            'length' => function_exists('mb_strlen') ? mb_strlen($title, 'UTF-8') : strlen($title),
+            'product_id' => $productId,
+            'product_name' => (string) ($product['product_name'] ?? ''),
+            'template_name' => (string) ($exportOptions['title_template_name'] ?? ''),
+        ));
     }
 
     public function nextsku(): void

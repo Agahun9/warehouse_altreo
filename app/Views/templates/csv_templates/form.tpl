@@ -98,6 +98,7 @@
                   <li><code>product.images[0].url</code> - pierwszy obrazek</li>
                   <li><code>product.images</code> - wszystkie obrazki, polaczone separatorem tablicy</li>
                   <li><code>product.allegro_parameters</code> - wszystkie parametry Allegro w jednej komorce, kazdy w nowej linii</li>
+                  <li><code>product.allegro_parameters_eu</code> - wszystkie parametry Allegro w formacie EU: <code>parameter_id|type|value|</code></li>
                   <li><code>images</code> lub <code>product.generated_images</code> - generowana lista sciezek obrazow EasyUploader</li>
                 </ul>
               </div>
@@ -152,7 +153,7 @@
                   <li>Zapisz szablon.</li>
                   <li>Przejdz do listy produktow.</li>
                   <li>Zaznacz wybrane produkty albo wybierz eksport wszystkich.</li>
-                  <li>Jesli uzywasz pola <code>images</code>, uzupelnij w modalu opcje kolekcji, ilosci zdjec, miniatur i mockupow.</li>
+                  <li>Jesli uzywasz pola <code>images</code>, uzupelnij w modalu eksportu kolekcje, ilosci zdjec, miniatur i mockupow oraz makra sciezek.</li>
                   <li>Kliknij <code>Eksport CSV</code>, wybierz szablon i wygeneruj plik.</li>
                 </ol>
               </div>
@@ -265,6 +266,37 @@
     }).join('');
   }
 
+  function imageLayoutRowsHtml(layout) {
+    if (!Array.isArray(layout) || layout.length === 0) {
+      layout = [
+        { type: 'thumbnail', value: '' },
+        { type: 'mockup', value: '' },
+        { type: 'image', value: '' }
+      ];
+    }
+
+    return layout.map(function (item) {
+      var type = String(item && item.type ? item.type : 'static');
+      var value = String(item && item.value ? item.value : '');
+      var staticStyle = type === 'static' ? '' : ' style="display:none;"';
+      return '<div class="border rounded p-2 mb-2 bg-light image-layout-item" draggable="true">'
+        + '<div class="d-flex justify-content-between align-items-center gap-2">'
+        + '<span class="text-secondary small" style="cursor:move;">:: przeciagnij</span>'
+        + '<button type="button" class="btn btn-sm btn-outline-danger remove-image-layout-item">Usun</button>'
+        + '</div>'
+        + '<div class="row g-2 mt-1">'
+        + '<div class="col-md-4"><label class="form-label small">Typ sekcji</label><select class="form-select form-select-sm image-layout-type">'
+        + '<option value="thumbnail"' + (type === 'thumbnail' ? ' selected' : '') + '>Miniatura</option>'
+        + '<option value="mockup"' + (type === 'mockup' ? ' selected' : '') + '>Mockupy / gridy</option>'
+        + '<option value="image"' + (type === 'image' ? ' selected' : '') + '>Zdjecia</option>'
+        + '<option value="static"' + (type === 'static' ? ' selected' : '') + '>Stala wartosc</option>'
+        + '</select></div>'
+        + '<div class="col-md-8 image-layout-static-wrap"' + staticStyle + '><label class="form-label small">Stala wartosc</label><input type="text" class="form-control form-control-sm image-layout-value" value="' + escapeHtml(value) + '" placeholder="np. ---"></div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
   function createColumnCard(column) {
     var data = column || {
       header_name: '',
@@ -276,6 +308,7 @@
 
     var condition = data.settings && data.settings.condition ? data.settings.condition : {};
     var conditionElse = (condition && Object.prototype.hasOwnProperty.call(condition, 'else')) ? condition['else'] : '';
+    var imageOptions = data.settings && data.settings.image_options ? data.settings.image_options : {};
 
     var card = document.createElement('div');
     card.className = 'card border column-card';
@@ -292,7 +325,7 @@
       + '  <div class="row g-2">'
       + '    <div class="col-md-3"><label class="form-label small">Naglowek</label><input type="text" class="form-control form-control-sm col-header" value="' + escapeHtml(data.header_name) + '"></div>'
       + '    <div class="col-md-2"><label class="form-label small">Typ</label><select class="form-select form-select-sm col-type"><option value="field">field</option><option value="static">static</option><option value="computed">computed</option></select></div>'
-      + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
+      + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><input type="text" class="form-control form-control-sm col-field-search mb-1" placeholder="Szukaj pola"><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
       + '    <div class="col-md-3 static-wrap"><label class="form-label small">Wartosc stala</label><input type="text" class="form-control form-control-sm col-static" value="' + escapeHtml(data.source_value) + '"></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Funkcja</label><select class="form-select form-select-sm col-fn">' + functionOptions(data.settings.function) + '</select></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="2">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea></div>'
@@ -316,6 +349,27 @@
       + '    </div>'
       + '    <div class="mapping-list">' + mappingRowsHtml(data.mappings) + '</div>'
       + '  </div>'
+      + '  <div class="border rounded p-2 mt-2 image-layout-wrap" style="display:none;">'
+      + '    <div class="row g-2 mb-3">'
+      + '      <div class="col-12"><label class="form-label small">Makro miniatur</label><textarea class="form-control form-control-sm image-option-thumbnail-macro" rows="2">' + escapeHtml(imageOptions.thumbnail_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\{ldelim}{ldelim}collection_code{rdelim}{rdelim}\\miniatura_t_{ldelim}{ldelim}index{rdelim}{rdelim}.png') + '</textarea></div>'
+      + '      <div class="col-12"><label class="form-label small">Makro mockupow / gridow</label><textarea class="form-control form-control-sm image-option-mockup-macro" rows="2">' + escapeHtml(imageOptions.mockup_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\mockup_{ldelim}{ldelim}index{rdelim}{rdelim}.jpg') + '</textarea></div>'
+      + '      <div class="col-12"><label class="form-label small">Makro zdjec</label><textarea class="form-control form-control-sm image-option-image-macro" rows="2">' + escapeHtml(imageOptions.image_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\{ldelim}{ldelim}collection_code{rdelim}{rdelim}\\{ldelim}{ldelim}index{rdelim}{rdelim}.jpg') + '</textarea></div>'
+      + '      <div class="col-12 small text-secondary">Tokeny: {ldelim}{ldelim}base_directory{rdelim}{rdelim}, {ldelim}{ldelim}contours{rdelim}{rdelim}, {ldelim}{ldelim}collection_code{rdelim}{rdelim}, {ldelim}{ldelim}collection_name{rdelim}{rdelim}, {ldelim}{ldelim}product_name{rdelim}{rdelim}, {ldelim}{ldelim}product_slug{rdelim}{rdelim}, {ldelim}{ldelim}sku{rdelim}{rdelim}, {ldelim}{ldelim}old_sku{rdelim}{rdelim}, {ldelim}{ldelim}price{rdelim}{rdelim}, {ldelim}{ldelim}index{rdelim}{rdelim}, {ldelim}{ldelim}index0{rdelim}{rdelim}</div>'
+      + '    </div>'
+      + '    <div class="d-flex justify-content-between align-items-center mb-2">'
+      + '      <div>'
+      + '        <div class="small fw-semibold">Uklad sekcji obrazow</div>'
+      + '        <div class="small text-secondary">Ustaw kolejnosc: miniatura, mockupy, zdjecia i stale teksty pomiedzy nimi.</div>'
+      + '      </div>'
+      + '      <div class="d-flex gap-2 flex-wrap">'
+      + '        <button type="button" class="btn btn-sm btn-outline-secondary add-image-layout-item" data-layout-type="thumbnail">Dodaj miniature</button>'
+      + '        <button type="button" class="btn btn-sm btn-outline-secondary add-image-layout-item" data-layout-type="mockup">Dodaj mockupy</button>'
+      + '        <button type="button" class="btn btn-sm btn-outline-secondary add-image-layout-item" data-layout-type="image">Dodaj zdjecia</button>'
+      + '        <button type="button" class="btn btn-sm btn-outline-primary add-image-layout-item" data-layout-type="static">Dodaj stala</button>'
+      + '      </div>'
+      + '    </div>'
+      + '    <div class="image-layout-list">' + imageLayoutRowsHtml(data.settings.image_layout || []) + '</div>'
+      + '  </div>'
       + '</div>';
 
     var typeSelect = card.querySelector('.col-type');
@@ -326,16 +380,40 @@
 
     function updateVisibility() {
       var type = typeSelect.value;
+      var fieldValue = card.querySelector('.col-field').value;
       card.querySelector('.field-wrap').style.display = (type === 'field') ? '' : 'none';
       card.querySelector('.static-wrap').style.display = (type === 'static') ? '' : 'none';
       var computedFields = card.querySelectorAll('.computed-wrap');
       for (var i = 0; i < computedFields.length; i++) {
         computedFields[i].style.display = (type === 'computed') ? '' : 'none';
       }
+      var imageLayoutWrap = card.querySelector('.image-layout-wrap');
+      if (imageLayoutWrap) {
+        imageLayoutWrap.style.display = (type === 'field' && (fieldValue === 'product.generated_images' || fieldValue === 'images' || fieldValue === 'generated_images')) ? '' : 'none';
+      }
     }
 
     typeSelect.addEventListener('change', updateVisibility);
+    card.querySelector('.col-field').addEventListener('change', updateVisibility);
     updateVisibility();
+
+    var fieldSearchInput = card.querySelector('.col-field-search');
+    var fieldSelect = card.querySelector('.col-field');
+    if (fieldSearchInput && fieldSelect) {
+      fieldSearchInput.addEventListener('input', function () {
+        var query = String(fieldSearchInput.value || '').toLowerCase().trim();
+        var options = fieldSelect.querySelectorAll('option');
+        for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+          if (optionIndex === 0) {
+            options[optionIndex].hidden = false;
+            continue;
+          }
+
+          var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+          options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+        }
+      });
+    }
 
     card.querySelector('.remove-column').addEventListener('click', function () {
       card.remove();
@@ -362,6 +440,40 @@
           row.remove();
         }
       }
+
+      if (event.target.classList.contains('remove-image-layout-item')) {
+        var layoutRow = event.target.closest('.image-layout-item');
+        if (layoutRow) {
+          layoutRow.remove();
+        }
+      }
+
+      if (event.target.classList.contains('add-image-layout-item')) {
+        var list = card.querySelector('.image-layout-list');
+        var layoutType = String(event.target.getAttribute('data-layout-type') || 'static');
+        if (list) {
+          var wrapper = document.createElement('div');
+          wrapper.innerHTML = imageLayoutRowsHtml([{ type: layoutType, value: '' }]);
+          list.appendChild(wrapper.firstChild);
+          bindImageLayoutInteractions(card);
+        }
+      }
+    });
+
+    card.addEventListener('change', function (event) {
+      if (!event.target.classList.contains('image-layout-type')) {
+        return;
+      }
+
+      var item = event.target.closest('.image-layout-item');
+      if (!item) {
+        return;
+      }
+
+      var staticWrap = item.querySelector('.image-layout-static-wrap');
+      if (staticWrap) {
+        staticWrap.style.display = event.target.value === 'static' ? '' : 'none';
+      }
     });
 
     card.addEventListener('dragstart', function () {
@@ -387,6 +499,49 @@
 
       builder.insertBefore(dragging, card);
     });
+
+    function bindImageLayoutInteractions(scope) {
+      var items = scope.querySelectorAll('.image-layout-item');
+      for (var index = 0; index < items.length; index++) {
+        (function (item) {
+          if (item.dataset.imageLayoutBound === '1') {
+            return;
+          }
+
+          item.dataset.imageLayoutBound = '1';
+          item.addEventListener('dragstart', function (event) {
+            item.classList.add('opacity-50');
+            item.dataset.dragging = '1';
+            event.stopPropagation();
+          });
+
+          item.addEventListener('dragend', function (event) {
+            item.classList.remove('opacity-50');
+            item.dataset.dragging = '0';
+            event.stopPropagation();
+          });
+
+          item.addEventListener('dragover', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+          });
+
+          item.addEventListener('drop', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var list = scope.querySelector('.image-layout-list');
+            var dragging = list ? list.querySelector('.image-layout-item[data-dragging="1"]') : null;
+            if (!list || !dragging || dragging === item) {
+              return;
+            }
+
+            list.insertBefore(dragging, item);
+          });
+        })(items[index]);
+      }
+    }
+
+    bindImageLayoutInteractions(card);
 
     return card;
   }
@@ -435,6 +590,26 @@
       }
     }
 
+    var imageLayout = [];
+    var imageLayoutRows = card.querySelectorAll('.image-layout-item');
+    for (var i = 0; i < imageLayoutRows.length; i++) {
+      var layoutTypeField = imageLayoutRows[i].querySelector('.image-layout-type');
+      if (!layoutTypeField) {
+        continue;
+      }
+
+      imageLayout.push({
+        type: layoutTypeField.value,
+        value: imageLayoutRows[i].querySelector('.image-layout-value') ? imageLayoutRows[i].querySelector('.image-layout-value').value : ''
+      });
+    }
+
+    var imageOptions = {
+      thumbnail_macro: card.querySelector('.image-option-thumbnail-macro') ? card.querySelector('.image-option-thumbnail-macro').value : '',
+      mockup_macro: card.querySelector('.image-option-mockup-macro') ? card.querySelector('.image-option-mockup-macro').value : '',
+      image_macro: card.querySelector('.image-option-image-macro') ? card.querySelector('.image-option-image-macro').value : ''
+    };
+
     return {
       header_name: card.querySelector('.col-header').value,
       source_type: type,
@@ -444,6 +619,8 @@
         args: args,
         format: card.querySelector('.col-format').value,
         array_separator: card.querySelector('.col-array-sep').value,
+        image_layout: imageLayout,
+        image_options: imageOptions,
         condition: condition
       },
       mappings: mappings

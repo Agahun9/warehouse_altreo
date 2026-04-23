@@ -424,14 +424,14 @@ class AllegroService
 
     public function linkOfferToProduct(int $offerRowId, ?int $productId, string $linkedBy = 'manual'): array
     {
-        $offer = $this->offerDetails($offerRowId);
+        $offer = $this->storage->findOfferById($offerRowId);
         if (!$offer) {
             throw new RuntimeException('Nie znaleziono oferty Allegro.');
         }
 
         $this->storage->linkOfferToProduct($offerRowId, $productId, $linkedBy);
 
-        return (array) $this->offerDetails($offerRowId);
+        return (array) $this->storage->findOfferById($offerRowId);
     }
 
     public function enqueueOfferChanges(array $filters, string $operation, array $payload = array(), string $manualIdentifiers = ''): array
@@ -514,9 +514,8 @@ class AllegroService
 
         $availableAt = date('Y-m-d H:i:s', time() + max(0, $delaySeconds));
         $queued = 0;
-        $queued += $this->storage->enqueueOfferChanges($targets, 'set_price_from_product', array(), $availableAt, true);
-        $queued += $this->storage->enqueueOfferChanges($targets, 'set_stock_from_product', array(), $availableAt, true);
-        $queued += $this->storage->enqueueOfferChanges($targets, 'set_sku', array('warehouse_product_id' => 'auto'), $availableAt, true);
+        // $queued += $this->storage->enqueueOfferChanges($targets, 'set_price_from_product', array(), $availableAt, true);
+        // $queued += $this->storage->enqueueOfferChanges($targets, 'set_stock_from_product', array(), $availableAt, true);
 
         return array(
             'products' => count($expandedProductIds),

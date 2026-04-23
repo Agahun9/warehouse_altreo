@@ -242,7 +242,10 @@
                 </div>
                 <span class="allegro-queue-mini-percent">{$queueDonePercent|string_format:'%.0f'}%</span>
               </div>
-              <div class="small text-secondary mb-2">Zostało {$queueRemaining}, gotowe {$queueStats.done}</div>
+              <div class="small text-secondary mb-2">
+                Zostalo {$queueRemaining},
+                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=done&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity={$filters.warehouse_quantity|escape:'url'}&allegro_quantity={$filters.allegro_quantity|escape:'url'}" class="allegro-queue-mini-link text-success">gotowe {$queueStats.done}</a>
+              </div>
               <div class="allegro-queue-progress" aria-label="Stan kolejki Allegro">
                 {if $queuePendingPercent > 0}<div class="allegro-queue-progress-part is-pending" style="width: {$queuePendingPercent|string_format:'%.2f'}%;"></div>{/if}
                 {if $queueRetryPercent > 0}<div class="allegro-queue-progress-part is-retry" style="width: {$queueRetryPercent|string_format:'%.2f'}%;"></div>{/if}
@@ -351,8 +354,8 @@
             </div>
             <div class="col-xl-2 col-md-6">
               <label class="form-label">Szukaj</label>
-              <input type="text" name="q" value="{$filters.q|escape}" class="form-control" placeholder='offer id / nazwa / SKU'>
-              <div class="form-text">Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
+              <input type="text" name="q" value="{$filters.q|escape}" class="form-control" placeholder='offer id / nazwa / SKU, kilka ID oddziel przecinkiem'>
+              <div class="form-text">Mozesz wkleic kilka ID oddzielonych przecinkiem lub srednikiem. Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
             </div>
             <div class="col-xl-2 col-md-4">
               <label class="form-label">SKU</label>

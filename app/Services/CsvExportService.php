@@ -40,13 +40,35 @@ class CsvExportService
         }
 
         foreach ($rows as $product) {
-            $line = array();
+            $resolvedColumns = array();
+            $rowCount = 1;
+
             foreach ($tpl['columns'] as $column) {
                 $value = $this->resolveColumnValue($product, $column, $arraySeparator, $exportOptions);
-                $line[] = $value;
+                $items = $this->columnRowValues($product, $column, $value, $exportOptions);
+                if (count($items) > $rowCount) {
+                    $rowCount = count($items);
+                }
+
+                $resolvedColumns[] = array(
+                    'items' => $items,
+                    'repeat' => !$this->isMultiRowColumn($column),
+                );
             }
 
-            fputcsv($stream, $line, $delimiter);
+            for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
+                $line = array();
+                foreach ($resolvedColumns as $resolvedColumn) {
+                    if ($resolvedColumn['repeat']) {
+                        $line[] = isset($resolvedColumn['items'][0]) ? $resolvedColumn['items'][0] : '';
+                        continue;
+                    }
+
+                    $line[] = isset($resolvedColumn['items'][$rowIndex]) ? $resolvedColumn['items'][$rowIndex] : '';
+                }
+
+                fputcsv($stream, $line, $delimiter);
+            }
         }
 
         rewind($stream);
@@ -207,5 +229,39 @@ class CsvExportService
         }
 
         return $value;
+    }
+
+    private function columnRowValues(array $product, array $column, string $value, array $exportOptions): array
+    {
+        if (!$this->isMultiRowColumn($column)) {
+            return array($value);
+        }
+
+        $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
+        if (in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true)) {
+            $settings = isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
+            return $this->resolver->generateImageExportRows($product, $exportOptions, $settings);
+        }
+
+        $items = preg_split('/\r\n|\r|\n/', $value);
+        if (!is_array($items) || $items === array()) {
+            return array('');
+        }
+
+        $items = array_values(array_filter(array_map('trim', $items), static function (string $item): bool {
+            return $item !== '';
+        }));
+
+        return $items !== array() ? $items : array('');
+    }
+
+    private function isMultiRowColumn(array $column): bool
+    {
+        if (($column['source_type'] ?? 'field') !== 'field') {
+            return false;
+        }
+
+        $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
+        return in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true);
     }
 }

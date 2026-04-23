@@ -1185,12 +1185,6 @@ class AllegroStorageRepository
 
     public function queueCounts(): array
     {
-        $cacheKey = 'allegro:queue-counts';
-        $cached = $this->getCache($cacheKey);
-        if (is_array($cached) && isset($cached['pending'])) {
-            return $cached;
-        }
-
         $rows = $this->database->fetchAll(
             'SELECT status, COUNT(*) AS total FROM allegro_offer_change_queue GROUP BY status'
         );
@@ -1209,8 +1203,6 @@ class AllegroStorageRepository
                 $result[$status] = (int) ($row['total'] ?? 0);
             }
         }
-
-        $this->putCache($cacheKey, $result, self::STATS_CACHE_TTL);
 
         return $result;
     }
@@ -1480,10 +1472,16 @@ class AllegroStorageRepository
         $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
         if ($query !== '') {
             $searchTokens = $this->splitOfferSearchTokens($query);
-
+            $includeClauses = array();
             foreach ($searchTokens['include'] as $index => $token) {
                 $tokenKey = 'q_in_' . $index;
-                $whereParts[] = '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
+                if (!empty($searchTokens['list_mode']) && ctype_digit($token)) {
+                    $includeClauses[] = 'offers.offer_id = :' . $tokenKey . '_offer_id_exact';
+                    $params[$tokenKey . '_offer_id_exact'] = $token;
+                    continue;
+                }
+
+                $includeClauses[] = '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
                     . ' OR offers.sku LIKE :' . $tokenKey . '_offer_sku'
                     . ' OR offers.name LIKE :' . $tokenKey . '_offer_name'
                     . ' OR warehouse.sku LIKE :' . $tokenKey . '_warehouse_sku'
@@ -1494,6 +1492,11 @@ class AllegroStorageRepository
                 $params[$tokenKey . '_offer_name'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_sku'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_name'] = $tokenLike;
+            }
+
+            if ($includeClauses !== array()) {
+                $glue = !empty($searchTokens['list_mode']) ? ' OR ' : ' AND ';
+                $whereParts[] = '(' . implode($glue, $includeClauses) . ')';
             }
 
             foreach ($searchTokens['exclude'] as $index => $token) {
@@ -1582,15 +1585,19 @@ class AllegroStorageRepository
             return array(
                 'include' => array(),
                 'exclude' => array(),
+                'list_mode' => false,
             );
         }
 
+        $listMode = preg_match('/[;,]/u', $query) === 1;
+        $query = preg_replace('/[;,]+/u', ' ', $query);
         preg_match_all('/([!-]?"[^"]+"|[!-]?\'[^\']+\'|[!-]?\S+)/u', $query, $matches);
         $rawTokens = isset($matches[0]) && is_array($matches[0]) ? $matches[0] : array();
 
         $result = array(
             'include' => array(),
             'exclude' => array(),
+            'list_mode' => $listMode,
         );
 
         foreach ($rawTokens as $rawToken) {

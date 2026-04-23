@@ -531,6 +531,86 @@ class ProductRepository
         return $this->attachCustomFields($this->attachSharedStock($this->attachAllegroParameters($rows)));
     }
 
+    public function exportRowsFiltered(array $filters = array()): array
+    {
+        $sql = 'SELECT products.*,'
+            . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
+            . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id'
+            . ' FROM ' . self::TABLE
+            . ' LEFT JOIN categories ON categories.id = products.category_id'
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id';
+        $params = array();
+        $whereParts = array('products.deleted_at IS NULL');
+
+        $id = isset($filters['id']) ? trim((string) $filters['id']) : '';
+        $this->appendIdFilterCondition($whereParts, $params, $id, 'filter_id');
+
+        $global = isset($filters['global']) ? trim((string) $filters['global']) : '';
+        $this->appendGlobalProductFilterCondition($whereParts, $params, $global, 'filter_global');
+
+        $sku = isset($filters['sku']) ? trim((string) $filters['sku']) : '';
+        $this->appendTextFilterCondition($whereParts, $params, array('products.sku'), $sku, 'filter_sku');
+
+        $productName = isset($filters['product_name']) ? trim((string) $filters['product_name']) : '';
+        $this->appendTextFilterCondition($whereParts, $params, array('products.product_name'), $productName, 'filter_product_name');
+
+        $categoryId = isset($filters['category_id']) ? trim((string) $filters['category_id']) : '';
+        if ($categoryId !== '' && ctype_digit($categoryId) && (int) $categoryId > 0) {
+            $whereParts[] = 'products.category_id = :filter_category_id';
+            $params['filter_category_id'] = (int) $categoryId;
+        }
+
+        $quantity = isset($filters['quantity']) ? trim((string) $filters['quantity']) : '';
+        if ($quantity !== '') {
+            if (preg_match('/^\s*(\d+)\s*\-\s*(\d+)\s*$/', $quantity, $matches) === 1) {
+                $from = (int) $matches[1];
+                $to = (int) $matches[2];
+                if ($from > $to) {
+                    $tmp = $from;
+                    $from = $to;
+                    $to = $tmp;
+                }
+                $whereParts[] = 'COALESCE(shared_stock_groups.quantity, products.quantity) BETWEEN :filter_quantity_from AND :filter_quantity_to';
+                $params['filter_quantity_from'] = $from;
+                $params['filter_quantity_to'] = $to;
+            } else {
+                $whereParts[] = 'CAST(COALESCE(shared_stock_groups.quantity, products.quantity) AS CHAR) LIKE :filter_quantity';
+                $params['filter_quantity'] = '%' . $quantity . '%';
+            }
+        }
+
+        $localization = isset($filters['localization']) ? trim((string) $filters['localization']) : '';
+        if ($localization !== '') {
+            $whereParts[] = 'COALESCE(shared_stock_groups.localization, products.localization) LIKE :filter_localization';
+            $params['filter_localization'] = '%' . $localization . '%';
+        }
+
+        $withGlass = isset($filters['with_glass']) ? trim((string) $filters['with_glass']) : '';
+        if ($withGlass === '1') {
+            $whereParts[] = '(products.product_name LIKE :filter_with_glass_yes_ascii OR products.product_name LIKE :filter_with_glass_yes_utf)';
+            $params['filter_with_glass_yes_ascii'] = '%+ SZKLO%';
+            $params['filter_with_glass_yes_utf'] = '%+ SZKŁO%';
+        } elseif ($withGlass === '0') {
+            $whereParts[] = '(products.product_name NOT LIKE :filter_with_glass_no_ascii AND products.product_name NOT LIKE :filter_with_glass_no_utf)';
+            $params['filter_with_glass_no_ascii'] = '%+ SZKLO%';
+            $params['filter_with_glass_no_utf'] = '%+ SZKŁO%';
+        }
+
+        if ($whereParts !== array()) {
+            $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+        }
+
+        $sql .= ' ORDER BY products.id DESC, products.id DESC';
+
+        $rows = $this->database->fetchAll($sql, $params);
+        foreach ($rows as $index => $row) {
+            $rows[$index]['images'] = $this->parseImages(isset($row['img']) ? (string) $row['img'] : '');
+        }
+
+        return $this->attachCustomFields($this->attachSharedStock($this->attachAllegroParameters($rows)));
+    }
+
     private function parseImages(string $value): array
     {
         $value = trim($value);

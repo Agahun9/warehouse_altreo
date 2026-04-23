@@ -39,12 +39,16 @@ class TemplateParser
     {
         $condition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : array();
         $args = isset($settings['args']) && is_array($settings['args']) ? $settings['args'] : array();
+        $imageLayout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
 
         return array(
             'function' => isset($settings['function']) ? (string) $settings['function'] : '',
             'args' => $args,
             'format' => isset($settings['format']) ? (string) $settings['format'] : '',
             'array_separator' => isset($settings['array_separator']) ? (string) $settings['array_separator'] : '',
+            'image_layout' => $imageLayout,
+            'image_options' => $imageOptions,
             'condition' => array(
                 'field' => isset($condition['field']) ? (string) $condition['field'] : '',
                 'operator' => isset($condition['operator']) ? (string) $condition['operator'] : 'eq',

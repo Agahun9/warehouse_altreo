@@ -221,7 +221,7 @@
         </div>
         
         <!-- Panel akcji masowych -->
-        <div id="bulkActionsPanel" class="card-body bg-light border-bottom" style="display: none;">
+        <div id="bulkActionsPanel" class="card-body bg-light border-bottom">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
             <div class="text-secondary">
               <strong id="bulkSelectedCount">0</strong> produktów zaznaczonych
@@ -475,7 +475,11 @@
           <div class="mb-2">
             <label class="form-label d-block">Zakres eksportu</label>
             <div class="form-check">
-              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected" checked>
+              <input class="form-check-input" type="radio" name="export_mode" id="exportFiltered" value="filtered" checked>
+              <label class="form-check-label" for="exportFiltered">Wyfiltrowane produkty</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected">
               <label class="form-check-label" for="exportSelected">Zaznaczone produkty (<span id="selectedCount">0</span>)</label>
             </div>
             <div class="form-check">
@@ -498,7 +502,16 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label small">Kolekcja do tytulu</label>
-                <input type="text" name="collection_name" class="form-control form-control-sm" placeholder="np. Marble">
+                <input type="text" name="collection_name" id="csvExportCollectionName" class="form-control form-control-sm" placeholder="np. Marble">
+              </div>
+              <div class="col-12">
+                <div id="csvGeneratedTitlePreview" class="border rounded-3 p-3 bg-light">
+                  <div class="d-flex justify-content-between gap-2 align-items-center flex-wrap">
+                    <strong>Podglad tytulu z pierwszego zaznaczonego produktu</strong>
+                    <span id="csvGeneratedTitleLength" class="badge text-bg-secondary">0 / 75</span>
+                  </div>
+                  <div id="csvGeneratedTitlePreviewText" class="small mt-2 text-secondary">Wybierz szablon tytulu i zaznacz produkt, aby zobaczyc podglad.</div>
+                </div>
               </div>
             </div>
             <div class="form-text">
@@ -510,31 +523,23 @@
             <div class="row g-2">
               <div class="col-md-4">
                 <label class="form-label small">Kolekcja numeracja</label>
-                <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A">
+                <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A100">
               </div>
               <div class="col-md-8">
-                <label class="form-label small">Nazwa kolekcji dla obrazow</label>
-                <input type="text" name="image_collection_name" class="form-control form-control-sm" placeholder="np. KOLEKCJA">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label small">Dopisanie do nazwy obrazow</label>
-                <input type="text" name="image_title_suffix" class="form-control form-control-sm" placeholder="np. smooth">
-              </div>
-                <div class="col-md-6">
-                <label class="form-label small">Cena </label>
+                <label class="form-label small">Cena</label>
                 <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="35">
               </div>
-              <div class="col-md-2">
-                <label class="form-label small">Ilosc zdjec</label>
-                <input type="number" min="0" name="image_count" class="form-control form-control-sm" value="0">
-              </div>
-              <div class="col-md-2">
+              <div class="col-md-4">
                 <label class="form-label small">Ilosc miniatur</label>
                 <input type="number" min="0" name="thumbnail_count" class="form-control form-control-sm" value="0">
               </div>
-              <div class="col-md-2">
-                <label class="form-label small">Grid/mockup</label>
-                <input type="number" min="0" name="grid_count" class="form-control form-control-sm" value="0">
+              <div class="col-md-4">
+                <label class="form-label small">Ilosc mockupow / gridow</label>
+                <input type="number" min="0" name="mockup_count" class="form-control form-control-sm" value="0">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Ilosc zdjec</label>
+                <input type="number" min="0" name="image_count" class="form-control form-control-sm" value="0">
               </div>
               <div class="col-12">
                 <label class="form-label small">Bazowy katalog</label>
@@ -542,11 +547,18 @@
               </div>
             </div>
             <div class="form-text">
-              W szablonie uzyj pola <code>product.allegro_parameters</code> dla parametrow Allegro oraz
-              <code>images</code> albo <code>product.generated_images</code> dla listy sciezek obrazow.
+              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu.
             </div>
           </div>
           <div id="selectedProductIdsContainer"></div>
+          <input type="hidden" name="filter_id" value="{$filters.id|default:''|escape}">
+          <input type="hidden" name="filter_global" value="{$filters.global|default:''|escape}">
+          <input type="hidden" name="filter_sku" value="{$filters.sku|default:''|escape}">
+          <input type="hidden" name="filter_product_name" value="{$filters.product_name|default:''|escape}">
+          <input type="hidden" name="filter_category_id" value="{$filters.category_id|default:''|escape}">
+          <input type="hidden" name="filter_quantity" value="{$filters.quantity|default:''|escape}">
+          <input type="hidden" name="filter_localization" value="{$filters.localization|default:''|escape}">
+          <input type="hidden" name="filter_with_glass" value="{$filters.with_glass|default:''|escape}">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
@@ -675,6 +687,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var exportForm = document.getElementById('csvExportForm');
   var selectedContainer = document.getElementById('selectedProductIdsContainer');
   var exportSelected = document.getElementById('exportSelected');
+  var exportFiltered = document.getElementById('exportFiltered');
+  var titleTemplateSelect = document.querySelector('select[name="title_template_id"]');
+  var collectionNameInput = document.getElementById('csvExportCollectionName');
+  var generatedTitlePreview = document.getElementById('csvGeneratedTitlePreviewText');
+  var generatedTitleLength = document.getElementById('csvGeneratedTitleLength');
+  var generatedTitlePreviewBox = document.getElementById('csvGeneratedTitlePreview');
+  var generatedTitlePreviewUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=previewgeneratedtitle';
 
   // Bulk operations
   var bulkCopyBtn = document.getElementById('bulkCopyBtn');
@@ -853,13 +872,6 @@ document.addEventListener('DOMContentLoaded', function() {
         count++;
       }
     }
-    if (bulkActionsPanel) {
-      if (count > 0) {
-        bulkActionsPanel.style.display = 'block';
-      } else {
-        bulkActionsPanel.style.display = 'none';
-      }
-    }
     var bulkSelectedCount = document.getElementById('bulkSelectedCount');
     if (bulkSelectedCount) {
       bulkSelectedCount.textContent = String(count);
@@ -879,6 +891,85 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateBulkActionsPanel();
+    updateGeneratedTitlePreview();
+  }
+
+  function firstSelectedId() {
+    for (var i = 0; i < checkboxes.length; i++) {
+      if (checkboxes[i].checked) {
+        return checkboxes[i].value;
+      }
+    }
+
+    return '';
+  }
+
+  function setGeneratedTitlePreviewState(text, length) {
+    if (!generatedTitlePreview || !generatedTitleLength) {
+      return;
+    }
+
+    generatedTitlePreview.textContent = text || '';
+    generatedTitleLength.textContent = String(length || 0) + ' / 75';
+    generatedTitleLength.classList.remove('text-bg-secondary', 'text-bg-danger');
+    generatedTitleLength.classList.add((length || 0) > 75 ? 'text-bg-danger' : 'text-bg-secondary');
+
+    if (generatedTitlePreviewBox) {
+      generatedTitlePreviewBox.classList.remove('border-danger', 'bg-danger-subtle');
+      if ((length || 0) > 75) {
+        generatedTitlePreviewBox.classList.add('border-danger', 'bg-danger-subtle');
+      }
+    }
+  }
+
+  function updateGeneratedTitlePreview() {
+    if (!window.fetch || !generatedTitlePreview || !generatedTitleLength) {
+      return;
+    }
+
+    var productId = firstSelectedId();
+    var titleTemplateId = titleTemplateSelect ? String(titleTemplateSelect.value || '').trim() : '';
+    var collectionName = collectionNameInput ? String(collectionNameInput.value || '').trim() : '';
+
+    if (!productId) {
+      setGeneratedTitlePreviewState('Wybierz produkt, aby zobaczyc podglad.', 0);
+      return;
+    }
+
+    if (!titleTemplateId) {
+      setGeneratedTitlePreviewState('Wybierz szablon tytulu, aby zobaczyc podglad.', 0);
+      return;
+    }
+
+    setGeneratedTitlePreviewState('Liczenie podgladu tytulu...', 0);
+
+    fetch(
+      generatedTitlePreviewUrl
+        + '&product_id=' + encodeURIComponent(productId)
+        + '&title_template_id=' + encodeURIComponent(titleTemplateId)
+        + '&collection_name=' + encodeURIComponent(collectionName),
+      { headers: { 'Accept': 'application/json' } }
+    )
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = {};
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (error) {
+            data = { message: text || ('HTTP ' + response.status) };
+          }
+          if (!response.ok) {
+            throw new Error(data && data.message ? data.message : ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        setGeneratedTitlePreviewState(String(data && data.title ? data.title : ''), Number(data && data.length ? data.length : 0));
+      })
+      .catch(function (error) {
+        setGeneratedTitlePreviewState(error && error.message ? error.message : 'Nie udalo sie pobrac podgladu tytulu.', 0);
+      });
   }
 
   if (selectAll) {
@@ -1058,10 +1149,6 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Zaznacz produkty do eksportu.');
         return;
       }
-      // Ensure "selected" mode is checked
-      if (exportSelected) {
-        exportSelected.checked = true;
-      }
       // Update the selected count in the modal
       var countSpan = document.getElementById('selectedCount');
       if (countSpan) {
@@ -1070,7 +1157,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // Show the CSV export modal
       var csvModal = new bootstrap.Modal(document.getElementById('csvExportModal'));
       csvModal.show();
+      updateGeneratedTitlePreview();
     });
+  }
+
+  if (titleTemplateSelect) {
+    titleTemplateSelect.addEventListener('change', updateGeneratedTitlePreview);
+  }
+
+  if (collectionNameInput) {
+    collectionNameInput.addEventListener('input', updateGeneratedTitlePreview);
   }
 
   // Bulk Cancel handler
@@ -1126,6 +1222,8 @@ document.addEventListener('DOMContentLoaded', function() {
           input.value = ids[j];
           selectedContainer.appendChild(input);
         }
+      } else if (exportFiltered && exportFiltered.checked) {
+        return;
       }
     });
   }
