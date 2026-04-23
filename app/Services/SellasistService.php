@@ -235,7 +235,9 @@ class SellasistService
         do {
             $response = $this->request(
                 'GET',
-                '/api/v1/orders?status_id=' . $statusId . '&sort=asc&limit=' . $limit . '&offset=' . $offset
+                '/api/v1/orders?status_id=' . $statusId . '&sort=asc&limit=' . $limit . '&offset=' . $offset,
+                null,
+                true
             );
 
             if (!is_array($response) || $response === array()) {
@@ -779,7 +781,7 @@ class SellasistService
         );
     }
 
-    private function request(string $method, string $path, ?array $payload = null)
+    private function request(string $method, string $path, ?array $payload = null, bool $allowNotFound = false)
     {
         $url = $this->baseUrl() . $path;
         $ch = curl_init();
@@ -816,6 +818,10 @@ class SellasistService
 
         $decoded = json_decode($response, true);
         if ($httpCode >= 400) {
+            if ($allowNotFound && $httpCode === 404) {
+                return array();
+            }
+
             $message = is_array($decoded) && isset($decoded['message']) ? (string) $decoded['message'] : ('HTTP ' . $httpCode);
             throw new RuntimeException('Sellasist API zwrocilo blad: ' . $message . ' | URL: ' . $url);
         }
