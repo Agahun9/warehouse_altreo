@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Core\Config;
 use App\Core\Database;
 use App\Models\AllegroStorageRepository;
+use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\ProductChangeAuditService;
@@ -121,7 +122,21 @@ class AllegroService
 
     public function offersPage(array $filters, int $page, int $perPage, string $sortBy, string $sortDir): array
     {
-        return $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir);
+        $rows = $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir);
+        if ($rows === array()) {
+            return $rows;
+        }
+
+        $reloaded = false;
+        foreach ($rows as $row) {
+            if ($this->ensureAutoLinkedOfferOnRead($row)) {
+                $reloaded = true;
+            }
+        }
+
+        return $reloaded
+            ? $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir)
+            : $rows;
     }
 
     public function countOffers(array $filters): int
@@ -210,7 +225,16 @@ class AllegroService
 
     public function offerDetails(int $id)
     {
-        return $this->storage->findOfferById($id);
+        $offer = $this->storage->findOfferById($id);
+        if (!$offer) {
+            return $offer;
+        }
+
+        if ($this->ensureAutoLinkedOfferOnRead($offer)) {
+            return $this->storage->findOfferById($id);
+        }
+
+        return $offer;
     }
 
     public function triggerUrl(array $account, string $baseUrl): string
@@ -678,7 +702,7 @@ class AllegroService
             }
 
             $this->storage->markSyncSuccess($accountId);
-            $summary['auto_linked'] = $this->storage->autoLinkOffersBySku($accountId, 1000);
+            $summary['auto_linked'] = $this->autoLinkOffersToWarehouse($accountId, 1000);
             $summary['warehouse_products_refreshed'] = $this->syncWarehouseProductsFromCycle($accountId, $cycle);
             $summary['state'] = $this->storage->syncState($accountId);
         } catch (RuntimeException $exception) {
@@ -1967,8 +1991,210 @@ class AllegroService
 
         $this->storage->upsertOffer($payload);
         if (!$existing || empty($existing['warehouse_product_id'])) {
-            $this->storage->autoLinkOffersBySku((int) $account['id'], 50);
+            $this->autoLinkOffersToWarehouse((int) $account['id'], 50);
         }
+    }
+
+    private function autoLinkOffersToWarehouse(?int $accountId = null, int $limit = 500): int
+    {
+        $offers = $this->storage->unlinkedOffersForAutoLink($accountId, $limit);
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $products = new ProductRepository(Database::instance());
+        $products->ensureSchema();
+
+        $customFields = new ProductCustomFieldRepository(Database::instance());
+        $customFields->ensureSchema();
+
+        $count = 0;
+        foreach ($offers as $offer) {
+            $offerRowId = isset($offer['id']) ? (int) $offer['id'] : 0;
+            $allegroSku = trim((string) ($offer['sku'] ?? ''));
+            $offerName = trim((string) ($offer['name'] ?? ''));
+            if ($offerRowId <= 0 || $allegroSku === '') {
+                continue;
+            }
+
+            $productId = $this->resolveWarehouseProductIdForAllegroSku($products, $customFields, $allegroSku, $offerName);
+            if ($productId === null) {
+                continue;
+            }
+
+            $linkedBy = preg_match('/[a-z]/i', $allegroSku) === 1 ? 'sku' : 'old_sku';
+            $this->storage->linkOfferToProduct($offerRowId, $productId, $linkedBy);
+            $count++;
+        }
+
+        return $count;
+    }
+
+    private function ensureAutoLinkedOfferOnRead(array $offer): bool
+    {
+        $linkedBy = trim((string) ($offer['linked_by'] ?? ''));
+        $shouldRecheckExistingAutoLink = !empty($offer['warehouse_product_id']) && in_array($linkedBy, array('sku', 'old_sku'), true);
+        if (!$shouldRecheckExistingAutoLink && !empty($offer['warehouse_product_id'])) {
+            return false;
+        }
+
+        $offerRowId = isset($offer['id']) ? (int) $offer['id'] : 0;
+        $allegroSku = trim((string) ($offer['sku'] ?? ''));
+        $offerName = trim((string) ($offer['name'] ?? ''));
+        if ($offerRowId <= 0 || $allegroSku === '') {
+            return false;
+        }
+
+        $products = new ProductRepository(Database::instance());
+        $products->ensureSchema();
+
+        $customFields = new ProductCustomFieldRepository(Database::instance());
+        $customFields->ensureSchema();
+
+        $productId = $this->resolveWarehouseProductIdForAllegroSku($products, $customFields, $allegroSku, $offerName);
+        if ($productId === null) {
+            return false;
+        }
+
+        $currentProductId = isset($offer['warehouse_product_id']) ? (int) $offer['warehouse_product_id'] : 0;
+        $resolvedLinkedBy = preg_match('/[a-z]/i', $allegroSku) === 1 ? 'sku' : 'old_sku';
+        if ($currentProductId === $productId && $linkedBy === $resolvedLinkedBy) {
+            return false;
+        }
+
+        $this->storage->linkOfferToProduct($offerRowId, $productId, $resolvedLinkedBy);
+        return true;
+    }
+
+    private function resolveWarehouseProductIdForAllegroSku(
+        ProductRepository $products,
+        ProductCustomFieldRepository $customFields,
+        string $allegroSku,
+        string $offerName = ''
+    ): ?int {
+        if (preg_match('/[a-z]/i', $allegroSku) === 1) {
+            $product = $products->findBySku($allegroSku);
+            return $product ? (int) ($product['id'] ?? 0) : null;
+        }
+
+        if (ctype_digit($allegroSku)) {
+            $productIds = $customFields->findProductIdsBySlugAndValue('old_sku', $allegroSku);
+            return $this->bestProductIdForOldSkuCandidates($products, $productIds, $offerName);
+        }
+
+        return null;
+    }
+
+    private function bestProductIdForOldSkuCandidates(ProductRepository $products, array $productIds, string $offerName): ?int
+    {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+        if ($productIds === array()) {
+            return null;
+        }
+
+        if (count($productIds) === 1) {
+            return $productIds[0];
+        }
+
+        $scored = array();
+        foreach ($productIds as $productId) {
+            $product = $products->find($productId);
+            if (!$product) {
+                continue;
+            }
+
+            $score = $this->offerNameMatchScore(
+                (string) ($product['product_name'] ?? ''),
+                (string) ($product['sku'] ?? ''),
+                $offerName
+            );
+            $scored[] = array(
+                'id' => $productId,
+                'score' => $score,
+            );
+        }
+
+        if ($scored === array()) {
+            return null;
+        }
+
+        usort($scored, static function (array $a, array $b): int {
+            $scoreDiff = (int) ($b['score'] ?? 0) - (int) ($a['score'] ?? 0);
+            if ($scoreDiff !== 0) {
+                return $scoreDiff;
+            }
+
+            return (int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0);
+        });
+
+        $best = $scored[0];
+        $secondScore = isset($scored[1]) ? (int) ($scored[1]['score'] ?? 0) : -1;
+        $bestScore = (int) ($best['score'] ?? 0);
+
+        if ($bestScore <= 0) {
+            return null;
+        }
+
+        if ($secondScore === $bestScore) {
+            return null;
+        }
+
+        return (int) ($best['id'] ?? 0) > 0 ? (int) $best['id'] : null;
+    }
+
+    private function offerNameMatchScore(string $productName, string $sku, string $offerName): int
+    {
+        $productNameLower = mb_strtolower($productName, 'UTF-8');
+        $skuLower = mb_strtolower($sku, 'UTF-8');
+        $tokens = $this->offerMatchTokens($offerName);
+        $score = 0;
+
+        foreach ($tokens as $token) {
+            if ($productNameLower === $token) {
+                $score += 25;
+                continue;
+            }
+
+            if (mb_stripos($productNameLower, $token, 0, 'UTF-8') !== false) {
+                $score += preg_match('/[a-z]+\d+|\d+[a-z]+/iu', $token) ? 35 : 15;
+            }
+
+            if (mb_stripos($skuLower, $token, 0, 'UTF-8') !== false) {
+                $score += 10;
+            }
+        }
+
+        return $score;
+    }
+
+    private function offerMatchTokens(string $value): array
+    {
+        $value = mb_strtolower($value, 'UTF-8');
+        $value = preg_replace('/[^a-z0-9]+/iu', ' ', $value);
+        $parts = preg_split('/\s+/', trim((string) $value)) ?: array();
+        $stopwords = array(
+            'etui', 'silikonowe', 'silikon', 'clear', 'na', 'do', 'wzory', 'wzor', 'szklo', 'szkło',
+            'case', 'pokrowiec', 'plecki', 'plus', 'ochronne', 'ochrona', 'glass',
+            'fc', 'barcelona', 'barca', 'yamal', 'pedri', 'lewandowski'
+        );
+        $tokens = array();
+
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part === '' || in_array($part, $stopwords, true)) {
+                continue;
+            }
+            if (mb_strlen($part, 'UTF-8') < 2) {
+                continue;
+            }
+            if (!in_array($part, $tokens, true)) {
+                $tokens[] = $part;
+            }
+        }
+
+        return array_slice($tokens, 0, 8);
     }
 
     private function warehousePriceFromOffer(array $offer): ?string
@@ -1985,46 +2211,9 @@ class AllegroService
             return false;
         }
 
-        $productId = (int) $offer['warehouse_product_id'];
-        $products = new ProductRepository(Database::instance());
-        $products->ensureSchema();
-        $product = $products->find($productId);
-        if (!$product) {
-            return false;
-        }
-
-        $updated = false;
-        $updates = array();
-        $offerName = trim((string) ($offer['name'] ?? ''));
-        if ($offerName !== '' && (string) ($product['product_name'] ?? '') !== $offerName) {
-            $updates['product_name'] = $offerName;
-        }
-
-        $offerPrice = $this->normalizeDecimal($offer['price_amount'] ?? null);
-        if ($offerPrice !== null) {
-            $currentPrice = $this->normalizeDecimal($product['price_gross'] ?? null);
-            if ($currentPrice !== $offerPrice) {
-                $updates['price_gross'] = $offerPrice;
-            }
-        }
-
-        if ($updates !== array()) {
-            $products->updateById($productId, $updates);
-            $updated = true;
-        }
-
-        if (isset($offer['stock_available']) && (int) ($product['quantity'] ?? 0) !== (int) $offer['stock_available']) {
-            $sharedStock = new SharedStockGroupRepository(Database::instance());
-            $sharedStock->ensureSchema();
-            $sharedStock->updateStockValuesForProduct(
-                $productId,
-                max(0, (int) $offer['stock_available']),
-                isset($product['localization']) ? (string) $product['localization'] : null
-            );
-            $updated = true;
-        }
-
-        return $updated;
+        // Allegro moze byc powiazane z produktem, ale nie nadpisuje danych magazynowych.
+        // Lista produktow w magazynie pozostaje zrodlem prawdy.
+        return false;
     }
 
     private function syncWarehouseProductsFromCycle(int $accountId, string $cycle): int

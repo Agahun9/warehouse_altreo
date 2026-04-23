@@ -830,6 +830,27 @@ class AllegroStorageRepository
         return $count;
     }
 
+    public function unlinkedOffersForAutoLink(?int $accountId = null, int $limit = 500): array
+    {
+        $limit = max(1, min(5000, $limit));
+        $params = array();
+        $where = 'offers.warehouse_product_id IS NULL AND offers.sku IS NOT NULL AND offers.sku <> ""';
+
+        if ($accountId !== null) {
+            $where .= ' AND offers.account_id = :account_id';
+            $params['account_id'] = $accountId;
+        }
+
+        return $this->database->fetchAll(
+            'SELECT offers.id, offers.account_id, offers.offer_id, offers.sku, offers.name'
+            . ' FROM allegro_offers offers'
+            . ' WHERE ' . $where
+            . ' ORDER BY offers.id ASC'
+            . ' LIMIT ' . $limit,
+            $params
+        );
+    }
+
     public function resolveOfferTargets(array $identifiers, ?int $accountId = null): array
     {
         $tokens = array_values(array_unique(array_filter(array_map(static function ($value): string {

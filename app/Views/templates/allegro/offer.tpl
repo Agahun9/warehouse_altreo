@@ -77,7 +77,7 @@
                   <div class="small text-secondary">Lokalizacja: {$offer.warehouse_localization|default:'-'|escape}</div>
                 {else}
                   <div class="text-danger">Ta oferta nie jest jeszcze podpieta do produktu magazynowego.</div>
-                  <div class="small text-secondary mt-1">Auto-link probuje spinac po identycznym SKU przy syncu. Tu mozesz nadpisac to recznie po ID produktu.</div>
+                  <div class="small text-secondary mt-1">Auto-link probuje spinac po SKU Allegro: gdy sa litery, szuka po SKU magazynu; gdy sa same cyfry, szuka po OLD_SKU. Tu mozesz nadpisac to recznie po ID produktu.</div>
                 {/if}
               </div>
 

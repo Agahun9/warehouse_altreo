@@ -436,8 +436,8 @@
                   },
                   "SellasistService.php": {
                     "type": "-",
-                    "size": 35089,
-                    "lmtime": 1776864777842.7373,
+                    "size": 35264,
+                    "lmtime": 1776924186825.8809,
                     "modified": false
                   },
                   "TemplateParser.php": {
@@ -1083,8 +1083,8 @@
               },
               ".gitignore": {
                 "type": "-",
-                "size": 21,
-                "lmtime": 1776923447942.6016,
+                "size": 76,
+                "lmtime": 1776924061759.4783,
                 "modified": false
               },
               "index.html": {
