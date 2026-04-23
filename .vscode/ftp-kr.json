@@ -1,0 +1,19 @@
+{
+    "host": "s183.cyber-folks.pl",
+    "username": "pfuuseajvz",
+    "password": "!#sadZFGzsadf@sd1234ZCcsdaF",
+    "remotePath": "/domains/magazyn.altreo.pl/public_html/crm/new_version",
+    "localRoot": "D:\\magazyn_new",
+    "protocol": "ftp",
+    "port": 21,
+    "fileNameEncoding": "utf8",
+    "autoUpload": true,
+    "autoDelete": true,
+    "autoDownload": true,
+    "ignore": [
+        ".git",
+        "/.vscode",
+        "OBRYSY_GENERATOR",
+        "temporary"
+    ]
+}

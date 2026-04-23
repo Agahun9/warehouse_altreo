@@ -1,0 +1,2379 @@
+{
+  "ftp://pfuuseajvz@s183.cyber-folks.pl:21": {
+    "domains": {
+      "magazyn.altreo.pl": {
+        "public_html": {
+          "crm": {
+            "allegro_api_access.php": {
+              "type": "-",
+              "size": 9358,
+              "lmtime": 0,
+              "modified": true
+            },
+            "allegro_api_functions.php": {
+              "type": "-",
+              "size": 249,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_api — kopia.php": {
+              "type": "-",
+              "size": 22710,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_api.php": {
+              "type": "-",
+              "size": 48176,
+              "lmtime": 0,
+              "modified": true
+            },
+            "allegro_api_refresh.php": {
+              "type": "-",
+              "size": 3836,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_api_run_tasks.php": {
+              "type": "-",
+              "size": 7652,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_api_synchro.php": {
+              "type": "-",
+              "size": 14485,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_api_test.php": {
+              "type": "-",
+              "size": 10110,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_products_full.csv": {
+              "type": "-",
+              "size": 16279728,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_warehouse — kopia.php": {
+              "type": "-",
+              "size": 14576,
+              "lmtime": 0,
+              "modified": false
+            },
+            "allegro_warehouse.php": {
+              "type": "-",
+              "size": 20275,
+              "lmtime": 0,
+              "modified": false
+            },
+            "altreo_components.php": {
+              "type": "-",
+              "size": 34780,
+              "lmtime": 0,
+              "modified": false
+            },
+            "altreo_exports.php": {
+              "type": "-",
+              "size": 32936,
+              "lmtime": 0,
+              "modified": false
+            },
+            "altreo_products.php": {
+              "type": "-",
+              "size": 30942,
+              "lmtime": 0,
+              "modified": false
+            },
+            "BL_api.php": {
+              "type": "-",
+              "size": 9169,
+              "lmtime": 0,
+              "modified": false
+            },
+            "cache": {},
+            "change_password.php": {
+              "type": "-",
+              "size": 1266,
+              "lmtime": 0,
+              "modified": false
+            },
+            "classes": {},
+            "collect.php": {
+              "type": "-",
+              "size": 9321,
+              "lmtime": 0,
+              "modified": false
+            },
+            "config": {},
+            "contours": {},
+            "css": {},
+            "dane.csv": {
+              "type": "-",
+              "size": 1001,
+              "lmtime": 0,
+              "modified": false
+            },
+            "empik": {},
+            "erli_api.php": {
+              "type": "-",
+              "size": 6789,
+              "lmtime": 0,
+              "modified": false
+            },
+            "eu_editor.php": {
+              "type": "-",
+              "size": 42740,
+              "lmtime": 0,
+              "modified": false
+            },
+            "generate_description.php": {
+              "type": "-",
+              "size": 823,
+              "lmtime": 0,
+              "modified": false
+            },
+            "get_template.php": {
+              "type": "-",
+              "size": 2011,
+              "lmtime": 0,
+              "modified": false
+            },
+            "header_ajax.php": {
+              "type": "-",
+              "size": 1460,
+              "lmtime": 0,
+              "modified": false
+            },
+            "img": {},
+            "img_components": {},
+            "img_computers_products": {},
+            "img_products": {},
+            "index_ajax.php": {
+              "type": "-",
+              "size": 834,
+              "lmtime": 0,
+              "modified": false
+            },
+            "index_APILO.php": {
+              "type": "-",
+              "size": 10007,
+              "lmtime": 0,
+              "modified": false
+            },
+            "index_BL.php": {
+              "type": "-",
+              "size": 12368,
+              "lmtime": 0,
+              "modified": false
+            },
+            "index.php": {
+              "type": "-",
+              "size": 3017,
+              "lmtime": 0,
+              "modified": false
+            },
+            "jpk_vat.xml": {
+              "type": "-",
+              "size": 20489,
+              "lmtime": 0,
+              "modified": false
+            },
+            "js": {},
+            "lib1": {},
+            "libs": {},
+            "libs1": {},
+            "login.php": {
+              "type": "-",
+              "size": 3884,
+              "lmtime": 0,
+              "modified": false
+            },
+            "morele": {},
+            "new_version": {
+              "app": {
+                "bootstrap.php": {
+                  "type": "-",
+                  "size": 761,
+                  "lmtime": 1774531236398.5396,
+                  "modified": false
+                },
+                "Config": {
+                  "app.php": {
+                    "type": "-",
+                    "size": 786,
+                    "lmtime": 1776923447787.797,
+                    "modified": false
+                  },
+                  "database.php": {
+                    "type": "-",
+                    "size": 290,
+                    "lmtime": 1774520861917.4988,
+                    "modified": false
+                  }
+                },
+                "Controllers": {
+                  "AdminController.php": {
+                    "type": "-",
+                    "size": 9253,
+                    "lmtime": 1776864153322.4978,
+                    "modified": false
+                  },
+                  "AllegroController.php": {
+                    "type": "-",
+                    "size": 28742,
+                    "lmtime": 1776864446198.4707,
+                    "modified": false
+                  },
+                  "AuthController.php": {
+                    "type": "-",
+                    "size": 12107,
+                    "lmtime": 1776864142427.3975,
+                    "modified": false
+                  },
+                  "CategoryController.php": {
+                    "type": "-",
+                    "size": 8685,
+                    "lmtime": 1776864411140.412,
+                    "modified": false
+                  },
+                  "CsvTemplateController.php": {
+                    "type": "-",
+                    "size": 92447,
+                    "lmtime": 1776864427638.816,
+                    "modified": false
+                  },
+                  "IndexController.php": {
+                    "type": "-",
+                    "size": 8564,
+                    "lmtime": 1776864801708.023,
+                    "modified": false
+                  },
+                  "ProductController.php": {
+                    "type": "-",
+                    "size": 577851,
+                    "lmtime": 1776864405296.6262,
+                    "modified": false
+                  },
+                  "SellasistController.php": {
+                    "type": "-",
+                    "size": 4208,
+                    "lmtime": 1776864435293.5232,
+                    "modified": false
+                  }
+                },
+                "Core": {
+                  "Application.php": {
+                    "type": "-",
+                    "size": 2440,
+                    "lmtime": 1776857680758.359,
+                    "modified": false
+                  },
+                  "Config.php": {
+                    "type": "-",
+                    "size": 547,
+                    "lmtime": 1774519686427.2651,
+                    "modified": false
+                  },
+                  "Controller.php": {
+                    "type": "-",
+                    "size": 5563,
+                    "lmtime": 1776865407511.6777,
+                    "modified": false
+                  },
+                  "Database.php": {
+                    "type": "-",
+                    "size": 6714,
+                    "lmtime": 1776682701129.1145,
+                    "modified": false
+                  },
+                  "SmartyFactory.php": {
+                    "type": "-",
+                    "size": 890,
+                    "lmtime": 1774519023186.3835,
+                    "modified": false
+                  }
+                },
+                "Database": {
+                  "auth.sql": {
+                    "type": "-",
+                    "size": 2260,
+                    "lmtime": 1774521653491.1714,
+                    "modified": false
+                  },
+                  "products.sql": {
+                    "type": "-",
+                    "size": 3543,
+                    "lmtime": 1776168845948.1982,
+                    "modified": false
+                  }
+                },
+                "Models": {
+                  "AllegroStorageRepository.php": {
+                    "type": "-",
+                    "size": 94561,
+                    "lmtime": 1776865457862.555,
+                    "modified": false
+                  },
+                  "CategoryRepository.php": {
+                    "type": "-",
+                    "size": 7023,
+                    "lmtime": 1776865428927.6343,
+                    "modified": false
+                  },
+                  "CsvImportProfileRepository.php": {
+                    "type": "-",
+                    "size": 6743,
+                    "lmtime": 1776865498750.91,
+                    "modified": false
+                  },
+                  "CsvTemplateRepository.php": {
+                    "type": "-",
+                    "size": 9545,
+                    "lmtime": 1776865488849.0293,
+                    "modified": false
+                  },
+                  "CsvTitleTemplateRepository.php": {
+                    "type": "-",
+                    "size": 2764,
+                    "lmtime": 1776865493773.4717,
+                    "modified": false
+                  },
+                  "DerivedStockLinkRepository.php": {
+                    "type": "-",
+                    "size": 10332,
+                    "lmtime": 1776865478086.2036,
+                    "modified": false
+                  },
+                  "ProductAllegroParameterRepository.php": {
+                    "type": "-",
+                    "size": 6145,
+                    "lmtime": 1776865483221.69,
+                    "modified": false
+                  },
+                  "ProductChangeLogRepository.php": {
+                    "type": "-",
+                    "size": 7121,
+                    "lmtime": 1776865418992.1526,
+                    "modified": false
+                  },
+                  "ProductCustomFieldRepository.php": {
+                    "type": "-",
+                    "size": 9289,
+                    "lmtime": 1776865504334.053,
+                    "modified": false
+                  },
+                  "ProductRepository.php": {
+                    "type": "-",
+                    "size": 167305,
+                    "lmtime": 1776865424725.6726,
+                    "modified": false
+                  },
+                  "SellasistOrderSyncRepository.php": {
+                    "type": "-",
+                    "size": 6288,
+                    "lmtime": 1776865516804.953,
+                    "modified": false
+                  },
+                  "SettingRepository.php": {
+                    "type": "-",
+                    "size": 2465,
+                    "lmtime": 1776865511494.6929,
+                    "modified": false
+                  },
+                  "SharedStockGroupRepository.php": {
+                    "type": "-",
+                    "size": 22434,
+                    "lmtime": 1776865462587.6458,
+                    "modified": false
+                  },
+                  "UserRepository.php": {
+                    "type": "-",
+                    "size": 10038,
+                    "lmtime": 1776865413780.442,
+                    "modified": false
+                  }
+                },
+                "Services": {
+                  "AllegroService.php": {
+                    "type": "-",
+                    "size": 103213,
+                    "lmtime": 1776851730782.0771,
+                    "modified": false
+                  },
+                  "ComputedFunctions.php": {
+                    "type": "-",
+                    "size": 5194,
+                    "lmtime": 1776087602212.5244,
+                    "modified": false
+                  },
+                  "CsvExportService.php": {
+                    "type": "-",
+                    "size": 7127,
+                    "lmtime": 1776087602311.1191,
+                    "modified": false
+                  },
+                  "JwtService.php": {
+                    "type": "-",
+                    "size": 2066,
+                    "lmtime": 1774521598763.9778,
+                    "modified": false
+                  },
+                  "MailService.php": {
+                    "type": "-",
+                    "size": 1518,
+                    "lmtime": 1774521599157.3157,
+                    "modified": false
+                  },
+                  "ProductChangeAuditService.php": {
+                    "type": "-",
+                    "size": 17288,
+                    "lmtime": 1776864128950.1196,
+                    "modified": false
+                  },
+                  "SellasistService.php": {
+                    "type": "-",
+                    "size": 35089,
+                    "lmtime": 1776864777842.7373,
+                    "modified": false
+                  },
+                  "TemplateParser.php": {
+                    "type": "-",
+                    "size": 3453,
+                    "lmtime": 1776087602414.2715,
+                    "modified": false
+                  },
+                  "TokenService.php": {
+                    "type": "-",
+                    "size": 471,
+                    "lmtime": 1774521598759.9702,
+                    "modified": false
+                  },
+                  "ValueResolver.php": {
+                    "type": "-",
+                    "size": 18114,
+                    "lmtime": 1776087602546.364,
+                    "modified": false
+                  }
+                },
+                "Storage": {
+                  "imports": {
+                    "3b72141fe4ada89dbe8c3bd16870e0c6.csv": {
+                      "type": "-",
+                      "size": 277006,
+                      "lmtime": 1776679676777.4143,
+                      "modified": false
+                    },
+                    "51935318d5231ff2cf88c237b2e285d4.csv": {
+                      "type": "-",
+                      "size": 277006,
+                      "lmtime": 1776679677078.5083,
+                      "modified": false
+                    },
+                    "5af05631d607bf5765cb69a03f7f3a74.csv": {
+                      "type": "-",
+                      "size": 277006,
+                      "lmtime": 1776679677342.3328,
+                      "modified": false
+                    },
+                    "9fb757f6a34454bbc539059f11a4955f.csv": {
+                      "type": "-",
+                      "size": 277006,
+                      "lmtime": 1776679677654.7651,
+                      "modified": false
+                    },
+                    "a7fe729bcdcd5634229fb7157b394b05.csv": {
+                      "type": "-",
+                      "size": 277006,
+                      "lmtime": 1776679677966.2615,
+                      "modified": false
+                    }
+                  },
+                  "logs": {
+                    "app.log": {
+                      "type": "-",
+                      "size": 504977,
+                      "lmtime": 1776679678231.0344,
+                      "modified": false
+                    }
+                  },
+                  "mail": {}
+                },
+                "Views": {
+                  "cache": {
+                    ".gitignore": {
+                      "type": "-",
+                      "size": 14,
+                      "lmtime": 1774518672873.0544,
+                      "modified": false
+                    }
+                  },
+                  "configs": {
+                    ".gitignore": {
+                      "type": "-",
+                      "size": 14,
+                      "lmtime": 1774518672873.0544,
+                      "modified": false
+                    }
+                  },
+                  "templates": {
+                    "admin": {
+                      "allegro_accounts.tpl": {
+                        "type": "-",
+                        "size": 8152,
+                        "lmtime": 1776679678564.0906,
+                        "modified": false
+                      },
+                      "automation.tpl": {
+                        "type": "-",
+                        "size": 19447,
+                        "lmtime": 1776857680771.8674,
+                        "modified": false
+                      },
+                      "users.tpl": {
+                        "type": "-",
+                        "size": 10972,
+                        "lmtime": 1776864650250.1973,
+                        "modified": false
+                      }
+                    },
+                    "allegro": {
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 98815,
+                        "lmtime": 1776838879642.4277,
+                        "modified": false
+                      },
+                      "offer.tpl": {
+                        "type": "-",
+                        "size": 16707,
+                        "lmtime": 1776679679275.5466,
+                        "modified": false
+                      }
+                    },
+                    "auth": {
+                      "forgot_password.tpl": {
+                        "type": "-",
+                        "size": 1410,
+                        "lmtime": 1774521846055.5198,
+                        "modified": false
+                      },
+                      "login.tpl": {
+                        "type": "-",
+                        "size": 1703,
+                        "lmtime": 1774521845857.5205,
+                        "modified": false
+                      },
+                      "register.tpl": {
+                        "type": "-",
+                        "size": 2259,
+                        "lmtime": 1776864172817.6057,
+                        "modified": false
+                      },
+                      "reset_password.tpl": {
+                        "type": "-",
+                        "size": 1693,
+                        "lmtime": 1774521846545.375,
+                        "modified": false
+                      }
+                    },
+                    "categories": {
+                      "form.tpl": {
+                        "type": "-",
+                        "size": 11443,
+                        "lmtime": 1776851404887.6995,
+                        "modified": false
+                      },
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 4163,
+                        "lmtime": 1774535617504.362,
+                        "modified": false
+                      }
+                    },
+                    "csv_templates": {
+                      "form.tpl": {
+                        "type": "-",
+                        "size": 24213,
+                        "lmtime": 1776087602798.7603,
+                        "modified": false
+                      },
+                      "import.tpl": {
+                        "type": "-",
+                        "size": 21412,
+                        "lmtime": 1776847110359.7341,
+                        "modified": false
+                      },
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 4855,
+                        "lmtime": 1776679679441.11,
+                        "modified": false
+                      },
+                      "title_form.tpl": {
+                        "type": "-",
+                        "size": 5314,
+                        "lmtime": 1776087603015.5664,
+                        "modified": false
+                      },
+                      "title_generator.tpl": {
+                        "type": "-",
+                        "size": 4318,
+                        "lmtime": 1776087603134.0632,
+                        "modified": false
+                      }
+                    },
+                    "index.tpl": {
+                      "type": "-",
+                      "size": 19546,
+                      "lmtime": 1776864834777.1238,
+                      "modified": false
+                    },
+                    "layout": {
+                      "footer.tpl": {
+                        "type": "-",
+                        "size": 3443,
+                        "lmtime": 1774536183573.4612,
+                        "modified": true
+                      },
+                      "header.tpl": {
+                        "type": "-",
+                        "size": 9748,
+                        "lmtime": 1776857680779.4944,
+                        "modified": false
+                      }
+                    },
+                    "products": {
+                      "form.tpl": {
+                        "type": "-",
+                        "size": 99379,
+                        "lmtime": 1776849458888.0605,
+                        "modified": false
+                      },
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 51865,
+                        "lmtime": 1776850132735.528,
+                        "modified": false
+                      }
+                    },
+                    "sellasist": {
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 5244,
+                        "lmtime": 1776857680728.7617,
+                        "modified": false
+                      },
+                      "stickers.tpl": {
+                        "type": "-",
+                        "size": 3958,
+                        "lmtime": 1776860272937.4465,
+                        "modified": false
+                      },
+                      "subtract_stock_result.tpl": {
+                        "type": "-",
+                        "size": 2079,
+                        "lmtime": 1776861898161.3513,
+                        "modified": false
+                      }
+                    }
+                  },
+                  "templates_c": {
+                    "023d65e3c2920fd6ca8aef1a9138b5ddc84cceaf_0.file_header.tpl.php": {
+                      "type": "-",
+                      "size": 12408,
+                      "lmtime": 1776679680050.8584,
+                      "modified": false
+                    },
+                    "02533e9cc958a2a6e70c86b1e60e87fd62c29874_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 20400,
+                      "lmtime": 1776679680210.3523,
+                      "modified": false
+                    },
+                    "10168ca54f182d8c489e61c2bb765bde991772bc_0.file_login.tpl.php": {
+                      "type": "-",
+                      "size": 3083,
+                      "lmtime": 1776679680345.0063,
+                      "modified": false
+                    },
+                    "502315d5d78695b6467a1f900dd9a75a1e10fc71_0.file_footer.tpl.php": {
+                      "type": "-",
+                      "size": 4972,
+                      "lmtime": 1776679680522.9104,
+                      "modified": false
+                    },
+                    "54d38f9d655b661a92fdec3277b15f15c5cec84c_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 102237,
+                      "lmtime": 1776679680741.038,
+                      "modified": false
+                    },
+                    "6142553e695ced20795c75a42368bce89299fcef_0.file_offer.tpl.php": {
+                      "type": "-",
+                      "size": 23863,
+                      "lmtime": 1776679681048.653,
+                      "modified": true
+                    },
+                    "6561e12d064ccd9e70d2ea244a63aed8a9063cdd_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 7024,
+                      "lmtime": 1776679681158.8916,
+                      "modified": false
+                    },
+                    "6bfd0f057b66356dfeee73cc34de0e5fe8e58427_0.file_form.tpl.php": {
+                      "type": "-",
+                      "size": 111830,
+                      "lmtime": 1776679681379.62,
+                      "modified": false
+                    },
+                    "807196f3270880e814131e8bcbee4600214e99c5_0.file_users.tpl.php": {
+                      "type": "-",
+                      "size": 9436,
+                      "lmtime": 1776679681540.5398,
+                      "modified": false
+                    },
+                    "a2898781edb2ea2b8195d307caff03baaa1c7873_0.file_import.tpl.php": {
+                      "type": "-",
+                      "size": 18874,
+                      "lmtime": 1776679681758.1936,
+                      "modified": false
+                    },
+                    "b9a27070405671bb36c554b2aab5c91b342f3fc0_0.file_form.tpl.php": {
+                      "type": "-",
+                      "size": 27667,
+                      "lmtime": 1776679681947.9307,
+                      "modified": false
+                    },
+                    "cf6c84308aca063c09cf8eb4c7105f50da6ac696_0.file_form.tpl.php": {
+                      "type": "-",
+                      "size": 13212,
+                      "lmtime": 1776679682086.009,
+                      "modified": false
+                    },
+                    "d2981eed000731be57d9054d8d07fea0bf40a49b_0.file_automation.tpl.php": {
+                      "type": "-",
+                      "size": 23162,
+                      "lmtime": 1776679682260.5007,
+                      "modified": false
+                    },
+                    "e1c5313662276ce2e4c90812cbd4e80c8fa11eac_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 66722,
+                      "lmtime": 1776679682448.5212,
+                      "modified": false
+                    },
+                    "e4e4d9adc211cbda30d04c5462841c3a8b41a8c6_0.file_title_generator.tpl.php": {
+                      "type": "-",
+                      "size": 7355,
+                      "lmtime": 1776679682647.388,
+                      "modified": false
+                    },
+                    "f276a3c6c1a59e1472e244e9a7c33972573e60c5_0.file_title_form.tpl.php": {
+                      "type": "-",
+                      "size": 8339,
+                      "lmtime": 1776679682810.4497,
+                      "modified": false
+                    },
+                    "f4db1bb889b2381e1a84317604c257104ca5826f_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 8607,
+                      "lmtime": 1776679682938.012,
+                      "modified": false
+                    },
+                    "fb888a24be75a3cab1f84576728bf93e392f8206_0.file_allegro_accounts.tpl.php": {
+                      "type": "-",
+                      "size": 10157,
+                      "lmtime": 1776679683110.469,
+                      "modified": false
+                    }
+                  }
+                }
+              },
+              "dist": {
+                "assets": {
+                  "img": {
+                    "AdminLTEFullLogo.png": {
+                      "type": "-",
+                      "size": 3009,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "AdminLTELogo.png": {
+                      "type": "-",
+                      "size": 2637,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "avatar2.png": {
+                      "type": "-",
+                      "size": 8265,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "avatar3.png": {
+                      "type": "-",
+                      "size": 9246,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "avatar4.png": {
+                      "type": "-",
+                      "size": 13543,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "avatar5.png": {
+                      "type": "-",
+                      "size": 7587,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "avatar.png": {
+                      "type": "-",
+                      "size": 8118,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "boxed-bg.jpg": {
+                      "type": "-",
+                      "size": 123766,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "boxed-bg.png": {
+                      "type": "-",
+                      "size": 43676,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "credit": {
+                      "american-express.png": {
+                        "type": "-",
+                        "size": 2162,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      },
+                      "cirrus.png": {
+                        "type": "-",
+                        "size": 1577,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      },
+                      "mastercard.png": {
+                        "type": "-",
+                        "size": 1575,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      },
+                      "paypal2.png": {
+                        "type": "-",
+                        "size": 1219,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      },
+                      "paypal.png": {
+                        "type": "-",
+                        "size": 1976,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      },
+                      "visa.png": {
+                        "type": "-",
+                        "size": 1062,
+                        "lmtime": 1773137547000,
+                        "modified": false
+                      }
+                    },
+                    "default-150x150.png": {
+                      "type": "-",
+                      "size": 339,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "icons.png": {
+                      "type": "-",
+                      "size": 1139,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "photo1.png": {
+                      "type": "-",
+                      "size": 662169,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "photo2.png": {
+                      "type": "-",
+                      "size": 422537,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "photo3.jpg": {
+                      "type": "-",
+                      "size": 370563,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "photo4.jpg": {
+                      "type": "-",
+                      "size": 1145510,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "prod-1.jpg": {
+                      "type": "-",
+                      "size": 45269,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "prod-2.jpg": {
+                      "type": "-",
+                      "size": 32224,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "prod-3.jpg": {
+                      "type": "-",
+                      "size": 21025,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "prod-4.jpg": {
+                      "type": "-",
+                      "size": 26459,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "prod-5.jpg": {
+                      "type": "-",
+                      "size": 32090,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user1-128x128.jpg": {
+                      "type": "-",
+                      "size": 2750,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user2-160x160.jpg": {
+                      "type": "-",
+                      "size": 6905,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user3-128x128.jpg": {
+                      "type": "-",
+                      "size": 3398,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user4-128x128.jpg": {
+                      "type": "-",
+                      "size": 3455,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user5-128x128.jpg": {
+                      "type": "-",
+                      "size": 6415,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user6-128x128.jpg": {
+                      "type": "-",
+                      "size": 4250,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user7-128x128.jpg": {
+                      "type": "-",
+                      "size": 6363,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    },
+                    "user8-128x128.jpg": {
+                      "type": "-",
+                      "size": 4983,
+                      "lmtime": 1773137547000,
+                      "modified": false
+                    }
+                  }
+                },
+                "css": {
+                  "adminlte.css": {
+                    "type": "-",
+                    "size": 362420,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.css.map": {
+                    "type": "-",
+                    "size": 874225,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.min.css": {
+                    "type": "-",
+                    "size": 298756,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.min.css.map": {
+                    "type": "-",
+                    "size": 764981,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.rtl.css": {
+                    "type": "-",
+                    "size": 361651,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.rtl.css.map": {
+                    "type": "-",
+                    "size": 874090,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.rtl.min.css": {
+                    "type": "-",
+                    "size": 298924,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.rtl.min.css.map": {
+                    "type": "-",
+                    "size": 1138954,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  }
+                },
+                "js": {
+                  "adminlte.js": {
+                    "type": "-",
+                    "size": 44110,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.js.map": {
+                    "type": "-",
+                    "size": 34230,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.min.js": {
+                    "type": "-",
+                    "size": 19197,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  },
+                  "adminlte.min.js.map": {
+                    "type": "-",
+                    "size": 21029,
+                    "lmtime": 1773137547000,
+                    "modified": false
+                  }
+                }
+              },
+              ".gitignore": {
+                "type": "-",
+                "size": 21,
+                "lmtime": 1776923447942.6016,
+                "modified": false
+              },
+              "index.html": {
+                "type": "-",
+                "size": 254,
+                "lmtime": 1776087600797.8225,
+                "modified": false
+              },
+              "index.php": {
+                "type": "-",
+                "size": 899,
+                "lmtime": 1776923447942.6016,
+                "modified": false
+              },
+              "OBRYSY_GENERATOR": {},
+              "smarty-5.8.0": {
+                "libs": {
+                  "Smarty.class.php": {
+                    "type": "-",
+                    "size": 1514,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  }
+                },
+                "LICENSE": {
+                  "type": "-",
+                  "size": 8201,
+                  "lmtime": 1771165635000,
+                  "modified": false
+                },
+                "src": {
+                  "BlockHandler": {
+                    "Base.php": {
+                      "type": "-",
+                      "size": 326,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "BlockHandlerInterface.php": {
+                      "type": "-",
+                      "size": 208,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "BlockPluginWrapper.php": {
+                      "type": "-",
+                      "size": 428,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TextFormat.php": {
+                      "type": "-",
+                      "size": 2686,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Cacheresource": {
+                    "Base.php": {
+                      "type": "-",
+                      "size": 4004,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Custom.php": {
+                      "type": "-",
+                      "size": 9742,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "File.php": {
+                      "type": "-",
+                      "size": 10954,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "KeyValueStore.php": {
+                      "type": "-",
+                      "size": 17172,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Compile": {
+                    "AttributeCompiler.php": {
+                      "type": "-",
+                      "size": 3857,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Base.php": {
+                      "type": "-",
+                      "size": 4309,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "BlockCompiler.php": {
+                      "type": "-",
+                      "size": 6230,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CompilerInterface.php": {
+                      "type": "-",
+                      "size": 611,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "DefaultHandlerBlockCompiler.php": {
+                      "type": "-",
+                      "size": 682,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "DefaultHandlerFunctionCallCompiler.php": {
+                      "type": "-",
+                      "size": 1355,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "FunctionCallCompiler.php": {
+                      "type": "-",
+                      "size": 2490,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Modifier": {
+                      "Base.php": {
+                        "type": "-",
+                        "size": 1412,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "BCPluginWrapper.php": {
+                        "type": "-",
+                        "size": 344,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CatModifierCompiler.php": {
+                        "type": "-",
+                        "size": 445,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CountCharactersModifierCompiler.php": {
+                        "type": "-",
+                        "size": 626,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CountParagraphsModifierCompiler.php": {
+                        "type": "-",
+                        "size": 459,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CountSentencesModifierCompiler.php": {
+                        "type": "-",
+                        "size": 554,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CountWordsModifierCompiler.php": {
+                        "type": "-",
+                        "size": 565,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "DefaultModifierCompiler.php": {
+                        "type": "-",
+                        "size": 596,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "EmptyModifierCompiler.php": {
+                        "type": "-",
+                        "size": 417,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "EscapeModifierCompiler.php": {
+                        "type": "-",
+                        "size": 2481,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "FromCharsetModifierCompiler.php": {
+                        "type": "-",
+                        "size": 559,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IndentModifierCompiler.php": {
+                        "type": "-",
+                        "size": 529,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IsArrayModifierCompiler.php": {
+                        "type": "-",
+                        "size": 431,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IssetModifierCompiler.php": {
+                        "type": "-",
+                        "size": 601,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "JsonEncodeModifierCompiler.php": {
+                        "type": "-",
+                        "size": 313,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "LowerModifierCompiler.php": {
+                        "type": "-",
+                        "size": 463,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ModifierCompilerInterface.php": {
+                        "type": "-",
+                        "size": 401,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Nl2brModifierCompiler.php": {
+                        "type": "-",
+                        "size": 402,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "NoPrintModifierCompiler.php": {
+                        "type": "-",
+                        "size": 325,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "RawModifierCompiler.php": {
+                        "type": "-",
+                        "size": 436,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "RoundModifierCompiler.php": {
+                        "type": "-",
+                        "size": 489,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "StringFormatModifierCompiler.php": {
+                        "type": "-",
+                        "size": 394,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "StripModifierCompiler.php": {
+                        "type": "-",
+                        "size": 634,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "StripTagsModifierCompiler.php": {
+                        "type": "-",
+                        "size": 553,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "StrlenModifierCompiler.php": {
+                        "type": "-",
+                        "size": 351,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "StrRepeatModifierCompiler.php": {
+                        "type": "-",
+                        "size": 389,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "SubstrModifierCompiler.php": {
+                        "type": "-",
+                        "size": 337,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ToCharsetModifierCompiler.php": {
+                        "type": "-",
+                        "size": 553,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "UnescapeModifierCompiler.php": {
+                        "type": "-",
+                        "size": 915,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "UpperModifierCompiler.php": {
+                        "type": "-",
+                        "size": 426,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "WordWrapModifierCompiler.php": {
+                        "type": "-",
+                        "size": 623,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      }
+                    },
+                    "ModifierCompiler.php": {
+                      "type": "-",
+                      "size": 2959,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ObjectMethodBlockCompiler.php": {
+                      "type": "-",
+                      "size": 940,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ObjectMethodCallCompiler.php": {
+                      "type": "-",
+                      "size": 2250,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "PrintExpressionCompiler.php": {
+                      "type": "-",
+                      "size": 2516,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "SpecialVariableCompiler.php": {
+                      "type": "-",
+                      "size": 4096,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Tag": {
+                      "Append.php": {
+                        "type": "-",
+                        "size": 1480,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Assign.php": {
+                        "type": "-",
+                        "size": 2760,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "BCPluginWrapper.php": {
+                        "type": "-",
+                        "size": 683,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "BlockClose.php": {
+                        "type": "-",
+                        "size": 3736,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Block.php": {
+                        "type": "-",
+                        "size": 2313,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "BreakTag.php": {
+                        "type": "-",
+                        "size": 3071,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Call.php": {
+                        "type": "-",
+                        "size": 2332,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "CaptureClose.php": {
+                        "type": "-",
+                        "size": 921,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Capture.php": {
+                        "type": "-",
+                        "size": 1853,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ConfigLoad.php": {
+                        "type": "-",
+                        "size": 1542,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ContinueTag.php": {
+                        "type": "-",
+                        "size": 324,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Debug.php": {
+                        "type": "-",
+                        "size": 999,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ElseIfTag.php": {
+                        "type": "-",
+                        "size": 2890,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ElseTag.php": {
+                        "type": "-",
+                        "size": 680,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "EvalTag.php": {
+                        "type": "-",
+                        "size": 1611,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ExtendsTag.php": {
+                        "type": "-",
+                        "size": 2309,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForClose.php": {
+                        "type": "-",
+                        "size": 1035,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForeachClose.php": {
+                        "type": "-",
+                        "size": 1347,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForeachElse.php": {
+                        "type": "-",
+                        "size": 947,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForeachSection.php": {
+                        "type": "-",
+                        "size": 5113,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForeachTag.php": {
+                        "type": "-",
+                        "size": 7679,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForElse.php": {
+                        "type": "-",
+                        "size": 710,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "ForTag.php": {
+                        "type": "-",
+                        "size": 3856,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "FunctionClose.php": {
+                        "type": "-",
+                        "size": 6136,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "FunctionTag.php": {
+                        "type": "-",
+                        "size": 1863,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IfClose.php": {
+                        "type": "-",
+                        "size": 950,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IfTag.php": {
+                        "type": "-",
+                        "size": 2111,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "IncludeTag.php": {
+                        "type": "-",
+                        "size": 5387,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Inheritance.php": {
+                        "type": "-",
+                        "size": 1612,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Ldelim.php": {
+                        "type": "-",
+                        "size": 911,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "NocacheClose.php": {
+                        "type": "-",
+                        "size": 752,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Nocache.php": {
+                        "type": "-",
+                        "size": 717,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Rdelim.php": {
+                        "type": "-",
+                        "size": 756,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "SectionClose.php": {
+                        "type": "-",
+                        "size": 1027,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "SectionElse.php": {
+                        "type": "-",
+                        "size": 694,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Section.php": {
+                        "type": "-",
+                        "size": 12030,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "SetfilterClose.php": {
+                        "type": "-",
+                        "size": 955,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "Setfilter.php": {
+                        "type": "-",
+                        "size": 1128,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "WhileClose.php": {
+                        "type": "-",
+                        "size": 869,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      },
+                      "WhileTag.php": {
+                        "type": "-",
+                        "size": 2226,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      }
+                    }
+                  },
+                  "Compiler": {
+                    "BaseCompiler.php": {
+                      "type": "-",
+                      "size": 264,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CodeFrame.php": {
+                      "type": "-",
+                      "size": 4342,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Configfile.php": {
+                      "type": "-",
+                      "size": 4545,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Template.php": {
+                      "type": "-",
+                      "size": 38148,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "CompilerException.php": {
+                    "type": "-",
+                    "size": 1453,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Data.php": {
+                    "type": "-",
+                    "size": 13106,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Debug.php": {
+                    "type": "-",
+                    "size": 12061,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "debug.tpl": {
+                    "type": "-",
+                    "size": 5026,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "ErrorHandler.php": {
+                    "type": "-",
+                    "size": 3176,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Exception.php": {
+                    "type": "-",
+                    "size": 217,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Extension": {
+                    "Base.php": {
+                      "type": "-",
+                      "size": 878,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "BCPluginsAdapter.php": {
+                      "type": "-",
+                      "size": 5939,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CallbackWrapper.php": {
+                      "type": "-",
+                      "size": 616,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CoreExtension.php": {
+                      "type": "-",
+                      "size": 2538,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "DefaultExtension.php": {
+                      "type": "-",
+                      "size": 26448,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ExtensionInterface.php": {
+                      "type": "-",
+                      "size": 2969,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Filter": {
+                    "FilterInterface.php": {
+                      "type": "-",
+                      "size": 124,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "FilterPluginWrapper.php": {
+                      "type": "-",
+                      "size": 311,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Output": {
+                      "TrimWhitespace.php": {
+                        "type": "-",
+                        "size": 3287,
+                        "lmtime": 1771165635000,
+                        "modified": false
+                      }
+                    }
+                  },
+                  "FunctionHandler": {
+                    "AttributeBase.php": {
+                      "type": "-",
+                      "size": 1611,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "AttributeFunctionHandlerInterface.php": {
+                      "type": "-",
+                      "size": 376,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Base.php": {
+                      "type": "-",
+                      "size": 336,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "BCPluginWrapper.php": {
+                      "type": "-",
+                      "size": 380,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Counter.php": {
+                      "type": "-",
+                      "size": 1537,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Count.php": {
+                      "type": "-",
+                      "size": 1083,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Cycle.php": {
+                      "type": "-",
+                      "size": 2875,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Fetch.php": {
+                      "type": "-",
+                      "size": 5874,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "FunctionHandlerInterface.php": {
+                      "type": "-",
+                      "size": 194,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlBase.php": {
+                      "type": "-",
+                      "size": 2323,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlCheckboxes.php": {
+                      "type": "-",
+                      "size": 5104,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlImage.php": {
+                      "type": "-",
+                      "size": 4431,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlOptions.php": {
+                      "type": "-",
+                      "size": 6231,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlRadios.php": {
+                      "type": "-",
+                      "size": 4490,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlSelectDate.php": {
+                      "type": "-",
+                      "size": 12120,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlSelectTime.php": {
+                      "type": "-",
+                      "size": 11187,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "HtmlTable.php": {
+                      "type": "-",
+                      "size": 4522,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Mailto.php": {
+                      "type": "-",
+                      "size": 4592,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Math.php": {
+                      "type": "-",
+                      "size": 3947,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "functions.php": {
+                    "type": "-",
+                    "size": 7718,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Lexer": {
+                    "ConfigfileLexer.php": {
+                      "type": "-",
+                      "size": 22890,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ConfigfileLexer.plex": {
+                      "type": "-",
+                      "size": 6934,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TemplateLexer.php": {
+                      "type": "-",
+                      "size": 35410,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TemplateLexer.plex": {
+                      "type": "-",
+                      "size": 20322,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Parser": {
+                    "ConfigfileParser.php": {
+                      "type": "-",
+                      "size": 32787,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ConfigfileParser.y": {
+                      "type": "-",
+                      "size": 7289,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TemplateParser.php": {
+                      "type": "-",
+                      "size": 142309,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TemplateParser.y": {
+                      "type": "-",
+                      "size": 36257,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "ParseTree": {
+                    "Base.php": {
+                      "type": "-",
+                      "size": 665,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Code.php": {
+                      "type": "-",
+                      "size": 781,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "DqContent.php": {
+                      "type": "-",
+                      "size": 821,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Dq.php": {
+                      "type": "-",
+                      "size": 2969,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Tag.php": {
+                      "type": "-",
+                      "size": 1658,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Template.php": {
+                      "type": "-",
+                      "size": 4985,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Text.php": {
+                      "type": "-",
+                      "size": 1221,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Resource": {
+                    "BasePlugin.php": {
+                      "type": "-",
+                      "size": 4113,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CustomPlugin.php": {
+                      "type": "-",
+                      "size": 2684,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ExtendsPlugin.php": {
+                      "type": "-",
+                      "size": 3188,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "FilePlugin.php": {
+                      "type": "-",
+                      "size": 5013,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "RecompiledPlugin.php": {
+                      "type": "-",
+                      "size": 709,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "StreamPlugin.php": {
+                      "type": "-",
+                      "size": 1570,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "StringEval.php": {
+                      "type": "-",
+                      "size": 2164,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "StringPlugin.php": {
+                      "type": "-",
+                      "size": 2053,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Runtime": {
+                    "Block.php": {
+                      "type": "-",
+                      "size": 1522,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "CaptureRuntime.php": {
+                      "type": "-",
+                      "size": 3114,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "DefaultPluginHandlerRuntime.php": {
+                      "type": "-",
+                      "size": 1416,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "ForeachRuntime.php": {
+                      "type": "-",
+                      "size": 3901,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "InheritanceRuntime.php": {
+                      "type": "-",
+                      "size": 6412,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "TplFunctionRuntime.php": {
+                      "type": "-",
+                      "size": 4708,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "Security.php": {
+                    "type": "-",
+                    "size": 15530,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Smarty.php": {
+                    "type": "-",
+                    "size": 56443,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Template": {
+                    "Cached.php": {
+                      "type": "-",
+                      "size": 10808,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Compiled.php": {
+                      "type": "-",
+                      "size": 8239,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Config.php": {
+                      "type": "-",
+                      "size": 673,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "GeneratedPhpFile.php": {
+                      "type": "-",
+                      "size": 3322,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    },
+                    "Source.php": {
+                      "type": "-",
+                      "size": 6252,
+                      "lmtime": 1771165635000,
+                      "modified": false
+                    }
+                  },
+                  "TemplateBase.php": {
+                    "type": "-",
+                    "size": 10056,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Template.php": {
+                    "type": "-",
+                    "size": 17995,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "TestInstall.php": {
+                    "type": "-",
+                    "size": 7180,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "UndefinedVariable.php": {
+                    "type": "-",
+                    "size": 300,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  },
+                  "Variable.php": {
+                    "type": "-",
+                    "size": 2258,
+                    "lmtime": 1771165635000,
+                    "modified": false
+                  }
+                }
+              },
+              "temporary": {},
+              "uploads": {
+                "products": {
+                  "2026": {
+                    "04": {
+                      "product_20260417_085013_56b6279dae56.jpg": {
+                        "type": "-",
+                        "size": 1116509,
+                        "lmtime": 1776679683369.6028,
+                        "modified": false
+                      },
+                      "product_20260417_085017_99112e3adb43.png": {
+                        "type": "-",
+                        "size": 2047523,
+                        "lmtime": 1776679683814.234,
+                        "modified": false
+                      },
+                      "product_20260417_102808_6532c4294f5c.png": {
+                        "type": "-",
+                        "size": 1609819,
+                        "lmtime": 1776679684127.5508,
+                        "modified": false
+                      },
+                      "product_20260417_102812_bd3811024405.png": {
+                        "type": "-",
+                        "size": 1588859,
+                        "lmtime": 1776679684510.448,
+                        "modified": false
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "new_version111": {},
+            "OSS.csv": {
+              "type": "-",
+              "size": 23109,
+              "lmtime": 0,
+              "modified": true
+            },
+            "output": {},
+            "plugins": {},
+            "product_ajax_add_fv.php": {
+              "type": "-",
+              "size": 4957,
+              "lmtime": 0,
+              "modified": false
+            },
+            "product.php": {
+              "type": "-",
+              "size": 4448,
+              "lmtime": 0,
+              "modified": false
+            },
+            "products_folders": {},
+            "register.php": {
+              "type": "-",
+              "size": 1400,
+              "lmtime": 0,
+              "modified": false
+            },
+            "render_template.php": {
+              "type": "-",
+              "size": 3956,
+              "lmtime": 0,
+              "modified": false
+            },
+            "scalanie.bat": {
+              "type": "-",
+              "size": 42,
+              "lmtime": 0,
+              "modified": false
+            },
+            "scss": {},
+            "sellasist_api.php": {
+              "type": "-",
+              "size": 10963,
+              "lmtime": 0,
+              "modified": false
+            },
+            "src": {},
+            "stan_magazynu_ajax.php": {
+              "type": "-",
+              "size": 6570,
+              "lmtime": 0,
+              "modified": false
+            },
+            "stan_magazynu.php": {
+              "type": "-",
+              "size": 47332,
+              "lmtime": 0,
+              "modified": true
+            },
+            "templates": {},
+            "templates_c": {},
+            "test.php": {
+              "type": "-",
+              "size": 290,
+              "lmtime": 0,
+              "modified": false
+            },
+            "tinyfilemanager.php": {
+              "type": "-",
+              "size": 196664,
+              "lmtime": 0,
+              "modified": false
+            },
+            "tmp_login_debug.log": {
+              "type": "-",
+              "size": 45380,
+              "lmtime": 0,
+              "modified": true
+            },
+            "tokens.json": {
+              "type": "-",
+              "size": 1534,
+              "lmtime": 0,
+              "modified": false
+            },
+            "Untitled-1.txt": {
+              "type": "-",
+              "size": 611,
+              "lmtime": 0,
+              "modified": false
+            },
+            "user_functions.php": {
+              "type": "-",
+              "size": 2988,
+              "lmtime": 0,
+              "modified": false
+            },
+            "users.php": {
+              "type": "-",
+              "size": 912,
+              "lmtime": 0,
+              "modified": false
+            },
+            "UV_template.php": {
+              "type": "-",
+              "size": 2240,
+              "lmtime": 0,
+              "modified": false
+            },
+            ".vscode": {},
+            "warehouse_add_fv.php": {
+              "type": "-",
+              "size": 7388,
+              "lmtime": 0,
+              "modified": false
+            },
+            "warehouse_generate_inventory_report.php": {
+              "type": "-",
+              "size": 4415,
+              "lmtime": 0,
+              "modified": false
+            },
+            "warehouse_generate.php": {
+              "type": "-",
+              "size": 5382,
+              "lmtime": 0,
+              "modified": false
+            },
+            "warehouse_index.php": {
+              "type": "-",
+              "size": 1747,
+              "lmtime": 0,
+              "modified": false
+            },
+            "warehouse_mass_transcribe.php": {
+              "type": "-",
+              "size": 2247,
+              "lmtime": 0,
+              "modified": false
+            },
+            "warehouse_transcribe.php": {
+              "type": "-",
+              "size": 5166,
+              "lmtime": 0,
+              "modified": false
+            },
+            "wzory_n": {},
+            "zbieranie.php": {
+              "type": "-",
+              "size": 7428,
+              "lmtime": 0,
+              "modified": false
+            },
+            "zestawienie.csv": {
+              "type": "-",
+              "size": 96483,
+              "lmtime": 0,
+              "modified": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "$version": 1
+}
