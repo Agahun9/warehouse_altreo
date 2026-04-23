@@ -149,9 +149,9 @@ class AdminController extends Controller
         }
 
         try {
-            $queueDoneDays = max(1, (int) $this->input('queue_done_days', 14));
-            $queueErrorDays = max(1, (int) $this->input('queue_error_days', 30));
-            $deletedProductsDays = max(1, (int) $this->input('deleted_products_days', 30));
+            $queueDoneDays = max(0, (int) $this->input('queue_done_days', 14));
+            $queueErrorDays = max(0, (int) $this->input('queue_error_days', 30));
+            $deletedProductsDays = max(0, (int) $this->input('deleted_products_days', 30));
 
             $result = $this->allegro->cleanupStorage($queueDoneDays, $queueErrorDays, $deletedProductsDays);
 

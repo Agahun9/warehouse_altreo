@@ -210,9 +210,9 @@ class AllegroService
 
     public function cleanupStorage(int $queueDoneDays = 14, int $queueErrorDays = 30, int $deletedProductsDays = 30): array
     {
-        $queueDoneDays = max(1, $queueDoneDays);
-        $queueErrorDays = max(1, $queueErrorDays);
-        $deletedProductsDays = max(1, $deletedProductsDays);
+        $queueDoneDays = max(0, $queueDoneDays);
+        $queueErrorDays = max(0, $queueErrorDays);
+        $deletedProductsDays = max(0, $deletedProductsDays);
 
         $products = new ProductRepository(Database::instance());
         $products->ensureSchema();
@@ -2098,12 +2098,15 @@ class AllegroService
             return $productIds[0];
         }
 
+        $activeCandidates = array();
         $scored = array();
         foreach ($productIds as $productId) {
             $product = $products->find($productId);
             if (!$product) {
                 continue;
             }
+
+            $activeCandidates[] = (int) ($product['id'] ?? 0);
 
             $score = $this->offerNameMatchScore(
                 (string) ($product['product_name'] ?? ''),
@@ -2120,6 +2123,11 @@ class AllegroService
             return null;
         }
 
+        $activeCandidates = array_values(array_unique(array_filter($activeCandidates)));
+        if (count($activeCandidates) === 1) {
+            return (int) $activeCandidates[0];
+        }
+
         usort($scored, static function (array $a, array $b): int {
             $scoreDiff = (int) ($b['score'] ?? 0) - (int) ($a['score'] ?? 0);
             if ($scoreDiff !== 0) {
@@ -2134,7 +2142,7 @@ class AllegroService
         $bestScore = (int) ($best['score'] ?? 0);
 
         if ($bestScore <= 0) {
-            return null;
+            return count($scored) === 1 ? (int) ($best['id'] ?? 0) : null;
         }
 
         if ($secondScore === $bestScore) {

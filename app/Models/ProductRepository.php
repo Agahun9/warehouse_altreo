@@ -159,13 +159,7 @@ class ProductRepository
         $this->appendIdFilterCondition($whereParts, $params, $id, 'filter_id');
 
         $global = isset($filters['global']) ? trim((string) $filters['global']) : '';
-        $this->appendTextFilterCondition(
-            $whereParts,
-            $params,
-            array('products.sku', 'products.product_name'),
-            $global,
-            'filter_global'
-        );
+        $this->appendGlobalProductFilterCondition($whereParts, $params, $global, 'filter_global');
 
         $sku = isset($filters['sku']) ? trim((string) $filters['sku']) : '';
         $this->appendTextFilterCondition($whereParts, $params, array('products.sku'), $sku, 'filter_sku');
@@ -255,13 +249,7 @@ class ProductRepository
         $this->appendIdFilterCondition($whereParts, $params, $id, 'filter_id');
 
         $global = isset($filters['global']) ? trim((string) $filters['global']) : '';
-        $this->appendTextFilterCondition(
-            $whereParts,
-            $params,
-            array('products.sku', 'products.product_name'),
-            $global,
-            'filter_global'
-        );
+        $this->appendGlobalProductFilterCondition($whereParts, $params, $global, 'filter_global');
 
         $sku = isset($filters['sku']) ? trim((string) $filters['sku']) : '';
         $this->appendTextFilterCondition($whereParts, $params, array('products.sku'), $sku, 'filter_sku');
@@ -379,16 +367,57 @@ class ProductRepository
         $limit = max(1, min(20, $limit));
 
         return $this->database->fetchAll(
-            'SELECT products.id, products.sku, products.product_name'
+            'SELECT products.id, products.sku, products.product_name, old_sku_values.value AS old_sku'
             . ' FROM ' . self::TABLE
-            . ' WHERE products.deleted_at IS NULL AND (products.sku LIKE :query OR products.product_name LIKE :query_name)'
-            . ' ORDER BY products.id DESC, products.id DESC'
+            . ' LEFT JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.slug = "old_sku"'
+            . ' LEFT JOIN product_custom_field_values old_sku_values'
+            . '   ON old_sku_values.product_id = products.id AND old_sku_values.definition_id = old_sku_definition.id'
+            . ' WHERE products.deleted_at IS NULL'
+            . '   AND (products.sku LIKE :query OR products.product_name LIKE :query_name OR old_sku_values.value LIKE :query_old_sku)'
+            . ' ORDER BY'
+            . '   CASE'
+            . '     WHEN products.sku = :query_exact THEN 0'
+            . '     WHEN old_sku_values.value = :query_old_sku_exact THEN 1'
+            . '     WHEN products.sku LIKE :query_prefix THEN 2'
+            . '     WHEN old_sku_values.value LIKE :query_old_sku_prefix THEN 3'
+            . '     ELSE 4'
+            . '   END,'
+            . ' products.id DESC'
             . ' LIMIT ' . $limit,
             array(
                 'query' => '%' . $query . '%',
                 'query_name' => '%' . $query . '%',
+                'query_old_sku' => '%' . $query . '%',
+                'query_exact' => $query,
+                'query_old_sku_exact' => $query,
+                'query_prefix' => $query . '%',
+                'query_old_sku_prefix' => $query . '%',
             )
         );
+    }
+
+    private function appendGlobalProductFilterCondition(array &$whereParts, array &$params, string $value, string $paramPrefix): void
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return;
+        }
+
+        $whereParts[] = '('
+            . 'products.sku LIKE :' . $paramPrefix . '_sku'
+            . ' OR products.product_name LIKE :' . $paramPrefix . '_name'
+            . ' OR EXISTS ('
+            . '   SELECT 1'
+            . '   FROM product_custom_field_values cfv'
+            . '   INNER JOIN product_custom_field_definitions cfd ON cfd.id = cfv.definition_id'
+            . '   WHERE cfv.product_id = products.id'
+            . '     AND cfd.slug = "old_sku"'
+            . '     AND cfv.value LIKE :' . $paramPrefix . '_old_sku'
+            . ' )'
+            . ')';
+        $params[$paramPrefix . '_sku'] = '%' . $value . '%';
+        $params[$paramPrefix . '_name'] = '%' . $value . '%';
+        $params[$paramPrefix . '_old_sku'] = '%' . $value . '%';
     }
 
     public function searchForAllegroSku(string $query = '', string $offerName = '', int $limit = 12): array
@@ -823,7 +852,7 @@ class ProductRepository
 
     public function purgeDeletedProducts(int $olderThanDays = 30): array
     {
-        $olderThanDays = max(1, $olderThanDays);
+        $olderThanDays = max(0, $olderThanDays);
         $cutoff = date('Y-m-d H:i:s', time() - ($olderThanDays * 86400));
 
         $rows = $this->database->fetchAll(

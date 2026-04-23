@@ -47,9 +47,13 @@
           var item = items[i];
           var sku = String(item.sku || '');
           var name = String(item.product_name || '');
+          var oldSku = String(item.old_sku || '');
           html += '<a class="quick-search-item" href="{$baseUrl|escape:'javascript'}?controller=products&action=index&filter_global=' + encodeURIComponent(query || sku) + '">';
           html += '<div class="fw-semibold">' + sku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
           html += '<div class="small text-secondary">' + name.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          if (oldSku) {
+            html += '<div class="small text-secondary">OLD_SKU: ' + oldSku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          }
           html += '</a>';
         }
 

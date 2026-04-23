@@ -176,19 +176,24 @@
           <form method="post" action="{$baseUrl}?controller=admin&action=cleanup" class="row g-3 align-items-end">
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-queue-done-days">Usun zakonczona kolejke starsza niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-queue-done-days" name="queue_done_days" value="14">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-done-days" name="queue_done_days" value="14">
             </div>
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-queue-error-days">Usun bledy i retry starsze niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-queue-error-days" name="queue_error_days" value="30">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-error-days" name="queue_error_days" value="30">
             </div>
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-deleted-products-days">Usun produkty skasowane starsze niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-deleted-products-days" name="deleted_products_days" value="30">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-deleted-products-days" name="deleted_products_days" value="30">
             </div>
             <div class="col-12">
               <div class="small text-secondary">
                 Ten przycisk czysci stare wpisy z <code>allegro_offer_change_queue</code>, odpina oferty Allegro od produktow, ktore sa juz oznaczone jako usuniete, i trwale usuwa stare produkty po soft-delecie razem z ich logami zmian.
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="small text-secondary">
+                Mozesz wpisac <code>0</code>, aby sprzatac od teraz, bez czekania 1 dnia.
               </div>
             </div>
             <div class="col-12 d-flex justify-content-between gap-2 align-items-center flex-wrap">

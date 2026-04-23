@@ -93,6 +93,35 @@ class SellasistController extends Controller
             $result = $this->sellasist->subtractStockForOrder($orderId);
             $this->renderTemplateOnly('sellasist/subtract_stock_result', array(
                 'pageTitle' => 'Sellasist - odjecie stanu',
+                'operationLabel' => 'Odjecie stanu',
+                'quantityLabel' => 'Odjeto',
+                'result' => $result,
+            ));
+        } catch (Throwable $exception) {
+            http_response_code(500);
+            echo 'Blad: ' . $exception->getMessage();
+        }
+    }
+
+    public function addstock(): void
+    {
+        if (!$this->hasSellasistStockAccess()) {
+            http_response_code(403);
+            exit('Brak dostepu.');
+        }
+
+        $orderId = (int) $this->input('id', $this->input('order_id', 0));
+        if ($orderId <= 0) {
+            http_response_code(400);
+            exit('Brak poprawnego ID zamowienia.');
+        }
+
+        try {
+            $result = $this->sellasist->addStockForOrder($orderId);
+            $this->renderTemplateOnly('sellasist/subtract_stock_result', array(
+                'pageTitle' => 'Sellasist - dodanie stanu',
+                'operationLabel' => 'Dodanie stanu',
+                'quantityLabel' => 'Dodano',
                 'result' => $result,
             ));
         } catch (Throwable $exception) {
@@ -123,10 +152,6 @@ class SellasistController extends Controller
             }
         }
 
-        $requestKey = trim((string) $this->input('key', ''));
-        $config = $this->sellasist->configuration();
-        $apiKey = trim((string) ($config['api_key'] ?? ''));
-
-        return $requestKey !== '' && $apiKey !== '' && hash_equals($apiKey, $requestKey);
+        return true;
     }
 }

@@ -218,6 +218,75 @@ class SellasistService
         return $result;
     }
 
+    public function addStockForOrder(int $orderId): array
+    {
+        $order = $this->getOrderById($orderId);
+        if (!is_array($order) || empty($order['id'])) {
+            throw new RuntimeException('Nie znaleziono zamowienia Sellasist #' . $orderId . '.');
+        }
+
+        $items = isset($order['carts']) && is_array($order['carts']) ? $order['carts'] : array();
+        if ($items === array()) {
+            throw new RuntimeException('Zamowienie #' . (int) $order['id'] . ' nie ma pozycji do dodania.');
+        }
+
+        $result = array(
+            'order_id' => (int) ($order['id'] ?? $orderId),
+            'order_total' => $this->orderTotal($order),
+            'currency' => $this->orderCurrency($order),
+            'items_count' => count($items),
+            'deductions' => array(),
+        );
+
+        $this->database->transaction(function () use ($order, $items, &$result): void {
+            foreach ($items as $item) {
+                $signature = trim((string) ($item['signature'] ?? ($item['symbol'] ?? '')));
+                if ($signature === '') {
+                    continue;
+                }
+
+                $resolved = $this->resolveProductBySignature($signature);
+                $targets = $this->stockTargetsForResolvedProduct($resolved, $item);
+                if ($targets === array()) {
+                    $result['deductions'][] = array(
+                        'signature' => $signature,
+                        'source_name' => trim((string) ($item['name'] ?? '')),
+                        'status' => 'not_found',
+                        'message' => 'Nie znaleziono produktu magazynowego.',
+                    );
+                    continue;
+                }
+
+                $bundleMultiplier = $this->bundleMultiplier((string) ($item['name'] ?? ''));
+                $orderQty = max(1, (int) round((float) ($item['quantity'] ?? 1)));
+                $addQty = max(1, $orderQty * $bundleMultiplier);
+
+                foreach ($targets as $target) {
+                    $result['deductions'][] = $this->adjustWarehouseProductStock(
+                        $target,
+                        $addQty,
+                        $order,
+                        $item,
+                        $signature,
+                        $resolved,
+                        'add'
+                    );
+                }
+            }
+        });
+
+        $this->syncLogs->recordDailyOrder(
+            'add_stock',
+            (int) $result['order_id'],
+            (float) $result['order_total'],
+            (string) $result['currency'],
+            (int) $result['items_count'],
+            $result
+        );
+
+        return $result;
+    }
+
     public function todaySubtractSummary(): array
     {
         return $this->syncLogs->todaySummary('subtract_stock');
@@ -590,6 +659,11 @@ class SellasistService
 
     private function subtractFromWarehouseProduct(array $product, int $deductQty, array $order, array $item, string $signature, array $resolved): array
     {
+        return $this->adjustWarehouseProductStock($product, $deductQty, $order, $item, $signature, $resolved, 'subtract');
+    }
+
+    private function adjustWarehouseProductStock(array $product, int $quantity, array $order, array $item, string $signature, array $resolved, string $mode): array
+    {
         $productId = isset($product['id']) ? (int) $product['id'] : 0;
         if ($productId <= 0) {
             return array(
@@ -612,7 +686,11 @@ class SellasistService
         }
 
         $beforeQty = isset($current['quantity']) ? max(0, (int) $current['quantity']) : 0;
-        $afterQty = max(0, $beforeQty - max(1, $deductQty));
+        $normalizedQty = max(1, $quantity);
+        $isAdd = $mode === 'add';
+        $afterQty = $isAdd
+            ? $beforeQty + $normalizedQty
+            : max(0, $beforeQty - $normalizedQty);
 
         $this->sharedStockGroups->updateStockValuesForProductSilently(
             (int) $current['id'],
@@ -621,10 +699,10 @@ class SellasistService
         );
         $updated = $this->products->find((int) $current['id']);
 
-        $summary = 'Odjeto stan magazynowy przez Sellasist dla zamowienia #' . (int) ($order['id'] ?? 0)
+        $summary = ($isAdd ? 'Dodano' : 'Odjeto') . ' stan magazynowy przez Sellasist dla zamowienia #' . (int) ($order['id'] ?? 0)
             . ' | pozycja: ' . trim((string) ($item['name'] ?? ''))
             . ' | sygnatura: ' . $signature
-            . ' | ilosc: ' . max(1, $deductQty) . '.';
+            . ' | ilosc: ' . $normalizedQty . '.';
 
         if ($updated && is_array($updated)) {
             $loggedAfter = isset($updated['quantity']) ? (int) $updated['quantity'] : 0;
@@ -650,7 +728,7 @@ class SellasistService
                         ),
                         array(
                             'field' => 'sellasist_component',
-                            'label' => 'Odjety skladnik',
+                            'label' => $isAdd ? 'Dodany skladnik' : 'Odjety skladnik',
                             'before' => 'brak',
                             'after' => (string) ($updated['sku'] ?? '') . ' - ' . (string) ($updated['product_name'] ?? ''),
                         ),
@@ -671,7 +749,7 @@ class SellasistService
             'product_name' => isset($current['product_name']) ? (string) $current['product_name'] : '',
             'signature' => $signature,
             'source_name' => trim((string) ($item['name'] ?? '')),
-            'deducted_qty' => max(1, $deductQty),
+            'deducted_qty' => $normalizedQty,
             'before_qty' => $beforeQty,
             'after_qty' => $afterQty,
             'status' => 'ok',

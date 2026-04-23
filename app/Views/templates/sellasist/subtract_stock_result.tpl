@@ -45,6 +45,7 @@
 </head>
 <body>
   <div class="summary">
+    <div><strong>Operacja:</strong> {$operationLabel|default:'Odjecie stanu'|escape}</div>
     <div><strong>Zamowienie:</strong> #{$result.order_id}</div>
     <div><strong>Wartosc:</strong> {$result.order_total|string_format:'%.2f'} {$result.currency|escape}</div>
     <div><strong>Liczba pozycji:</strong> {$result.items_count}</div>
@@ -58,7 +59,7 @@
         <th>Produkt magazynowy</th>
         <th>Pozycja z zamowienia</th>
         <th>Sygnatura</th>
-        <th>Odjeto</th>
+        <th>{$quantityLabel|default:'Odjeto'|escape}</th>
         <th>Stan przed</th>
         <th>Stan po</th>
         <th>Info</th>

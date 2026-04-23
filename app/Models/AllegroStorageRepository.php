@@ -1218,7 +1218,7 @@ class AllegroStorageRepository
     public function fetchQueueBatch(int $limit = 100, ?int $accountId = null): array
     {
         $params = array('now' => date('Y-m-d H:i:s'));
-        $sql = 'SELECT queue.*, offers.offer_json, offers.warehouse_product_id, offers.sku, offers.name'
+        $sql = 'SELECT queue.*, offers.warehouse_product_id, offers.sku, offers.name'
             . ' FROM allegro_offer_change_queue queue'
             . ' INNER JOIN allegro_offers offers ON offers.id = queue.offer_row_id'
             . ' WHERE queue.status IN ("pending", "retry") AND queue.available_at <= :now';
@@ -1233,7 +1233,6 @@ class AllegroStorageRepository
 
         foreach ($rows as $index => $row) {
             $rows[$index]['payload'] = $this->decodeJsonAny($row['payload_json'] ?? null);
-            $rows[$index]['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
         }
 
         return $rows;
