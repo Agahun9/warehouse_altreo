@@ -41,13 +41,15 @@ class CategoryRepository
             . "slug VARCHAR(190) NOT NULL,\n"
             . "sku_prefix VARCHAR(20) NOT NULL DEFAULT 'PRD',\n"
             . "allegro_category_id VARCHAR(64) DEFAULT NULL,\n"
+            . "empik_category_id VARCHAR(190) DEFAULT NULL,\n"
             . "description TEXT DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
             . "PRIMARY KEY (id),\n"
             . "UNIQUE KEY ux_categories_slug (slug),\n"
             . "KEY idx_categories_name (name),\n"
-            . "KEY idx_categories_allegro (allegro_category_id)\n"
+            . "KEY idx_categories_allegro (allegro_category_id),\n"
+            . "KEY idx_categories_empik (empik_category_id)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
@@ -68,6 +70,15 @@ class CategoryRepository
 
             if (!$hasAllegroColumn) {
                 $this->database->query("ALTER TABLE categories ADD COLUMN allegro_category_id VARCHAR(64) NULL AFTER sku_prefix");
+            }
+
+            $hasEmpikColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'empik_category_id')
+            ) > 0;
+
+            if (!$hasEmpikColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN empik_category_id VARCHAR(190) NULL AFTER allegro_category_id");
             }
         }
 
@@ -158,6 +169,7 @@ class CategoryRepository
             'slug' => 'bez-kategorii',
             'sku_prefix' => 'PRD',
             'allegro_category_id' => null,
+            'empik_category_id' => null,
             'description' => 'Domyslna kategoria systemowa.',
         ));
     }
@@ -197,6 +209,19 @@ class CategoryRepository
 
         $value = preg_replace('/[^A-Za-z0-9\-_]+/', '', $value);
         return $value !== '' ? $value : null;
+    }
+
+    public function normalizeEmpikCategoryId($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/[[:cntrl:]]+/u', '', $value);
+        $value = trim((string) $value);
+
+        return $value !== '' ? mb_substr($value, 0, 190, 'UTF-8') : null;
     }
 
     public function slugify($text): string

@@ -1,13 +1,14 @@
 ﻿<main class="app-main">
   <div class="app-content-header">
     <div class="container-fluid">
-      <div class="row">
-        <div class="col-sm-6">
-          <h3 class="mb-0">{$contentTitle|escape}</h3>
-          <p class="text-secondary mb-0">{$pageDescription|escape}</p>
-        </div>
-        <div class="col-sm-6">
-          <ol class="breadcrumb float-sm-end">
+      <div class="products-page-header">
+        <div class="products-page-header-shell">
+          <div>
+            <div class="products-page-kicker">Lista produktow</div>
+            <h3 class="products-page-title">{$contentTitle|escape}</h3>
+            <p class="products-page-description">{$pageDescription|escape}</p>
+          </div>
+          <ol class="breadcrumb products-page-breadcrumb">
             <li class="breadcrumb-item"><a href="{$baseUrl}?controller=index">Start</a></li>
             <li class="breadcrumb-item active" aria-current="page">{$breadcrumbCurrent|escape}</li>
           </ol>
@@ -17,6 +18,111 @@
   </div>
 
   <style>
+    .products-page-header {
+      padding: 1.25rem 0 1.5rem;
+    }
+
+    .products-page-header-shell {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.35rem 1.5rem;
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 1rem;
+      background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, .06);
+    }
+
+    .products-page-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      margin-bottom: .55rem;
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #0d6efd;
+    }
+
+    .products-page-title {
+      margin: 0;
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .products-page-description {
+      margin: .45rem 0 0;
+      max-width: 720px;
+      color: #6b7280;
+      font-size: .98rem;
+      line-height: 1.55;
+    }
+
+    .products-page-breadcrumb {
+      margin: 0;
+      padding: .45rem .7rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .88);
+      border: 1px solid rgba(13, 110, 253, .10);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+    }
+
+    .products-page-breadcrumb .breadcrumb-item,
+    .products-page-breadcrumb .breadcrumb-item a {
+      font-size: .85rem;
+      color: #64748b;
+      text-decoration: none;
+    }
+
+    .products-page-breadcrumb .breadcrumb-item.active {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .products-toolbar-card,
+    .products-list-card {
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, .05);
+    }
+
+    .products-toolbar-card .card-body,
+    .products-list-card .card-header {
+      padding: 1rem 1.2rem;
+    }
+
+    .products-section-title {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .products-section-subtitle {
+      margin-top: .25rem;
+      color: #6b7280;
+      font-size: .88rem;
+      line-height: 1.45;
+    }
+
+    .products-list-card .card-header {
+      background: linear-gradient(180deg, rgba(248, 250, 252, .96) 0%, rgba(255, 255, 255, 1) 100%);
+      border-bottom: 1px solid rgba(15, 23, 42, .08);
+    }
+
+    .products-total-badge {
+      min-width: 3rem;
+      padding: .55rem .8rem;
+      border-radius: 999px;
+      font-size: .9rem;
+      font-weight: 700;
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .18);
+    }
+
     .products-table {
       table-layout: auto;
       width: 100%;
@@ -190,6 +296,26 @@
         padding: .32rem .45rem;
       }
     }
+
+    @media (max-width: 767.98px) {
+      .products-page-header-shell {
+        padding: 1rem;
+        flex-direction: column;
+      }
+
+      .products-page-title {
+        font-size: 1.35rem;
+      }
+
+      .products-page-breadcrumb {
+        align-self: flex-start;
+      }
+
+      .products-toolbar-card .card-body,
+      .products-list-card .card-header {
+        padding: .9rem 1rem;
+      }
+    }
   </style>
 
   <div class="app-content">
@@ -197,11 +323,11 @@
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
 
-      <div class="card mb-4">
+      <div class="card mb-4 products-toolbar-card">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
-            <h3 class="card-title mb-1">Filtry i sortowanie</h3>
-            <div class="text-secondary small">Klikaj naglowki kolumn, aby przelaczac: ASC, DESC, reset.</div>
+            <h3 class="products-section-title">Filtry i sortowanie</h3>
+            <div class="products-section-subtitle">Klikaj naglowki kolumn, aby przelaczac: ASC, DESC, reset.</div>
           </div>
           <div class="d-flex gap-2">
             <a href="{$csvImportUrl|escape}" class="btn btn-outline-primary">Import CSV</a>
@@ -211,13 +337,13 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card products-list-card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div>
-            <h3 class="card-title mb-0">Wszystkie produkty</h3>
-            <div class="small text-secondary">Lacznie {$totalProducts} produktow, strona {$page} z {$totalPages}</div>
+            <h3 class="products-section-title">Wszystkie produkty</h3>
+            <div class="products-section-subtitle">Lacznie {$totalProducts} produktow, strona {$page} z {$totalPages}</div>
           </div>
-          <span class="badge text-bg-primary">{$totalProducts}</span>
+          <span class="badge text-bg-primary products-total-badge">{$totalProducts}</span>
         </div>
         
         <!-- Panel akcji masowych -->

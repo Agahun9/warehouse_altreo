@@ -57,8 +57,23 @@
                 <input type="text" class="form-control" id="allegro_category_id" name="allegro_category_id" value="{$category.allegro_category_id|default:''|escape}" placeholder="ID kategorii Allegro">
                 <div class="form-text">Mozesz wpisac ID recznie lub wybrac z listy ponizej.</div>
               </div>
+              <div class="col-md-6">
+                <label for="empik_category_search" class="form-label">Wyszukaj kategorie Empik</label>
+                <div class="input-group">
+                  <input type="text" class="form-control" id="empik_category_search" placeholder="np. etui, portfel, kubek">
+                  <button type="button" class="btn btn-outline-success" id="empik_category_search_btn">Szukaj Empik</button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label for="empik_category_id" class="form-label">Empik category ID</label>
+                <input type="text" class="form-control" id="empik_category_id" name="empik_category_id" value="{$category.empik_category_id|default:''|escape}" placeholder="Kod kategorii Empik">
+                <div class="form-text">Wyszukiwanie jest budowane z drzewa kategorii Mirakl/Empik.</div>
+              </div>
               <div class="col-12">
                 <div id="allegro_category_selected" class="small text-secondary mb-2"></div>
+              </div>
+              <div class="col-12">
+                <div id="empik_category_selected" class="small text-secondary mb-2"></div>
               </div>
               <div class="col-md-6">
                 <div class="border rounded p-2">
@@ -70,6 +85,18 @@
                 <div class="border rounded p-2">
                   <div class="small fw-semibold mb-2">Drzewko wynikow</div>
                   <div id="allegro_category_tree" class="small"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-success-subtle">
+                  <div class="small fw-semibold mb-2">Wyniki Empik</div>
+                  <div id="empik_category_results" class="list-group"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-success-subtle">
+                  <div class="small fw-semibold mb-2">Drzewko Empik</div>
+                  <div id="empik_category_tree" class="small"></div>
                 </div>
               </div>
               <div class="col-md-6">
@@ -94,19 +121,6 @@
 
 <script>
   (function () {
-    var input = document.getElementById('allegro_category_search');
-    var button = document.getElementById('allegro_category_search_btn');
-    var results = document.getElementById('allegro_category_results');
-    var tree = document.getElementById('allegro_category_tree');
-    var selectedLabel = document.getElementById('allegro_category_selected');
-    var categoryIdInput = document.getElementById('allegro_category_id');
-    var resultById = {};
-    var currentController = null;
-
-    if (!input || !button || !results || !tree || !selectedLabel || !categoryIdInput) {
-      return;
-    }
-
     function escapeHtml(value) {
       return String(value || '')
         .replace(/&/g, '&amp;')
@@ -121,22 +135,6 @@
         return String(item.path);
       }
       return item && item.name ? String(item.name) : '';
-    }
-
-    function setSelectedText() {
-      var id = categoryIdInput.value.trim();
-      if (!id) {
-        selectedLabel.textContent = 'Brak przypisanej kategorii Allegro.';
-        return;
-      }
-
-      var item = resultById[id];
-      if (item) {
-        selectedLabel.textContent = 'Wybrane Allegro ID: ' + id + ' | Sciezka: ' + normalizedPath(item);
-        return;
-      }
-
-      selectedLabel.textContent = 'Wybrane Allegro ID: ' + id;
     }
 
     function buildTree(items) {
@@ -191,103 +189,157 @@
       return html;
     }
 
-    function renderResults(items) {
-      resultById = {};
 
-      if (!items || !items.length) {
-        results.innerHTML = '<div class="list-group-item text-secondary">Brak wynikow.</div>';
-        tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
+    function initMarketplaceSearch(config) {
+      var input = document.getElementById(config.inputId);
+      var button = document.getElementById(config.buttonId);
+      var results = document.getElementById(config.resultsId);
+      var tree = document.getElementById(config.treeId);
+      var selectedLabel = document.getElementById(config.selectedId);
+      var categoryIdInput = document.getElementById(config.categoryInputId);
+      var resultById = {};
+      var currentController = null;
+
+      if (!input || !button || !results || !tree || !selectedLabel || !categoryIdInput) {
         return;
       }
 
-      var html = '';
-      for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        resultById[String(item.id)] = item;
-        var path = normalizedPath(item);
+      function setSelectedText() {
+        var id = categoryIdInput.value.trim();
+        if (!id) {
+          selectedLabel.textContent = 'Brak przypisanej kategorii ' + config.marketName + '.';
+          return;
+        }
 
-        html += '<button type="button" class="list-group-item list-group-item-action" data-id="' + escapeHtml(item.id) + '">'
-          + '<strong>' + escapeHtml(path) + '</strong>'
-          + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + '</div>'
-          + '</button>';
+        var item = resultById[id];
+        if (item) {
+          selectedLabel.textContent = 'Wybrane ' + config.marketName + ' ID: ' + id + ' | Sciezka: ' + normalizedPath(item);
+          return;
+        }
+
+        selectedLabel.textContent = 'Wybrane ' + config.marketName + ' ID: ' + id;
       }
-      results.innerHTML = html;
 
-      var treeData = buildTree(items);
-      var treeHtml = renderTreeNode(treeData);
-      tree.innerHTML = treeHtml || '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
-    }
-
-    function doSearch() {
-      var search = input.value.trim();
-      if (search.length < 2) {
-        results.innerHTML = '<div class="list-group-item text-secondary">Wpisz minimum 2 znaki.</div>';
-        tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
+      function renderResults(items) {
         resultById = {};
-        setSelectedText();
-        return;
+
+        if (!items || !items.length) {
+          results.innerHTML = '<div class="list-group-item text-secondary">Brak wynikow.</div>';
+          tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
+          return;
+        }
+
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          resultById[String(item.id)] = item;
+          var path = normalizedPath(item);
+
+          html += '<button type="button" class="list-group-item list-group-item-action" data-id="' + escapeHtml(item.id) + '">'
+            + '<strong>' + escapeHtml(path) + '</strong>'
+            + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + '</div>'
+            + '</button>';
+        }
+        results.innerHTML = html;
+
+        var treeData = buildTree(items);
+        var treeHtml = renderTreeNode(treeData);
+        tree.innerHTML = treeHtml || '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
       }
 
-      if (currentController && typeof currentController.abort === 'function') {
-        currentController.abort();
-      }
-
-      currentController = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      button.disabled = true;
-      results.innerHTML = '<div class="list-group-item text-secondary">Pobieranie...</div>';
-      tree.innerHTML = '<div class="text-secondary">Budowanie drzewa...</div>';
-
-      var url = '{$baseUrl|escape:"javascript"}?controller=allegro&action=categories&search=' + encodeURIComponent(search);
-      fetch(url, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        signal: currentController ? currentController.signal : undefined
-      })
-        .then(function (response) { return response.json(); })
-        .then(function (data) {
-          if (data && data.error) {
-            results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(data.error) + '</div>';
-            tree.innerHTML = '<div class="text-danger">Nie udalo sie pobrac drzewa.</div>';
-            return;
-          }
-          renderResults(data.items || []);
+      function doSearch() {
+        var search = input.value.trim();
+        if (search.length < 2) {
+          results.innerHTML = '<div class="list-group-item text-secondary">Wpisz minimum 2 znaki.</div>';
+          tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
+          resultById = {};
           setSelectedText();
+          return;
+        }
+
+        if (currentController && typeof currentController.abort === 'function') {
+          currentController.abort();
+        }
+
+        currentController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        button.disabled = true;
+        results.innerHTML = '<div class="list-group-item text-secondary">Pobieranie...</div>';
+        tree.innerHTML = '<div class="text-secondary">Budowanie drzewa...</div>';
+
+        var url = '{$baseUrl|escape:"javascript"}?controller=' + encodeURIComponent(config.controller) + '&action=categories&search=' + encodeURIComponent(search);
+        fetch(url, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          signal: currentController ? currentController.signal : undefined
         })
-        .catch(function (error) {
-          if (error && error.name === 'AbortError') {
-            return;
-          }
-          results.innerHTML = '<div class="list-group-item text-danger">Blad pobierania danych z Allegro.</div>';
-          tree.innerHTML = '<div class="text-danger">Blad budowania drzewa.</div>';
-        })
-        .finally(function () {
-          button.disabled = false;
-        });
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (data && data.error) {
+              results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(data.error) + '</div>';
+              tree.innerHTML = '<div class="text-danger">Nie udalo sie pobrac drzewa.</div>';
+              return;
+            }
+            renderResults(data.items || []);
+            setSelectedText();
+          })
+          .catch(function (error) {
+            if (error && error.name === 'AbortError') {
+              return;
+            }
+            results.innerHTML = '<div class="list-group-item text-danger">Blad pobierania danych z ' + escapeHtml(config.marketName) + '.</div>';
+            tree.innerHTML = '<div class="text-danger">Blad budowania drzewa.</div>';
+          })
+          .finally(function () {
+            button.disabled = false;
+          });
+      }
+
+      button.addEventListener('click', doSearch);
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          doSearch();
+        }
+      });
+
+      results.addEventListener('click', function (event) {
+        var target = event.target;
+        while (target && target !== results && !target.getAttribute('data-id')) {
+          target = target.parentNode;
+        }
+
+        if (!target || target === results) {
+          return;
+        }
+
+        var id = target.getAttribute('data-id') || '';
+        categoryIdInput.value = id;
+        setSelectedText();
+      });
+
+      categoryIdInput.addEventListener('input', setSelectedText);
+      setSelectedText();
     }
 
-    button.addEventListener('click', doSearch);
-    input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        doSearch();
-      }
+    initMarketplaceSearch({
+      controller: 'allegro',
+      marketName: 'Allegro',
+      inputId: 'allegro_category_search',
+      buttonId: 'allegro_category_search_btn',
+      resultsId: 'allegro_category_results',
+      treeId: 'allegro_category_tree',
+      selectedId: 'allegro_category_selected',
+      categoryInputId: 'allegro_category_id'
     });
 
-    results.addEventListener('click', function (event) {
-      var target = event.target;
-      while (target && target !== results && !target.getAttribute('data-id')) {
-        target = target.parentNode;
-      }
-
-      if (!target || target === results) {
-        return;
-      }
-
-      var id = target.getAttribute('data-id') || '';
-      categoryIdInput.value = id;
-      setSelectedText();
+    initMarketplaceSearch({
+      controller: 'empik',
+      marketName: 'Empik',
+      inputId: 'empik_category_search',
+      buttonId: 'empik_category_search_btn',
+      resultsId: 'empik_category_results',
+      treeId: 'empik_category_tree',
+      selectedId: 'empik_category_selected',
+      categoryInputId: 'empik_category_id'
     });
-
-    categoryIdInput.addEventListener('input', setSelectedText);
-    setSelectedText();
   })();
 </script>

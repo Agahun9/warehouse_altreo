@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Models\CategoryRepository;
 use App\Services\AllegroService;
+use App\Services\EmpikService;
 use RuntimeException;
 use Throwable;
 
@@ -18,11 +19,15 @@ class CategoryController extends Controller
     /** @var AllegroService */
     private $allegro;
 
+    /** @var EmpikService */
+    private $empik;
+
     public function __construct()
     {
         $this->categories = new CategoryRepository($this->db());
         $this->categories->ensureSchema();
         $this->allegro = new AllegroService();
+        $this->empik = new EmpikService();
     }
 
     public function index(): void
@@ -49,6 +54,7 @@ class CategoryController extends Controller
             'name' => '',
             'sku_prefix' => '',
             'allegro_category_id' => '',
+            'empik_category_id' => '',
             'description' => '',
         ));
     }
@@ -66,6 +72,7 @@ class CategoryController extends Controller
             $description = trim((string) $this->input('description', ''));
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
+            $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
 
             if ($name === '') {
                 throw new RuntimeException('Nazwa kategorii jest wymagana.');
@@ -85,6 +92,7 @@ class CategoryController extends Controller
                 'slug' => $slug,
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
+                'empik_category_id' => $empikCategoryId,
                 'description' => ($description !== '' ? $description : null),
             ));
             $this->setFlash('success', 'Kategoria zostala dodana.');
@@ -94,6 +102,7 @@ class CategoryController extends Controller
                 'name' => (string) $this->input('name', ''),
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
+                'empik_category_id' => (string) $this->input('empik_category_id', ''),
                 'description' => (string) $this->input('description', ''),
             ), $exception->getMessage());
         }
@@ -133,6 +142,7 @@ class CategoryController extends Controller
             $description = trim((string) $this->input('description', ''));
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
+            $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
 
             if ($name === '') {
                 throw new RuntimeException('Nazwa kategorii jest wymagana.');
@@ -152,6 +162,7 @@ class CategoryController extends Controller
                 'slug' => $slug,
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
+                'empik_category_id' => $empikCategoryId,
                 'description' => ($description !== '' ? $description : null),
             ));
             $this->setFlash('success', 'Kategoria zostala zaktualizowana.');
@@ -162,6 +173,7 @@ class CategoryController extends Controller
                 'name' => (string) $this->input('name', ''),
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
+                'empik_category_id' => (string) $this->input('empik_category_id', ''),
                 'description' => (string) $this->input('description', ''),
             ), $exception->getMessage());
         }
@@ -192,6 +204,50 @@ class CategoryController extends Controller
 
             $this->categories->updateById($id, array('allegro_category_id' => $allegroCategoryId));
             $this->setFlash('success', 'Mapowanie Allegro zostalo zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=categories&action=edit&id=' . $id);
+    }
+
+    public function setempik(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=categories&action=index');
+        }
+
+        $id = (int) $this->input('id', 0);
+        $category = $this->categories->findById($id);
+
+        if (!$category) {
+            $this->setFlash('error', 'Nie znaleziono kategorii.');
+            $this->redirect('./index.php?controller=categories&action=index');
+        }
+
+        $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
+
+        try {
+            if ($empikCategoryId !== null) {
+                $matches = $this->empik->searchCategories($empikCategoryId, false);
+                $isKnown = false;
+
+                foreach ($matches as $item) {
+                    if ((string) ($item['id'] ?? '') === $empikCategoryId) {
+                        $isKnown = true;
+                        break;
+                    }
+                }
+
+                if (!$isKnown && $matches === array()) {
+                    $this->empik->searchCategories($empikCategoryId, true);
+                }
+            }
+
+            $this->categories->updateById($id, array('empik_category_id' => $empikCategoryId));
+            $this->setFlash('success', 'Mapowanie Empik zostalo zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

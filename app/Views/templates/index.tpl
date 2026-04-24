@@ -347,6 +347,9 @@
               </div>
 
               <a href="{$baseUrl}?controller=allegro&action=index" class="btn btn-sm btn-light">Otworz Allegro</a>
+              {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
+                <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-sm btn-outline-light">Otworz Empik</a>
+              {/if}
             </div>
           </div>
 

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-19 20:31:09
+/* Smarty version 5.8.0, created on 2026-04-23 22:20:34
   from 'file:admin/automation.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e51f6daaae31_36924260',
+  'unifunc' => 'content_69ea7f120bcf56_25664075',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'd2981eed000731be57d9054d8d07fea0bf40a49b' => 
     array (
       0 => 'admin/automation.tpl',
-      1 => 1776623448,
+      1 => 1776975629,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e51f6daaae31_36924260 (\Smarty\Template $_smarty_tpl) {
+function content_69ea7f120bcf56_25664075 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/admin';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -237,6 +237,149 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
         </div>
       </div>
 
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h3 class="card-title mb-0">Empik API</h3>
+          <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=index" class="btn btn-sm btn-outline-secondary">Wroc do Empik</a>
+        </div>
+        <div class="card-body">
+          <div class="row g-4">
+            <div class="col-lg-4">
+              <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=admin&action=saveempik" class="row g-3">
+                <input type="hidden" name="account_id" value="">
+                <div class="col-12">
+                  <label class="form-label">Nazwa konta</label>
+                  <input type="text" name="name" class="form-control" placeholder="np. Empik PL" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Instance URL</label>
+                  <input type="url" name="api_url" class="form-control" placeholder="https://twoja-instancja.mirakl.net" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">API Key</label>
+                  <input type="text" name="api_key" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">shop_id</label>
+                  <input type="number" min="1" step="1" name="shop_id" class="form-control" placeholder="opcjonalnie">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Locale</label>
+                  <input type="text" name="locale" class="form-control" value="pl_PL">
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="1" id="empik_active_default" checked>
+                    <label class="form-check-label" for="empik_active_default">Konto aktywne</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <button type="submit" class="btn btn-primary">Zapisz Empik API</button>
+                </div>
+              </form>
+            </div>
+            <div class="col-lg-8">
+              <div class="alert alert-light border small text-secondary">
+                Empik Marketplace dziala na Mirakl Seller API. Wprowadz adres swojej instancji Mirakl oraz API key od Empik.
+                Jesli sprzedawca ma kilka sklepow w tej samej instancji, mozesz dopisac takze <code>shop_id</code>.
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Konto</th>
+                      <th>API</th>
+                      <th>Status</th>
+                      <th>Sync</th>
+                      <th>Akcje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('empikAccounts'), 'account');
+$foreach1DoElse = true;
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('account')->value) {
+$foreach1DoElse = false;
+?>
+                      <tr>
+                        <td>
+                          <div class="fw-semibold"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['name'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                          <div class="small text-secondary">slug: <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['slug'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                        </td>
+                        <td>
+                          <div class="small"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['api_url'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                          <div class="small text-secondary">shop_id: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['shop_id'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+ | locale: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['locale'] ?? null)===null||$tmp==='' ? 'pl_PL' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                        </td>
+                        <td>
+                          <?php if ($_smarty_tpl->getValue('account')['is_active']) {?>
+                            <span class="badge text-bg-success">Aktywne</span>
+                          <?php } else { ?>
+                            <span class="badge text-bg-secondary">Nieaktywne</span>
+                          <?php }?>
+                          <?php if ($_smarty_tpl->getValue('account')['last_error_message']) {?>
+                            <div class="small text-danger mt-1"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['last_error_message'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                          <?php }?>
+                        </td>
+                        <td>
+                          <div class="small">ostatni sync: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['last_sync_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                          <div class="small text-secondary">ostatni blad: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['last_error_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                        </td>
+                        <td class="text-nowrap">
+                          <div class="d-grid gap-2">
+                            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=sync&account=<?php echo rawurlencode((string)$_smarty_tpl->getValue('account')['slug']);?>
+" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
+                            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=index&account_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('account')['id']);?>
+" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                            <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=admin&action=saveempik" class="d-grid">
+                              <input type="hidden" name="account_id" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['id'], ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="name" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['name'], ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="api_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['api_url'], ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="api_key" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('account')['api_key'], ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="shop_id" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['shop_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="locale" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('account')['locale'] ?? null)===null||$tmp==='' ? 'pl_PL' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+                              <input type="hidden" name="is_active" value="<?php if ($_smarty_tpl->getValue('account')['is_active']) {?>0<?php } else { ?>1<?php }?>">
+                              <button type="submit" class="btn btn-sm <?php if ($_smarty_tpl->getValue('account')['is_active']) {?>btn-outline-warning<?php } else { ?>btn-outline-success<?php }?>">
+                                <?php if ($_smarty_tpl->getValue('account')['is_active']) {?>Wylacz konto<?php } else { ?>Wlacz konto<?php }?>
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    <?php
+}
+if ($foreach1DoElse) {
+?>
+                      <tr><td colspan="5" class="text-center text-secondary py-4">Brak skonfigurowanych kont Empik.</td></tr>
+                    <?php
+}
+$_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb-4 border-warning-subtle">
         <div class="card-header">
           <h3 class="card-title mb-0">Sprzatanie bazy</h3>
@@ -246,19 +389,24 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 ?controller=admin&action=cleanup" class="row g-3 align-items-end">
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-queue-done-days">Usun zakonczona kolejke starsza niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-queue-done-days" name="queue_done_days" value="14">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-done-days" name="queue_done_days" value="14">
             </div>
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-queue-error-days">Usun bledy i retry starsze niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-queue-error-days" name="queue_error_days" value="30">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-error-days" name="queue_error_days" value="30">
             </div>
             <div class="col-lg-4">
               <label class="form-label" for="cleanup-deleted-products-days">Usun produkty skasowane starsze niz dni</label>
-              <input type="number" min="1" step="1" class="form-control" id="cleanup-deleted-products-days" name="deleted_products_days" value="30">
+              <input type="number" min="0" step="1" class="form-control" id="cleanup-deleted-products-days" name="deleted_products_days" value="30">
             </div>
             <div class="col-12">
               <div class="small text-secondary">
                 Ten przycisk czysci stare wpisy z <code>allegro_offer_change_queue</code>, odpina oferty Allegro od produktow, ktore sa juz oznaczone jako usuniete, i trwale usuwa stare produkty po soft-delecie razem z ich logami zmian.
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="small text-secondary">
+                Mozesz wpisac <code>0</code>, aby sprzatac od teraz, bez czekania 1 dnia.
               </div>
             </div>
             <div class="col-12 d-flex justify-content-between gap-2 align-items-center flex-wrap">
@@ -266,6 +414,35 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                 Uzywaj ostroznie: ostatni krok wykonuje trwale usuniecie produktow, ktore byly juz oznaczone jako skasowane.
               </div>
               <button type="submit" class="btn btn-outline-warning">Uruchom sprzatanie bazy</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3 class="card-title mb-0">Sellasist API</h3>
+        </div>
+        <div class="card-body">
+          <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=admin&action=savesellasist" class="row g-3">
+            <div class="col-lg-5">
+              <label class="form-label" for="sellasist-base-url">Adres Sellasist</label>
+              <input type="url" class="form-control" id="sellasist-base-url" name="sellasist_base_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sellasistBaseUrl'), ENT_QUOTES, 'UTF-8', true);?>
+" placeholder="https://altreo.sellasist.pl">
+            </div>
+            <div class="col-lg-7">
+              <label class="form-label" for="sellasist-api-key">API Key</label>
+              <input type="text" class="form-control" id="sellasist-api-key" name="sellasist_api_key" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sellasistApiKey'), ENT_QUOTES, 'UTF-8', true);?>
+" placeholder="Wklej klucz API Sellasist">
+            </div>
+            <div class="col-12">
+              <div class="small text-secondary">
+                Dane sa uzywane przez modul Sellasist, zakladke Zbieranie oraz generowanie naklejek. Domyslnie pobierane sa zamowienia ze statusu <code>23</code>, a po wygenerowaniu naklejek system zmienia status na <code>3</code>.
+              </div>
+            </div>
+            <div class="col-12">
+              <button type="submit" class="btn btn-primary">Zapisz ustawienia Sellasist</button>
             </div>
           </form>
         </div>
@@ -341,9 +518,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <tbody>
               <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('automation')['accounts'], 'item');
-$foreach1DoElse = true;
+$foreach2DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('item')->value) {
-$foreach1DoElse = false;
+$foreach2DoElse = false;
 ?>
                 <tr>
                   <td>
@@ -368,7 +545,7 @@ $foreach1DoElse = false;
                 </tr>
               <?php
 }
-if ($foreach1DoElse) {
+if ($foreach2DoElse) {
 ?>
                 <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Allegro do automatyzacji.</td></tr>
               <?php

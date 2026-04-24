@@ -452,7 +452,7 @@ class AllegroController extends Controller
 
         try {
             $this->allegro->linkOfferToProduct($offerRowId, $productId, $productId !== null ? 'manual' : 'cleared');
-            $this->setFlash('success', 'Powiazanie oferty z magazynem zostalo zapisane.');
+            $this->setFlash('success', 'Reczne zapisywanie powiazania jest wylaczone. Oferta jest teraz laczona tylko na zywo po SKU.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

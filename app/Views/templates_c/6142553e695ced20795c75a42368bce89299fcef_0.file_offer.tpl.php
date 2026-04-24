@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-19 21:48:11
+/* Smarty version 5.8.0, created on 2026-04-23 09:23:08
   from 'file:allegro/offer.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e5317be74ad7_23986240',
+  'unifunc' => 'content_69e9c8dc9ab912_82197503',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '6142553e695ced20795c75a42368bce89299fcef' => 
     array (
       0 => 'allegro/offer.tpl',
-      1 => 1776624139,
+      1 => 1776925330,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e5317be74ad7_23986240 (\Smarty\Template $_smarty_tpl) {
+function content_69e9c8dc9ab912_82197503 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/allegro';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -132,7 +132,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 </div>
                 <?php } else { ?>
                   <div class="text-danger">Ta oferta nie jest jeszcze podpieta do produktu magazynowego.</div>
-                  <div class="small text-secondary mt-1">Auto-link probuje spinac po identycznym SKU przy syncu. Tu mozesz nadpisac to recznie po ID produktu.</div>
+                  <div class="small text-secondary mt-1">Auto-link probuje spinac po SKU Allegro: gdy sa litery, szuka po SKU magazynu; gdy sa same cyfry, szuka po OLD_SKU. Tu mozesz nadpisac to recznie po ID produktu.</div>
                 <?php }?>
               </div>
 

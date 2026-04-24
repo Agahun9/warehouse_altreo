@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 10:19:06
+/* Smarty version 5.8.0, created on 2026-04-23 22:18:33
   from 'file:layout/header.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1ecfa896515_52782350',
+  'unifunc' => 'content_69ea7e992f2bd7_51931907',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '023d65e3c2920fd6ca8aef1a9138b5ddc84cceaf' => 
     array (
       0 => 'layout/header.tpl',
-      1 => 1776413679,
+      1 => 1776975199,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1ecfa896515_52782350 (\Smarty\Template $_smarty_tpl) {
+function content_69ea7e992f2bd7_51931907 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/layout';
 ?><!DOCTYPE html>
 <html lang="pl">
@@ -82,6 +82,39 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
     .quick-search-item:hover {
       background: rgba(13, 110, 253, 0.08);
     }
+
+    .topbar-user-link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      max-width: min(280px, 32vw);
+      white-space: nowrap;
+    }
+
+    .topbar-user-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .topbar-user-role {
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 991.98px) {
+      .topbar-user-link {
+        max-width: 150px;
+      }
+
+      .topbar-user-role {
+        display: none;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .topbar-user-link {
+        max-width: 110px;
+      }
+    }
   </style>
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
@@ -102,6 +135,14 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
             <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('allegro',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
               <li class="nav-item d-none d-md-block"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=allegro&action=index" class="nav-link">Allegro</a></li>
+            <?php }?>
+            <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('empik',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+              <li class="nav-item d-none d-md-block"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=index" class="nav-link">Empik</a></li>
+            <?php }?>
+            <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('sellasist',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+              <li class="nav-item d-none d-md-block"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
             <?php }?>
             <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin') {?>
               <li class="nav-item d-none d-md-block"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -140,8 +181,22 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
         <ul class="navbar-nav ms-auto">
           <?php if ($_smarty_tpl->getValue('currentUser')) {?>
-            <li class="nav-item"><span class="nav-link text-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentUser')['email'], ENT_QUOTES, 'UTF-8', true);?>
-</span></li>
+            <li class="nav-item">
+              <span class="nav-link text-secondary topbar-user-link">
+                <span class="topbar-user-name">
+                  <?php if ((($tmp = $_smarty_tpl->getValue('currentUser')['first_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) != '' || (($tmp = $_smarty_tpl->getValue('currentUser')['last_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) != '') {?>
+                    <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('currentUser')['first_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+ <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('currentUser')['last_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+
+                  <?php } else { ?>
+                    <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentUser')['email'], ENT_QUOTES, 'UTF-8', true);?>
+
+                  <?php }?>
+                </span>
+                <span class="badge topbar-user-role text-bg-<?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin') {?>dark<?php } else { ?>secondary<?php }?>"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentUser')['role'], ENT_QUOTES, 'UTF-8', true);?>
+</span>
+              </span>
+            </li>
             <li class="nav-item"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=auth&action=logout" class="nav-link">Wyloguj</a></li>
           <?php } else { ?>
@@ -194,6 +249,24 @@ echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=allegro&action=index" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'allegro') {?> active<?php }?>">
                     <i class="nav-icon bi bi-shop"></i>
                     <p>Allegro</p>
+                  </a>
+                </li>
+              <?php }?>
+              <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('empik',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+                <li class="nav-item">
+                  <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=index" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'empik') {?> active<?php }?>">
+                    <i class="nav-icon bi bi-bag"></i>
+                    <p>Empik</p>
+                  </a>
+                </li>
+              <?php }?>
+              <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('sellasist',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+                <li class="nav-item">
+                  <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=sellasist&action=zbieranie" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'sellasist') {?> active<?php }?>">
+                    <i class="nav-icon bi bi-bag-check"></i>
+                    <p>Sellasist</p>
                   </a>
                 </li>
               <?php }?>

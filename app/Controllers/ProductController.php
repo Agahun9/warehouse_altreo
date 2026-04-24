@@ -12,9 +12,11 @@ use App\Models\DerivedStockLinkRepository;
 use App\Models\ProductAllegroParameterRepository;
 use App\Models\ProductChangeLogRepository;
 use App\Models\ProductCustomFieldRepository;
+use App\Models\ProductEmpikParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
+use App\Services\EmpikService;
 use App\Services\ValueResolver;
 use Throwable;
 
@@ -29,6 +31,9 @@ class ProductController extends Controller
     /** @var ProductAllegroParameterRepository */
     private $allegroParameters;
 
+    /** @var ProductEmpikParameterRepository */
+    private $empikParameters;
+
     /** @var CsvTemplateRepository */
     private $csvTemplates;
 
@@ -40,6 +45,9 @@ class ProductController extends Controller
 
     /** @var AllegroService */
     private $allegro;
+
+    /** @var EmpikService */
+    private $empik;
 
     /** @var SharedStockGroupRepository */
     private $sharedStockGroups;
@@ -55,6 +63,8 @@ class ProductController extends Controller
         $this->products->ensureSchema();
         $this->allegroParameters = new ProductAllegroParameterRepository($this->db());
         $this->allegroParameters->ensureSchema();
+        $this->empikParameters = new ProductEmpikParameterRepository($this->db());
+        $this->empikParameters->ensureSchema();
         $this->csvTemplates = new CsvTemplateRepository($this->db());
         $this->csvTemplates->ensureSchema();
         $this->csvTitleTemplates = new CsvTitleTemplateRepository($this->db());
@@ -66,6 +76,7 @@ class ProductController extends Controller
         $this->derivedStockLinks = new DerivedStockLinkRepository($this->db());
         $this->derivedStockLinks->ensureSchema();
         $this->allegro = new AllegroService();
+        $this->empik = new EmpikService();
     }
 
     public function index(): void
@@ -266,6 +277,70 @@ class ProductController extends Controller
         }
     }
 
+    public function empikparameters(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        if ($categoryId <= 0) {
+            $this->jsonResponse(array('items' => array()));
+            return;
+        }
+
+        try {
+            $definitions = $this->empikDefinitionsForCategory($categoryId);
+            $values = array();
+
+            $includeValues = $this->shouldIncludeCurrentValues();
+            $productId = (int) $this->input('id', 0);
+
+            if ($includeValues && $productId > 0) {
+                $product = $this->products->find($productId);
+                if ($product && (int) $product['category_id'] === $categoryId) {
+                    $values = $this->empikParameters->allForProduct($productId);
+                }
+            }
+
+            $this->jsonResponse(array('items' => $definitions, 'values' => $values));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function empikparameteroptions(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        $attributeId = trim((string) $this->input('attribute_id', ''));
+        $query = trim((string) $this->input('q', ''));
+        $limit = max(1, min(50, (int) $this->input('limit', 20)));
+
+        if ($categoryId <= 0 || $attributeId === '') {
+            $this->jsonResponse(array('items' => array()));
+            return;
+        }
+
+        try {
+            $category = $this->categories->findById($categoryId);
+            if (!$category) {
+                $this->jsonResponse(array('items' => array()));
+                return;
+            }
+
+            $empikCategoryId = isset($category['empik_category_id']) ? trim((string) $category['empik_category_id']) : '';
+            if ($empikCategoryId === '') {
+                $this->jsonResponse(array('items' => array()));
+                return;
+            }
+
+            $items = $this->empik->searchAttributeOptions($empikCategoryId, $attributeId, $query, $limit);
+            $this->jsonResponse(array('items' => $items));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
     public function copyproducts(): void
     {
         $this->requireModule('products');
@@ -460,6 +535,14 @@ class ProductController extends Controller
                 $this->allegroParameters->replaceForProduct($productId, $allegroValues);
             }
 
+            if ($this->shouldClearEmpikParameters()) {
+                $this->empikParameters->replaceForProduct($productId, array());
+            } else {
+                $definitions = $this->empikDefinitionsForCategory((int) $data['category_id']);
+                $empikValues = $this->extractEmpikParameters($definitions);
+                $this->empikParameters->replaceForProduct($productId, $empikValues);
+            }
+
             $this->customFields->replaceForProduct($productId, $this->extractCustomFieldValues());
             $this->sharedStockGroups->syncProductRelations(
                 $productId,
@@ -482,7 +565,8 @@ class ProductController extends Controller
                 $this->postedProductData(),
                 './index.php?controller=products&action=store',
                 $exception->getMessage(),
-                $this->postedAllegroValues()
+                $this->postedAllegroValues(),
+                $this->postedEmpikValues()
             );
         }
     }
@@ -504,7 +588,8 @@ class ProductController extends Controller
             $product,
             './index.php?controller=products&action=update&id=' . $id,
             null,
-            $this->allegroParameters->allForProduct($id)
+            $this->allegroParameters->allForProduct($id),
+            $this->empikParameters->allForProduct($id)
         );
     }
 
@@ -540,6 +625,14 @@ class ProductController extends Controller
                 $this->allegroParameters->replaceForProduct($id, $allegroValues);
             }
 
+            if ($this->shouldClearEmpikParameters() || $categoryChanged) {
+                $this->empikParameters->replaceForProduct($id, array());
+            } else {
+                $definitions = $this->empikDefinitionsForCategory((int) $data['category_id']);
+                $empikValues = $this->extractEmpikParameters($definitions);
+                $this->empikParameters->replaceForProduct($id, $empikValues);
+            }
+
             $this->customFields->replaceForProduct($id, $this->extractCustomFieldValues());
             $this->sharedStockGroups->syncProductRelations(
                 $id,
@@ -565,7 +658,8 @@ class ProductController extends Controller
                 $product,
                 './index.php?controller=products&action=update&id=' . $id,
                 $exception->getMessage(),
-                $this->postedAllegroValues()
+                $this->postedAllegroValues(),
+                $this->postedEmpikValues()
             );
         }
     }
@@ -845,10 +939,11 @@ class ProductController extends Controller
         $this->redirect('./index.php?controller=products&action=create');
     }
 
-    private function renderForm(string $pageTitle, string $contentTitle, array $product, string $formAction, $flashError = null, array $allegroValues = array()): void
+    private function renderForm(string $pageTitle, string $contentTitle, array $product, string $formAction, $flashError = null, array $allegroValues = array(), array $empikValues = array()): void
     {
         $categoryId = isset($product['category_id']) ? (int) $product['category_id'] : 0;
         $allegroDefinitions = array();
+        $empikDefinitions = array();
         $productHistory = array();
         $productImages = $this->imageUrlsFromValue(isset($product['img']) ? (string) $product['img'] : '');
         $contourDirectories = $this->contourDirectories();
@@ -856,6 +951,14 @@ class ProductController extends Controller
         if ($categoryId > 0) {
             try {
                 $allegroDefinitions = $this->allegroDefinitionsForCategory($categoryId);
+            } catch (Throwable $exception) {
+                if ($flashError === null) {
+                    $flashError = $exception->getMessage();
+                }
+            }
+
+            try {
+                $empikDefinitions = $this->empikDefinitionsForCategory($categoryId);
             } catch (Throwable $exception) {
                 if ($flashError === null) {
                     $flashError = $exception->getMessage();
@@ -884,6 +987,9 @@ class ProductController extends Controller
             'allegroDefinitions' => $allegroDefinitions,
             'allegroValues' => $allegroValues,
             'allegroValuesJson' => json_encode($allegroValues),
+            'empikDefinitions' => $empikDefinitions,
+            'empikValues' => $empikValues,
+            'empikValuesJson' => json_encode($empikValues),
             'customFieldDefinitions' => $this->customFields->definitions(),
             'customFieldValues' => $this->postedCustomFieldValuesForView($this->customFieldValuesForView($product)),
             'assignedCustomFields' => $this->assignedCustomFieldsForView($product),
@@ -960,6 +1066,12 @@ class ProductController extends Controller
     private function postedAllegroValues(): array
     {
         $input = $this->input('allegro_parameters', array());
+        return is_array($input) ? $input : array();
+    }
+
+    private function postedEmpikValues(): array
+    {
+        $input = $this->input('empik_parameters', array());
         return is_array($input) ? $input : array();
     }
 
@@ -1085,6 +1197,21 @@ class ProductController extends Controller
         return $this->allegro->categoryParameters($allegroCategoryId);
     }
 
+    private function empikDefinitionsForCategory(int $categoryId): array
+    {
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            return array();
+        }
+
+        $empikCategoryId = isset($category['empik_category_id']) ? trim((string) $category['empik_category_id']) : '';
+        if ($empikCategoryId === '') {
+            return array();
+        }
+
+        return $this->empik->categoryAttributes($empikCategoryId);
+    }
+
     private function extractAllegroParameters(array $definitions): array
     {
         if ($definitions === array()) {
@@ -1099,9 +1226,29 @@ class ProductController extends Controller
         return $this->allegro->validateParameterValues($definitions, $input);
     }
 
+    private function extractEmpikParameters(array $definitions): array
+    {
+        if ($definitions === array()) {
+            return array();
+        }
+
+        $input = $this->input('empik_parameters', array());
+        if (!is_array($input)) {
+            $input = array();
+        }
+
+        return $this->empik->validateAttributeValues($definitions, $input);
+    }
+
     private function shouldClearAllegroParameters(): bool
     {
         $value = $this->input('clear_allegro_parameters', '0');
+        return $value === '1' || $value === 1 || $value === true || $value === 'true';
+    }
+
+    private function shouldClearEmpikParameters(): bool
+    {
+        $value = $this->input('clear_empik_parameters', '0');
         return $value === '1' || $value === 1 || $value === true || $value === 'true';
     }
 

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-19 21:49:25
+/* Smarty version 5.8.0, created on 2026-04-23 11:27:40
   from 'file:allegro/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e531c5423a58_16707091',
+  'unifunc' => 'content_69e9e60c50e0e1_84259441',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '54d38f9d655b661a92fdec3277b15f15c5cec84c' => 
     array (
       0 => 'allegro/index.tpl',
-      1 => 1776628157,
+      1 => 1776936456,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e531c5423a58_16707091 (\Smarty\Template $_smarty_tpl) {
+function content_69e9e60c50e0e1_84259441 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/allegro';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -278,9 +278,26 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
                 <span class="allegro-queue-mini-percent"><?php echo sprintf('%.0f',$_smarty_tpl->getValue('queueDonePercent'));?>
 %</span>
               </div>
-              <div class="small text-secondary mb-2">Zostało <?php echo $_smarty_tpl->getValue('queueRemaining');?>
-, gotowe <?php echo $_smarty_tpl->getValue('queueStats')['done'];?>
-</div>
+              <div class="small text-secondary mb-2">
+                Zostalo <?php echo $_smarty_tpl->getValue('queueRemaining');?>
+,
+                <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=allegro&action=index&page=1&per_page=<?php echo $_smarty_tpl->getValue('perPage');?>
+&sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
+&sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
+&account_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['account_id']);?>
+&q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
+&sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
+&status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
+&queue_status=done&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
+&market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
+&invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
+&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
+&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+" class="allegro-queue-mini-link text-success">gotowe <?php echo $_smarty_tpl->getValue('queueStats')['done'];?>
+</a>
+              </div>
               <div class="allegro-queue-progress" aria-label="Stan kolejki Allegro">
                 <?php if ($_smarty_tpl->getValue('queuePendingPercent') > 0) {?><div class="allegro-queue-progress-part is-pending" style="width: <?php echo sprintf('%.2f',$_smarty_tpl->getValue('queuePendingPercent'));?>
 %;"></div><?php }?>
@@ -302,6 +319,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=pending&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -317,6 +335,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=retry&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -332,6 +351,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=error&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -394,6 +414,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=pending&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -414,6 +435,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=retry&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -434,6 +456,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=done&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -454,6 +477,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &q=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['q']);?>
 &sku=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['sku']);?>
 &status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['status']);?>
+&duplicates=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['duplicates']);?>
 &queue_status=error&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
@@ -478,6 +502,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
                 <span>strona <?php echo $_smarty_tpl->getValue('page');?>
  z <?php echo $_smarty_tpl->getValue('totalPages');?>
 </span>
+                <?php if ($_smarty_tpl->getValue('duplicatesOnly')) {?><span class="allegro-topbar-chip">widok: tylko duble</span><?php }?>
               </div>
             </div>
             <div class="allegro-topbar-actions">
@@ -517,8 +542,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <div class="col-xl-2 col-md-6">
               <label class="form-label">Szukaj</label>
               <input type="text" name="q" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['q'], ENT_QUOTES, 'UTF-8', true);?>
-" class="form-control" placeholder='offer id / nazwa / SKU'>
-              <div class="form-text">Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
+" class="form-control" placeholder='offer id / nazwa / SKU, kilka ID oddziel przecinkiem'>
+              <div class="form-text">Mozesz wkleic kilka ID oddzielonych przecinkiem lub srednikiem. Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
             </div>
             <div class="col-xl-2 col-md-4">
               <label class="form-label">SKU</label>
@@ -755,7 +780,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
         </div>
 
         <div class="modal fade" id="allegroBulkModal" tabindex="-1" aria-labelledby="allegroBulkModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-xl modal-dialog-scrollable">
+          <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
             <div class="modal-content">
               <div class="modal-header">
                 <div>
@@ -841,6 +866,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 ">
             <input type="hidden" name="queue_status" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('queueStatusFilter'), ENT_QUOTES, 'UTF-8', true);?>
 ">
+            <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
             <div class="col-12">
               <div class="bulk-ops-shell">
                 <div class="row g-3">
@@ -849,16 +876,16 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       <div class="bulk-ops-step-title">Krok 1</div>
                       <div class="fw-semibold mb-2">Wybierz zakres zmian</div>
                       <div class="d-grid gap-2">
-                        <label class="bulk-ops-choice active js-selection-choice" for="selection_scope_filtered">
+                        <label class="bulk-ops-choice js-selection-choice" for="selection_scope_filtered">
                           <div class="form-check">
-                            <input class="form-check-input" type="radio" name="selection_scope" id="selection_scope_filtered" value="filtered" checked>
+                            <input class="form-check-input" type="radio" name="selection_scope" id="selection_scope_filtered" value="filtered">
                             <span class="form-check-label fw-semibold">Wszystkie z filtrowania</span>
                           </div>
                           <div class="small text-secondary mt-1">Bierze caly wynik filtrowania z bazy, bez znaczenia ustawienia "Na strone".</div>
                         </label>
-                        <label class="bulk-ops-choice js-selection-choice" for="selection_scope_selected">
+                        <label class="bulk-ops-choice active js-selection-choice" for="selection_scope_selected">
                           <div class="form-check">
-                            <input class="form-check-input" type="radio" name="selection_scope" id="selection_scope_selected" value="selected">
+                            <input class="form-check-input" type="radio" name="selection_scope" id="selection_scope_selected" value="selected" checked>
                             <span class="form-check-label fw-semibold">Tylko zaznaczone na liscie</span>
                           </div>
                           <div class="small text-secondary mt-1">Uzywa checkboxow z tabeli. Dobre do recznego wyboru kilku lub kilkudziesieciu ofert.</div>
@@ -878,6 +905,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                         <option value="set_sku">Ustaw SKU</option>
                         <option value="set_price">Cena: ustaw recznie</option>
                         <option value="set_price_from_product">Cena: z magazynu</option>
+                        <option value="set_category_parameters">Kategoria i parametry</option>
                         <option value="set_delivery">Dostawa: ustaw czas wysylki</option>
                         <option value="set_invoice">Faktura: ustaw opcje</option>
                         <option value="link_product_auto">Produkt Allegro: auto</option>
@@ -967,7 +995,47 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                         <div class="form-text">Przydatne przy porzadkowaniu wielu ofert po jednym standardzie sprzedazy.</div>
                       </div>
 
-                      <div class="mb-0 js-bulk-field" data-ops="replace_name,set_name,set_sku,set_price,set_price_from_product,set_delivery,set_invoice,link_product_auto,link_product_id,end_offer,resume_offer">
+                      <div class="mb-3 js-bulk-field" data-ops="set_category_parameters">
+                        <div class="border rounded p-3 bg-body-tertiary">
+                          <div class="fw-semibold mb-2">Sugerowana kategoria z pierwszej oferty</div>
+                          <div class="small text-secondary mb-2">Mozesz skorzystac z kategorii pierwszej zaznaczonej oferty z listy albo wybrac produkt przez wyszukiwarke magazynowa i na tej podstawie podpowiemy inna kategorie Allegro.</div>
+                          <div class="row g-2">
+                            <div class="col-12">
+                              <label class="form-label" for="bulk-category-product-search">Wyszukaj produkt magazynowy</label>
+                              <input type="text" class="form-control" id="bulk-category-product-search" placeholder="Szukaj produktu po SKU lub nazwie">
+                              <div class="form-text">Podpowiedzi z wyszukiwarki nie zmieniaja zakresu akcji masowej. Sluza tylko do zasugerowania kategorii.</div>
+                            </div>
+                            <div class="col-12">
+                              <div class="border rounded p-2 bg-white small bulk-ops-hidden" id="bulk-category-source-selected"></div>
+                              <div class="list-group small mt-2 bulk-ops-hidden" id="bulk-category-product-suggestions"></div>
+                            </div>
+                          </div>
+                          <div class="border rounded p-2 bg-white mt-3 small" id="bulk-category-suggestion-box">
+                            Brak sugerowanej kategorii. Zaznacz najpierw oferte z listy albo wybierz produkt w wyszukiwarce.
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="mb-3 js-bulk-field" data-ops="set_category_parameters">
+                        <label class="form-label" for="bulk-category-search-input">Wyszukaj lub popraw kategorie Allegro</label>
+                        <div class="input-group">
+                          <input type="text" class="form-control" id="bulk-category-search-input" placeholder="np. etui iphone, szklo hartowane">
+                          <button type="button" class="btn btn-outline-primary" id="bulk-category-search-btn">Szukaj</button>
+                        </div>
+                        <input type="hidden" name="category_id" id="bulk-category-id" value="">
+                        <div class="list-group small mt-2 bulk-ops-hidden" id="bulk-category-search-results"></div>
+                        <div class="border rounded p-2 bg-body-tertiary mt-2 small" id="bulk-category-selected-box">Nie wybrano jeszcze kategorii Allegro.</div>
+                      </div>
+
+                      <div class="mb-3 js-bulk-field" data-ops="set_category_parameters">
+                        <label class="form-label">Parametry dla wybranej kategorii</label>
+                        <div class="small text-secondary mb-2">Po wybraniu kategorii wczytamy parametry Allegro i bedziesz mogl je zmienic przed dodaniem ofert do kolejki.</div>
+                        <div class="border rounded p-3 bg-body-tertiary" id="bulk-category-parameters-box">
+                          <div class="text-secondary">Najpierw wybierz kategorie Allegro.</div>
+                        </div>
+                      </div>
+
+                      <div class="mb-0 js-bulk-field" data-ops="replace_name,set_name,set_sku,set_price,set_price_from_product,set_category_parameters,set_delivery,set_invoice,link_product_auto,link_product_id,end_offer,resume_offer">
                         <div class="form-text pt-2">Paczka bierze teraz caly wynik filtrowania bez sztucznego limitu.</div>
                       </div>
                     </div>
@@ -1024,6 +1092,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 " class="link-dark text-decoration-none">Magazyn <?php if ($_smarty_tpl->getValue('sortIndicators')['warehouse_quantity'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['warehouse_quantity'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
                 <th><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['price'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Cena / VAT <?php if ($_smarty_tpl->getValue('sortIndicators')['price'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['price'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
+                <th>Duble</th>
                 <th><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['status'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Status i rynki <?php if ($_smarty_tpl->getValue('sortIndicators')['status'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['status'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
                 <th><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['sold'], ENT_QUOTES, 'UTF-8', true);?>
@@ -1052,8 +1121,16 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['queue_meta']['row
                     <input type="checkbox" class="form-check-input js-offer-select" name="selected_offer_ids[]" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['id'], ENT_QUOTES, 'UTF-8', true);?>
 " form="allegro-bulk-form" data-offer-id="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['offer_id'], ENT_QUOTES, 'UTF-8', true);?>
 " data-offer-name="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['name'], ENT_QUOTES, 'UTF-8', true);?>
+" data-offer-category-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-offer-category-name="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['category_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " data-offer-allegro-url="https://allegro.pl/oferta/<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['offer_id'], ENT_QUOTES, 'UTF-8', true);?>
-">
+" data-warehouse-product-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_product_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-warehouse-product-name="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-warehouse-sku="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_sku'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-warehouse-category-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-warehouse-category-name="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_category_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-warehouse-category-allegro-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['warehouse_category_allegro_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+"<?php if ($_smarty_tpl->getValue('offer')['duplicate_meta']['is_duplicate'] && !$_smarty_tpl->getValue('offer')['duplicate_meta']['can_end_offer']) {?> disabled title="Najstarsza oferta w grupie dubli nie moze zostac zakonczona"<?php }?>>
                   </td>
                   <td style="width:80px;">
                     <?php if ($_smarty_tpl->getValue('offer')['primary_image_url']) {?>
@@ -1076,12 +1153,6 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['queue_meta']['row
 </div><?php }?>
                     <div class="small text-secondary">produkt Allegro: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['allegro_product_id'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </div>
-                    <?php if ($_smarty_tpl->getValue('offer')['duplicate_meta']['is_duplicate']) {?>
-                      <div class="small mt-1">
-                        <span class="badge text-bg-danger">Dubel x<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['duplicate_meta']['duplicate_count'], ENT_QUOTES, 'UTF-8', true);?>
-</span>
-                      </div>
-                    <?php }?>
                     <?php if ($_smarty_tpl->getValue('offer')['queue_meta']['has_queue_entry']) {?>
                       <div class="small mt-2">
                         <span class="badge <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['queue_meta']['badge_class'], ENT_QUOTES, 'UTF-8', true);?>
@@ -1142,6 +1213,43 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       </div>
                     <?php }?>
                   </td>
+                  <td class="small">
+                    <?php if ($_smarty_tpl->getValue('offer')['duplicate_meta']['is_duplicate']) {?>
+                      <div><span class="badge text-bg-danger">Dubel</span></div>
+                      <div class="mt-1">Inne oferty: <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['duplicate_meta']['duplicate_count'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                      <div>Najstarsza: <code><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['duplicate_meta']['oldest_offer_id'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</code><?php if ($_smarty_tpl->getValue('offer')['duplicate_meta']['is_oldest']) {?> <span class="text-danger">(ta oferta)</span><?php }?></div>
+                      <div class="mt-1">
+                        <?php if ($_smarty_tpl->getValue('offer')['duplicate_meta']['can_end_offer']) {?>
+                          <span class="text-success">Do zakończenia: tak</span>
+                        <?php } else { ?>
+                          <span class="text-danger">Do zakończenia: nie, zostaje jako najstarsza</span>
+                        <?php }?>
+                      </div>
+                      <div class="mt-1">
+                        <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('offer')['duplicate_meta']['peer_details'], 'peer');
+$foreach4DoElse = true;
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('peer')->value) {
+$foreach4DoElse = false;
+?>
+                          <div><code><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('peer')['offer_id'], ENT_QUOTES, 'UTF-8', true);?>
+</code> <span class="text-secondary">(<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('peer')['status'], ENT_QUOTES, 'UTF-8', true);?>
+)</span></div>
+                        <?php
+}
+if ($foreach4DoElse) {
+?>
+                          <div class="text-secondary">Brak innych ofert w tej grupie.</div>
+                        <?php
+}
+$_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
+                      </div>
+                    <?php } else { ?>
+                      <span class="text-secondary">Brak</span>
+                    <?php }?>
+                  </td>
                   <td>
                     <div><span class="badge text-bg-light border"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('offer')['status_label'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </span></div>
@@ -1149,9 +1257,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       <?php if ($_smarty_tpl->getValue('offer')['marketplace_entries']) {?>
                         <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('offer')['marketplace_entries'], 'market');
-$foreach4DoElse = true;
+$foreach5DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('market')->value) {
-$foreach4DoElse = false;
+$foreach5DoElse = false;
 ?>
                           <span class="badge text-bg-light border me-1 mb-1"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('market')['label'], ENT_QUOTES, 'UTF-8', true);?>
 </span>
@@ -1196,6 +1304,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                     <div class="d-grid gap-2">
                       <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=allegro&action=offer&id=<?php echo $_smarty_tpl->getValue('offer')['id'];?>
+&return_url=<?php echo rawurlencode((string)$_smarty_tpl->getValue('currentListUrl'));?>
 " class="btn btn-sm btn-outline-primary">Szczegoly oferty</a>
                       <a href="https://allegro.pl/oferta/<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['offer_id'], ENT_QUOTES, 'UTF-8', true);?>
 " target="_blank" rel="noreferrer" class="btn btn-sm btn-outline-secondary">Przejdz do Allegro</a>
@@ -1206,7 +1315,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 }
 if ($foreach2DoElse) {
 ?>
-                <tr><td colspan="12" class="text-center text-secondary py-4">Brak ofert dla wybranych filtrow.</td></tr>
+                <tr><td colspan="13" class="text-center text-secondary py-4">Brak ofert dla wybranych filtrow.</td></tr>
               <?php
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
@@ -1261,6 +1370,335 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 </main>
 <?php echo '<script'; ?>
 >
+  (function () {
+    var bulkForm = document.getElementById('allegro-bulk-form');
+    var operationSelect = document.getElementById('bulk-operation-select');
+    var categoryProductSearchInput = document.getElementById('bulk-category-product-search');
+    var categoryProductSuggestions = document.getElementById('bulk-category-product-suggestions');
+    var categorySourceSelected = document.getElementById('bulk-category-source-selected');
+    var categorySuggestionBox = document.getElementById('bulk-category-suggestion-box');
+    var categorySearchInput = document.getElementById('bulk-category-search-input');
+    var categorySearchButton = document.getElementById('bulk-category-search-btn');
+    var categorySearchResults = document.getElementById('bulk-category-search-results');
+    var categoryIdInput = document.getElementById('bulk-category-id');
+    var categorySelectedBox = document.getElementById('bulk-category-selected-box');
+    var categoryParametersBox = document.getElementById('bulk-category-parameters-box');
+    var checkboxes = Array.prototype.slice.call(document.querySelectorAll('.js-offer-select'));
+    var searchTimer = null;
+    var suggestedCategory = null;
+
+    if (!bulkForm || !operationSelect || !categorySuggestionBox || !categorySelectedBox || !categoryParametersBox) {
+      return;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    function isCategoryOperation() {
+      return operationSelect.value === 'set_category_parameters';
+    }
+
+    function firstCheckedOfferMeta() {
+      var checked = checkboxes.find(function (item) { return item.checked; });
+      if (!checked) {
+        return null;
+      }
+
+      return {
+        offerName: checked.getAttribute('data-offer-name') || '',
+        offerCategoryName: checked.getAttribute('data-offer-category-name') || '',
+        offerCategoryId: checked.getAttribute('data-offer-category-id') || '',
+        warehouseProductName: checked.getAttribute('data-warehouse-product-name') || ''
+      };
+    }
+
+    function renderSuggestedCategory() {
+      if (!suggestedCategory || !suggestedCategory.id) {
+        categorySuggestionBox.innerHTML = 'Brak sugerowanej kategorii. Zaznacz najpierw oferte z lista albo wybierz produkt w wyszukiwarce.';
+        return;
+      }
+
+      categorySuggestionBox.innerHTML = ''
+        + '<div class="fw-semibold">Sugerowana kategoria Allegro</div>'
+        + '<div><code>' + escapeHtml(suggestedCategory.id) + '</code> ' + escapeHtml(suggestedCategory.path || suggestedCategory.name || '') + '</div>'
+        + '<div class="small text-secondary mt-1">' + escapeHtml(suggestedCategory.sourceLabel || '') + '</div>'
+        + '<button type="button" class="btn btn-sm btn-outline-primary mt-2" id="bulk-use-suggested-category">Uzyj tej kategorii</button>';
+
+      var useButton = document.getElementById('bulk-use-suggested-category');
+      if (useButton) {
+        useButton.addEventListener('click', function () {
+          selectCategory(suggestedCategory);
+        });
+      }
+    }
+
+    function refreshSuggestedCategoryFromSelection() {
+      if (!isCategoryOperation()) {
+        return;
+      }
+
+      if (categoryProductSearchInput && categoryProductSearchInput.value.trim() !== '') {
+        return;
+      }
+
+      var meta = firstCheckedOfferMeta();
+      suggestedCategory = meta && meta.offerCategoryId ? {
+        id: meta.offerCategoryId,
+        name: meta.offerCategoryName || '',
+        path: meta.offerCategoryName || '',
+        sourceLabel: 'Na podstawie kategorii pierwszej zaznaczonej oferty: ' + (meta.offerName || '')
+      } : null;
+      renderSuggestedCategory();
+    }
+
+    function renderCategoryParameters(items) {
+      if (!items || !items.length) {
+        categoryParametersBox.innerHTML = '<div class="text-secondary">Wybrana kategoria nie zwrocila parametrow.</div>';
+        return;
+      }
+
+      var html = '<div class="row g-3">';
+      items.forEach(function (item) {
+        var pid = String(item.id || '');
+        if (!pid) {
+          return;
+        }
+
+        var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
+        var multiple = !!item.multiple || item.type === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
+        var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
+        html += '<div class="col-md-6"><div class="border rounded p-3 bg-white h-100">';
+        html += '<label class="form-label fw-semibold">' + escapeHtml(item.name || pid);
+        if (item.required) {
+          html += ' <span class="badge text-bg-warning text-dark">wymagany</span>';
+        }
+        html += item.describes_product ? ' <span class="badge text-bg-light border">produkt</span>' : ' <span class="badge text-bg-light border">oferta</span>';
+        html += '</label>';
+
+        if (dict.length && multiple) {
+          if (dict.length > 12) {
+            html += '<input type="text" class="form-control form-control-sm mb-2 js-category-param-filter" data-filter-target="bulk-category-param-list-' + escapeHtml(pid) + '" placeholder="Szukaj na liscie wartosci">';
+          }
+          html += '<div class="d-flex flex-column gap-2" id="bulk-category-param-list-' + escapeHtml(pid) + '" style="max-height: 220px; overflow: auto;">';
+          dict.forEach(function (option, index) {
+            var optId = String(option.id || option.value || '');
+            var inputId = 'bulk-category-param-' + pid + '-' + index;
+            html += '<div class="form-check js-category-param-option" data-filter-label="' + escapeHtml((option.value || optId).toLowerCase()) + '"><input class="form-check-input" type="checkbox" id="' + inputId + '" name="category_parameters[' + escapeHtml(pid) + '][]" value="' + escapeHtml(optId) + '"><label class="form-check-label" for="' + inputId + '">' + escapeHtml(option.value || optId) + '</label></div>';
+          });
+          html += '</div>';
+        } else if (dict.length) {
+          html += '<select class="form-select" name="category_parameters[' + escapeHtml(pid) + ']"><option value="">Wybierz wartosc</option>';
+          dict.forEach(function (option) {
+            var optId = String(option.id || option.value || '');
+            html += '<option value="' + escapeHtml(optId) + '">' + escapeHtml(option.value || optId) + '</option>';
+          });
+          html += '</select>';
+        } else if (multiple) {
+          html += '<textarea class="form-control" name="category_parameters[' + escapeHtml(pid) + ']" rows="3" placeholder="Kazda wartosc w osobnej linii"></textarea>';
+        } else if (item.type === 'integer' || item.type === 'float' || item.type === 'number') {
+          html += '<input type="number" step="any" class="form-control" name="category_parameters[' + escapeHtml(pid) + ']" value="">';
+        } else {
+          html += '<input type="text" class="form-control" name="category_parameters[' + escapeHtml(pid) + ']" value="">';
+        }
+
+        html += '</div></div>';
+      });
+      html += '</div>';
+      categoryParametersBox.innerHTML = html;
+
+      Array.prototype.slice.call(categoryParametersBox.querySelectorAll('.js-category-param-filter')).forEach(function (input) {
+        input.addEventListener('input', function () {
+          var targetId = input.getAttribute('data-filter-target') || '';
+          var container = targetId ? document.getElementById(targetId) : null;
+          var phrase = input.value ? input.value.trim().toLowerCase() : '';
+          if (!container) {
+            return;
+          }
+
+          Array.prototype.slice.call(container.querySelectorAll('.js-category-param-option')).forEach(function (option) {
+            var haystack = option.getAttribute('data-filter-label') || '';
+            option.style.display = phrase === '' || haystack.indexOf(phrase) !== -1 ? '' : 'none';
+          });
+        });
+      });
+    }
+
+    function loadCategoryParameters(categoryId) {
+      categoryParametersBox.innerHTML = '<div class="text-secondary">Wczytuje parametry kategorii...</div>';
+      fetch('<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=allegro&action=parameters&id=' + encodeURIComponent(categoryId), { credentials: 'same-origin' })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          renderCategoryParameters(data && data.items ? data.items : []);
+        })
+        .catch(function () {
+          categoryParametersBox.innerHTML = '<div class="text-danger">Blad pobierania parametrow kategorii.</div>';
+        });
+    }
+
+    function selectCategory(item) {
+      if (!item || !item.id) {
+        return;
+      }
+
+      categoryIdInput.value = item.id;
+      categorySelectedBox.innerHTML = '<div class="fw-semibold">Wybrana kategoria</div><div><code>' + escapeHtml(item.id) + '</code> ' + escapeHtml(item.path || item.name || '') + '</div>';
+      if (categorySearchInput) {
+        categorySearchInput.value = item.path || item.name || '';
+      }
+      loadCategoryParameters(item.id);
+    }
+
+    function renderCategorySearchResults(items) {
+      if (!items || !items.length) {
+        categorySearchResults.innerHTML = '<div class="list-group-item text-secondary">Brak kategorii pasujacych do wyszukiwania.</div>';
+        categorySearchResults.classList.remove('bulk-ops-hidden');
+        return;
+      }
+
+      var html = '';
+      items.forEach(function (item) {
+        html += '<button type="button" class="list-group-item list-group-item-action js-category-search-result" data-id="' + escapeHtml(item.id || '') + '" data-name="' + escapeHtml(item.name || '') + '" data-path="' + escapeHtml(item.path || item.name || '') + '"><div class="fw-semibold"><code>' + escapeHtml(item.id || '') + '</code> ' + escapeHtml(item.name || '') + '</div><div class="small text-secondary">' + escapeHtml(item.path || item.name || '') + '</div></button>';
+      });
+      categorySearchResults.innerHTML = html;
+      categorySearchResults.classList.remove('bulk-ops-hidden');
+
+      Array.prototype.slice.call(categorySearchResults.querySelectorAll('.js-category-search-result')).forEach(function (button) {
+        button.addEventListener('click', function () {
+          selectCategory({
+            id: button.getAttribute('data-id') || '',
+            name: button.getAttribute('data-name') || '',
+            path: button.getAttribute('data-path') || ''
+          });
+          categorySearchResults.classList.add('bulk-ops-hidden');
+        });
+      });
+    }
+
+    function searchAllegroCategories() {
+      var phrase = categorySearchInput ? categorySearchInput.value.trim() : '';
+      if (phrase.length < 2) {
+        return;
+      }
+
+      fetch('<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=allegro&action=categories&search=' + encodeURIComponent(phrase), { credentials: 'same-origin' })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          renderCategorySearchResults(data && data.items ? data.items : []);
+        })
+        .catch(function () {
+          categorySearchResults.innerHTML = '<div class="list-group-item text-danger">Blad pobierania kategorii Allegro.</div>';
+          categorySearchResults.classList.remove('bulk-ops-hidden');
+        });
+    }
+
+    function renderCategoryProductSuggestions(items) {
+      if (!items || !items.length) {
+        categoryProductSuggestions.innerHTML = '<div class="list-group-item text-secondary">Brak pasujacych produktow.</div>';
+        categoryProductSuggestions.classList.remove('bulk-ops-hidden');
+        return;
+      }
+
+      var html = '';
+      items.forEach(function (item) {
+        html += '<button type="button" class="list-group-item list-group-item-action js-category-product-suggestion" data-id="' + escapeHtml(item.id || '') + '" data-sku="' + escapeHtml(item.sku || '') + '" data-name="' + escapeHtml(item.product_name || '') + '" data-category-name="' + escapeHtml(item.category_name || '') + '" data-category-allegro-id="' + escapeHtml(item.category_allegro_id || '') + '"><div class="fw-semibold">' + escapeHtml(item.product_name || '-') + '</div><div class="small text-secondary">#' + escapeHtml(item.id || '') + ' | ' + escapeHtml(item.sku || '-') + ' | kategoria: ' + escapeHtml(item.category_name || '-') + '</div></button>';
+      });
+      categoryProductSuggestions.innerHTML = html;
+      categoryProductSuggestions.classList.remove('bulk-ops-hidden');
+
+      Array.prototype.slice.call(categoryProductSuggestions.querySelectorAll('.js-category-product-suggestion')).forEach(function (button) {
+        button.addEventListener('click', function () {
+          var item = {
+            id: button.getAttribute('data-id') || '',
+            sku: button.getAttribute('data-sku') || '',
+            product_name: button.getAttribute('data-name') || '',
+            category_name: button.getAttribute('data-category-name') || '',
+            category_allegro_id: button.getAttribute('data-category-allegro-id') || ''
+          };
+
+          categorySourceSelected.innerHTML = '<div class="fw-semibold">Produkt do sugestii kategorii</div><div>#' + escapeHtml(item.id) + ' | ' + escapeHtml(item.sku || '-') + '</div><div class="text-secondary">' + escapeHtml(item.product_name || '-') + '</div><div class="small text-secondary mt-1">Kategoria magazynowa: ' + escapeHtml(item.category_name || '-') + '</div>';
+          categorySourceSelected.classList.remove('bulk-ops-hidden');
+          suggestedCategory = item.category_allegro_id ? {
+            id: item.category_allegro_id,
+            name: item.category_name || '',
+            path: item.category_name || '',
+            sourceLabel: 'Na podstawie produktu z wyszukiwania: ' + (item.product_name || '')
+          } : null;
+          renderSuggestedCategory();
+          categoryProductSuggestions.classList.add('bulk-ops-hidden');
+        });
+      });
+    }
+
+    function searchCategoryProducts() {
+      var query = categoryProductSearchInput ? categoryProductSearchInput.value.trim() : '';
+      var meta = firstCheckedOfferMeta();
+      var offerName = meta && meta.offerName ? meta.offerName : '';
+      if (query.length < 2 && offerName.length < 3) {
+        categoryProductSuggestions.classList.add('bulk-ops-hidden');
+        return;
+      }
+
+      fetch('<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=allegro&action=warehouseproducts&q=' + encodeURIComponent(query) + '&offer_name=' + encodeURIComponent(offerName), { credentials: 'same-origin' })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          renderCategoryProductSuggestions(data && data.items ? data.items : []);
+        })
+        .catch(function () {
+          categoryProductSuggestions.innerHTML = '<div class="list-group-item text-danger">Blad pobierania produktow magazynowych.</div>';
+          categoryProductSuggestions.classList.remove('bulk-ops-hidden');
+        });
+    }
+
+    operationSelect.addEventListener('change', refreshSuggestedCategoryFromSelection);
+    checkboxes.forEach(function (item) {
+      item.addEventListener('change', refreshSuggestedCategoryFromSelection);
+    });
+
+    if (categoryProductSearchInput) {
+      categoryProductSearchInput.addEventListener('input', function () {
+        if (categoryProductSearchInput.value.trim() === '') {
+          categorySourceSelected.innerHTML = '';
+          categorySourceSelected.classList.add('bulk-ops-hidden');
+          refreshSuggestedCategoryFromSelection();
+        }
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(searchCategoryProducts, 220);
+      });
+    }
+
+    if (categorySearchButton) {
+      categorySearchButton.addEventListener('click', searchAllegroCategories);
+    }
+
+    if (categorySearchInput) {
+      categorySearchInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          searchAllegroCategories();
+        }
+      });
+    }
+
+    bulkForm.addEventListener('submit', function (event) {
+      if (isCategoryOperation() && (!categoryIdInput || !categoryIdInput.value.trim())) {
+        event.preventDefault();
+        window.alert('Wybierz kategorie Allegro przed dodaniem zmian do kolejki.');
+      }
+    });
+
+    refreshSuggestedCategoryFromSelection();
+  })();
+
   (function () {
     var bulkForm = document.getElementById('allegro-bulk-form');
     if (!bulkForm) {
@@ -1327,6 +1765,14 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
         title: 'Cena: z magazynu',
         description: 'Pobierze cene brutto z przypietego produktu magazynowego i wysle ja na Allegro.',
         hint: 'Cena pobrana z magazynu',
+        valueLabel: 'Wartosc',
+        valuePlaceholder: '',
+        valueHelp: ''
+      },
+      set_category_parameters: {
+        title: 'Kategoria i parametry',
+        description: 'Na podstawie pierwszej zaznaczonej oferty wybierzesz sugerowana kategorie, a potem ustawisz parametry Allegro.',
+        hint: 'Zmiana kategorii i parametrow Allegro',
         valueLabel: 'Wartosc',
         valuePlaceholder: '',
         valueHelp: ''
@@ -1406,18 +1852,23 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
     };
 
     function updateCounter() {
-      var checked = checkboxes.filter(function (item) { return item.checked; }).length;
+      var selectable = checkboxes.filter(function (item) { return !item.disabled; });
+      var checked = selectable.filter(function (item) { return item.checked; }).length;
       if (counter) {
         counter.textContent = 'Zaznaczone na stronie: ' + checked;
       }
       if (checkAll) {
-        checkAll.checked = checked > 0 && checked === checkboxes.length;
-        checkAll.indeterminate = checked > 0 && checked < checkboxes.length;
+        checkAll.disabled = selectable.length === 0;
+        checkAll.checked = selectable.length > 0 && checked === selectable.length;
+        checkAll.indeterminate = checked > 0 && checked < selectable.length;
       }
     }
 
     function setAll(state) {
       checkboxes.forEach(function (item) {
+        if (item.disabled) {
+          return;
+        }
         item.checked = state;
       });
       updateCounter();
@@ -1425,6 +1876,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 
     function invertAll() {
       checkboxes.forEach(function (item) {
+        if (item.disabled) {
+          return;
+        }
         item.checked = !item.checked;
       });
       updateCounter();
@@ -1432,7 +1886,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 
     function selectedScope() {
       var current = bulkForm.querySelector('input[name="selection_scope"]:checked');
-      return current ? current.value : 'filtered';
+      return current ? current.value : 'selected';
     }
 
     function refreshSelectionChoices() {
@@ -1604,11 +2058,18 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 
     checkboxes.forEach(function (item, index) {
       item.addEventListener('click', function (event) {
+        if (item.disabled) {
+          event.preventDefault();
+          return;
+        }
         if (event.shiftKey && lastChecked !== null) {
           var start = Math.min(lastChecked, index);
           var end = Math.max(lastChecked, index);
           var targetState = item.checked;
           for (var i = start; i <= end; i++) {
+            if (checkboxes[i].disabled) {
+              continue;
+            }
             checkboxes[i].checked = targetState;
           }
         }
@@ -1657,8 +2118,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 
     bulkForm.addEventListener('submit', function (event) {
       var selectedScope = bulkForm.querySelector('input[name="selection_scope"]:checked');
-      var scope = selectedScope ? selectedScope.value : 'filtered';
-      var selectedCount = checkboxes.filter(function (item) { return item.checked; }).length;
+      var scope = selectedScope ? selectedScope.value : 'selected';
+      var selectedCount = checkboxes.filter(function (item) { return !item.disabled && item.checked; }).length;
       var operation = operationSelect ? operationSelect.value : '';
       var manualIdsField = bulkForm.querySelector('textarea[name="manual_offer_ids"]');
       var manualIdsValue = manualIdsField ? manualIdsField.value.trim() : '';
@@ -1777,7 +2238,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
           return;
         }
         var checkbox = row.querySelector('.js-offer-select');
-        if (checkbox) {
+        if (checkbox && !checkbox.disabled) {
           checkbox.click();
         }
       });

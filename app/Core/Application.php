@@ -9,6 +9,7 @@ use App\Controllers\AllegroController;
 use App\Controllers\AuthController;
 use App\Controllers\CategoryController;
 use App\Controllers\CsvTemplateController;
+use App\Controllers\EmpikController;
 use App\Controllers\IndexController;
 use App\Controllers\ProductController;
 use App\Controllers\SellasistController;
@@ -37,6 +38,9 @@ class Application
                 break;
             case 'allegro':
                 $controller = new AllegroController();
+                break;
+            case 'empik':
+                $controller = new EmpikController();
                 break;
             case 'auth':
                 $controller = new AuthController();

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-19 21:27:22
+/* Smarty version 5.8.0, created on 2026-04-23 22:49:13
   from 'file:index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e52c9aab9136_53408955',
+  'unifunc' => 'content_69ea85c9ddc8b8_32500719',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '02533e9cc958a2a6e70c86b1e60e87fd62c29874' => 
     array (
       0 => 'index.tpl',
-      1 => 1776626810,
+      1 => 1776975198,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e52c9aab9136_53408955 (\Smarty\Template $_smarty_tpl) {
+function content_69ea85c9ddc8b8_32500719 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -64,12 +64,169 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
       <?php }?>
 
       <style>
-        .dashboard-allegro-card {
-          border: 1px solid rgba(15, 23, 42, 0.08);
+        .dashboard-focus-card {
+          position: relative;
+          overflow: hidden;
+          border: 0;
+          border-radius: 1.25rem;
+          color: #fff;
+          box-shadow: 0 20px 45px rgba(15, 23, 42, 0.14);
+        }
+
+        .dashboard-focus-card::before {
+          content: '';
+          position: absolute;
+          inset: auto -10% -35% auto;
+          width: 13rem;
+          height: 13rem;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        .dashboard-focus-card::after {
+          content: '';
+          position: absolute;
+          inset: -30% auto auto -10%;
+          width: 10rem;
+          height: 10rem;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        .dashboard-focus-card .card-body {
+          position: relative;
+          z-index: 1;
+          padding: 1.35rem;
+        }
+
+        .dashboard-focus-card-sellasist {
+          background: linear-gradient(135deg, #0f766e 0%, #14b8a6 55%, #67e8f9 100%);
+        }
+
+        .dashboard-focus-card-allegro {
+          background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 52%, #60a5fa 100%);
+        }
+
+        .dashboard-focus-label {
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          font-size: 0.74rem;
+          font-weight: 700;
+          opacity: 0.82;
+        }
+
+        .dashboard-focus-value {
+          font-size: 2.5rem;
+          font-weight: 700;
+          line-height: 1;
+        }
+
+        .dashboard-focus-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.35rem 0.75rem;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.14);
+          color: #fff;
+          font-size: 0.8rem;
+          font-weight: 700;
+        }
+
+        .dashboard-mini-stat {
+          border-radius: 0.95rem;
+          background: rgba(255, 255, 255, 0.12);
+          padding: 0.85rem 0.9rem;
+          min-height: 100%;
+        }
+
+        .dashboard-mini-stat strong {
+          display: block;
+          font-size: 1.2rem;
+          color: #fff;
+        }
+
+        .dashboard-focus-note {
+          color: rgba(255, 255, 255, 0.84);
+          font-size: 0.84rem;
+        }
+
+        .dashboard-sellasist-chart-wrap {
+          margin: 0.4rem 0 1rem;
+          padding: 0.9rem 0.9rem 0.65rem;
           border-radius: 1rem;
-          background:
-            radial-gradient(circle at top right, rgba(13, 110, 253, 0.12), transparent 34%),
-            linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,249,250,0.98));
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        .dashboard-sellasist-chart {
+          width: 100%;
+          height: auto;
+          display: block;
+        }
+
+        .dashboard-sellasist-grid {
+          stroke: rgba(255, 255, 255, 0.18);
+          stroke-width: 1;
+        }
+
+        .dashboard-sellasist-line-orders {
+          fill: none;
+          stroke: #f8fafc;
+          stroke-width: 3;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        .dashboard-sellasist-line-value {
+          fill: none;
+          stroke: #fde047;
+          stroke-width: 3;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        .dashboard-sellasist-legend {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.85rem;
+          margin-bottom: 0.55rem;
+        }
+
+        .dashboard-sellasist-legend-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.88);
+        }
+
+        .dashboard-sellasist-legend-line {
+          width: 1.25rem;
+          height: 0.2rem;
+          border-radius: 999px;
+          display: inline-block;
+        }
+
+        .dashboard-sellasist-legend-orders {
+          background: #f8fafc;
+        }
+
+        .dashboard-sellasist-legend-value {
+          background: #fde047;
+        }
+
+        .dashboard-sellasist-labels {
+          display: grid;
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          gap: 0.35rem;
+          margin-top: 0.45rem;
+        }
+
+        .dashboard-sellasist-labels span {
+          text-align: center;
+          font-size: 0.72rem;
+          color: rgba(255, 255, 255, 0.74);
         }
 
         .dashboard-allegro-progress {
@@ -77,8 +234,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
           overflow: hidden;
           height: 0.7rem;
           border-radius: 999px;
-          background: #e9ecef;
-          box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+          background: rgba(255, 255, 255, 0.18);
+          box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
         }
 
         .dashboard-allegro-progress-done {
@@ -99,8 +256,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
           gap: 0.35rem;
           padding: 0.24rem 0.62rem;
           border-radius: 999px;
-          background: #f3f5f7;
-          color: #334155;
+          background: rgba(255, 255, 255, 0.14);
+          color: #fff;
           font-size: 0.84rem;
           font-weight: 600;
         }
@@ -134,72 +291,82 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       </div>
 
       <div class="row">
-        <div class="col-xl-8">
-          <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <h3 class="card-title mb-0">Ostatnio aktualizowane produkty</h3>
-              <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-?controller=products&action=index" class="btn btn-sm btn-outline-primary">Przejdz do produktow</a>
-            </div>
-            <div class="card-body p-0">
-              <div class="table-responsive">
-                <table class="table table-sm table-hover table-striped table-bordered mb-0">
-                  <thead class="table-light">
-                    <tr>
-                      <th>ID</th>
-                      <th>SKU</th>
-                      <th>Nazwa</th>
-                      <th>Kategoria</th>
-                      <th>Ilosc</th>
-                      <th>Zmieniono</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php if ($_smarty_tpl->getValue('recentProducts')) {?>
-                      <?php
-$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('recentProducts'), 'product');
+        <div class="col-xl-4">
+          <div class="card dashboard-focus-card dashboard-focus-card-sellasist mb-4">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                <div>
+                  <div class="dashboard-focus-label">Sellasist dzisiaj</div>
+                  <div class="dashboard-focus-value mt-2"><?php echo (($tmp = $_smarty_tpl->getValue('sellasistTodayStats')['orders_count'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp);?>
+</div>
+                </div>
+                <span class="dashboard-focus-chip">magazyn</span>
+              </div>
+
+              <div class="dashboard-sellasist-chart-wrap">
+                <div class="dashboard-sellasist-legend">
+                  <span class="dashboard-sellasist-legend-item"><span class="dashboard-sellasist-legend-line dashboard-sellasist-legend-orders"></span>Zamowienia</span>
+                  <span class="dashboard-sellasist-legend-item"><span class="dashboard-sellasist-legend-line dashboard-sellasist-legend-value"></span>Wartosc produktow</span>
+                </div>
+
+                <svg class="dashboard-sellasist-chart" viewBox="0 0 320 132" aria-label="Wykres Sellasist z ostatnich dni">
+                  <line class="dashboard-sellasist-grid" x1="8" y1="18" x2="312" y2="18"></line>
+                  <line class="dashboard-sellasist-grid" x1="8" y1="64" x2="312" y2="64"></line>
+                  <line class="dashboard-sellasist-grid" x1="8" y1="114" x2="312" y2="114"></line>
+                  <polyline class="dashboard-sellasist-line-orders" points="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sellasistChart')['orders_points'], ENT_QUOTES, 'UTF-8', true);?>
+"></polyline>
+                  <polyline class="dashboard-sellasist-line-value" points="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sellasistChart')['value_points'], ENT_QUOTES, 'UTF-8', true);?>
+"></polyline>
+                </svg>
+
+                <div class="dashboard-sellasist-labels">
+                  <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('sellasistDailySeries'), 'point');
 $foreach1DoElse = true;
-foreach ($_from ?? [] as $_smarty_tpl->getVariable('product')->value) {
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('point')->value) {
 $foreach1DoElse = false;
 ?>
-                        <tr>
-                          <td><?php echo $_smarty_tpl->getValue('product')['id'];?>
-</td>
-                          <td><span class="badge text-bg-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOTES, 'UTF-8', true);?>
-</span></td>
-                          <td class="fw-semibold"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['product_name'], ENT_QUOTES, 'UTF-8', true);?>
-</td>
-                          <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['category_name'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
-</td>
-                          <td><?php echo $_smarty_tpl->getValue('product')['quantity'];?>
-</td>
-                          <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
-</td>
-                        </tr>
-                      <?php
+                    <span><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('point')['label'], ENT_QUOTES, 'UTF-8', true);?>
+</span>
+                  <?php
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
-                    <?php } else { ?>
-                      <tr>
-                        <td colspan="6" class="text-center py-3">Brak danych o produktach.</td>
-                      </tr>
-                    <?php }?>
-                  </tbody>
-                </table>
+                </div>
               </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-6">
+                  <div class="dashboard-mini-stat">
+                    <span class="dashboard-focus-label d-block mb-1">Dzis zamowienia</span>
+                    <strong><?php echo (($tmp = $_smarty_tpl->getValue('sellasistTodayStats')['orders_count'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp);?>
+</strong>
+                    <span class="dashboard-focus-note">skala: 0-<?php echo (($tmp = $_smarty_tpl->getValue('sellasistChart')['y_axis_orders'][1] ?? null)===null||$tmp==='' ? 1 ?? null : $tmp);?>
+</span>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="dashboard-mini-stat">
+                    <span class="dashboard-focus-label d-block mb-1">Dzis wartosc</span>
+                    <strong><?php echo sprintf('%.2f',(($tmp = $_smarty_tpl->getValue('sellasistTodayStats')['total_value'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp));?>
+</strong>
+                    <span class="dashboard-focus-note"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('sellasistTodayStats')['currency'] ?? null)===null||$tmp==='' ? 'PLN' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+, bez wysylki</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dashboard-focus-note">Wykres pokazuje ostatnie 7 dni. Zolty wykres liczy tylko wartosc produktow z zamowien, bez kosztow wysylki.</div>
             </div>
           </div>
-        </div>
 
-        <div class="col-xl-4">
-          <div class="card dashboard-allegro-card mb-4">
+          <div class="card dashboard-focus-card dashboard-focus-card-allegro mb-4">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                 <div>
-                  <div class="small text-secondary">Kolejka Allegro</div>
-                  <div class="h5 mb-1">Zostało <?php echo $_smarty_tpl->getValue('allegroQueueRemaining');?>
+                  <div class="dashboard-focus-label">Kolejka Allegro</div>
+                  <div class="h3 mb-1 mt-2">Zostalo <?php echo $_smarty_tpl->getValue('allegroQueueRemaining');?>
 </div>
-                  <div class="small text-secondary">Zrobione <?php echo $_smarty_tpl->getValue('allegroQueueStats')['done'];?>
+                  <div class="dashboard-focus-note">Zrobione <?php echo $_smarty_tpl->getValue('allegroQueueStats')['done'];?>
  z <?php echo $_smarty_tpl->getValue('allegroQueueTotal');?>
 </div>
                 </div>
@@ -207,7 +374,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 %</span>
               </div>
 
-              <div class="dashboard-allegro-progress mb-3" aria-label="Postęp kolejki Allegro">
+              <div class="dashboard-allegro-progress mb-3" aria-label="Postep kolejki Allegro">
                 <?php if ($_smarty_tpl->getValue('allegroQueueDonePercent') > 0) {?><div class="dashboard-allegro-progress-done" style="width: <?php echo sprintf('%.2f',$_smarty_tpl->getValue('allegroQueueDonePercent'));?>
 %;"></div><?php }?>
                 <?php if ($_smarty_tpl->getValue('allegroQueueRemainingPercent') > 0) {?><div class="dashboard-allegro-progress-remaining" style="width: <?php echo sprintf('%.2f',$_smarty_tpl->getValue('allegroQueueRemainingPercent'));?>
@@ -216,31 +383,43 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 %;"></div><?php }?>
               </div>
 
-              <div class="row g-2 small mb-3">
+              <div class="row g-3 small mb-3">
                 <div class="col-6">
-                  <div class="text-secondary">Oczekuje + ponów</div>
-                  <div class="fw-semibold"><?php echo $_smarty_tpl->getValue('allegroQueueStats')['pending']+$_smarty_tpl->getValue('allegroQueueStats')['retry'];?>
-</div>
+                  <div class="dashboard-mini-stat">
+                    <div class="dashboard-focus-label mb-1">Oczekuje + ponow</div>
+                    <strong><?php echo $_smarty_tpl->getValue('allegroQueueStats')['pending']+$_smarty_tpl->getValue('allegroQueueStats')['retry'];?>
+</strong>
+                  </div>
                 </div>
                 <div class="col-6">
-                  <div class="text-secondary">W toku</div>
-                  <div class="fw-semibold"><?php echo $_smarty_tpl->getValue('allegroQueueStats')['processing'];?>
-</div>
+                  <div class="dashboard-mini-stat">
+                    <div class="dashboard-focus-label mb-1">W toku</div>
+                    <strong><?php echo $_smarty_tpl->getValue('allegroQueueStats')['processing'];?>
+</strong>
+                  </div>
                 </div>
                 <div class="col-6">
-                  <div class="text-secondary">Błędy</div>
-                  <div class="fw-semibold text-danger"><?php echo $_smarty_tpl->getValue('allegroQueueStats')['error'];?>
-</div>
+                  <div class="dashboard-mini-stat">
+                    <div class="dashboard-focus-label mb-1">Bledy</div>
+                    <strong><?php echo $_smarty_tpl->getValue('allegroQueueStats')['error'];?>
+</strong>
+                  </div>
                 </div>
                 <div class="col-6">
-                  <div class="text-secondary">Gotowe</div>
-                  <div class="fw-semibold text-success"><?php echo $_smarty_tpl->getValue('allegroQueueStats')['done'];?>
-</div>
+                  <div class="dashboard-mini-stat">
+                    <div class="dashboard-focus-label mb-1">Gotowe</div>
+                    <strong><?php echo $_smarty_tpl->getValue('allegroQueueStats')['done'];?>
+</strong>
+                  </div>
                 </div>
               </div>
 
               <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-?controller=allegro&action=index" class="btn btn-sm btn-outline-primary">Otwórz Allegro</a>
+?controller=allegro&action=index" class="btn btn-sm btn-light">Otworz Allegro</a>
+              <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('empik',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+                <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=empik&action=index" class="btn btn-sm btn-outline-light">Otworz Empik</a>
+              <?php }?>
             </div>
           </div>
 
@@ -277,10 +456,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="row">
-        <div class="col-12">
+        <div class="col-xl-8">
           <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
               <h3 class="card-title mb-0">Historia zmian produktow</h3>
@@ -360,10 +537,10 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                     <thead class="table-light">
                       <tr>
                         <th>ID</th>
-                        <th>Email</th>
+                        <th>Uzytkownik</th>
                         <th>Rola</th>
+                        <th>Dostep</th>
                         <th>Status</th>
-                        <th>Blokada</th>
                         <th>Utworzono</th>
                       </tr>
                     </thead>
@@ -378,12 +555,23 @@ $foreach4DoElse = false;
                           <tr>
                             <td><?php echo $_smarty_tpl->getValue('user')['id'];?>
 </td>
-                            <td><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('user')['email'], ENT_QUOTES, 'UTF-8', true);?>
-</td>
+                            <td>
+                              <div class="fw-semibold"><?php if ((($tmp = $_smarty_tpl->getValue('user')['first_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) != '' || (($tmp = $_smarty_tpl->getValue('user')['last_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) != '') {
+echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('user')['first_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+ <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('user')['last_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);
+} else {
+echo htmlspecialchars((string)$_smarty_tpl->getValue('user')['email'], ENT_QUOTES, 'UTF-8', true);
+}?></div>
+                              <div class="small text-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('user')['email'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                            </td>
                             <td><span class="badge text-bg-<?php if ($_smarty_tpl->getValue('user')['role'] == 'admin') {?>dark<?php } else { ?>secondary<?php }?>"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('user')['role'], ENT_QUOTES, 'UTF-8', true);?>
 </span></td>
-                            <td><?php if ($_smarty_tpl->getValue('user')['is_active']) {?><span class="badge text-bg-success">aktywne</span><?php } else { ?><span class="badge text-bg-warning">nieaktywne</span><?php }?></td>
-                            <td><?php if ($_smarty_tpl->getValue('user')['is_blocked']) {?><span class="badge text-bg-danger">zablokowane</span><?php } else { ?><span class="badge text-bg-success">odblokowane</span><?php }?></td>
+                            <td><span class="badge text-bg-<?php if ($_smarty_tpl->getValue('user')['permission_level'] == 'read') {?>warning<?php } else { ?>primary<?php }?>"><?php if ($_smarty_tpl->getValue('user')['permission_level'] == 'read') {?>odczyt<?php } else { ?>edycja<?php }?></span></td>
+                            <td>
+                              <?php if ($_smarty_tpl->getValue('user')['is_active']) {?><span class="badge text-bg-success">aktywne</span><?php } else { ?><span class="badge text-bg-warning">nieaktywne</span><?php }?>
+                              <?php if ($_smarty_tpl->getValue('user')['is_blocked']) {?><span class="badge text-bg-danger ms-1">zablokowane</span><?php }?>
+                            </td>
                             <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('user')['created_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </td>
                           </tr>

@@ -30,7 +30,10 @@ class AllegroService
         $this->config = isset($app['allegro']) && is_array($app['allegro']) ? $app['allegro'] : array();
         $this->storage = new AllegroStorageRepository(Database::instance());
         $this->storage->ensureSchema();
+        $customFields = new ProductCustomFieldRepository(Database::instance());
+        $customFields->ensureSchema();
         $this->storage->cleanupExpiredCache();
+        $this->disableStoredWarehouseLinks();
     }
 
     public function listAccounts(): array
@@ -122,21 +125,7 @@ class AllegroService
 
     public function offersPage(array $filters, int $page, int $perPage, string $sortBy, string $sortDir): array
     {
-        $rows = $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir);
-        if ($rows === array()) {
-            return $rows;
-        }
-
-        $reloaded = false;
-        foreach ($rows as $row) {
-            if ($this->ensureAutoLinkedOfferOnRead($row)) {
-                $reloaded = true;
-            }
-        }
-
-        return $reloaded
-            ? $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir)
-            : $rows;
+        return $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir);
     }
 
     public function countOffers(array $filters): int
@@ -225,16 +214,7 @@ class AllegroService
 
     public function offerDetails(int $id)
     {
-        $offer = $this->storage->findOfferById($id);
-        if (!$offer) {
-            return $offer;
-        }
-
-        if ($this->ensureAutoLinkedOfferOnRead($offer)) {
-            return $this->storage->findOfferById($id);
-        }
-
-        return $offer;
+        return $this->storage->findOfferById($id);
     }
 
     public function triggerUrl(array $account, string $baseUrl): string
@@ -429,9 +409,7 @@ class AllegroService
             throw new RuntimeException('Nie znaleziono oferty Allegro.');
         }
 
-        $this->storage->linkOfferToProduct($offerRowId, $productId, $linkedBy);
-
-        return (array) $this->storage->findOfferById($offerRowId);
+        return (array) $offer;
     }
 
     public function enqueueOfferChanges(array $filters, string $operation, array $payload = array(), string $manualIdentifiers = ''): array
@@ -1982,87 +1960,17 @@ class AllegroService
         $summary = $this->normalizeOfferSummary($details);
         $payload = $this->buildOfferPayload((int) $account['id'], $this->uuidV4(), $summary, $details, null, null);
 
-        $existing = $this->offerDetails($offerRowId);
-        if ($existing && !empty($existing['warehouse_product_id'])) {
-            $payload['warehouse_product_id'] = (int) $existing['warehouse_product_id'];
-            $payload['linked_by'] = (string) ($existing['linked_by'] ?? 'manual');
-        }
-
         $this->storage->upsertOffer($payload);
-        if (!$existing || empty($existing['warehouse_product_id'])) {
-            $this->autoLinkOffersToWarehouse((int) $account['id'], 50);
-        }
     }
 
     private function autoLinkOffersToWarehouse(?int $accountId = null, int $limit = 500): int
     {
-        $offers = $this->storage->unlinkedOffersForAutoLink($accountId, $limit);
-        if ($offers === array()) {
-            return 0;
-        }
-
-        $products = new ProductRepository(Database::instance());
-        $products->ensureSchema();
-
-        $customFields = new ProductCustomFieldRepository(Database::instance());
-        $customFields->ensureSchema();
-
-        $count = 0;
-        foreach ($offers as $offer) {
-            $offerRowId = isset($offer['id']) ? (int) $offer['id'] : 0;
-            $allegroSku = trim((string) ($offer['sku'] ?? ''));
-            $offerName = trim((string) ($offer['name'] ?? ''));
-            if ($offerRowId <= 0 || $allegroSku === '') {
-                continue;
-            }
-
-            $productId = $this->resolveWarehouseProductIdForAllegroSku($products, $customFields, $allegroSku, $offerName);
-            if ($productId === null) {
-                continue;
-            }
-
-            $linkedBy = preg_match('/[a-z]/i', $allegroSku) === 1 ? 'sku' : 'old_sku';
-            $this->storage->linkOfferToProduct($offerRowId, $productId, $linkedBy);
-            $count++;
-        }
-
-        return $count;
+        return 0;
     }
 
     private function ensureAutoLinkedOfferOnRead(array $offer): bool
     {
-        $linkedBy = trim((string) ($offer['linked_by'] ?? ''));
-        $shouldRecheckExistingAutoLink = !empty($offer['warehouse_product_id']) && in_array($linkedBy, array('sku', 'old_sku'), true);
-        if (!$shouldRecheckExistingAutoLink && !empty($offer['warehouse_product_id'])) {
-            return false;
-        }
-
-        $offerRowId = isset($offer['id']) ? (int) $offer['id'] : 0;
-        $allegroSku = trim((string) ($offer['sku'] ?? ''));
-        $offerName = trim((string) ($offer['name'] ?? ''));
-        if ($offerRowId <= 0 || $allegroSku === '') {
-            return false;
-        }
-
-        $products = new ProductRepository(Database::instance());
-        $products->ensureSchema();
-
-        $customFields = new ProductCustomFieldRepository(Database::instance());
-        $customFields->ensureSchema();
-
-        $productId = $this->resolveWarehouseProductIdForAllegroSku($products, $customFields, $allegroSku, $offerName);
-        if ($productId === null) {
-            return false;
-        }
-
-        $currentProductId = isset($offer['warehouse_product_id']) ? (int) $offer['warehouse_product_id'] : 0;
-        $resolvedLinkedBy = preg_match('/[a-z]/i', $allegroSku) === 1 ? 'sku' : 'old_sku';
-        if ($currentProductId === $productId && $linkedBy === $resolvedLinkedBy) {
-            return false;
-        }
-
-        $this->storage->linkOfferToProduct($offerRowId, $productId, $resolvedLinkedBy);
-        return true;
+        return false;
     }
 
     private function resolveWarehouseProductIdForAllegroSku(
@@ -2416,6 +2324,18 @@ class AllegroService
         );
 
         return $row && !empty($row['sku']) ? trim((string) $row['sku']) : '';
+    }
+
+    private function disableStoredWarehouseLinks(): void
+    {
+        $cacheKey = 'allegro:warehouse-links-disabled:v1';
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached) && !empty($cached['done'])) {
+            return;
+        }
+
+        $this->storage->clearStoredOfferLinks();
+        $this->storage->putCache($cacheKey, array('done' => 1), 31536000);
     }
 
     private function patchImagesFromOffer(array $offer): array

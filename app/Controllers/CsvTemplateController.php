@@ -12,6 +12,7 @@ use App\Models\CsvTemplateRepository;
 use App\Models\DerivedStockLinkRepository;
 use App\Models\ProductAllegroParameterRepository;
 use App\Models\ProductCustomFieldRepository;
+use App\Models\ProductEmpikParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\CsvExportService;
@@ -28,6 +29,9 @@ class CsvTemplateController extends Controller
 
     /** @var ProductAllegroParameterRepository */
     private $allegroParameters;
+
+    /** @var ProductEmpikParameterRepository */
+    private $empikParameters;
 
     /** @var CsvExportService */
     private $exportService;
@@ -66,6 +70,9 @@ class CsvTemplateController extends Controller
 
         $this->allegroParameters = new ProductAllegroParameterRepository($this->db());
         $this->allegroParameters->ensureSchema();
+
+        $this->empikParameters = new ProductEmpikParameterRepository($this->db());
+        $this->empikParameters->ensureSchema();
 
         $this->customFields = new ProductCustomFieldRepository($this->db());
         $this->customFields->ensureSchema();
@@ -1980,6 +1987,7 @@ class CsvTemplateController extends Controller
             'product.images' => 'Wszystkie zdjecia',
             'product.allegro_parameters' => 'Parametry Allegro (nazwa: wartosc)',
             'product.allegro_parameters_eu' => 'Parametry ALLEGRO EU (parameter_id|type|value|)',
+            'product.empik_parameters' => 'Parametry Empik (nazwa: wartosc)',
             'product.generated_title' => 'Generowany tytul CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
             'product.price_net' => 'Cena netto',
@@ -1989,11 +1997,16 @@ class CsvTemplateController extends Controller
             'product.category_name' => 'Nazwa kategorii',
             'product.category_slug' => 'Slug kategorii',
             'product.category_id_allegro' => 'ID kategorii Allegro',
+            'product.category_id_empik' => 'ID kategorii Empik',
             'product.created_at' => 'Data utworzenia',
             'product.updated_at' => 'Data modyfikacji',
         );
 
         foreach ($this->allegroParameters->usedParameterFieldOptions() as $fieldKey => $fieldLabel) {
+            $options[$fieldKey] = $fieldLabel;
+        }
+
+        foreach ($this->empikParameters->usedParameterFieldOptions() as $fieldKey => $fieldLabel) {
             $options[$fieldKey] = $fieldLabel;
         }
 

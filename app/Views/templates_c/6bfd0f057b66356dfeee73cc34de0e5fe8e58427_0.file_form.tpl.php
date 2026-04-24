@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 08:54:42
+/* Smarty version 5.8.0, created on 2026-04-23 22:47:36
   from 'file:products/form.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1d9322de494_91453802',
+  'unifunc' => 'content_69ea856892cd78_22151493',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '6bfd0f057b66356dfeee73cc34de0e5fe8e58427' => 
     array (
       0 => 'products/form.tpl',
-      1 => 1776408869,
+      1 => 1776977243,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1d9322de494_91453802 (\Smarty\Template $_smarty_tpl) {
+function content_69ea856892cd78_22151493 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/products';
 ?><main class="app-main">
   <style>
@@ -459,8 +459,12 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOT
             <span>Pola wlasne<small>Cechy i dodatkowe dane</small></span>
           </button>
           <button type="button" class="product-tab-button" data-product-tab-trigger="marketplace" aria-pressed="false">
-            <i class="bi bi-shop-window"></i>
+            <i class="bi bi-shop"></i>
             <span>Allegro<small>Parametry i kopiowanie</small></span>
+          </button>
+          <button type="button" class="product-tab-button" data-product-tab-trigger="empik" aria-pressed="false">
+            <i class="bi bi-bag"></i>
+            <span>Empik<small>Parametry kategorii</small></span>
           </button>
         </div>
         <form method="post" action="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('formAction'), ENT_QUOTES, 'UTF-8', true);?>
@@ -514,7 +518,13 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOT
 " readonly>
                           <div class="form-text">SKU jest nadawane automatycznie na podstawie kategorii i po przypisaniu nie zmienia sie.</div>
                         </div>
-                        <div class="col-md-8">
+                        <div class="col-md-4">
+                          <label for="ean" class="form-label">EAN</label>
+                          <input type="text" class="form-control" id="ean" name="ean" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['ean'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" inputmode="numeric" autocomplete="off" placeholder="np. 5901234123457">
+                          <div class="form-text">Opcjonalnie. Dozwolone dlugosci: 8, 12, 13 lub 14 cyfr.</div>
+                        </div>
+                        <div class="col-md-4">
                           <label for="product_name" class="form-label">Nazwa produktu</label>
                           <input type="text" class="form-control" id="product_name" name="product_name" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " required>
@@ -537,6 +547,7 @@ $foreach0DoElse = false;
                               <option value="<?php echo $_smarty_tpl->getValue('category')['id'];?>
 " data-sku-prefix="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('category')['sku_prefix'] ?? null)===null||$tmp==='' ? 'PRD' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " data-allegro-category-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('category')['allegro_category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" data-empik-category-id="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('category')['empik_category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 "<?php if ((($tmp = $_smarty_tpl->getValue('product')['category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) == $_smarty_tpl->getValue('category')['id']) {?> selected<?php }?>><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('category')['name'], ENT_QUOTES, 'UTF-8', true);?>
 </option>
                             <?php
@@ -943,6 +954,20 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                   <div id="allegro-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
                 </div>
                 </div>
+
+                <div class="product-tab-panel" data-product-tab-panel="empik">
+                <div class="product-section-box">
+                  <div class="product-section-title">
+                    <div>
+                      <h5><i class="bi bi-bag me-2"></i>Parametry Empik</h5>
+                      <p>Sekcja laduje atrybuty Mirakl/Empik na podstawie przypisanego `empik_category_id` kategorii produktu.</p>
+                    </div>
+                    <span class="product-section-chip"><i class="bi bi-diagram-2"></i>Z kategorii Empik</span>
+                  </div>
+                  <div id="empik-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z Empik, aby zaladowac parametry.</div>
+                  <div id="empik-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
+                </div>
+                </div>
               </div>
 
               <div class="col-xl-4">
@@ -958,6 +983,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                   </div>
                   <div class="product-summary-row"><span class="text-secondary">SKU</span><strong id="summarySku"><?php if ((($tmp = $_smarty_tpl->getValue('product')['sku'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {
 echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOTES, 'UTF-8', true);
+} else { ?>-<?php }?></strong></div>
+                  <div class="product-summary-row"><span class="text-secondary">EAN</span><strong id="summaryEan"><?php if ((($tmp = $_smarty_tpl->getValue('product')['ean'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {
+echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['ean'], ENT_QUOTES, 'UTF-8', true);
 } else { ?>-<?php }?></strong></div>
                   <div class="product-summary-row"><span class="text-secondary">Nazwa</span><strong id="summaryName"><?php if ((($tmp = $_smarty_tpl->getValue('product')['product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {
 echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['product_name'], ENT_QUOTES, 'UTF-8', true);
@@ -978,9 +1006,10 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);
                   <div class="product-summary-row"><span class="text-secondary">Cena brutto</span><strong id="summaryPrice"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['price_gross'] ?? null)===null||$tmp==='' ? '0.00' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </strong></div>
                   <div class="d-grid gap-2 mt-4">
-                    <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-floppy me-2"></i>Zapisz produkt</button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href='<?php echo $_smarty_tpl->getValue('baseUrl');?>
-?controller=products&action=index'; }"><i class="bi bi-arrow-left me-2"></i>Wroc do listy</button>
+                    <button type="submit" name="save_action" value="return" class="btn btn-primary btn-lg"><i class="bi bi-floppy me-2"></i>Zapisz i wroc</button>
+                    <button type="submit" name="save_action" value="stay" class="btn btn-outline-primary"><i class="bi bi-floppy2 me-2"></i>Zapisz i zostan</button>
+                    <a href="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('returnUrl') ?? null)===null||$tmp==='' ? './index.php?controller=products&action=index' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-2"></i>Wroc do listy</a>
                   </div>
                 </div>
 
@@ -1061,8 +1090,11 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
     var quantityInput = document.getElementById('quantity');
     var categoryInput = document.getElementById('category_id');
     var skuInput = document.getElementById('sku');
+    var eanInput = document.getElementById('ean');
     var allegroInfo = document.getElementById('allegro-parameters-info');
     var allegroContainer = document.getElementById('allegro-parameters-container');
+    var empikInfo = document.getElementById('empik-parameters-info');
+    var empikContainer = document.getElementById('empik-parameters-container');
     var copyProductSearch = document.getElementById('copy-product-search');
     var copyProductSelect = document.getElementById('copy-product-select');
     var copyProductButton = document.getElementById('copy-product-button');
@@ -1085,6 +1117,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
     var deleteCustomFieldDefinitionSelect = document.getElementById('deleteCustomFieldDefinitionSelect');
     var deleteCustomFieldDefinitionBtn = document.getElementById('deleteCustomFieldDefinitionBtn');
     var summarySku = document.getElementById('summarySku');
+    var summaryEan = document.getElementById('summaryEan');
     var summaryName = document.getElementById('summaryName');
     var summaryCategory = document.getElementById('summaryCategory');
     var summaryQuantity = document.getElementById('summaryQuantity');
@@ -1101,7 +1134,10 @@ echo $_smarty_tpl->getValue('product')['id'];
 }?>';
     var existingAllegroValues = <?php echo (($tmp = $_smarty_tpl->getValue('allegroValuesJson') ?? null)===null||$tmp==='' ? '{}' ?? null : $tmp);?>
 ;
+    var existingEmpikValues = <?php echo (($tmp = $_smarty_tpl->getValue('empikValuesJson') ?? null)===null||$tmp==='' ? '{}' ?? null : $tmp);?>
+;
     var currentAllegroItems = [];
+    var currentEmpikItems = [];
 
     function toNumber(value) {
       value = String(value || '').replace(',', '.');
@@ -1116,6 +1152,9 @@ echo $_smarty_tpl->getValue('product')['id'];
     function syncSummary() {
       if (summarySku && skuInput) {
         summarySku.textContent = skuInput.value && skuInput.value.trim() !== '' ? skuInput.value : '-';
+      }
+      if (summaryEan && eanInput) {
+        summaryEan.textContent = eanInput.value && eanInput.value.trim() !== '' ? eanInput.value : '-';
       }
       if (overviewSku && skuInput) {
         overviewSku.textContent = skuInput.value && skuInput.value.trim() !== '' ? skuInput.value : 'Automatyczne';
@@ -1501,14 +1540,16 @@ echo $_smarty_tpl->getValue('product')['id'];
       }
     }
 
-    function renderAllegroParameterFields(items, values) {
-      if (!allegroContainer) {
+    function renderMarketplaceParameterFields(containerNode, infoNode, items, values, inputName, emptyLabel, loadedLabel, singleDictionaryMode) {
+      if (!containerNode) {
         return;
       }
 
       if (!items || !items.length) {
-        allegroContainer.innerHTML = '';
-        allegroInfo.textContent = 'Brak parametrow dla tej kategorii Allegro.';
+        containerNode.innerHTML = '';
+        if (infoNode) {
+          infoNode.textContent = emptyLabel;
+        }
         return;
       }
 
@@ -1522,6 +1563,7 @@ echo $_smarty_tpl->getValue('product')['id'];
         var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
         var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
         var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
+        var optionLookup = !!item.option_lookup;
         var value = values && typeof values === 'object' ? values[pid] : '';
         var selectedValues = normalizeSelectedArray(value);
 
@@ -1530,7 +1572,7 @@ echo $_smarty_tpl->getValue('product')['id'];
         var labelClass = required ? 'form-label text-danger fw-bold' : 'form-label';
         html += '<label class="' + labelClass + '">' + escapeHtml(pName) + (required ? ' (wymagany)' : '') + '</label>';
 
-        if (dict.length) {
+        if (dict.length || (singleDictionaryMode === 'autocomplete' && optionLookup && !multiple)) {
           if (multiple) {
             html += '<div class="border rounded p-2">';
             html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
@@ -1542,7 +1584,7 @@ echo $_smarty_tpl->getValue('product')['id'];
               var inputId = 'allegro_' + escapeHtml(pid) + '_' + d;
               var optionLabel = String(option.value || optId);
               html += '<div class="form-check js-param-option" data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '">';
-              html += '<input class="form-check-input" type="checkbox" id="' + inputId + '" name="allegro_parameters[' + escapeHtml(pid) + '][]" value="' + escapeHtml(optId) + '"' + checked + '>';
+              html += '<input class="form-check-input" type="checkbox" id="' + inputId + '" name="' + inputName + '[' + escapeHtml(pid) + '][]" value="' + escapeHtml(optId) + '"' + checked + '>';
               html += '<label class="form-check-label" for="' + inputId + '">' + escapeHtml(optionLabel) + '</label>';
               html += '</div>';
             }
@@ -1551,21 +1593,47 @@ echo $_smarty_tpl->getValue('product')['id'];
             html += '<div class="form-text">Wielokrotny wybor z listy.</div>';
           } else {
             var singleValue = value === null || typeof value === 'undefined' ? '' : String(value);
-            html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
-            html += '<select class="form-select form-select-sm js-param-select" data-param-id="' + escapeHtml(pid) + '" name="allegro_parameters[' + escapeHtml(pid) + ']" style="max-height: 38px;">';
-            html += '<option value="">Wybierz</option>';
-            for (var s = 0; s < dict.length; s++) {
-              var singleOption = dict[s] || {};
-              var singleId = String(singleOption.id || '');
-              var selected = singleValue === singleId ? ' selected' : '';
-              var optionLabel = String(singleOption.value || singleId);
-              html += '<option data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '" value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(optionLabel) + '</option>';
+            if (singleDictionaryMode === 'autocomplete') {
+              var datalistId = 'empik_datalist_' + escapeHtml(pid);
+              var hiddenInputId = 'empik_hidden_' + escapeHtml(pid);
+              var displayValue = singleValue;
+              for (var s = 0; s < dict.length; s++) {
+                var previewOption = dict[s] || {};
+                var previewId = String(previewOption.id || '');
+                var previewLabel = String(previewOption.value || previewId);
+                if (singleValue !== '' && (singleValue === previewId || singleValue.toLowerCase() === previewLabel.toLowerCase())) {
+                  displayValue = previewLabel;
+                  break;
+                }
+              }
+              html += '<input type="text" class="form-control form-control-sm js-param-autocomplete" list="' + datalistId + '" data-hidden-input-id="' + hiddenInputId + '" data-datalist-id="' + datalistId + '" data-attribute-id="' + escapeHtml(pid) + '" value="' + escapeHtml(displayValue) + '" placeholder="Zacznij wpisywac, aby zobaczyc podpowiedzi...">';
+              html += '<input type="hidden" id="' + hiddenInputId + '" name="' + inputName + '[' + escapeHtml(pid) + ']" value="' + escapeHtml(singleValue) + '">';
+              html += '<datalist id="' + datalistId + '">';
+              for (var s = 0; s < dict.length; s++) {
+                var autoOption = dict[s] || {};
+                var autoId = String(autoOption.id || '');
+                var autoLabel = String(autoOption.value || autoId);
+                html += '<option value="' + escapeHtml(autoLabel) + '" data-option-id="' + escapeHtml(autoId) + '"></option>';
+              }
+              html += '</datalist>';
+              html += '<div class="form-text js-param-autocomplete-status">Wpisuj, aby pobrac warianty z Empik.</div>';
+            } else {
+              html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
+              html += '<select class="form-select form-select-sm js-param-select" data-param-id="' + escapeHtml(pid) + '" name="' + inputName + '[' + escapeHtml(pid) + ']" style="max-height: 38px;">';
+              html += '<option value="">Wybierz</option>';
+              for (var s = 0; s < dict.length; s++) {
+                var singleOption = dict[s] || {};
+                var singleId = String(singleOption.id || '');
+                var selected = singleValue === singleId ? ' selected' : '';
+                var optionLabel = String(singleOption.value || singleId);
+                html += '<option data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '" value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(optionLabel) + '</option>';
+              }
+              html += '</select>';
             }
-            html += '</select>';
           }
         } else if (pType === 'boolean' || pType === 'bool') {
           var boolValue = value === true || value === 1 || value === '1' || value === 'true' ? 'true' : (value === false || value === 0 || value === '0' || value === 'false' ? 'false' : '');
-          html += '<select class="form-select form-select-sm" name="allegro_parameters[' + escapeHtml(pid) + ']">';
+          html += '<select class="form-select form-select-sm" name="' + inputName + '[' + escapeHtml(pid) + ']">';
           html += '<option value="">-- Wybierz --</option>';
           html += '<option value="true"' + (boolValue === 'true' ? ' selected' : '') + '>Tak</option>';
           html += '<option value="false"' + (boolValue === 'false' ? ' selected' : '') + '>Nie</option>';
@@ -1577,33 +1645,45 @@ echo $_smarty_tpl->getValue('product')['id'];
           } else if (value !== null && typeof value !== 'undefined') {
             multilineValue = String(value);
           }
-          html += '<textarea class="form-control" name="allegro_parameters[' + escapeHtml(pid) + ']" rows="3">' + escapeHtml(multilineValue) + '</textarea>';
+          html += '<textarea class="form-control" name="' + inputName + '[' + escapeHtml(pid) + ']" rows="3">' + escapeHtml(multilineValue) + '</textarea>';
           html += '<div class="form-text">Wpisz wiele wartosci, jedna w linii.</div>';
         } else if (pType === 'integer' || pType === 'float' || pType === 'number') {
           var numValue = value === null || typeof value === 'undefined' ? '' : String(value);
-          html += '<input type="number" step="any" class="form-control" name="allegro_parameters[' + escapeHtml(pid) + ']" value="' + escapeHtml(numValue) + '">';
+          html += '<input type="number" step="any" class="form-control" name="' + inputName + '[' + escapeHtml(pid) + ']" value="' + escapeHtml(numValue) + '">';
         } else {
           var textValue = value === null || typeof value === 'undefined' ? '' : String(value);
-          html += '<input type="text" class="form-control" name="allegro_parameters[' + escapeHtml(pid) + ']" value="' + escapeHtml(textValue) + '">';
+          html += '<input type="text" class="form-control" name="' + inputName + '[' + escapeHtml(pid) + ']" value="' + escapeHtml(textValue) + '">';
         }
 
         html += '<div class="small text-secondary mt-1">ID: ' + escapeHtml(pid) + ' | typ: ' + escapeHtml(pType) + (multiple ? ' | multiple' : '') + '</div>';
         html += '</div>';
       }
 
-      allegroContainer.innerHTML = html;
-      currentAllegroItems = items;
-      bindOptionFilters();
-      allegroInfo.textContent = 'Parametry Allegro zaladowane.';
+      containerNode.innerHTML = html;
+      bindOptionFilters(containerNode);
+      bindAutocompleteMappings(containerNode);
+      if (infoNode) {
+        infoNode.textContent = loadedLabel;
+      }
     }
 
 
-    function bindOptionFilters() {
-      if (!allegroContainer) {
+    function renderAllegroParameterFields(items, values) {
+      renderMarketplaceParameterFields(allegroContainer, allegroInfo, items, values, 'allegro_parameters', 'Brak parametrow dla tej kategorii Allegro.', 'Parametry Allegro zaladowane.', 'select');
+      currentAllegroItems = items || [];
+    }
+
+    function renderEmpikParameterFields(items, values) {
+      renderMarketplaceParameterFields(empikContainer, empikInfo, items, values, 'empik_parameters', 'Brak parametrow dla tej kategorii Empik.', 'Parametry Empik zaladowane.', 'autocomplete');
+      currentEmpikItems = items || [];
+    }
+
+    function bindOptionFilters(scopeNode) {
+      if (!scopeNode) {
         return;
       }
 
-      var filters = allegroContainer.querySelectorAll('.js-param-option-filter');
+      var filters = scopeNode.querySelectorAll('.js-param-option-filter');
       for (var i = 0; i < filters.length; i++) {
         filters[i].addEventListener('input', function () {
           var phrase = String(this.value || '').toLowerCase().trim();
@@ -1630,6 +1710,146 @@ echo $_smarty_tpl->getValue('product')['id'];
               var optLabel = String(opt.getAttribute('data-option-label') || '').toLowerCase();
               opt.hidden = !(phrase === '' || optLabel.indexOf(phrase) !== -1);
             }
+          }
+        });
+      }
+    }
+
+    function bindAutocompleteMappings(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var inputs = scopeNode.querySelectorAll('.js-param-autocomplete');
+      for (var i = 0; i < inputs.length; i++) {
+        var renderAutocompleteOptions = function (datalist, items) {
+          if (!datalist) {
+            return;
+          }
+
+          datalist.innerHTML = '';
+          for (var j = 0; j < items.length; j++) {
+            var option = items[j] || {};
+            var optionId = String(option.id || '');
+            var optionLabel = String(option.value || optionId);
+            var node = document.createElement('option');
+            node.value = optionLabel;
+            node.setAttribute('data-option-id', optionId);
+            datalist.appendChild(node);
+          }
+        };
+
+        var fetchAutocompleteOptions = function (inputNode) {
+          var attributeId = String(inputNode.getAttribute('data-attribute-id') || '');
+          var datalistId = String(inputNode.getAttribute('data-datalist-id') || '');
+          var categoryId = categoryInput ? String(categoryInput.value || '') : '';
+          var phrase = String(inputNode.value || '').trim();
+          var datalist = datalistId ? document.getElementById(datalistId) : null;
+          var statusNode = inputNode.parentNode ? inputNode.parentNode.querySelector('.js-param-autocomplete-status') : null;
+
+          if (!attributeId || !categoryId || !datalist) {
+            return;
+          }
+
+          if (phrase.length < 1) {
+            renderAutocompleteOptions(datalist, []);
+            if (statusNode) {
+              statusNode.textContent = 'Wpisuj, aby pobrac warianty z Empik.';
+            }
+            return;
+          }
+
+          if (statusNode) {
+            statusNode.textContent = 'Szukanie wariantow w Empik...';
+          }
+
+          var url = '<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=products&action=empikparameteroptions&category_id=' + encodeURIComponent(categoryId) + '&attribute_id=' + encodeURIComponent(attributeId) + '&q=' + encodeURIComponent(phrase) + '&limit=25';
+          fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (response) {
+              return response.text().then(function (rawText) {
+                var parsed = {};
+                try {
+                  parsed = rawText ? JSON.parse(rawText) : {};
+                } catch (e) {
+                  parsed = { error: rawText || ('HTTP ' + response.status) };
+                }
+                if (!response.ok) {
+                  throw new Error(parsed && parsed.error ? parsed.error : ('HTTP ' + response.status));
+                }
+                return parsed;
+              });
+            })
+            .then(function (data) {
+              var items = data && data.items ? data.items : [];
+              renderAutocompleteOptions(datalist, items);
+              if (statusNode) {
+                statusNode.textContent = items.length ? ('Znaleziono ' + items.length + ' wariantow z Empik.') : 'Brak wariantow dla tej frazy.';
+              }
+            })
+            .catch(function (error) {
+              renderAutocompleteOptions(datalist, []);
+              if (statusNode) {
+                statusNode.textContent = error && error.message ? error.message : 'Nie udalo sie pobrac wariantow Empik.';
+              }
+            });
+        };
+
+        var syncHidden = function (inputNode) {
+          var hiddenId = String(inputNode.getAttribute('data-hidden-input-id') || '');
+          var datalistId = String(inputNode.getAttribute('data-datalist-id') || '');
+          if (!hiddenId || !datalistId) {
+            return;
+          }
+
+          var hiddenInput = document.getElementById(hiddenId);
+          var datalist = document.getElementById(datalistId);
+          if (!hiddenInput || !datalist) {
+            return;
+          }
+
+          var typedValue = String(inputNode.value || '').trim();
+          if (typedValue === '') {
+            hiddenInput.value = '';
+            return;
+          }
+
+          var normalizedTyped = typedValue.toLowerCase();
+          var options = datalist.querySelectorAll('option');
+          for (var j = 0; j < options.length; j++) {
+            var option = options[j];
+            var label = String(option.value || '').trim();
+            var optionId = String(option.getAttribute('data-option-id') || '').trim();
+            if (normalizedTyped === label.toLowerCase() || (optionId !== '' && normalizedTyped === optionId.toLowerCase())) {
+              hiddenInput.value = optionId !== '' ? optionId : label;
+              return;
+            }
+          }
+
+          hiddenInput.value = typedValue;
+        };
+
+        inputs[i].addEventListener('input', function () {
+          syncHidden(this);
+          if (this._empikAutocompleteTimer) {
+            clearTimeout(this._empikAutocompleteTimer);
+          }
+          var self = this;
+          this._empikAutocompleteTimer = setTimeout(function () {
+            fetchAutocompleteOptions(self);
+          }, 250);
+        });
+
+        inputs[i].addEventListener('change', function () {
+          syncHidden(this);
+          fetchAutocompleteOptions(this);
+        });
+
+        inputs[i].addEventListener('focus', function () {
+          if (String(this.value || '').trim() !== '') {
+            fetchAutocompleteOptions(this);
           }
         });
       }
@@ -2042,6 +2262,54 @@ echo $_smarty_tpl->getValue('product')['id'];
       copyProductButton.addEventListener('click', copyParametersFromSelectedProduct);
     }
 
+    function loadEmpikParameters() {
+      if (!categoryInput || !empikInfo || !empikContainer) {
+        return;
+      }
+
+      var categoryId = categoryInput.value;
+      if (!categoryId) {
+        empikInfo.textContent = 'Wybierz kategorie powiazana z Empik, aby zaladowac parametry.';
+        empikContainer.innerHTML = '';
+        return;
+      }
+
+      var selected = categoryInput.options[categoryInput.selectedIndex];
+      var empikCategoryId = selected ? (selected.getAttribute('data-empik-category-id') || '') : '';
+      if (!empikCategoryId) {
+        empikInfo.textContent = 'Ta kategoria nie ma przypisanego Empik category ID.';
+        empikContainer.innerHTML = '';
+        return;
+      }
+
+      empikInfo.textContent = 'Pobieranie parametrow Empik...';
+      var url = '<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=products&action=empikparameters&category_id=' + encodeURIComponent(categoryId) + '&include_values=1';
+      if (productId) {
+        url += '&id=' + encodeURIComponent(productId);
+      }
+
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.error) {
+            empikInfo.textContent = data.error;
+            empikContainer.innerHTML = '';
+            return;
+          }
+
+          var items = data && data.items ? data.items : [];
+          var values = data && data.values ? data.values : existingEmpikValues;
+          renderEmpikParameterFields(items, values);
+        })
+        .catch(function () {
+          empikInfo.textContent = 'Nie udalo sie pobrac parametrow Empik.';
+          empikContainer.innerHTML = '';
+        });
+    }
+
     for (var t = 0; t < tabButtons.length; t++) {
       tabButtons[t].addEventListener('click', function () {
         activateProductTab(this.getAttribute('data-product-tab-trigger'));
@@ -2061,10 +2329,9 @@ echo $_smarty_tpl->getValue('product')['id'];
     if (skuInput) {
       skuInput.addEventListener('input', syncSummary);
     }
-    if (categoryInput) {
-      categoryInput.addEventListener('change', syncSummary);
+    if (eanInput) {
+      eanInput.addEventListener('input', syncSummary);
     }
-
     if (addCustomFieldRowButton && newCustomFieldsContainer) {
       addCustomFieldRowButton.addEventListener('click', function () {
         var row = document.createElement('div');
@@ -2184,6 +2451,7 @@ echo $_smarty_tpl->getValue('product')['id'];
       categoryInput.addEventListener('change', function () {
         refreshSku();
         loadAllegroParameters();
+        loadEmpikParameters();
         syncSummary();
       });
 
@@ -2192,6 +2460,10 @@ echo $_smarty_tpl->getValue('product')['id'];
       }
 
       loadAllegroParameters();
+      loadEmpikParameters();
+    } else {
+      loadAllegroParameters();
+      loadEmpikParameters();
     }
 
     var productGalleryInput = document.getElementById('img');

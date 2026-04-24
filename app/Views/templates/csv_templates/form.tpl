@@ -99,6 +99,8 @@
                   <li><code>product.images</code> - wszystkie obrazki, polaczone separatorem tablicy</li>
                   <li><code>product.allegro_parameters</code> - wszystkie parametry Allegro w jednej komorce, kazdy w nowej linii</li>
                   <li><code>product.allegro_parameters_eu</code> - wszystkie parametry Allegro w formacie EU: <code>parameter_id|type|value|</code></li>
+                  <li><code>product.empik_parameters</code> - wszystkie parametry Empik w jednej komorce, kazdy w nowej linii</li>
+                  <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
                   <li><code>images</code> lub <code>product.generated_images</code> - generowana lista sciezek obrazow EasyUploader</li>
                 </ul>
               </div>

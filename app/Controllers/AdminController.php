@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Models\SettingRepository;
 use App\Models\UserRepository;
 use App\Services\AllegroService;
+use App\Services\EmpikService;
 use RuntimeException;
 use Throwable;
 
@@ -22,11 +23,15 @@ class AdminController extends Controller
     /** @var SettingRepository */
     private $settings;
 
+    /** @var EmpikService */
+    private $empik;
+
     public function __construct()
     {
         $this->users = new UserRepository($this->db());
         $this->users->ensureSchema();
         $this->allegro = new AllegroService();
+        $this->empik = new EmpikService();
         $this->settings = new SettingRepository($this->db());
         $this->settings->ensureSchema();
     }
@@ -113,6 +118,7 @@ class AdminController extends Controller
 
         $baseUrl = $this->absoluteBaseUrl();
         $accounts = $this->allegro->listAccounts();
+        $empikAccounts = $this->empik->listAccounts();
 
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $baseUrl);
@@ -127,6 +133,7 @@ class AdminController extends Controller
             'automation' => $this->allegro->automationLinks($baseUrl),
             'queueStats' => $this->allegro->queueCounts(),
             'accounts' => $accounts,
+            'empikAccounts' => $empikAccounts,
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
@@ -194,6 +201,34 @@ class AdminController extends Controller
             $this->settings->set('sellasist_api_key', $apiKey);
 
             $this->setFlash('success', 'Ustawienia Sellasist zostaly zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=admin&action=automation');
+    }
+
+    public function saveempik(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=admin&action=automation');
+        }
+
+        try {
+            $accountId = (int) $this->input('account_id', 0);
+            $this->empik->saveAccount(array(
+                'name' => $this->input('name', ''),
+                'api_url' => $this->input('api_url', ''),
+                'api_key' => $this->input('api_key', ''),
+                'shop_id' => $this->input('shop_id', ''),
+                'locale' => $this->input('locale', 'pl_PL'),
+                'is_active' => $this->input('is_active', '0') === '1' ? 1 : 0,
+            ), $accountId > 0 ? $accountId : null);
+
+            $this->setFlash('success', 'Ustawienia Empik API zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

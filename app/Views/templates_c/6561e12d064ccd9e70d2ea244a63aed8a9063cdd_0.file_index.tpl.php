@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 08:55:51
+/* Smarty version 5.8.0, created on 2026-04-23 22:23:04
   from 'file:categories/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1d9775aa170_05602160',
+  'unifunc' => 'content_69ea7fa858c691_01707626',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '6561e12d064ccd9e70d2ea244a63aed8a9063cdd' => 
     array (
       0 => 'categories/index.tpl',
-      1 => 1774535566,
+      1 => 1776975198,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1d9775aa170_05602160 (\Smarty\Template $_smarty_tpl) {
+function content_69ea7fa858c691_01707626 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/categories';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -77,6 +77,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
                   <th>Slug</th>
                   <th>Prefix SKU</th>
                   <th>Allegro ID</th>
+                  <th>Empik ID</th>
                   <th>Opis</th>
                   <th>Produkty</th>
                   <th>Utworzono</th>
@@ -102,6 +103,8 @@ $foreach0DoElse = false;
                       <td><span class="badge text-bg-dark"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('category')['sku_prefix'] ?? null)===null||$tmp==='' ? 'PRD' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </span></td>
                       <td><?php if ($_smarty_tpl->getValue('category')['allegro_category_id']) {?><code><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('category')['allegro_category_id'], ENT_QUOTES, 'UTF-8', true);?>
+</code><?php } else { ?>-<?php }?></td>
+                      <td><?php if ($_smarty_tpl->getValue('category')['empik_category_id']) {?><code><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('category')['empik_category_id'], ENT_QUOTES, 'UTF-8', true);?>
 </code><?php } else { ?>-<?php }?></td>
                       <td><?php echo htmlspecialchars((string)$_smarty_tpl->getSmarty()->getModifierCallback('truncate')((($tmp = $_smarty_tpl->getValue('category')['description'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp),100), ENT_QUOTES, 'UTF-8', true);?>
 </td>
@@ -132,7 +135,7 @@ $foreach0DoElse = false;
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                 <?php } else { ?>
                   <tr>
-                    <td colspan="10" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
+                    <td colspan="11" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
                   </tr>
                 <?php }?>
               </tbody>

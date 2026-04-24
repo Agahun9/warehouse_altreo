@@ -168,6 +168,118 @@
         </div>
       </div>
 
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h3 class="card-title mb-0">Empik API</h3>
+          <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-sm btn-outline-secondary">Wroc do Empik</a>
+        </div>
+        <div class="card-body">
+          <div class="row g-4">
+            <div class="col-lg-4">
+              <form method="post" action="{$baseUrl}?controller=admin&action=saveempik" class="row g-3">
+                <input type="hidden" name="account_id" value="">
+                <div class="col-12">
+                  <label class="form-label">Nazwa konta</label>
+                  <input type="text" name="name" class="form-control" placeholder="np. Empik PL" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Instance URL</label>
+                  <input type="url" name="api_url" class="form-control" placeholder="https://twoja-instancja.mirakl.net" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">API Key</label>
+                  <input type="text" name="api_key" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">shop_id</label>
+                  <input type="number" min="1" step="1" name="shop_id" class="form-control" placeholder="opcjonalnie">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Locale</label>
+                  <input type="text" name="locale" class="form-control" value="pl_PL">
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="1" id="empik_active_default" checked>
+                    <label class="form-check-label" for="empik_active_default">Konto aktywne</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <button type="submit" class="btn btn-primary">Zapisz Empik API</button>
+                </div>
+              </form>
+            </div>
+            <div class="col-lg-8">
+              <div class="alert alert-light border small text-secondary">
+                Empik Marketplace dziala na Mirakl Seller API. Wprowadz adres swojej instancji Mirakl oraz API key od Empik.
+                Jesli sprzedawca ma kilka sklepow w tej samej instancji, mozesz dopisac takze <code>shop_id</code>.
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Konto</th>
+                      <th>API</th>
+                      <th>Status</th>
+                      <th>Sync</th>
+                      <th>Akcje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {foreach $empikAccounts as $account}
+                      <tr>
+                        <td>
+                          <div class="fw-semibold">{$account.name|escape}</div>
+                          <div class="small text-secondary">slug: {$account.slug|escape}</div>
+                        </td>
+                        <td>
+                          <div class="small">{$account.api_url|escape}</div>
+                          <div class="small text-secondary">shop_id: {$account.shop_id|default:'-'|escape} | locale: {$account.locale|default:'pl_PL'|escape}</div>
+                        </td>
+                        <td>
+                          {if $account.is_active}
+                            <span class="badge text-bg-success">Aktywne</span>
+                          {else}
+                            <span class="badge text-bg-secondary">Nieaktywne</span>
+                          {/if}
+                          {if $account.last_error_message}
+                            <div class="small text-danger mt-1">{$account.last_error_message|escape}</div>
+                          {/if}
+                        </td>
+                        <td>
+                          <div class="small">ostatni sync: {$account.last_sync_at|default:'-'|escape}</div>
+                          <div class="small text-secondary">ostatni blad: {$account.last_error_at|default:'-'|escape}</div>
+                        </td>
+                        <td class="text-nowrap">
+                          <div class="d-grid gap-2">
+                            <a href="{$baseUrl}?controller=empik&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
+                            <a href="{$baseUrl}?controller=empik&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                            <form method="post" action="{$baseUrl}?controller=admin&action=saveempik" class="d-grid">
+                              <input type="hidden" name="account_id" value="{$account.id|escape}">
+                              <input type="hidden" name="name" value="{$account.name|escape}">
+                              <input type="hidden" name="api_url" value="{$account.api_url|escape}">
+                              <input type="hidden" name="api_key" value="{$account.api_key|escape}">
+                              <input type="hidden" name="shop_id" value="{$account.shop_id|default:''|escape}">
+                              <input type="hidden" name="locale" value="{$account.locale|default:'pl_PL'|escape}">
+                              <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
+                              <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
+                                {if $account.is_active}Wylacz konto{else}Wlacz konto{/if}
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    {foreachelse}
+                      <tr><td colspan="5" class="text-center text-secondary py-4">Brak skonfigurowanych kont Empik.</td></tr>
+                    {/foreach}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb-4 border-warning-subtle">
         <div class="card-header">
           <h3 class="card-title mb-0">Sprzatanie bazy</h3>

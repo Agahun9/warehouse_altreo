@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-19 20:20:25
+/* Smarty version 5.8.0, created on 2026-04-23 16:09:28
   from 'file:products/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e51ce9f28d37_41526872',
+  'unifunc' => 'content_69ea2818f04ac5_52219120',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'e1c5313662276ce2e4c90812cbd4e80c8fa11eac' => 
     array (
       0 => 'products/index.tpl',
-      1 => 1776621584,
+      1 => 1776953365,
       2 => 'file',
     ),
   ),
@@ -20,20 +20,21 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e51ce9f28d37_41526872 (\Smarty\Template $_smarty_tpl) {
+function content_69ea2818f04ac5_52219120 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/products';
 ?><main class="app-main">
   <div class="app-content-header">
     <div class="container-fluid">
-      <div class="row">
-        <div class="col-sm-6">
-          <h3 class="mb-0"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('contentTitle'), ENT_QUOTES, 'UTF-8', true);?>
+      <div class="products-page-header">
+        <div class="products-page-header-shell">
+          <div>
+            <div class="products-page-kicker">Lista produktow</div>
+            <h3 class="products-page-title"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('contentTitle'), ENT_QUOTES, 'UTF-8', true);?>
 </h3>
-          <p class="text-secondary mb-0"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('pageDescription'), ENT_QUOTES, 'UTF-8', true);?>
+            <p class="products-page-description"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('pageDescription'), ENT_QUOTES, 'UTF-8', true);?>
 </p>
-        </div>
-        <div class="col-sm-6">
-          <ol class="breadcrumb float-sm-end">
+          </div>
+          <ol class="breadcrumb products-page-breadcrumb">
             <li class="breadcrumb-item"><a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=index">Start</a></li>
             <li class="breadcrumb-item active" aria-current="page"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('breadcrumbCurrent'), ENT_QUOTES, 'UTF-8', true);?>
@@ -45,6 +46,111 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
   </div>
 
   <style>
+    .products-page-header {
+      padding: 1.25rem 0 1.5rem;
+    }
+
+    .products-page-header-shell {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.35rem 1.5rem;
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 1rem;
+      background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, .06);
+    }
+
+    .products-page-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      margin-bottom: .55rem;
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #0d6efd;
+    }
+
+    .products-page-title {
+      margin: 0;
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .products-page-description {
+      margin: .45rem 0 0;
+      max-width: 720px;
+      color: #6b7280;
+      font-size: .98rem;
+      line-height: 1.55;
+    }
+
+    .products-page-breadcrumb {
+      margin: 0;
+      padding: .45rem .7rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .88);
+      border: 1px solid rgba(13, 110, 253, .10);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+    }
+
+    .products-page-breadcrumb .breadcrumb-item,
+    .products-page-breadcrumb .breadcrumb-item a {
+      font-size: .85rem;
+      color: #64748b;
+      text-decoration: none;
+    }
+
+    .products-page-breadcrumb .breadcrumb-item.active {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .products-toolbar-card,
+    .products-list-card {
+      border: 1px solid rgba(15, 23, 42, .08);
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, .05);
+    }
+
+    .products-toolbar-card .card-body,
+    .products-list-card .card-header {
+      padding: 1rem 1.2rem;
+    }
+
+    .products-section-title {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .products-section-subtitle {
+      margin-top: .25rem;
+      color: #6b7280;
+      font-size: .88rem;
+      line-height: 1.45;
+    }
+
+    .products-list-card .card-header {
+      background: linear-gradient(180deg, rgba(248, 250, 252, .96) 0%, rgba(255, 255, 255, 1) 100%);
+      border-bottom: 1px solid rgba(15, 23, 42, .08);
+    }
+
+    .products-total-badge {
+      min-width: 3rem;
+      padding: .55rem .8rem;
+      border-radius: 999px;
+      font-size: .9rem;
+      font-weight: 700;
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .18);
+    }
+
     .products-table {
       table-layout: auto;
       width: 100%;
@@ -61,14 +167,13 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
     }
 
     .product-sku-cell {
-      width: 1%;
-      min-width: 0;
-      white-space: nowrap;
+      width: 130px;
+      min-width: 130px;
     }
 
     .product-name-cell {
-      width: 24%;
-      min-width: 220px;
+      width: 520px;
+      min-width: 520px;
     }
 
     .product-compact-cell {
@@ -79,6 +184,34 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
     .product-actions-cell {
       width: 1%;
       white-space: nowrap;
+    }
+
+    .product-contours-cell {
+      width: 100px;
+      min-width: 100px;
+      max-width: 100px;
+      padding-left: .2rem !important;
+      padding-right: .2rem !important;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .product-price-cell {
+      width: 100px;
+      min-width: 100px;
+      max-width: 100px;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+
+    .product-sku-secondary {
+      display: block;
+      margin-top: .2rem;
+      font-size: .74rem;
+      color: #6c757d;
+      word-break: break-word;
+      white-space: normal;
     }
 
     .quick-edit-input {
@@ -191,6 +324,26 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
         padding: .32rem .45rem;
       }
     }
+
+    @media (max-width: 767.98px) {
+      .products-page-header-shell {
+        padding: 1rem;
+        flex-direction: column;
+      }
+
+      .products-page-title {
+        font-size: 1.35rem;
+      }
+
+      .products-page-breadcrumb {
+        align-self: flex-start;
+      }
+
+      .products-toolbar-card .card-body,
+      .products-list-card .card-header {
+        padding: .9rem 1rem;
+      }
+    }
   </style>
 
   <div class="app-content">
@@ -200,11 +353,11 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
       <?php if ($_smarty_tpl->getValue('flashError')) {?><div class="alert alert-danger"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashError'), ENT_QUOTES, 'UTF-8', true);?>
 </div><?php }?>
 
-      <div class="card mb-4">
+      <div class="card mb-4 products-toolbar-card">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
-            <h3 class="card-title mb-1">Filtry i sortowanie</h3>
-            <div class="text-secondary small">Klikaj naglowki kolumn, aby przelaczac: ASC, DESC, reset.</div>
+            <h3 class="products-section-title">Filtry i sortowanie</h3>
+            <div class="products-section-subtitle">Klikaj naglowki kolumn, aby przelaczac: ASC, DESC, reset.</div>
           </div>
           <div class="d-flex gap-2">
             <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('csvImportUrl'), ENT_QUOTES, 'UTF-8', true);?>
@@ -217,21 +370,21 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
         </div>
       </div>
 
-      <div class="card">
+      <div class="card products-list-card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div>
-            <h3 class="card-title mb-0">Wszystkie produkty</h3>
-            <div class="small text-secondary">Lacznie <?php echo $_smarty_tpl->getValue('totalProducts');?>
+            <h3 class="products-section-title">Wszystkie produkty</h3>
+            <div class="products-section-subtitle">Lacznie <?php echo $_smarty_tpl->getValue('totalProducts');?>
  produktow, strona <?php echo $_smarty_tpl->getValue('page');?>
  z <?php echo $_smarty_tpl->getValue('totalPages');?>
 </div>
           </div>
-          <span class="badge text-bg-primary"><?php echo $_smarty_tpl->getValue('totalProducts');?>
+          <span class="badge text-bg-primary products-total-badge"><?php echo $_smarty_tpl->getValue('totalProducts');?>
 </span>
         </div>
         
         <!-- Panel akcji masowych -->
-        <div id="bulkActionsPanel" class="card-body bg-light border-bottom" style="display: none;">
+        <div id="bulkActionsPanel" class="card-body bg-light border-bottom">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
             <div class="text-secondary">
               <strong id="bulkSelectedCount">0</strong> produktów zaznaczonych
@@ -267,16 +420,19 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
               <input type="hidden" name="filter_global" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['global'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 ">
               <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 pt-3">
-                <div class="d-flex align-items-center gap-2">
-                  <span class="small text-secondary">Na strone</span>
-                  <select name="per_page" class="form-select form-select-sm" style="width:120px;">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="small text-secondary">Na strone</span>
+                    <select name="per_page" class="form-select form-select-sm" style="width:120px;">
                     <option value="50"<?php if ($_smarty_tpl->getValue('perPage') == 50) {?> selected<?php }?>>50</option>
                     <option value="100"<?php if ($_smarty_tpl->getValue('perPage') == 100) {?> selected<?php }?>>100</option>
                     <option value="200"<?php if ($_smarty_tpl->getValue('perPage') == 200) {?> selected<?php }?>>200</option>
                     <option value="500"<?php if ($_smarty_tpl->getValue('perPage') == 500) {?> selected<?php }?>>500</option>
                     <option value="1000"<?php if ($_smarty_tpl->getValue('perPage') == 1000) {?> selected<?php }?>>1000</option>
-                  </select>
-                </div>
+                    </select>
+                  </div>
+                  <div class="small text-secondary">
+                    Negacja filtrow: wpisz `!tekst`, np. `!9D` oznacza "nie zawiera 9D".
+                  </div>
                 <?php if ($_smarty_tpl->getValue('totalPages') > 1) {?>
                   <?php $_smarty_tpl->assign('prevPage', $_smarty_tpl->getValue('page')-1, false, NULL);?>
                   <?php $_smarty_tpl->assign('nextPage', $_smarty_tpl->getValue('page')+1, false, NULL);?>
@@ -290,7 +446,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Pierwsza</a>
@@ -304,7 +460,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Poprzednia</a>
@@ -325,7 +481,7 @@ $foreach0DoElse = false;
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 "><?php echo $_smarty_tpl->getValue('pageItem')['value'];?>
@@ -346,7 +502,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Nastepna</a>
@@ -360,7 +516,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Ostatnia</a>
@@ -392,20 +548,18 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['product_name'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Nazwa <?php if ($_smarty_tpl->getValue('sortIndicators')['product_name'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['product_name'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a>
                     </th>
-                    <th style="width: 12%; min-width: 110px;">
+                    <th style="width: 100px; min-width: 100px;">
                       <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['category'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Kategoria <?php if ($_smarty_tpl->getValue('sortIndicators')['category'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['category'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a>
                     </th>
                     <th class="product-compact-cell"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['quantity'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Ilosc <?php if ($_smarty_tpl->getValue('sortIndicators')['quantity'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['quantity'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
-                    <th style="min-width: 120px;"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['localization'], ENT_QUOTES, 'UTF-8', true);?>
+                    <th style="width: 100px; min-width: 100px;"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['localization'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Lokalizacja <?php if ($_smarty_tpl->getValue('sortIndicators')['localization'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['localization'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
-                    <th style="min-width: 120px;">Wymiary</th>
-                    <th class="product-compact-cell">Obrys</th>
+                    <th style="width: 100px; min-width: 100px;">Wymiary</th>
+                    <th class="product-contours-cell">Obrys</th>
                     <th class="product-compact-cell">Zdjecie</th>
-                    <th class="product-compact-cell">VAT</th>
-                    <th class="product-compact-cell">Cena netto</th>
-                    <th class="product-compact-cell">Cena brutto</th>
+                    <th class="product-price-cell">Cena</th>
                     <th class="product-compact-cell">Utworzono</th>
                     <th class="product-compact-cell">Zmieniono</th>
                     <th class="text-end product-actions-cell">Akcje</th>
@@ -440,13 +594,13 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                     <th><input type="text" name="filter_localization" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['localization'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " class="form-control form-control-sm" placeholder="lokalizacja"></th>
                     <th>
-                      <select name="filter_show_derived" class="form-select form-select-sm">
-                        <option value="0"<?php if ($_smarty_tpl->getValue('showDerivedFilter') == '0') {?> selected<?php }?>>pochodne: nie</option>
-                        <option value="1"<?php if ($_smarty_tpl->getValue('showDerivedFilter') == '1') {?> selected<?php }?>>pochodne: tak</option>
-                        <option value=""<?php if ($_smarty_tpl->getValue('showDerivedFilter') == '') {?> selected<?php }?>>pochodne: wszystkie</option>
+                      <select name="filter_with_glass" class="form-select form-select-sm">
+                        <option value=""<?php if ($_smarty_tpl->getValue('withGlassFilter') == '') {?> selected<?php }?>>szklo: wszystkie</option>
+                        <option value="1"<?php if ($_smarty_tpl->getValue('withGlassFilter') == '1') {?> selected<?php }?>>produkty ze szklem</option>
+                        <option value="0"<?php if ($_smarty_tpl->getValue('withGlassFilter') == '0') {?> selected<?php }?>>produkty bez szkła</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="8">
+                    <th class="text-end" colspan="6">
                     <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('clearFiltersUrl'), ENT_QUOTES, 'UTF-8', true);?>
 " class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
@@ -465,8 +619,14 @@ $foreach2DoElse = false;
 "></td>
                         <td class="product-compact-cell"><?php echo $_smarty_tpl->getValue('product')['id'];?>
 </td>
-                        <td class="product-sku-cell"><span class="badge text-bg-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOTES, 'UTF-8', true);?>
-</span></td>
+                        <td class="product-sku-cell">
+                          <span class="badge text-bg-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['sku'], ENT_QUOTES, 'UTF-8', true);?>
+</span>
+                          <?php if ((($tmp = $_smarty_tpl->getValue('product')['custom_fields']['old_sku'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) !== '') {?>
+                            <span class="product-sku-secondary">OLD_SKU: <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['custom_fields']['old_sku'], ENT_QUOTES, 'UTF-8', true);?>
+</span>
+                          <?php }?>
+                        </td>
                         <td class="product-name-cell" style="white-space: normal;">
                           <input type="text" class="quick-edit-input js-quick-edit-field" data-field="product_name" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['product_name'], ENT_QUOTES, 'UTF-8', true);?>
 " aria-label="Nazwa produktu">
@@ -551,16 +711,17 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                           <input type="text" class="quick-edit-input js-quick-edit-field" data-field="dimensions" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['dimensions'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " aria-label="Wymiary">
                         </td>
-                        <td class="product-compact-cell"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['contours'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+                        <td class="product-contours-cell" title="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['contours'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('product')['contours'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </td>
                         <td class="product-compact-cell"><?php if ($_smarty_tpl->getValue('product')['img']) {?><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getSmarty()->getModifierCallback('regex_replace')($_smarty_tpl->getValue('product')['img'],'/\\s*\\|\\s*.*/',''), ENT_QUOTES, 'UTF-8', true);?>
 " target="_blank" rel="noreferrer">Podglad</a><?php } else { ?>-<?php }?></td>
-                        <td class="product-compact-cell"><?php echo $_smarty_tpl->getValue('product')['vat_rate'];?>
-%</td>
-                        <td class="product-compact-cell"><?php echo $_smarty_tpl->getValue('product')['price_net'];?>
-</td>
-                        <td class="product-compact-cell"><?php echo $_smarty_tpl->getValue('product')['price_gross'];?>
-</td>
+                        <td class="product-price-cell">
+                          <div><strong>B:</strong> <?php echo $_smarty_tpl->getValue('product')['price_gross'];?>
+</div>
+                          <div class="small text-secondary"><strong>N:</strong> <?php echo $_smarty_tpl->getValue('product')['price_net'];?>
+</div>
+                        </td>
                         <td class="product-compact-cell"><?php echo (($tmp = $_smarty_tpl->getValue('product')['created_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
 </td>
                         <td class="js-updated-at-cell product-compact-cell"><?php echo (($tmp = $_smarty_tpl->getValue('product')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
@@ -585,7 +746,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                   <?php } else { ?>
-                    <tr><td colspan="16" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="14" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   <?php }?>
                 </tbody>
               </table>
@@ -608,7 +769,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Poprzednia</a>
@@ -622,7 +783,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &filter_category_id=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['category_id']);?>
 &filter_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['quantity']);?>
 &filter_localization=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['localization']);?>
-&filter_show_derived=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['show_derived']);?>
+&filter_with_glass=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['with_glass']);?>
 &sort_by=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortBy'));?>
 &sort_dir=<?php echo rawurlencode((string)$_smarty_tpl->getValue('sortDir'));?>
 ">Nastepna</a>
@@ -672,7 +833,11 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
           <div class="mb-2">
             <label class="form-label d-block">Zakres eksportu</label>
             <div class="form-check">
-              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected" checked>
+              <input class="form-check-input" type="radio" name="export_mode" id="exportFiltered" value="filtered" checked>
+              <label class="form-check-label" for="exportFiltered">Wyfiltrowane produkty</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected">
               <label class="form-check-label" for="exportSelected">Zaznaczone produkty (<span id="selectedCount">0</span>)</label>
             </div>
             <div class="form-check">
@@ -704,7 +869,16 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
               </div>
               <div class="col-md-6">
                 <label class="form-label small">Kolekcja do tytulu</label>
-                <input type="text" name="collection_name" class="form-control form-control-sm" placeholder="np. Marble">
+                <input type="text" name="collection_name" id="csvExportCollectionName" class="form-control form-control-sm" placeholder="np. Marble">
+              </div>
+              <div class="col-12">
+                <div id="csvGeneratedTitlePreview" class="border rounded-3 p-3 bg-light">
+                  <div class="d-flex justify-content-between gap-2 align-items-center flex-wrap">
+                    <strong>Podglad tytulu z pierwszego zaznaczonego produktu</strong>
+                    <span id="csvGeneratedTitleLength" class="badge text-bg-secondary">0 / 75</span>
+                  </div>
+                  <div id="csvGeneratedTitlePreviewText" class="small mt-2 text-secondary">Wybierz szablon tytulu i zaznacz produkt, aby zobaczyc podglad.</div>
+                </div>
               </div>
             </div>
             <div class="form-text">
@@ -716,31 +890,23 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <div class="row g-2">
               <div class="col-md-4">
                 <label class="form-label small">Kolekcja numeracja</label>
-                <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A">
+                <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A100">
               </div>
               <div class="col-md-8">
-                <label class="form-label small">Nazwa kolekcji dla obrazow</label>
-                <input type="text" name="image_collection_name" class="form-control form-control-sm" placeholder="np. KOLEKCJA">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label small">Dopisanie do nazwy obrazow</label>
-                <input type="text" name="image_title_suffix" class="form-control form-control-sm" placeholder="np. smooth">
-              </div>
-                <div class="col-md-6">
-                <label class="form-label small">Cena </label>
+                <label class="form-label small">Cena</label>
                 <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="35">
               </div>
-              <div class="col-md-2">
-                <label class="form-label small">Ilosc zdjec</label>
-                <input type="number" min="0" name="image_count" class="form-control form-control-sm" value="0">
-              </div>
-              <div class="col-md-2">
+              <div class="col-md-4">
                 <label class="form-label small">Ilosc miniatur</label>
                 <input type="number" min="0" name="thumbnail_count" class="form-control form-control-sm" value="0">
               </div>
-              <div class="col-md-2">
-                <label class="form-label small">Grid/mockup</label>
-                <input type="number" min="0" name="grid_count" class="form-control form-control-sm" value="0">
+              <div class="col-md-4">
+                <label class="form-label small">Ilosc mockupow / gridow</label>
+                <input type="number" min="0" name="mockup_count" class="form-control form-control-sm" value="0">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Ilosc zdjec</label>
+                <input type="number" min="0" name="image_count" class="form-control form-control-sm" value="0">
               </div>
               <div class="col-12">
                 <label class="form-label small">Bazowy katalog</label>
@@ -748,11 +914,26 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
               </div>
             </div>
             <div class="form-text">
-              W szablonie uzyj pola <code>product.allegro_parameters</code> dla parametrow Allegro oraz
-              <code>images</code> albo <code>product.generated_images</code> dla listy sciezek obrazow.
+              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu.
             </div>
           </div>
           <div id="selectedProductIdsContainer"></div>
+          <input type="hidden" name="filter_id" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_global" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['global'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_sku" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['sku'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_product_name" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_category_id" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_quantity" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['quantity'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_localization" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['localization'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+          <input type="hidden" name="filter_with_glass" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['with_glass'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
@@ -773,6 +954,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       </div>
       <form id="bulkCategoryForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=bulkcategory">
+        <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
         <div class="modal-body">
           <p><strong>Zaznaczonych produktów: <span id="bulkCategoryCount">0</span></strong></p>
           <div class="mb-3">
@@ -814,9 +997,11 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       </div>
       <form id="bulkDeleteForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=bulkdelete">
+        <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
         <div class="modal-body">
           <div class="alert alert-danger" role="alert">
-            <strong>UWAGA!</strong> Będziesz usuwać <strong><span id="bulkDeleteCount">0</span></strong> produktów. Tej operacji nie można cofnąć!
+            <strong>UWAGA!</strong> Będziesz usuwać <strong><span id="bulkDeleteCount">0</span></strong> produktów. Tej operacji nie można cofnąć, ale usunięte zostaną tylko zaznaczone rekordy.
           </div>
           <div class="mb-3" style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px;">
             <p class="mb-2"><strong>Produkty do usunięcia:</strong></p>
@@ -848,6 +1033,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       </div>
       <form id="bulkCopyForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=bulkcopy">
+        <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
         <div class="modal-body">
           <p><strong>Produktów do skopiowania: <span id="bulkCopyCount">0</span></strong></p>
           <div id="bulkCopyProductList"></div>
@@ -869,13 +1056,15 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 <form id="deleteForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=delete" style="display: none;">
   <input type="hidden" name="id" id="deleteId">
+  <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
 </form>
 
 <?php echo '<script'; ?>
 >
 
 function deleteProduct(productId) {
-  if (confirm('Usunac ten produkt?')) {
+  if (confirm('Usunac tylko ten produkt? Powiazane i pochodne rekordy maja zostac w systemie.')) {
     document.getElementById('deleteId').value = productId;
     document.getElementById('deleteForm').submit();
   }
@@ -891,6 +1080,16 @@ document.addEventListener('DOMContentLoaded', function() {
   var exportForm = document.getElementById('csvExportForm');
   var selectedContainer = document.getElementById('selectedProductIdsContainer');
   var exportSelected = document.getElementById('exportSelected');
+  var exportFiltered = document.getElementById('exportFiltered');
+  var titleTemplateSelect = document.querySelector('select[name="title_template_id"]');
+  var collectionNameInput = document.getElementById('csvExportCollectionName');
+  var generatedTitlePreview = document.getElementById('csvGeneratedTitlePreviewText');
+  var generatedTitleLength = document.getElementById('csvGeneratedTitleLength');
+  var generatedTitlePreviewBox = document.getElementById('csvGeneratedTitlePreview');
+  var generatedTitlePreviewUrl = '<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=products&action=previewgeneratedtitle';
 
   // Bulk operations
   var bulkCopyBtn = document.getElementById('bulkCopyBtn');
@@ -1072,13 +1271,6 @@ document.addEventListener('DOMContentLoaded', function() {
         count++;
       }
     }
-    if (bulkActionsPanel) {
-      if (count > 0) {
-        bulkActionsPanel.style.display = 'block';
-      } else {
-        bulkActionsPanel.style.display = 'none';
-      }
-    }
     var bulkSelectedCount = document.getElementById('bulkSelectedCount');
     if (bulkSelectedCount) {
       bulkSelectedCount.textContent = String(count);
@@ -1098,6 +1290,85 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateBulkActionsPanel();
+    updateGeneratedTitlePreview();
+  }
+
+  function firstSelectedId() {
+    for (var i = 0; i < checkboxes.length; i++) {
+      if (checkboxes[i].checked) {
+        return checkboxes[i].value;
+      }
+    }
+
+    return '';
+  }
+
+  function setGeneratedTitlePreviewState(text, length) {
+    if (!generatedTitlePreview || !generatedTitleLength) {
+      return;
+    }
+
+    generatedTitlePreview.textContent = text || '';
+    generatedTitleLength.textContent = String(length || 0) + ' / 75';
+    generatedTitleLength.classList.remove('text-bg-secondary', 'text-bg-danger');
+    generatedTitleLength.classList.add((length || 0) > 75 ? 'text-bg-danger' : 'text-bg-secondary');
+
+    if (generatedTitlePreviewBox) {
+      generatedTitlePreviewBox.classList.remove('border-danger', 'bg-danger-subtle');
+      if ((length || 0) > 75) {
+        generatedTitlePreviewBox.classList.add('border-danger', 'bg-danger-subtle');
+      }
+    }
+  }
+
+  function updateGeneratedTitlePreview() {
+    if (!window.fetch || !generatedTitlePreview || !generatedTitleLength) {
+      return;
+    }
+
+    var productId = firstSelectedId();
+    var titleTemplateId = titleTemplateSelect ? String(titleTemplateSelect.value || '').trim() : '';
+    var collectionName = collectionNameInput ? String(collectionNameInput.value || '').trim() : '';
+
+    if (!productId) {
+      setGeneratedTitlePreviewState('Wybierz produkt, aby zobaczyc podglad.', 0);
+      return;
+    }
+
+    if (!titleTemplateId) {
+      setGeneratedTitlePreviewState('Wybierz szablon tytulu, aby zobaczyc podglad.', 0);
+      return;
+    }
+
+    setGeneratedTitlePreviewState('Liczenie podgladu tytulu...', 0);
+
+    fetch(
+      generatedTitlePreviewUrl
+        + '&product_id=' + encodeURIComponent(productId)
+        + '&title_template_id=' + encodeURIComponent(titleTemplateId)
+        + '&collection_name=' + encodeURIComponent(collectionName),
+      { headers: { 'Accept': 'application/json' } }
+    )
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = {};
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (error) {
+            data = { message: text || ('HTTP ' + response.status) };
+          }
+          if (!response.ok) {
+            throw new Error(data && data.message ? data.message : ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        setGeneratedTitlePreviewState(String(data && data.title ? data.title : ''), Number(data && data.length ? data.length : 0));
+      })
+      .catch(function (error) {
+        setGeneratedTitlePreviewState(error && error.message ? error.message : 'Nie udalo sie pobrac podgladu tytulu.', 0);
+      });
   }
 
   if (selectAll) {
@@ -1277,10 +1548,6 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Zaznacz produkty do eksportu.');
         return;
       }
-      // Ensure "selected" mode is checked
-      if (exportSelected) {
-        exportSelected.checked = true;
-      }
       // Update the selected count in the modal
       var countSpan = document.getElementById('selectedCount');
       if (countSpan) {
@@ -1289,7 +1556,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // Show the CSV export modal
       var csvModal = new bootstrap.Modal(document.getElementById('csvExportModal'));
       csvModal.show();
+      updateGeneratedTitlePreview();
     });
+  }
+
+  if (titleTemplateSelect) {
+    titleTemplateSelect.addEventListener('change', updateGeneratedTitlePreview);
+  }
+
+  if (collectionNameInput) {
+    collectionNameInput.addEventListener('input', updateGeneratedTitlePreview);
   }
 
   // Bulk Cancel handler
@@ -1345,6 +1621,8 @@ document.addEventListener('DOMContentLoaded', function() {
           input.value = ids[j];
           selectedContainer.appendChild(input);
         }
+      } else if (exportFiltered && exportFiltered.checked) {
+        return;
       }
     });
   }

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 10:26:32
+/* Smarty version 5.8.0, created on 2026-04-23 12:56:56
   from 'file:csv_templates/title_generator.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1eeb86a0475_05037990',
+  'unifunc' => 'content_69e9faf8120ca2_15682008',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'e4e4d9adc211cbda30d04c5462841c3a8b41a8c6' => 
     array (
       0 => 'csv_templates/title_generator.tpl',
-      1 => 1774552119,
+      1 => 1776941810,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1eeb86a0475_05037990 (\Smarty\Template $_smarty_tpl) {
+function content_69e9faf8120ca2_15682008 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -48,6 +48,26 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
   <div class="app-content">
     <div class="container-fluid">
+      <?php if ($_smarty_tpl->getValue('flashSuccess')) {?><div class="alert alert-success"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashSuccess'), ENT_QUOTES, 'UTF-8', true);?>
+</div><?php }?>
+      <?php if ($_smarty_tpl->getValue('flashError')) {?><div class="alert alert-danger"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashError'), ENT_QUOTES, 'UTF-8', true);?>
+</div><?php }?>
+
+      <div class="card mb-4">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h3 class="card-title mb-1">Szablony tytulow</h3>
+            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> używanego podczas eksportu CSV.</div>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Szablony CSV</a>
+            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb-4">
         <div class="card-body">
           <h3 class="card-title mb-2">Jak tego uzyc</h3>
@@ -57,84 +77,67 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
             <li>Na liscie produktow, przy eksporcie CSV, wybierz szablon tytulu i wpisz <code>Kolekcje do tytulu</code>.</li>
             <li>Generator sam pobierze z rozszyfrowanych parametrow Allegro dedykowany model i dedykowana marke.</li>
           </ol>
-          <div class="mt-3">
-            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
-          </div>
         </div>
       </div>
 
-      <div class="row g-3">
-        <?php
-$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('titleTemplates'), 'titleTemplate', false, 'templateKey');
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Nazwa</th>
+                  <th>Opis</th>
+                  <th>Wzor</th>
+                  <th>Utworzono</th>
+                  <th>Zmieniono</th>
+                  <th class="text-end">Akcje</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if ($_smarty_tpl->getValue('titleTemplates')) {?>
+                  <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('titleTemplates'), 'titleTemplate');
 $foreach0DoElse = true;
-foreach ($_from ?? [] as $_smarty_tpl->getVariable('templateKey')->value => $_smarty_tpl->getVariable('titleTemplate')->value) {
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('titleTemplate')->value) {
 $foreach0DoElse = false;
 ?>
-          <div class="col-lg-6">
-            <div class="card h-100">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <h3 class="card-title mb-0"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('titleTemplate')['name'], ENT_QUOTES, 'UTF-8', true);?>
-</h3>
-                <span class="badge text-bg-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('templateKey'), ENT_QUOTES, 'UTF-8', true);?>
-</span>
-              </div>
-              <div class="card-body">
-                <p class="mb-2"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('titleTemplate')['description'], ENT_QUOTES, 'UTF-8', true);?>
-</p>
-                <div class="mb-3">
-                  <div class="small fw-semibold mb-1">Wzor:</div>
-                  <pre class="bg-light border rounded p-2 small mb-0"><code><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('titleTemplate')['template_body'] ?? null)===null||$tmp==='' ? $_smarty_tpl->getValue('titleTemplate')['pattern'] ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+                    <tr>
+                      <td class="fw-semibold"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('titleTemplate')['name'], ENT_QUOTES, 'UTF-8', true);?>
+</td>
+                      <td><?php echo htmlspecialchars((string)$_smarty_tpl->getSmarty()->getModifierCallback('truncate')((($tmp = $_smarty_tpl->getValue('titleTemplate')['description'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp),120), ENT_QUOTES, 'UTF-8', true);?>
+</td>
+                      <td>
+                        <pre class="bg-light border rounded p-2 small mb-0"><code><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('titleTemplate')['template_body'] ?? null)===null||$tmp==='' ? $_smarty_tpl->getValue('titleTemplate')['pattern'] ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </code></pre>
-                </div>
-                <div class="mb-3">
-                  <div class="small fw-semibold mb-1">Przyklad:</div>
-                  <div class="border rounded p-2 bg-light"><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('titleTemplate')['example'] ?? null)===null||$tmp==='' ? 'Ustalany dynamicznie podczas eksportu' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
-</div>
-                </div>
-                <div class="d-flex gap-2">
-                  <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+                      </td>
+                      <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('titleTemplate')['created_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</td>
+                      <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('titleTemplate')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+</td>
+                      <td class="text-end">
+                        <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=edittitle&id=<?php echo $_smarty_tpl->getValue('titleTemplate')['id'];?>
 " class="btn btn-sm btn-outline-primary">Edytuj</a>
-                  <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+                        <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=deletetitle" class="d-inline" onsubmit="return confirm('Usunac szablon tytulu <?php echo strtr((string)$_smarty_tpl->getValue('titleTemplate')['name'], array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
 						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
 						"`" => "\\`", "\${" => "\\\$\{"));?>
 ?');">
-                    <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('titleTemplate')['id'];?>
+                          <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('titleTemplate')['id'];?>
 ">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        <?php
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+                        </form>
+                      </td>
+                    </tr>
+                  <?php
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
-      </div>
-
-      <div class="card mt-4">
-        <div class="card-header"><h3 class="card-title mb-0">Dostepne tokeny</h3></div>
-        <div class="card-body">
-          <div class="row g-2">
-            <?php
-$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('availableTitleTokens'), 'label', false, 'token');
-$foreach1DoElse = true;
-foreach ($_from ?? [] as $_smarty_tpl->getVariable('token')->value => $_smarty_tpl->getVariable('label')->value) {
-$foreach1DoElse = false;
-?>
-              <div class="col-lg-6">
-                <div class="border rounded p-2 small">
-                  <code><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('token'), ENT_QUOTES, 'UTF-8', true);?>
-</code><br>
-                  <span class="text-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('label'), ENT_QUOTES, 'UTF-8', true);?>
-</span>
-                </div>
-              </div>
-            <?php
-}
-$_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
+                <?php } else { ?>
+                  <tr><td colspan="6" class="text-center py-4">Brak szablonow tytulow.</td></tr>
+                <?php }?>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

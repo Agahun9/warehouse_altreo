@@ -55,6 +55,39 @@
     .quick-search-item:hover {
       background: rgba(13, 110, 253, 0.08);
     }
+
+    .topbar-user-link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      max-width: min(280px, 32vw);
+      white-space: nowrap;
+    }
+
+    .topbar-user-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .topbar-user-role {
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 991.98px) {
+      .topbar-user-link {
+        max-width: 150px;
+      }
+
+      .topbar-user-role {
+        display: none;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .topbar-user-link {
+        max-width: 110px;
+      }
+    }
   </style>
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
@@ -72,6 +105,9 @@
             {/if}
             {if $currentUser.role eq 'admin' or in_array('allegro', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=allegro&action=index" class="nav-link">Allegro</a></li>
+            {/if}
+            {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=empik&action=index" class="nav-link">Empik</a></li>
             {/if}
             {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
@@ -108,7 +144,18 @@
 
         <ul class="navbar-nav ms-auto">
           {if $currentUser}
-            <li class="nav-item"><span class="nav-link text-secondary">{$currentUser.email|escape}</span></li>
+            <li class="nav-item">
+              <span class="nav-link text-secondary topbar-user-link">
+                <span class="topbar-user-name">
+                  {if $currentUser.first_name|default:'' neq '' or $currentUser.last_name|default:'' neq ''}
+                    {$currentUser.first_name|default:''|escape} {$currentUser.last_name|default:''|escape}
+                  {else}
+                    {$currentUser.email|escape}
+                  {/if}
+                </span>
+                <span class="badge topbar-user-role text-bg-{if $currentUser.role eq 'admin'}dark{else}secondary{/if}">{$currentUser.role|escape}</span>
+              </span>
+            </li>
             <li class="nav-item"><a href="{$baseUrl}?controller=auth&action=logout" class="nav-link">Wyloguj</a></li>
           {else}
             <li class="nav-item"><a href="{$baseUrl}?controller=auth&action=login" class="nav-link">Logowanie</a></li>
@@ -149,6 +196,14 @@
                   <a href="{$baseUrl}?controller=allegro&action=index" class="nav-link{if $currentController eq 'allegro'} active{/if}">
                     <i class="nav-icon bi bi-shop"></i>
                     <p>Allegro</p>
+                  </a>
+                </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=empik&action=index" class="nav-link{if $currentController eq 'empik'} active{/if}">
+                    <i class="nav-icon bi bi-bag"></i>
+                    <p>Empik</p>
                   </a>
                 </li>
               {/if}

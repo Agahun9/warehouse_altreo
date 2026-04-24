@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 08:13:48
+/* Smarty version 5.8.0, created on 2026-04-23 09:20:36
   from 'file:layout/footer.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1cf9c975068_99053729',
+  'unifunc' => 'content_69e9c8442f13e9_29997749',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '502315d5d78695b6467a1f900dd9a75a1e10fc71' => 
     array (
       0 => 'layout/footer.tpl',
-      1 => 1774536131,
+      1 => 1776928833,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1cf9c975068_99053729 (\Smarty\Template $_smarty_tpl) {
+function content_69e9c8442f13e9_29997749 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/layout';
 ?>    <footer class="app-footer">
       <div class="float-end d-none d-sm-inline">Created by Agahun</div>
@@ -82,12 +82,16 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
           var item = items[i];
           var sku = String(item.sku || '');
           var name = String(item.product_name || '');
+          var oldSku = String(item.old_sku || '');
           html += '<a class="quick-search-item" href="<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
 						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
 						"`" => "\\`", "\${" => "\\\$\{"));?>
 ?controller=products&action=index&filter_global=' + encodeURIComponent(query || sku) + '">';
           html += '<div class="fw-semibold">' + sku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
           html += '<div class="small text-secondary">' + name.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          if (oldSku) {
+            html += '<div class="small text-secondary">OLD_SKU: ' + oldSku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          }
           html += '</a>';
         }
 

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 10:26:34
+/* Smarty version 5.8.0, created on 2026-04-23 12:55:10
   from 'file:csv_templates/title_form.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1eeba39d366_57234480',
+  'unifunc' => 'content_69e9fa8eeb3d92_24212391',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'f276a3c6c1a59e1472e244e9a7c33972573e60c5' => 
     array (
       0 => 'csv_templates/title_form.tpl',
-      1 => 1774552148,
+      1 => 1776941678,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1eeba39d366_57234480 (\Smarty\Template $_smarty_tpl) {
+function content_69e9fa8eeb3d92_24212391 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -84,6 +84,12 @@ echo $_prefixVariable2;?>
 field:product.allegro_parameter.456} wzory <?php ob_start();?>{<?php $_prefixVariable3 = ob_get_clean();
 echo $_prefixVariable3;?>
 option:collection_name}</code></div>
+              <div class="form-text">Znajdz i zamien w tokenie: <code><?php ob_start();?>{<?php $_prefixVariable4 = ob_get_clean();
+echo $_prefixVariable4;?>
+field:product.allegro_parameter.249512+Czarny-Czarna}</code> zamieni <code>Czarny</code> na <code>Czarna</code> w wartosci tego pola.</div>
+              <div class="form-text">Wiele zamian naraz: <code><?php ob_start();?>{<?php $_prefixVariable5 = ob_get_clean();
+echo $_prefixVariable5;?>
+field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska}</code>.</div>
             </div>
           </div>
         </div>
@@ -93,6 +99,8 @@ option:collection_name}</code></div>
           <div class="card-body">
             <div class="row g-2 align-items-end">
               <div class="col-md-8">
+                <label class="form-label">Szukaj tokenu</label>
+                <input type="text" id="tokenSearch" class="form-control mb-2" placeholder="Wpisz fragment nazwy albo tokenu">
                 <label class="form-label">Dostepne tokeny</label>
                 <select id="tokenSelect" class="form-select">
                   <option value="">Wybierz token do wstawienia</option>
@@ -118,11 +126,11 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <div class="mt-3">
               <div class="small fw-semibold mb-2">Szybkie tokeny eksportowe</div>
               <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable4 = ob_get_clean();
-echo $_prefixVariable4;?>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable6 = ob_get_clean();
+echo $_prefixVariable6;?>
 option:collection_name}">Kolekcja</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable5 = ob_get_clean();
-echo $_prefixVariable5;?>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable7 = ob_get_clean();
+echo $_prefixVariable7;?>
 option:price_to_csv}">Cena z eksportu</button>
               </div>
             </div>
@@ -144,6 +152,7 @@ option:price_to_csv}">Cena z eksportu</button>
 (function () {
   var textarea = document.getElementById('templateBody');
   var select = document.getElementById('tokenSelect');
+  var tokenSearch = document.getElementById('tokenSearch');
   var insertButton = document.getElementById('insertTokenBtn');
   var quickButtons = document.querySelectorAll('.js-quick-token');
 
@@ -172,6 +181,22 @@ option:price_to_csv}">Cena z eksportu</button>
   for (var i = 0; i < quickButtons.length; i++) {
     quickButtons[i].addEventListener('click', function () {
       insertAtCursor(this.getAttribute('data-token') || '');
+    });
+  }
+
+  if (tokenSearch && select) {
+    tokenSearch.addEventListener('input', function () {
+      var query = String(tokenSearch.value || '').toLowerCase().trim();
+      var options = select.querySelectorAll('option');
+      for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+        if (optionIndex === 0) {
+          options[optionIndex].hidden = false;
+          continue;
+        }
+
+        var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+        options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+      }
     });
   }
 })();

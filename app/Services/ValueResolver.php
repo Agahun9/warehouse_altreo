@@ -18,10 +18,20 @@ class ValueResolver
     /** @var array */
     private $allegroCategoryDefinitionsCache = array();
 
+    /** @var EmpikService */
+    private $empik;
+
+    /** @var array */
+    private $empikDefinitionCache = array();
+
+    /** @var array */
+    private $empikCategoryDefinitionsCache = array();
+
     public function __construct()
     {
         $this->computed = new ComputedFunctions();
         $this->allegro = new AllegroService();
+        $this->empik = new EmpikService();
     }
 
     public function resolveField(array $product, string $path, string $arraySeparator = '|', array $exportOptions = array())
@@ -58,6 +68,14 @@ class ValueResolver
 
         if (strpos($normalized, 'allegro_parameter.') === 0) {
             return $this->singleAllegroParameterValue($product, substr($normalized, 18));
+        }
+
+        if (in_array($normalized, array('empik_parameters', 'empik_parameters_text'), true)) {
+            return $this->formatEmpikParameters($product);
+        }
+
+        if (strpos($normalized, 'empik_parameter.') === 0) {
+            return $this->singleEmpikParameterValue($product, substr($normalized, 16));
         }
 
         if (in_array($normalized, array('price_to_csv', 'export_price'), true)) {
@@ -111,12 +129,14 @@ class ValueResolver
             'category_name' => 'category_name',
             'category_slug' => 'category_slug',
             'category_id_allegro' => 'allegro_category_id',
+            'category_id_empik' => 'empik_category_id',
             'product.name' => 'product_name',
             'product.title' => 'product_name',
             'product.category.name' => 'category_name',
             'product.category.slug' => 'category_slug',
             'product.category.id' => 'category_id',
             'product.category_id_allegro' => 'category_allegro_id',
+            'product.category_id_empik' => 'category_empik_id',
             'product.image' => 'img',
             'product.image.url' => 'img',
             'product.price' => 'price_gross',
@@ -137,6 +157,7 @@ class ValueResolver
             'csv_title' => 'generated_title',
             'allegro_parameters' => 'allegro_parameters',
             'allegro_parameters_eu' => 'allegro_parameters_eu',
+            'empik_parameters' => 'empik_parameters',
             'categories.name' => 'category_name',
             'categories.slug' => 'category_slug',
             'categories.allegro_id' => 'allegro_category_id',
@@ -336,6 +357,105 @@ class ValueResolver
 
         $this->allegroDefinitionCache[$categoryAllegroId] = $map;
         return $map;
+    }
+
+    private function formatEmpikParameters(array $product): string
+    {
+        $raw = isset($product['empik_parameters_raw']) && is_array($product['empik_parameters_raw']) ? $product['empik_parameters_raw'] : array();
+        if ($raw === array()) {
+            return '';
+        }
+
+        $categoryEmpikId = isset($product['category_empik_id']) ? (string) $product['category_empik_id'] : '';
+        $nameMap = $this->empikParameterNameMap($categoryEmpikId);
+        $lines = array();
+
+        foreach ($raw as $parameterId => $value) {
+            $label = isset($nameMap[$parameterId]) ? $nameMap[$parameterId] : (string) $parameterId;
+            $formattedValue = $this->formatEmpikParameterValue($value);
+            if ($formattedValue === '') {
+                continue;
+            }
+
+            $lines[] = $label . ': ' . $formattedValue;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function singleEmpikParameterValue(array $product, string $parameterId): string
+    {
+        $raw = isset($product['empik_parameters_raw']) && is_array($product['empik_parameters_raw']) ? $product['empik_parameters_raw'] : array();
+        if ($parameterId === '' || !array_key_exists($parameterId, $raw)) {
+            return '';
+        }
+
+        return $this->formatEmpikParameterValue($raw[$parameterId]);
+    }
+
+    private function formatEmpikParameterValue($value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $parts[] = $item;
+                }
+            }
+
+            return implode('|', $parts);
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        return trim((string) $value);
+    }
+
+    private function empikParameterNameMap(string $categoryEmpikId): array
+    {
+        if ($categoryEmpikId === '') {
+            return array();
+        }
+
+        if (isset($this->empikDefinitionCache[$categoryEmpikId])) {
+            return $this->empikDefinitionCache[$categoryEmpikId];
+        }
+
+        $map = array();
+
+        foreach ($this->empikCategoryDefinitions($categoryEmpikId) as $definition) {
+            if (!is_array($definition) || empty($definition['id'])) {
+                continue;
+            }
+
+            $map[(string) $definition['id']] = isset($definition['name']) ? (string) $definition['name'] : (string) $definition['id'];
+        }
+
+        $this->empikDefinitionCache[$categoryEmpikId] = $map;
+        return $map;
+    }
+
+    private function empikCategoryDefinitions(string $categoryEmpikId): array
+    {
+        if ($categoryEmpikId === '') {
+            return array();
+        }
+
+        if (isset($this->empikCategoryDefinitionsCache[$categoryEmpikId])) {
+            return $this->empikCategoryDefinitionsCache[$categoryEmpikId];
+        }
+
+        try {
+            $definitions = $this->empik->categoryAttributes($categoryEmpikId);
+        } catch (\Throwable $exception) {
+            $definitions = array();
+        }
+
+        $this->empikCategoryDefinitionsCache[$categoryEmpikId] = is_array($definitions) ? $definitions : array();
+        return $this->empikCategoryDefinitionsCache[$categoryEmpikId];
     }
 
     private function allegroParameterDefinition(string $categoryAllegroId, string $parameterId): array

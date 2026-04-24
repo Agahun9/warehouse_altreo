@@ -264,6 +264,30 @@ class AllegroStorageRepository
         $this->database->delete('allegro_cache', 'expires_at < :now', array('now' => date('Y-m-d H:i:s')));
     }
 
+    private function liveWarehouseJoinSql(): string
+    {
+        return ' LEFT JOIN products warehouse ON warehouse.id = ('
+            . ' CASE'
+            . ' WHEN offers.sku REGEXP "[A-Za-z]" THEN ('
+            . '   SELECT MIN(products_sku.id)'
+            . '   FROM products products_sku'
+            . '   WHERE products_sku.deleted_at IS NULL'
+            . '     AND products_sku.sku = offers.sku'
+            . ' )'
+            . ' WHEN offers.sku REGEXP "^[0-9]+$" THEN ('
+            . '   SELECT MIN(products_old.id)'
+            . '   FROM products products_old'
+            . '   INNER JOIN product_custom_field_values old_sku_values ON old_sku_values.product_id = products_old.id'
+            . '   INNER JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.id = old_sku_values.definition_id'
+            . '   WHERE products_old.deleted_at IS NULL'
+            . '     AND old_sku_definition.slug = "old_sku"'
+            . '     AND old_sku_values.value = offers.sku'
+            . ' )'
+            . ' ELSE NULL'
+            . ' END'
+            . ' )';
+    }
+
     public function allAccounts(): array
     {
         return $this->database->fetchAll(
@@ -423,7 +447,7 @@ class AllegroStorageRepository
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id';
 
         if ($analysis['needs_warehouse']) {
-            $idSql .= ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL';
+            $idSql .= $this->liveWarehouseJoinSql();
         }
 
         if ($analysis['needs_shared_stock']) {
@@ -446,7 +470,7 @@ class AllegroStorageRepository
         $detailParams = array();
         $placeholders = $this->buildIntegerPlaceholders('offer_id', $offerIds, $detailParams);
         $sql = 'SELECT offers.id, offers.account_id, offers.offer_id, offers.sku, offers.external_id, offers.warehouse_product_id,'
-            . ' offers.linked_by, offers.name, offers.primary_image_url, offers.primary_image_hash, offers.image_count,'
+            . ' offers.linked_by, warehouse.id AS warehouse_product_live_id, offers.name, offers.primary_image_url, offers.primary_image_hash, offers.image_count,'
             . ' offers.price_amount, offers.price_currency, offers.publication_status, offers.publication_ended_by,'
             . ' offers.stock_available, offers.stock_sold, offers.invoice_type, offers.allegro_product_id,'
             . ' offers.category_id, offers.category_name, offers.marketplaces_json, offers.parameters_json,'
@@ -458,7 +482,7 @@ class AllegroStorageRepository
             . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
             . ' FROM allegro_offers offers'
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
-            . ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL'
+            . $this->liveWarehouseJoinSql()
             . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
             . ' WHERE offers.id IN (' . implode(', ', $placeholders) . ')';
@@ -515,7 +539,7 @@ class AllegroStorageRepository
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id';
 
         if ($analysis['needs_warehouse']) {
-            $sql .= ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL';
+            $sql .= $this->liveWarehouseJoinSql();
         }
 
         if ($analysis['needs_shared_stock']) {
@@ -578,14 +602,14 @@ class AllegroStorageRepository
     public function findOfferById(int $id)
     {
         $row = $this->database->fetch(
-            'SELECT offers.*, accounts.name AS account_name, accounts.slug AS account_slug,'
+            'SELECT offers.*, warehouse.id AS warehouse_product_live_id, accounts.name AS account_name, accounts.slug AS account_slug,'
             . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross, warehouse.vat_rate AS warehouse_vat_rate,'
             . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name, warehouse_categories.allegro_category_id AS warehouse_category_allegro_id,'
             . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
             . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
             . ' FROM allegro_offers offers'
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
-            . ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL'
+            . $this->liveWarehouseJoinSql()
             . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
             . ' WHERE offers.id = :id LIMIT 1',
@@ -602,7 +626,7 @@ class AllegroStorageRepository
         $row['product_set'] = $this->decodeJsonList($row['product_set_json'] ?? null);
         $row['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
 
-        return $row;
+        return $this->normalizeOfferViewData($row);
     }
 
     public function findOfferByAccountAndOfferId(int $accountId, string $offerId)
@@ -613,13 +637,13 @@ class AllegroStorageRepository
         }
 
         $row = $this->database->fetch(
-            'SELECT offers.*,'
+            'SELECT offers.*, warehouse.id AS warehouse_product_live_id,'
             . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross,'
             . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name, warehouse_categories.allegro_category_id AS warehouse_category_allegro_id,'
             . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
             . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
             . ' FROM allegro_offers offers'
-            . ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL'
+            . $this->liveWarehouseJoinSql()
             . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
             . ' WHERE offers.account_id = :account_id AND offers.offer_id = :offer_id LIMIT 1',
@@ -692,8 +716,8 @@ class AllegroStorageRepository
             . ') ON DUPLICATE KEY UPDATE'
             . ' sku = VALUES(sku),'
             . ' external_id = VALUES(external_id),'
-            . ' warehouse_product_id = COALESCE(VALUES(warehouse_product_id), warehouse_product_id),'
-            . ' linked_by = COALESCE(VALUES(linked_by), linked_by),'
+            . ' warehouse_product_id = VALUES(warehouse_product_id),'
+            . ' linked_by = VALUES(linked_by),'
             . ' name = VALUES(name),'
             . ' primary_image_url = VALUES(primary_image_url),'
             . ' primary_image_hash = VALUES(primary_image_hash),'
@@ -721,6 +745,15 @@ class AllegroStorageRepository
             . ' last_synced_at = VALUES(last_synced_at)';
 
         $this->database->query($sql, $payload);
+    }
+
+    public function clearStoredOfferLinks(): int
+    {
+        return $this->database->query(
+            'UPDATE allegro_offers'
+            . ' SET warehouse_product_id = NULL, linked_by = NULL'
+            . ' WHERE warehouse_product_id IS NOT NULL OR linked_by IS NOT NULL'
+        )->rowCount();
     }
 
     public function fetchOffersForCompaction(int $limit = 500, ?int $accountId = null): array
@@ -898,7 +931,7 @@ class AllegroStorageRepository
         $sql = 'SELECT offers.id, offers.account_id, offers.offer_id'
             . ' FROM allegro_offers offers'
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
-            . ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL'
+            . $this->liveWarehouseJoinSql()
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
             . $whereSql
             . ' ORDER BY offers.id ASC';
@@ -1130,19 +1163,41 @@ class AllegroStorageRepository
             return array();
         }
 
-        $placeholders = array();
+        $skuPlaceholders = array();
+        $oldSkuPlaceholders = array();
         $params = array();
         foreach ($productIds as $index => $productId) {
-            $key = 'product_id_' . $index;
-            $placeholders[] = ':' . $key;
-            $params[$key] = $productId;
+            $skuKey = 'product_id_sku_' . $index;
+            $oldSkuKey = 'product_id_old_sku_' . $index;
+            $skuPlaceholders[] = ':' . $skuKey;
+            $oldSkuPlaceholders[] = ':' . $oldSkuKey;
+            $params[$skuKey] = $productId;
+            $params[$oldSkuKey] = $productId;
         }
 
         return $this->database->fetchAll(
-            'SELECT id, account_id, offer_id'
-            . ' FROM allegro_offers'
-            . ' WHERE warehouse_product_id IN (' . implode(', ', $placeholders) . ')'
-            . ' ORDER BY id ASC',
+            'SELECT DISTINCT offers.id, offers.account_id, offers.offer_id'
+            . ' FROM allegro_offers offers'
+            . ' WHERE ('
+            . '   EXISTS ('
+            . '     SELECT 1'
+            . '     FROM products warehouse_sku'
+            . '     WHERE warehouse_sku.deleted_at IS NULL'
+            . '       AND warehouse_sku.id IN (' . implode(', ', $skuPlaceholders) . ')'
+            . '       AND warehouse_sku.sku = offers.sku'
+            . '   )'
+            . '   OR EXISTS ('
+            . '     SELECT 1'
+            . '     FROM products warehouse_old'
+            . '     INNER JOIN product_custom_field_values warehouse_old_values ON warehouse_old_values.product_id = warehouse_old.id'
+            . '     INNER JOIN product_custom_field_definitions warehouse_old_definition ON warehouse_old_definition.id = warehouse_old_values.definition_id'
+            . '     WHERE warehouse_old.deleted_at IS NULL'
+            . '       AND warehouse_old.id IN (' . implode(', ', $oldSkuPlaceholders) . ')'
+            . '       AND warehouse_old_definition.slug = "old_sku"'
+            . '       AND warehouse_old_values.value = offers.sku'
+            . '   )'
+            . ' )'
+            . ' ORDER BY offers.id ASC',
             $params
         );
     }
@@ -1154,16 +1209,16 @@ class AllegroStorageRepository
         }
 
         $rows = $this->database->fetchAll(
-            'SELECT offers.*,'
+            'SELECT offers.*, warehouse.id AS warehouse_product_live_id,'
             . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross,'
             . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name, warehouse_categories.allegro_category_id AS warehouse_category_allegro_id,'
             . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
             . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
             . ' FROM allegro_offers offers'
-            . ' LEFT JOIN products warehouse ON warehouse.id = offers.warehouse_product_id AND warehouse.deleted_at IS NULL'
+            . $this->liveWarehouseJoinSql()
             . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
-            . ' WHERE offers.account_id = :account_id AND offers.last_seen_cycle = :cycle AND offers.warehouse_product_id IS NOT NULL'
+            . ' WHERE offers.account_id = :account_id AND offers.last_seen_cycle = :cycle AND warehouse.id IS NOT NULL'
             . ' ORDER BY offers.id ASC',
             array(
                 'account_id' => $accountId,
@@ -1549,9 +1604,9 @@ class AllegroStorageRepository
 
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
         if ($linked === '1') {
-            $whereParts[] = 'offers.warehouse_product_id IS NOT NULL';
+            $whereParts[] = 'warehouse.id IS NOT NULL';
         } elseif ($linked === '0') {
-            $whereParts[] = 'offers.warehouse_product_id IS NULL';
+            $whereParts[] = 'warehouse.id IS NULL';
         }
 
         $market = isset($filters['market']) ? trim((string) $filters['market']) : '';
@@ -1667,6 +1722,7 @@ class AllegroStorageRepository
         $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
         $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
         $duplicates = isset($filters['duplicates']) ? trim((string) $filters['duplicates']) : '';
+        $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
 
         $needsWarehouse = $query !== '';
         $needsSharedStock = $warehouseQuantity !== '';
@@ -1679,6 +1735,10 @@ class AllegroStorageRepository
         }
 
         if ($needsSharedStock) {
+            $needsWarehouse = true;
+        }
+
+        if ($linked !== '') {
             $needsWarehouse = true;
         }
 
@@ -1698,7 +1758,7 @@ class AllegroStorageRepository
             'sku' => 'offers.sku',
             'name' => 'offers.name',
             'warehouse_sku' => 'warehouse.sku',
-            'linked' => 'CASE WHEN offers.warehouse_product_id IS NULL THEN 0 ELSE 1 END',
+            'linked' => 'CASE WHEN warehouse.id IS NULL THEN 0 ELSE 1 END',
             'price' => 'offers.price_amount',
             'invoice' => 'offers.invoice_type',
             'status' => 'offers.publication_status',
@@ -1721,6 +1781,14 @@ class AllegroStorageRepository
 
     private function normalizeOfferViewData(array $row): array
     {
+        $liveWarehouseProductId = isset($row['warehouse_product_live_id']) ? (int) $row['warehouse_product_live_id'] : 0;
+        $row['stored_warehouse_product_id'] = isset($row['warehouse_product_id']) ? $row['warehouse_product_id'] : null;
+        $row['warehouse_product_id'] = $liveWarehouseProductId > 0 ? $liveWarehouseProductId : null;
+        if (empty($row['warehouse_product_id'])) {
+            $row['linked_by'] = null;
+        } elseif (trim((string) ($row['linked_by'] ?? '')) === '') {
+            $row['linked_by'] = 'sku';
+        }
         $marketplaceEntries = $this->extractMarketplaceEntriesForView($row);
         $row['marketplace_entries'] = $marketplaceEntries;
         $row['marketplace_labels'] = array_values(array_map(static function (array $entry): string {

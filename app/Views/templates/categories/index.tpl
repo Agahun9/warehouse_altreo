@@ -46,6 +46,7 @@
                   <th>Slug</th>
                   <th>Prefix SKU</th>
                   <th>Allegro ID</th>
+                  <th>Empik ID</th>
                   <th>Opis</th>
                   <th>Produkty</th>
                   <th>Utworzono</th>
@@ -62,6 +63,7 @@
                       <td><code>{$category.slug|escape}</code></td>
                       <td><span class="badge text-bg-dark">{$category.sku_prefix|default:'PRD'|escape}</span></td>
                       <td>{if $category.allegro_category_id}<code>{$category.allegro_category_id|escape}</code>{else}-{/if}</td>
+                      <td>{if $category.empik_category_id}<code>{$category.empik_category_id|escape}</code>{else}-{/if}</td>
                       <td>{$category.description|default:'-'|truncate:100|escape}</td>
                       <td><span class="badge text-bg-secondary">{$category.products_count|default:0}</span></td>
                       <td>{$category.created_at|default:'-'}</td>
@@ -81,7 +83,7 @@
                   {/foreach}
                 {else}
                   <tr>
-                    <td colspan="10" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
+                    <td colspan="11" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
                   </tr>
                 {/if}
               </tbody>
