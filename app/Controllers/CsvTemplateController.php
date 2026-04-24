@@ -1989,6 +1989,7 @@ class CsvTemplateController extends Controller
             'product.allegro_parameters_eu' => 'Parametry ALLEGRO EU (parameter_id|type|value|)',
             'product.empik_parameters' => 'Parametry Empik (nazwa: wartosc)',
             'product.generated_title' => 'Generowany tytul CSV',
+            'product.collection_name' => 'Kolekcja wpisana przy eksporcie CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
             'product.price_net' => 'Cena netto',
             'product.price_gross' => 'Cena brutto',

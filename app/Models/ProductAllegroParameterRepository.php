@@ -108,12 +108,12 @@ class ProductAllegroParameterRepository
     public function usedParameterFieldOptions(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT DISTINCT pap.parameter_id, c.allegro_category_id'
+            'SELECT DISTINCT pap.parameter_id, c.allegro_category_id, c.name AS category_name'
             . ' FROM product_allegro_parameters pap'
             . ' INNER JOIN products p ON p.id = pap.product_id'
             . ' INNER JOIN categories c ON c.id = p.category_id'
             . ' WHERE p.deleted_at IS NULL'
-            . ' ORDER BY pap.parameter_id ASC'
+            . ' ORDER BY pap.parameter_id ASC, c.name ASC'
         );
 
         if ($rows === array()) {
@@ -121,7 +121,30 @@ class ProductAllegroParameterRepository
         }
 
         $nameMapByCategory = array();
+        $categoriesByParameter = array();
         $options = array();
+
+        foreach ($rows as $row) {
+            $parameterId = isset($row['parameter_id']) ? (string) $row['parameter_id'] : '';
+            $categoryAllegroId = isset($row['allegro_category_id']) ? (string) $row['allegro_category_id'] : '';
+            $categoryName = trim((string) ($row['category_name'] ?? ''));
+
+            if ($parameterId === '') {
+                continue;
+            }
+
+            if (!isset($categoriesByParameter[$parameterId])) {
+                $categoriesByParameter[$parameterId] = array();
+            }
+
+            if ($categoryName !== '' && !in_array($categoryName, $categoriesByParameter[$parameterId], true)) {
+                $categoriesByParameter[$parameterId][] = $categoryName;
+            }
+
+            if ($categoryAllegroId !== '' && !isset($nameMapByCategory[$categoryAllegroId])) {
+                $nameMapByCategory[$categoryAllegroId] = $this->parameterNamesForCategory($categoryAllegroId);
+            }
+        }
 
         foreach ($rows as $row) {
             $parameterId = isset($row['parameter_id']) ? (string) $row['parameter_id'] : '';
@@ -131,15 +154,16 @@ class ProductAllegroParameterRepository
                 continue;
             }
 
-            if ($categoryAllegroId !== '' && !isset($nameMapByCategory[$categoryAllegroId])) {
-                $nameMapByCategory[$categoryAllegroId] = $this->parameterNamesForCategory($categoryAllegroId);
-            }
-
             $parameterName = isset($nameMapByCategory[$categoryAllegroId][$parameterId])
                 ? $nameMapByCategory[$categoryAllegroId][$parameterId]
                 : $parameterId;
 
-            $options['product.allegro_parameter.' . $parameterId] = 'Allegro: ' . $parameterName;
+            $label = 'Allegro: ' . $parameterName . ' [' . $parameterId . ']';
+            if (!empty($categoriesByParameter[$parameterId])) {
+                $label .= ' | Kategorie: ' . implode(', ', $categoriesByParameter[$parameterId]);
+            }
+
+            $options['product.allegro_parameter.' . $parameterId] = $label;
         }
 
         return $options;

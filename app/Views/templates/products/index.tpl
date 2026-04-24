@@ -234,6 +234,31 @@
       color: #027a48;
     }
 
+    .products-category-filter {
+      min-width: 180px;
+    }
+
+    .products-category-filter-search {
+      margin-bottom: .35rem;
+    }
+
+    .products-category-filter-search .form-control {
+      border-radius: .65rem;
+    }
+
+    .products-category-filter select {
+      min-height: 120px;
+      border-radius: .75rem;
+    }
+
+    .products-filter-hint {
+      display: block;
+      margin-top: .3rem;
+      font-size: .72rem;
+      color: #6b7280;
+      line-height: 1.35;
+    }
+
     .js-quick-edit-row {
       transition: background-color .24s ease, box-shadow .24s ease;
     }
@@ -331,6 +356,7 @@
           </div>
           <div class="d-flex gap-2">
             <a href="{$csvImportUrl|escape}" class="btn btn-outline-primary">Import CSV</a>
+            <a href="{$baseUrl}?controller=products&action=contoursmanager" class="btn btn-outline-dark">Manager obrysow</a>
             <a href="{$baseUrl}?controller=products&action=create&return_url={$currentListUrl|escape:'url'}" class="btn btn-success">Dodaj produkt</a>
          
           </div>
@@ -356,6 +382,12 @@
               <button type="button" id="bulkCopyBtn" class="btn btn-sm btn-outline-success" title="Skopiuj wszystkie zaznaczone produkty">
                 <i class="bi bi-files"></i> Kopiuj zaznaczone
               </button>
+              <button type="button" id="bulkCopySharedBtn" class="btn btn-sm btn-outline-success" title="Skopiuj zaznaczone i od razu powiaz jako wspolne">
+                <i class="bi bi-copy"></i> Kopiuj jako wspolny
+              </button>
+              <button type="button" id="bulkSharedBtn" class="btn btn-sm btn-outline-warning" title="Polacz zaznaczone produkty jako wspolne">
+                <i class="bi bi-diagram-3"></i> Polacz jako wspolne
+              </button>
               <button type="button" id="bulkCategoryBtn" class="btn btn-sm btn-outline-primary" title="Przypisz kategorię">
                 <i class="bi bi-tag"></i> Zmień kategorię
               </button>
@@ -372,12 +404,13 @@
 
         <div class="card-body p-0">
           <div class="table-responsive">
-            <form method="get" action="{$baseUrl}">
+            <form method="get" action="{$baseUrl}" id="productsFiltersForm">
               <input type="hidden" name="controller" value="products">
               <input type="hidden" name="action" value="index">
               <input type="hidden" name="sort_by" value="{$sortBy|default:''|escape}">
               <input type="hidden" name="sort_dir" value="{$sortDir|default:''|escape}">
               <input type="hidden" name="filter_global" value="{$filters.global|default:''|escape}">
+              <input type="hidden" name="filter_category_id" id="filterCategoryIdSerialized" value="{$filters.category_id|default:''|escape}">
               <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 pt-3">
                   <div class="d-flex align-items-center gap-2">
                     <span class="small text-secondary">Na strone</span>
@@ -391,6 +424,7 @@
                   </div>
                   <div class="small text-secondary">
                     Negacja filtrow: wpisz `!tekst`, np. `!9D` oznacza "nie zawiera 9D".
+                    W nazwie: spacja = AND, `|` = OR, `!` = wyklucz, cudzyslow = fraza.
                   </div>
                 {if $totalPages > 1}
                   {assign var=prevPage value=$page-1}
@@ -447,14 +481,22 @@
                     <th></th>
                     <th><input type="text" name="filter_id" value="{$filters.id|default:''|escape}" class="form-control form-control-sm" placeholder="np. 15"></th>
                     <th><input type="text" name="filter_sku" value="{$filters.sku|default:''|escape}" class="form-control form-control-sm" placeholder="fragment SKU"></th>
-                    <th><input type="text" name="filter_product_name" value="{$filters.product_name|default:''|escape}" class="form-control form-control-sm" placeholder="nazwa produktu"></th>
                     <th>
-                      <select name="filter_category_id" class="form-select form-select-sm">
-                        <option value="">wszystkie</option>
+                      <input type="text" name="filter_product_name" value="{$filters.product_name|default:''|escape}" class="form-control form-control-sm" placeholder='np. damska meska | "szklo hartowane" !czarna'>
+                      <span class="products-filter-hint">Spacja = AND, `|` = OR, `!` = bez frazy.</span>
+                    </th>
+                    <th>
+                      <div class="products-category-filter">
+                        <div class="products-category-filter-search">
+                          <input type="text" id="filterCategorySearch" class="form-control form-control-sm" placeholder="szukaj kategorii">
+                        </div>
+                        <select id="filterCategoryIdsUi" class="form-select form-select-sm" multiple>
                         {foreach $categories as $category}
-                          <option value="{$category.id}"{if $filters.category_id|default:'' eq $category.id} selected{/if}>{$category.name|escape}</option>
+                          <option value="{$category.id}" data-category-label="{$category.name|lower|escape}"{if in_array($category.id, $selectedCategoryIds|default:[])} selected{/if}>{$category.name|escape}</option>
                         {/foreach}
-                      </select>
+                        </select>
+                        <span class="products-filter-hint">Mozesz zaznaczyc wiele kategorii jednoczesnie.</span>
+                      </div>
                     </th>
                     <th><input type="text" name="filter_quantity" value="{$filters.quantity|default:''|escape}" class="form-control form-control-sm" placeholder="np. 10 lub 10-50"></th>
                     <th><input type="text" name="filter_localization" value="{$filters.localization|default:''|escape}" class="form-control form-control-sm" placeholder="lokalizacja"></th>
@@ -653,7 +695,7 @@
               </div>
               <div class="col-md-8">
                 <label class="form-label small">Cena</label>
-                <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="35">
+                <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="Cena">
               </div>
               <div class="col-md-4">
                 <label class="form-label small">Ilosc miniatur</label>
@@ -669,7 +711,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label small">Bazowy katalog</label>
-                <input type="text" name="image_base_directory" class="form-control form-control-sm" value="T:\wygnerowane_do_EU\">
+                <input type="text" name="image_base_directory" class="form-control form-control-sm" value="T:\wygenrowane_do_EU\">
               </div>
             </div>
             <div class="form-text">
@@ -789,6 +831,58 @@
   </div>
 </div>
 
+<div class="modal fade" id="bulkCopySharedModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Kopiuj zaznaczone jako wspolne</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="bulkCopySharedForm" method="post" action="{$baseUrl}?controller=products&action=bulkcopyshared">
+        <input type="hidden" name="return_url" value="{$currentListUrl|escape}">
+        <div class="modal-body">
+          <p><strong>Produktów do skopiowania: <span id="bulkCopySharedCount">0</span></strong></p>
+          <div id="bulkCopySharedProductList"></div>
+          <div id="bulkCopySharedProductIdsContainer"></div>
+          <div class="alert alert-warning" role="alert">
+            Kazda kopia zostanie od razu podpieta jako produkt wspolny z oryginalem. Nowa kopia nie dostanie relacji pochodnych.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Kopiuj jako wspolne</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="bulkSharedModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Polacz zaznaczone jako wspolne</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="bulkSharedForm" method="post" action="{$baseUrl}?controller=products&action=bulkshared">
+        <input type="hidden" name="return_url" value="{$currentListUrl|escape}">
+        <div class="modal-body">
+          <p><strong>Produktów do polaczenia: <span id="bulkSharedCount">0</span></strong></p>
+          <div id="bulkSharedProductList"></div>
+          <div id="bulkSharedProductIdsContainer"></div>
+          <div class="alert alert-info" role="alert">
+            Zaznaczone produkty trafia do jednej grupy wspolnego stanu. Jesli ktorys z nich ma stan pochodny, ta relacja zostanie usunieta.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-primary">Polacz jako wspolne</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <form id="deleteForm" method="post" action="{$baseUrl}?controller=products&action=delete" style="display: none;">
   <input type="hidden" name="id" id="deleteId">
   <input type="hidden" name="return_url" value="{$currentListUrl|escape}">
@@ -820,9 +914,15 @@ document.addEventListener('DOMContentLoaded', function() {
   var generatedTitleLength = document.getElementById('csvGeneratedTitleLength');
   var generatedTitlePreviewBox = document.getElementById('csvGeneratedTitlePreview');
   var generatedTitlePreviewUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=previewgeneratedtitle';
+  var productsFiltersForm = document.getElementById('productsFiltersForm');
+  var categoryFilterSerialized = document.getElementById('filterCategoryIdSerialized');
+  var categoryFilterSearch = document.getElementById('filterCategorySearch');
+  var categoryFilterUi = document.getElementById('filterCategoryIdsUi');
 
   // Bulk operations
   var bulkCopyBtn = document.getElementById('bulkCopyBtn');
+  var bulkCopySharedBtn = document.getElementById('bulkCopySharedBtn');
+  var bulkSharedBtn = document.getElementById('bulkSharedBtn');
   var bulkCategoryBtn = document.getElementById('bulkCategoryBtn');
   var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   var bulkExportBtn = document.getElementById('bulkExportBtn');
@@ -832,12 +932,44 @@ document.addEventListener('DOMContentLoaded', function() {
   var bulkCategoryModal = new bootstrap.Modal(document.getElementById('bulkCategoryModal'));
   var bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
   var bulkCopyModal = new bootstrap.Modal(document.getElementById('bulkCopyModal'));
+  var bulkCopySharedModal = new bootstrap.Modal(document.getElementById('bulkCopySharedModal'));
+  var bulkSharedModal = new bootstrap.Modal(document.getElementById('bulkSharedModal'));
 
   var bulkCategoryForm = document.getElementById('bulkCategoryForm');
   var bulkDeleteForm = document.getElementById('bulkDeleteForm');
   var bulkCopyForm = document.getElementById('bulkCopyForm');
+  var bulkCopySharedForm = document.getElementById('bulkCopySharedForm');
+  var bulkSharedForm = document.getElementById('bulkSharedForm');
   var quickUpdateUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=quickupdate';
   var lastCheckedCheckbox = null;
+
+  function syncCategoryFilterValue() {
+    if (!categoryFilterSerialized || !categoryFilterUi) {
+      return;
+    }
+
+    var values = [];
+    for (var i = 0; i < categoryFilterUi.options.length; i++) {
+      if (categoryFilterUi.options[i].selected) {
+        values.push(String(categoryFilterUi.options[i].value || ''));
+      }
+    }
+
+    categoryFilterSerialized.value = values.join(',');
+  }
+
+  function filterCategoryOptions() {
+    if (!categoryFilterSearch || !categoryFilterUi) {
+      return;
+    }
+
+    var query = String(categoryFilterSearch.value || '').trim().toLowerCase();
+    for (var i = 0; i < categoryFilterUi.options.length; i++) {
+      var option = categoryFilterUi.options[i];
+      var label = String(option.getAttribute('data-category-label') || option.text || '').toLowerCase();
+      option.hidden = query !== '' && label.indexOf(query) === -1;
+    }
+  }
 
   function setQuickEditStatus(row, message, state) {
     if (!row) {
@@ -884,6 +1016,31 @@ document.addEventListener('DOMContentLoaded', function() {
       payload[fields[i].getAttribute('data-field')] = fields[i].value;
     }
     return payload;
+  }
+
+  function renderSelectedProductsList(products) {
+    var productList = '<ul>';
+    for (var i = 0; i < products.length; i++) {
+      productList += '<li>' + products[i].sku + ' - ' + products[i].name + '</li>';
+    }
+    productList += '</ul>';
+    return productList;
+  }
+
+  function fillSelectedProductsContainer(containerId, ids) {
+    var container = document.getElementById(containerId);
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = '';
+    for (var i = 0; i < ids.length; i++) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'product_ids[]';
+      input.value = ids[i];
+      container.appendChild(input);
+    }
   }
 
   function saveQuickEditRow(row) {
@@ -1173,24 +1330,46 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       document.getElementById('bulkCopyCount').textContent = ids.length;
-      var productList = '<ul>';
-      for (var i = 0; i < products.length; i++) {
-        productList += '<li>' + products[i].sku + ' - ' + products[i].name + '</li>';
-      }
-      productList += '</ul>';
-      document.getElementById('bulkCopyProductList').innerHTML = productList;
-
-      var container = document.getElementById('bulkCopyProductIdsContainer');
-      container.innerHTML = '';
-      for (var i = 0; i < ids.length; i++) {
-        var input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'product_ids[]';
-        input.value = ids[i];
-        container.appendChild(input);
-      }
+      document.getElementById('bulkCopyProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkCopyProductIdsContainer', ids);
 
       bulkCopyModal.show();
+    });
+  }
+
+  if (bulkCopySharedBtn) {
+    bulkCopySharedBtn.addEventListener('click', function () {
+      var ids = getSelectedIds();
+      var products = getSelectedProductInfo();
+
+      if (ids.length === 0) {
+        alert('Zaznacz produkty do skopiowania jako wspolne.');
+        return;
+      }
+
+      document.getElementById('bulkCopySharedCount').textContent = ids.length;
+      document.getElementById('bulkCopySharedProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkCopySharedProductIdsContainer', ids);
+
+      bulkCopySharedModal.show();
+    });
+  }
+
+  if (bulkSharedBtn) {
+    bulkSharedBtn.addEventListener('click', function () {
+      var ids = getSelectedIds();
+      var products = getSelectedProductInfo();
+
+      if (ids.length < 2) {
+        alert('Zaznacz przynajmniej dwa produkty do polaczenia jako wspolne.');
+        return;
+      }
+
+      document.getElementById('bulkSharedCount').textContent = ids.length;
+      document.getElementById('bulkSharedProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkSharedProductIdsContainer', ids);
+
+      bulkSharedModal.show();
     });
   }
 
@@ -1352,6 +1531,20 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
     });
+  }
+
+  if (categoryFilterUi) {
+    categoryFilterUi.addEventListener('change', syncCategoryFilterValue);
+    syncCategoryFilterValue();
+  }
+
+  if (categoryFilterSearch) {
+    categoryFilterSearch.addEventListener('input', filterCategoryOptions);
+    filterCategoryOptions();
+  }
+
+  if (productsFiltersForm) {
+    productsFiltersForm.addEventListener('submit', syncCategoryFilterValue);
   }
 
   updateCount();

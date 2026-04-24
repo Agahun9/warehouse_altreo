@@ -103,12 +103,12 @@ class ProductEmpikParameterRepository
     public function usedParameterFieldOptions(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT DISTINCT pep.parameter_id, c.empik_category_id'
+            'SELECT DISTINCT pep.parameter_id, c.empik_category_id, c.name AS category_name'
             . ' FROM product_empik_parameters pep'
             . ' INNER JOIN products p ON p.id = pep.product_id'
             . ' INNER JOIN categories c ON c.id = p.category_id'
             . ' WHERE p.deleted_at IS NULL'
-            . ' ORDER BY pep.parameter_id ASC'
+            . ' ORDER BY pep.parameter_id ASC, c.name ASC'
         );
 
         if ($rows === array()) {
@@ -116,7 +116,30 @@ class ProductEmpikParameterRepository
         }
 
         $nameMapByCategory = array();
+        $categoriesByParameter = array();
         $options = array();
+
+        foreach ($rows as $row) {
+            $parameterId = isset($row['parameter_id']) ? (string) $row['parameter_id'] : '';
+            $categoryEmpikId = isset($row['empik_category_id']) ? (string) $row['empik_category_id'] : '';
+            $categoryName = trim((string) ($row['category_name'] ?? ''));
+
+            if ($parameterId === '') {
+                continue;
+            }
+
+            if (!isset($categoriesByParameter[$parameterId])) {
+                $categoriesByParameter[$parameterId] = array();
+            }
+
+            if ($categoryName !== '' && !in_array($categoryName, $categoriesByParameter[$parameterId], true)) {
+                $categoriesByParameter[$parameterId][] = $categoryName;
+            }
+
+            if ($categoryEmpikId !== '' && !isset($nameMapByCategory[$categoryEmpikId])) {
+                $nameMapByCategory[$categoryEmpikId] = $this->parameterNamesForCategory($categoryEmpikId);
+            }
+        }
 
         foreach ($rows as $row) {
             $parameterId = isset($row['parameter_id']) ? (string) $row['parameter_id'] : '';
@@ -126,15 +149,16 @@ class ProductEmpikParameterRepository
                 continue;
             }
 
-            if ($categoryEmpikId !== '' && !isset($nameMapByCategory[$categoryEmpikId])) {
-                $nameMapByCategory[$categoryEmpikId] = $this->parameterNamesForCategory($categoryEmpikId);
-            }
-
             $parameterName = isset($nameMapByCategory[$categoryEmpikId][$parameterId])
                 ? $nameMapByCategory[$categoryEmpikId][$parameterId]
                 : $parameterId;
 
-            $options['product.empik_parameter.' . $parameterId] = 'Empik: ' . $parameterName;
+            $label = 'Empik: ' . $parameterName . ' [' . $parameterId . ']';
+            if (!empty($categoriesByParameter[$parameterId])) {
+                $label .= ' | Kategorie: ' . implode(', ', $categoriesByParameter[$parameterId]);
+            }
+
+            $options['product.empik_parameter.' . $parameterId] = $label;
         }
 
         return $options;

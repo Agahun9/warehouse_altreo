@@ -18,6 +18,7 @@ use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\ValueResolver;
+use RuntimeException;
 use Throwable;
 
 class ProductController extends Controller
@@ -140,6 +141,7 @@ class ProductController extends Controller
             'clearFiltersUrl' => './index.php?controller=products&action=index',
             'currentListUrl' => $this->buildProductsIndexUrl($filters, $sortBy, $sortDir, $page, $perPage),
             'categories' => $this->categories->all(),
+            'selectedCategoryIds' => $this->normalizeCategoryFilterIdsForView($filters['category_id']),
             'exportTemplates' => $this->csvTemplates->allForSelect(),
             'titleTemplates' => $this->csvTitleTemplates->allForSelect(),
             'page' => $page,
@@ -168,6 +170,143 @@ class ProductController extends Controller
             'price_gross' => '0.00',
             'vat_rate' => '23.00',
         ), './index.php?controller=products&action=store', array());
+    }
+
+    public function contoursmanager(): void
+    {
+        $this->requireModule('products');
+
+        $directories = $this->contourDirectorySummaries();
+        $selectedDirectory = trim((string) $this->input('directory', ''));
+        if ($selectedDirectory === '' && $directories !== array()) {
+            $selectedDirectory = (string) ($directories[0]['name'] ?? '');
+        }
+
+        $this->render('products/contours_manager', array(
+            'pageTitle' => 'Obrysy',
+            'contentTitle' => 'Manager obrysow',
+            'pageDescription' => 'Dodawanie, zmiana nazwy, usuwanie folderow oraz wrzucanie plikow do OBRYSY_GENERATOR.',
+            'breadcrumbCurrent' => 'Manager obrysow',
+            'contourDirectories' => $directories,
+            'selectedContourDirectory' => $selectedDirectory,
+            'contoursManagerUrl' => './index.php?controller=products&action=contoursmanager',
+        ));
+    }
+
+    public function createcontourdirectory(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=products&action=contoursmanager');
+        }
+
+        try {
+            $name = $this->normalizeContourDirectoryName($this->input('name', ''));
+            $targetPath = $this->contourDirectoryPath($name, false);
+
+            if (is_dir($targetPath)) {
+                throw new RuntimeException('Folder obrysu o tej nazwie juz istnieje.');
+            }
+
+            if (!mkdir($targetPath, 0775, true) && !is_dir($targetPath)) {
+                throw new RuntimeException('Nie udalo sie utworzyc folderu obrysu.');
+            }
+
+            $this->setFlash('success', 'Dodano nowy folder obrysu.');
+            $this->redirect('./index.php?controller=products&action=contoursmanager&directory=' . urlencode($name));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=products&action=contoursmanager');
+        }
+    }
+
+    public function renamecontourdirectory(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=products&action=contoursmanager');
+        }
+
+        $redirectDirectory = trim((string) $this->input('directory', ''));
+
+        try {
+            $currentName = $this->normalizeContourDirectoryName($this->input('directory', ''));
+            $newName = $this->normalizeContourDirectoryName($this->input('new_name', ''));
+
+            if ($currentName === $newName) {
+                throw new RuntimeException('Nowa nazwa musi byc inna niz obecna.');
+            }
+
+            $currentPath = $this->contourDirectoryPath($currentName, true);
+            $newPath = $this->contourDirectoryPath($newName, false);
+
+            if (is_dir($newPath)) {
+                throw new RuntimeException('Docelowy folder juz istnieje.');
+            }
+
+            if (!rename($currentPath, $newPath)) {
+                throw new RuntimeException('Nie udalo sie zmienic nazwy folderu.');
+            }
+
+            $this->setFlash('success', 'Zmieniono nazwe folderu obrysu.');
+            $this->redirect('./index.php?controller=products&action=contoursmanager&directory=' . urlencode($newName));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $target = $redirectDirectory !== '' ? '&directory=' . urlencode($redirectDirectory) : '';
+            $this->redirect('./index.php?controller=products&action=contoursmanager' . $target);
+        }
+    }
+
+    public function deletecontourdirectory(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=products&action=contoursmanager');
+        }
+
+        try {
+            $name = $this->normalizeContourDirectoryName($this->input('directory', ''));
+            $path = $this->contourDirectoryPath($name, true);
+            $this->deleteDirectoryRecursively($path);
+            $this->setFlash('success', 'Usunieto folder obrysu wraz z zawartoscia.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=products&action=contoursmanager');
+    }
+
+    public function uploadcontourfiles(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=products&action=contoursmanager');
+        }
+
+        $redirectDirectory = trim((string) $this->input('directory', ''));
+
+        try {
+            $directory = $this->normalizeContourDirectoryName($this->input('directory', ''));
+            $targetDirectory = $this->contourDirectoryPath($directory, true);
+            $files = $this->normalizeUploadedContourFiles('contour_files');
+
+            if ($files === array()) {
+                throw new RuntimeException('Nie przeslano zadnych plikow.');
+            }
+
+            $uploadedCount = 0;
+            foreach ($files as $file) {
+                $this->storeUploadedContourFile($targetDirectory, $file);
+                $uploadedCount++;
+            }
+
+            $this->setFlash('success', 'Wgrano pliki do folderu obrysu: ' . $uploadedCount . '.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $target = $redirectDirectory !== '' ? '&directory=' . urlencode($redirectDirectory) : '';
+        $this->redirect('./index.php?controller=products&action=contoursmanager' . $target);
     }
 
     public function quicksearch(): void
@@ -781,24 +920,7 @@ class ProductController extends Controller
         $this->releaseSessionLock();
 
         try {
-            $copiedCount = 0;
-            foreach ($productIds as $id) {
-                try {
-                    $newId = $this->products->copyProduct(
-                        $id,
-                        $this->customFields,
-                        $this->allegroParameters,
-                        $this->sharedStockGroups,
-                        $this->derivedStockLinks
-                    );
-                    if ($newId) {
-                        $copiedCount++;
-                    }
-                } catch (Throwable $e) {
-                    // Continue with next product on individual error
-                    continue;
-                }
-            }
+            $copiedCount = $this->bulkCopyProducts($productIds, 'default');
 
             if ($copiedCount > 0) {
                 $this->setFlash('success', 'Skopiowano ' . $copiedCount . ' produktow.');
@@ -807,6 +929,65 @@ class ProductController extends Controller
             }
         } catch (Throwable $exception) {
             $this->setFlash('error', 'Blad podczas kopiowania produktow: ' . $exception->getMessage());
+        }
+
+        $this->redirect($this->resolveProductsReturnUrl());
+    }
+
+    public function bulkcopyshared(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect($this->resolveProductsReturnUrl());
+        }
+
+        $productIds = $this->normalizeIntegerArray($this->input('product_ids', array()));
+        if (count($productIds) === 0) {
+            $this->setFlash('error', 'Zaznacz produkty do skopiowania jako wspolne.');
+            $this->redirect($this->resolveProductsReturnUrl());
+        }
+
+        $this->releaseSessionLock();
+
+        try {
+            $copiedCount = $this->bulkCopyProducts($productIds, 'shared_copy');
+
+            if ($copiedCount > 0) {
+                $this->setFlash('success', 'Skopiowano ' . $copiedCount . ' produktow jako wspolne.');
+            } else {
+                $this->setFlash('error', 'Nie udalo sie skopiowac zadnych produktow jako wspolne.');
+            }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', 'Blad podczas kopiowania produktow jako wspolne: ' . $exception->getMessage());
+        }
+
+        $this->redirect($this->resolveProductsReturnUrl());
+    }
+
+    public function bulkshared(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect($this->resolveProductsReturnUrl());
+        }
+
+        $productIds = $this->normalizeIntegerArray($this->input('product_ids', array()));
+        if (count($productIds) < 2) {
+            $this->setFlash('error', 'Zaznacz przynajmniej dwa produkty do polaczenia jako wspolne.');
+            $this->redirect($this->resolveProductsReturnUrl());
+        }
+
+        $this->releaseSessionLock();
+
+        try {
+            foreach ($productIds as $productId) {
+                $this->derivedStockLinks->syncSourcesForProduct($productId, array());
+            }
+
+            $this->sharedStockGroups->syncProductsWithinSharedGroup($productIds);
+            $this->setFlash('success', 'Polaczono ' . count($productIds) . ' produktow jako wspolne.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', 'Blad podczas laczenia produktow jako wspolne: ' . $exception->getMessage());
         }
 
         $this->redirect($this->resolveProductsReturnUrl());
@@ -1307,6 +1488,11 @@ class ProductController extends Controller
             throw new \RuntimeException('EAN musi zawierac cyfry.');
         }
 
+        // Import potrafi zapisac placeholder "0" zamiast pustego EAN.
+        if (preg_match('/^0+$/', $value) === 1) {
+            return '';
+        }
+
         if (!in_array(strlen($value), array(8, 12, 13, 14), true)) {
             throw new \RuntimeException('EAN musi miec 8, 12, 13 lub 14 cyfr.');
         }
@@ -1499,7 +1685,7 @@ class ProductController extends Controller
 
     private function contourDirectories(): array
     {
-        $basePath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'OBRYSY_GENERATOR';
+        $basePath = $this->contoursBasePath();
         if (!is_dir($basePath)) {
             return array();
         }
@@ -1519,6 +1705,238 @@ class ProductController extends Controller
 
         natcasesort($result);
         return array_values($result);
+    }
+
+    private function contoursBasePath(): string
+    {
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'OBRYSY_GENERATOR';
+    }
+
+    private function normalizeContourDirectoryName($value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            throw new RuntimeException('Nazwa folderu obrysu jest wymagana.');
+        }
+
+        if (preg_match('/[\\\\\\/]/', $value) === 1) {
+            throw new RuntimeException('Nazwa folderu nie moze zawierac separatorow katalogow.');
+        }
+
+        if ($value === '.' || $value === '..') {
+            throw new RuntimeException('Niepoprawna nazwa folderu.');
+        }
+
+        if (preg_match('/^[A-Za-z0-9 _().-]+$/', $value) !== 1) {
+            throw new RuntimeException('Nazwa folderu moze zawierac tylko litery, cyfry, spacje, myslnik, podkreslenie, kropke i nawiasy.');
+        }
+
+        return $value;
+    }
+
+    private function contourDirectoryPath(string $name, bool $mustExist = true): string
+    {
+        $basePath = $this->contoursBasePath();
+        if (!is_dir($basePath)) {
+            throw new RuntimeException('Katalog OBRYSY_GENERATOR nie istnieje.');
+        }
+
+        $name = $this->normalizeContourDirectoryName($name);
+        $path = $basePath . DIRECTORY_SEPARATOR . $name;
+
+        if ($mustExist && !is_dir($path)) {
+            throw new RuntimeException('Wybrany folder obrysu nie istnieje.');
+        }
+
+        return $path;
+    }
+
+    private function contourDirectorySummaries(): array
+    {
+        $directories = $this->contourDirectories();
+        $result = array();
+
+        foreach ($directories as $directory) {
+            $path = $this->contourDirectoryPath($directory, true);
+            $files = $this->listFilesInContourDirectory($path);
+            $latestModified = null;
+
+            foreach ($files as $file) {
+                $modifiedAt = isset($file['modified_at']) ? (string) $file['modified_at'] : '';
+                if ($modifiedAt !== '' && ($latestModified === null || strcmp($modifiedAt, $latestModified) > 0)) {
+                    $latestModified = $modifiedAt;
+                }
+            }
+
+            $result[] = array(
+                'name' => $directory,
+                'files_count' => count($files),
+                'modified_at' => $latestModified,
+            );
+        }
+
+        return $result;
+    }
+
+    private function contourDirectoryFiles(string $name): array
+    {
+        $path = $this->contourDirectoryPath($name, true);
+        return $this->listFilesInContourDirectory($path);
+    }
+
+    private function listFilesInContourDirectory(string $directoryPath): array
+    {
+        $items = scandir($directoryPath);
+        if ($items === false) {
+            return array();
+        }
+
+        $result = array();
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $path = $directoryPath . DIRECTORY_SEPARATOR . $item;
+            $isDirectory = is_dir($path);
+            $result[] = array(
+                'name' => $item,
+                'type' => $isDirectory ? 'folder' : 'file',
+                'size' => $isDirectory ? null : (is_file($path) ? (int) filesize($path) : null),
+                'modified_at' => date('Y-m-d H:i:s', (int) filemtime($path)),
+            );
+        }
+
+        usort($result, static function (array $left, array $right): int {
+            if (($left['type'] ?? '') !== ($right['type'] ?? '')) {
+                return ($left['type'] ?? '') === 'folder' ? -1 : 1;
+            }
+
+            return strcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        return $result;
+    }
+
+    private function normalizeUploadedContourFiles(string $field): array
+    {
+        if (!isset($_FILES[$field])) {
+            return array();
+        }
+
+        $files = $_FILES[$field];
+        $names = isset($files['name']) && is_array($files['name']) ? $files['name'] : array($files['name'] ?? '');
+        $tmpNames = isset($files['tmp_name']) && is_array($files['tmp_name']) ? $files['tmp_name'] : array($files['tmp_name'] ?? '');
+        $errors = isset($files['error']) && is_array($files['error']) ? $files['error'] : array($files['error'] ?? UPLOAD_ERR_NO_FILE);
+        $sizes = isset($files['size']) && is_array($files['size']) ? $files['size'] : array($files['size'] ?? 0);
+
+        $result = array();
+        $count = max(count($names), count($tmpNames), count($errors), count($sizes));
+
+        for ($index = 0; $index < $count; $index++) {
+            $error = (int) ($errors[$index] ?? UPLOAD_ERR_NO_FILE);
+            if ($error === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+
+            if ($error !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Nie udalo sie przeslac jednego z plikow obrysu.');
+            }
+
+            $result[] = array(
+                'name' => (string) ($names[$index] ?? ''),
+                'tmp_name' => (string) ($tmpNames[$index] ?? ''),
+                'size' => (int) ($sizes[$index] ?? 0),
+            );
+        }
+
+        return $result;
+    }
+
+    private function storeUploadedContourFile(string $targetDirectory, array $file): void
+    {
+        $tmpName = isset($file['tmp_name']) ? (string) $file['tmp_name'] : '';
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            throw new RuntimeException('Nie znaleziono przeslanego pliku.');
+        }
+
+        $originalName = trim((string) ($file['name'] ?? ''));
+        $baseName = pathinfo($originalName, PATHINFO_BASENAME);
+        if ($baseName === '') {
+            throw new RuntimeException('Plik musi miec nazwe.');
+        }
+
+        if (preg_match('/[\\\\\\/]/', $baseName) === 1) {
+            throw new RuntimeException('Nazwa pliku jest niepoprawna.');
+        }
+
+        $targetPath = $targetDirectory . DIRECTORY_SEPARATOR . $baseName;
+        if (!move_uploaded_file($tmpName, $targetPath)) {
+            throw new RuntimeException('Nie udalo sie zapisac przeslanego pliku.');
+        }
+    }
+
+    private function bulkCopyProducts(array $productIds, string $mode = 'default'): int
+    {
+        $copiedCount = 0;
+        foreach ($productIds as $id) {
+            try {
+                $newId = $this->products->copyProduct(
+                    $id,
+                    $this->customFields,
+                    $this->allegroParameters,
+                    $this->sharedStockGroups,
+                    $this->derivedStockLinks,
+                    $mode
+                );
+                if ($newId) {
+                    $copiedCount++;
+                }
+            } catch (Throwable $e) {
+                continue;
+            }
+        }
+
+        return $copiedCount;
+    }
+
+    private function deleteDirectoryRecursively(string $directory): void
+    {
+        $realPath = realpath($directory);
+        $basePath = realpath($this->contoursBasePath());
+
+        if ($realPath === false || $basePath === false) {
+            throw new RuntimeException('Nie mozna odnalezc folderu do usuniecia.');
+        }
+
+        if ($realPath === $basePath || strpos($realPath, $basePath . DIRECTORY_SEPARATOR) !== 0) {
+            throw new RuntimeException('Mozna usuwac tylko foldery z OBRYSY_GENERATOR.');
+        }
+
+        $items = scandir($realPath);
+        if ($items === false) {
+            throw new RuntimeException('Nie udalo sie odczytac zawartosci folderu.');
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $path = $realPath . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($path)) {
+                $this->deleteDirectoryRecursively($path);
+                continue;
+            }
+
+            if (!unlink($path)) {
+                throw new RuntimeException('Nie udalo sie usunac pliku z folderu obrysu.');
+            }
+        }
+
+        if (!rmdir($realPath)) {
+            throw new RuntimeException('Nie udalo sie usunac folderu obrysu.');
+        }
     }
 
     private function nextSortDirection($column, $currentSortBy, $currentSortDir): string
@@ -1556,8 +1974,8 @@ class ProductController extends Controller
         if ($filters['product_name'] !== '') {
             $params['filter_product_name'] = $filters['product_name'];
         }
-        if ($filters['category_id'] !== '' && ctype_digit((string) $filters['category_id']) && (int) $filters['category_id'] > 0) {
-            $params['filter_category_id'] = (int) $filters['category_id'];
+        if ($filters['category_id'] !== '') {
+            $params['filter_category_id'] = $filters['category_id'];
         }
         if ($filters['quantity'] !== '') {
             $params['filter_quantity'] = $filters['quantity'];
@@ -1583,6 +2001,29 @@ class ProductController extends Controller
         }
 
         return './index.php?' . http_build_query($params);
+    }
+
+    private function normalizeCategoryFilterIdsForView($rawValue): array
+    {
+        $rawValue = trim((string) $rawValue);
+        if ($rawValue === '') {
+            return array();
+        }
+
+        $parts = preg_split('/[\s,;|]+/', $rawValue);
+        if (!is_array($parts)) {
+            return array();
+        }
+
+        $result = array();
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part !== '' && ctype_digit($part) && (int) $part > 0) {
+                $result[(int) $part] = (int) $part;
+            }
+        }
+
+        return array_values($result);
     }
 
     private function buildPageWindow(int $page, int $totalPages): array

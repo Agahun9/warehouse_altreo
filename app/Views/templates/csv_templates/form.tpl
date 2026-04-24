@@ -110,8 +110,11 @@
                   <p class="mb-2">W argumencie JSON mozesz uzywac tokenow typu <code>field:product.price_gross</code>.</p>
                   <p class="mb-1"><strong>Przyklad concat:</strong></p>
                   <pre class="bg-light border rounded p-2 small"><code>{ldelim}"separator":" ","parts":["field:product.price_gross","PLN"]{rdelim}</code></pre>
+                  <p class="mb-1"><strong>Przyklad concat z parametrem Allegro:</strong></p>
+                  <pre class="bg-light border rounded p-2 small"><code>{ldelim}"separator":" | ","parts":["field:product.product_name","field:product.allegro_parameter.11748"]{rdelim}</code></pre>
                   <p class="mb-1"><strong>Przyklad upper:</strong></p>
                   <pre class="bg-light border rounded p-2 small"><code>{ldelim}"value":"field:product.product_name"{rdelim}</code></pre>
+                  <p class="mb-0 text-secondary">Dokladny klucz parametru bierzesz z listy pol ponizej. Przy polach Allegro i Empik pokazuje sie teraz nazwa parametru, jego ID oraz nazwy kategorii, z ktorych jest brany.</p>
                 </div>
               </div>
               <div class="col-lg-6">
@@ -175,6 +178,10 @@
             <div class="small text-secondary mb-2">
               Przeciagnij wiersze za uchwyt, aby zmienic kolejnosc. Dla funkcji obliczanych uzywaj tokenow typu
               <code>field:product.price_gross</code> lub <code>field:product.category_name</code>.
+            </div>
+            <div class="alert alert-info py-2 px-3 small">
+              Dla parametrow Allegro wpisuj w JSON dokladnie klucz z listy, np. <code>field:product.allegro_parameter.11748</code>.
+              Na liscie pola pokazujemy nazwe parametru, jego ID i kategorie, z ktorych pochodzi.
             </div>
             <div id="columnsBuilder" class="d-grid gap-2"></div>
           </div>
@@ -241,6 +248,14 @@
     Object.keys(availableFields).forEach(function (key) {
       var isSelected = String(selected || '') === key ? ' selected' : '';
       html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(availableFields[key]) + '</option>';
+    });
+    return html;
+  }
+
+  function fieldInsertOptions() {
+    var html = '<option value="">Wybierz pole do wstawienia</option>';
+    Object.keys(availableFields).forEach(function (key) {
+      html += '<option value="' + escapeHtml(key) + '">' + escapeHtml(availableFields[key]) + '</option>';
     });
     return html;
   }
@@ -330,7 +345,7 @@
       + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><input type="text" class="form-control form-control-sm col-field-search mb-1" placeholder="Szukaj pola"><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
       + '    <div class="col-md-3 static-wrap"><label class="form-label small">Wartosc stala</label><input type="text" class="form-control form-control-sm col-static" value="' + escapeHtml(data.source_value) + '"></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Funkcja</label><select class="form-select form-select-sm col-fn">' + functionOptions(data.settings.function) + '</select></div>'
-      + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="2">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea></div>'
+      + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="2">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea><div class="row g-1 mt-1"><div class="col-12"><input type="text" class="form-control form-control-sm col-fn-field-search" placeholder="Szukaj pola do JSON"></div><div class="col-8"><select class="form-select form-select-sm col-fn-field-insert">' + fieldInsertOptions() + '</select></div><div class="col-4 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary insert-field-token">Wstaw do JSON</button></div></div><div class="form-text">Wstawi token w formacie <code>field:product.sku</code> w miejscu kursora.</div></div>'
       + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. date:Y-m-d lub number:2:,: " value="' + escapeHtml(data.settings.format || '') + '"></div>'
       + '    <div class="col-md-2"><label class="form-label small">Array sep.</label><input type="text" class="form-control form-control-sm col-array-sep" value="' + escapeHtml(data.settings.array_separator || '') + '"></div>'
       + '  </div>'
@@ -417,6 +432,25 @@
       });
     }
 
+    var fnFieldSearchInput = card.querySelector('.col-fn-field-search');
+    var fnFieldSelect = card.querySelector('.col-fn-field-insert');
+    var fnArgsTextarea = card.querySelector('.col-fn-args');
+    if (fnFieldSearchInput && fnFieldSelect) {
+      fnFieldSearchInput.addEventListener('input', function () {
+        var query = String(fnFieldSearchInput.value || '').toLowerCase().trim();
+        var options = fnFieldSelect.querySelectorAll('option');
+        for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+          if (optionIndex === 0) {
+            options[optionIndex].hidden = false;
+            continue;
+          }
+
+          var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+          options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+        }
+      });
+    }
+
     card.querySelector('.remove-column').addEventListener('click', function () {
       card.remove();
     });
@@ -447,6 +481,23 @@
         var layoutRow = event.target.closest('.image-layout-item');
         if (layoutRow) {
           layoutRow.remove();
+        }
+      }
+
+      if (event.target.classList.contains('insert-field-token')) {
+        if (!fnArgsTextarea || !fnFieldSelect || !fnFieldSelect.value) {
+          return;
+        }
+
+        var token = 'field:' + fnFieldSelect.value;
+        var start = typeof fnArgsTextarea.selectionStart === 'number' ? fnArgsTextarea.selectionStart : fnArgsTextarea.value.length;
+        var end = typeof fnArgsTextarea.selectionEnd === 'number' ? fnArgsTextarea.selectionEnd : fnArgsTextarea.value.length;
+        var currentValue = String(fnArgsTextarea.value || '');
+        fnArgsTextarea.value = currentValue.slice(0, start) + token + currentValue.slice(end);
+        fnArgsTextarea.focus();
+        var caretPosition = start + token.length;
+        if (typeof fnArgsTextarea.setSelectionRange === 'function') {
+          fnArgsTextarea.setSelectionRange(caretPosition, caretPosition);
         }
       }
 

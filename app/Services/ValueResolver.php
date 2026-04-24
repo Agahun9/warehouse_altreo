@@ -78,6 +78,10 @@ class ValueResolver
             return $this->singleEmpikParameterValue($product, substr($normalized, 16));
         }
 
+        if (in_array($normalized, array('collection_name', 'export_collection', 'csv_collection'), true)) {
+            return isset($exportOptions['collection_name']) ? (string) $exportOptions['collection_name'] : '';
+        }
+
         if (in_array($normalized, array('price_to_csv', 'export_price'), true)) {
             return isset($exportOptions['price_to_csv']) ? (string) $exportOptions['price_to_csv'] : '';
         }
@@ -161,6 +165,7 @@ class ValueResolver
             'categories.name' => 'category_name',
             'categories.slug' => 'category_slug',
             'categories.allegro_id' => 'allegro_category_id',
+            'collection_name' => 'collection_name',
             'price_to_csv' => 'price_to_csv',
    
         );

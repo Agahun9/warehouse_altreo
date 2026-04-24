@@ -167,11 +167,7 @@ class ProductRepository
         $productName = isset($filters['product_name']) ? trim((string) $filters['product_name']) : '';
         $this->appendTextFilterCondition($whereParts, $params, array('products.product_name'), $productName, 'filter_product_name');
 
-        $categoryId = isset($filters['category_id']) ? trim((string) $filters['category_id']) : '';
-        if ($categoryId !== '' && ctype_digit($categoryId) && (int) $categoryId > 0) {
-            $whereParts[] = 'products.category_id = :filter_category_id';
-            $params['filter_category_id'] = (int) $categoryId;
-        }
+        $this->appendCategoryFilterCondition($whereParts, $params, $filters['category_id'] ?? '', 'filter_category_id');
 
         $quantity = isset($filters['quantity']) ? trim((string) $filters['quantity']) : '';
         if ($quantity !== '') {
@@ -257,11 +253,7 @@ class ProductRepository
         $productName = isset($filters['product_name']) ? trim((string) $filters['product_name']) : '';
         $this->appendTextFilterCondition($whereParts, $params, array('products.product_name'), $productName, 'filter_product_name');
 
-        $categoryId = isset($filters['category_id']) ? trim((string) $filters['category_id']) : '';
-        if ($categoryId !== '' && ctype_digit($categoryId) && (int) $categoryId > 0) {
-            $whereParts[] = 'products.category_id = :filter_category_id';
-            $params['filter_category_id'] = (int) $categoryId;
-        }
+        $this->appendCategoryFilterCondition($whereParts, $params, $filters['category_id'] ?? '', 'filter_category_id');
 
         $quantity = isset($filters['quantity']) ? trim((string) $filters['quantity']) : '';
         if ($quantity !== '') {
@@ -313,25 +305,129 @@ class ProductRepository
             return;
         }
 
-        $isNegated = strpos($rawValue, '!') === 0;
-        $needle = $isNegated ? trim(substr($rawValue, 1)) : $rawValue;
-        if ($needle === '') {
+        $groups = preg_split('/\s*(?:\||\bOR\b)\s*/iu', $rawValue);
+        if (!is_array($groups) || $groups === array()) {
             return;
         }
 
-        $operator = $isNegated ? 'NOT LIKE' : 'LIKE';
-        $parts = array();
+        $groupSqlParts = array();
+        $groupIndex = 0;
 
-        foreach ($columns as $index => $column) {
+        foreach ($groups as $group) {
+            $terms = $this->tokenizeTextFilterExpression($group);
+            if ($terms === array()) {
+                continue;
+            }
+
+            $termSqlParts = array();
+            foreach ($terms as $termIndex => $term) {
+                $isNegated = strpos($term, '!') === 0;
+                $needle = trim($isNegated ? substr($term, 1) : $term);
+                if ($needle === '') {
+                    continue;
+                }
+
+                $operator = $isNegated ? 'NOT LIKE' : 'LIKE';
+                $columnParts = array();
+
+                foreach ($columns as $columnIndex => $column) {
+                    $paramName = $paramPrefix . '_' . $groupIndex . '_' . $termIndex . '_' . $columnIndex;
+                    $columnParts[] = $column . ' ' . $operator . ' :' . $paramName;
+                    $params[$paramName] = '%' . $needle . '%';
+                }
+
+                if ($columnParts !== array()) {
+                    $termSqlParts[] = '(' . implode($isNegated ? ' AND ' : ' OR ', $columnParts) . ')';
+                }
+            }
+
+            if ($termSqlParts !== array()) {
+                $groupSqlParts[] = '(' . implode(' AND ', $termSqlParts) . ')';
+                $groupIndex++;
+            }
+        }
+
+        if ($groupSqlParts !== array()) {
+            $whereParts[] = '(' . implode(' OR ', $groupSqlParts) . ')';
+        }
+    }
+
+    private function tokenizeTextFilterExpression(string $expression): array
+    {
+        $expression = trim($expression);
+        if ($expression === '') {
+            return array();
+        }
+
+        preg_match_all('/"([^"]+)"|\'([^\']+)\'|(\S+)/u', $expression, $matches, PREG_SET_ORDER);
+        $tokens = array();
+
+        foreach ($matches as $match) {
+            $token = '';
+            if (isset($match[1]) && $match[1] !== '') {
+                $token = $match[1];
+            } elseif (isset($match[2]) && $match[2] !== '') {
+                $token = $match[2];
+            } elseif (isset($match[3])) {
+                $token = $match[3];
+            }
+
+            $token = trim((string) $token);
+            if ($token !== '') {
+                $tokens[] = $token;
+            }
+        }
+
+        return $tokens;
+    }
+
+    private function appendCategoryFilterCondition(array &$whereParts, array &$params, $rawValue, string $paramPrefix): void
+    {
+        $categoryIds = $this->normalizeCategoryFilterIds($rawValue);
+        if ($categoryIds === array()) {
+            return;
+        }
+
+        $placeholders = array();
+        foreach ($categoryIds as $index => $categoryId) {
             $paramName = $paramPrefix . '_' . $index;
-            $parts[] = $column . ' ' . $operator . ' :' . $paramName;
-            $params[$paramName] = '%' . $needle . '%';
+            $placeholders[] = ':' . $paramName;
+            $params[$paramName] = $categoryId;
         }
 
-        if ($parts !== array()) {
-            $glue = $isNegated ? ' AND ' : ' OR ';
-            $whereParts[] = '(' . implode($glue, $parts) . ')';
+        $whereParts[] = 'products.category_id IN (' . implode(', ', $placeholders) . ')';
+    }
+
+    private function normalizeCategoryFilterIds($rawValue): array
+    {
+        if (is_array($rawValue)) {
+            $values = $rawValue;
+        } else {
+            $rawValue = trim((string) $rawValue);
+            if ($rawValue === '') {
+                return array();
+            }
+
+            $values = preg_split('/[\s,;|]+/', $rawValue);
+            if (!is_array($values)) {
+                return array();
+            }
         }
+
+        $result = array();
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if ($value === '' || !ctype_digit($value)) {
+                continue;
+            }
+
+            $intValue = (int) $value;
+            if ($intValue > 0) {
+                $result[$intValue] = $intValue;
+            }
+        }
+
+        return array_values($result);
     }
 
     private function appendIdFilterCondition(array &$whereParts, array &$params, string $rawValue, string $paramPrefix): void
@@ -555,11 +651,7 @@ class ProductRepository
         $productName = isset($filters['product_name']) ? trim((string) $filters['product_name']) : '';
         $this->appendTextFilterCondition($whereParts, $params, array('products.product_name'), $productName, 'filter_product_name');
 
-        $categoryId = isset($filters['category_id']) ? trim((string) $filters['category_id']) : '';
-        if ($categoryId !== '' && ctype_digit($categoryId) && (int) $categoryId > 0) {
-            $whereParts[] = 'products.category_id = :filter_category_id';
-            $params['filter_category_id'] = (int) $categoryId;
-        }
+        $this->appendCategoryFilterCondition($whereParts, $params, $filters['category_id'] ?? '', 'filter_category_id');
 
         $quantity = isset($filters['quantity']) ? trim((string) $filters['quantity']) : '';
         if ($quantity !== '') {
@@ -1042,7 +1134,7 @@ class ProductRepository
 
     public function productNameExists(string $productName, int $excludeId = 0): bool
     {
-        $sql = 'SELECT COUNT(*) FROM ' . self::TABLE . ' WHERE product_name = :product_name';
+        $sql = 'SELECT COUNT(*) FROM ' . self::TABLE . ' WHERE product_name = :product_name AND deleted_at IS NULL';
         $params = array('product_name' => trim($productName));
 
         if ($excludeId > 0) {
@@ -1131,7 +1223,7 @@ class ProductRepository
         return $this->database->fetchAll($sql, $params);
     }
 
-    public function copyProduct(int $id, ?ProductCustomFieldRepository $customFields = null, ?ProductAllegroParameterRepository $allegroParameters = null, ?SharedStockGroupRepository $sharedStockGroups = null, ?DerivedStockLinkRepository $derivedStockLinks = null): ?int
+    public function copyProduct(int $id, ?ProductCustomFieldRepository $customFields = null, ?ProductAllegroParameterRepository $allegroParameters = null, ?SharedStockGroupRepository $sharedStockGroups = null, ?DerivedStockLinkRepository $derivedStockLinks = null, string $mode = 'default'): ?int
     {
         // Get original product
         $original = $this->find($id);
@@ -1213,6 +1305,10 @@ class ProductRepository
         }
 
         $sharedRelationIds = array();
+        if ($mode === 'shared_copy') {
+            $sharedRelationIds[] = $id;
+        }
+
         if (!empty($original['shared_stock_enabled'])) {
             $sharedRelationIds[] = $id;
             foreach ($sharedStockGroups->membersForProduct($id) as $member) {
@@ -1230,7 +1326,7 @@ class ProductRepository
             isset($original['localization']) ? (string) $original['localization'] : null
         );
 
-        $derivedSourceIds = $derivedStockLinks->sourceIdsForProduct($id);
+        $derivedSourceIds = $mode === 'shared_copy' ? array() : $derivedStockLinks->sourceIdsForProduct($id);
         $derivedStockLinks->syncSourcesForProduct($newId, $derivedSourceIds);
         ProductChangeAuditService::instance($this->database)->markCreated(array($newId), 'copy');
 
