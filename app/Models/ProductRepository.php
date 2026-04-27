@@ -472,10 +472,11 @@ class ProductRepository
         $whereParts = array('products.deleted_at IS NULL');
         $this->appendGlobalProductFilterCondition($whereParts, $params, $query, 'quick_search');
 
-        return $this->database->fetchAll(
+        return $this->attachSharedStock($this->database->fetchAll(
             'SELECT products.id, products.sku, products.product_name, old_sku_values.value AS old_sku,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
-            . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization'
+            . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
+            . ' products.shared_stock_group_id'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.slug = "old_sku"'
             . ' LEFT JOIN product_custom_field_values old_sku_values'
@@ -495,7 +496,48 @@ class ProductRepository
             . ' products.id DESC'
             . ' LIMIT ' . $limit,
             $params
-        );
+        ));
+    }
+
+    public function effectiveStockByProductIds(array $productIds): array
+    {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($productIds === array()) {
+            return array();
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($productIds as $index => $productId) {
+            $key = 'product_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $productId;
+        }
+
+        $rows = $this->attachSharedStock($this->database->fetchAll(
+            'SELECT id, quantity, localization, shared_stock_group_id'
+            . ' FROM ' . self::TABLE
+            . ' WHERE deleted_at IS NULL AND id IN (' . implode(', ', $placeholders) . ')',
+            $params
+        ));
+
+        $map = array();
+        foreach ($rows as $row) {
+            $productId = isset($row['id']) ? (int) $row['id'] : 0;
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $map[$productId] = array(
+                'quantity' => isset($row['quantity']) ? (int) $row['quantity'] : 0,
+                'localization' => isset($row['localization']) ? (string) $row['localization'] : '',
+            );
+        }
+
+        return $map;
     }
 
     private function appendGlobalProductFilterCondition(array &$whereParts, array &$params, string $value, string $paramPrefix): void

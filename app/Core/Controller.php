@@ -182,7 +182,15 @@ abstract class Controller
     {
         $smarty = SmartyFactory::create();
         $appConfig = Config::get('app');
-        $currentUser = $this->currentUser();
+        $currentUser = array_key_exists('currentUser', $data)
+            ? $data['currentUser']
+            : $this->currentUser();
+        $flashSuccess = array_key_exists('flashSuccess', $data)
+            ? $data['flashSuccess']
+            : $this->getFlash('success');
+        $flashError = array_key_exists('flashError', $data)
+            ? $data['flashError']
+            : $this->getFlash('error');
 
         $defaultData = array(
             'assetBase' => 'dist',
@@ -191,8 +199,8 @@ abstract class Controller
             'baseUrl' => (string) $appConfig['base_url'],
             'currentController' => strtolower(isset($_GET['controller']) ? (string) $_GET['controller'] : 'index'),
             'currentAction' => strtolower(isset($_GET['action']) ? (string) $_GET['action'] : 'index'),
-            'flashSuccess' => $this->getFlash('success'),
-            'flashError' => $this->getFlash('error'),
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'currentUser' => $currentUser,
         );
 

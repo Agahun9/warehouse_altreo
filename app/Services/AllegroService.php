@@ -166,11 +166,15 @@ class AllegroService
 
     public function automationLinks(string $baseUrl): array
     {
+        $previewBase = rtrim($baseUrl, '?&') . '?controller=allegro&action=previewautoendoffers&format=json';
+        $autoEndBase = rtrim($baseUrl, '?&') . '?controller=allegro&action=autoendoffers&format=json';
         $accounts = $this->listAccounts();
         $links = array(
             'queue_worker' => rtrim($baseUrl, '?&') . '?controller=allegro&action=maintenance&queue_limit=200',
             'full_maintenance' => rtrim($baseUrl, '?&') . '?controller=allegro&action=maintenance&sync=1&queue_limit=200&max_batches=3&offer_limit=100&max_runtime=30',
             'refresh_tokens' => rtrim($baseUrl, '?&') . '?controller=allegro&action=refreshtoken&format=json',
+            'auto_end_offers' => $autoEndBase,
+            'auto_end_offers_mail_example' => $autoEndBase . '&mail_to=twoj%40adres.pl',
             'accounts' => array(),
         );
 
@@ -182,6 +186,8 @@ class AllegroService
             $queueOnly = rtrim($baseUrl, '?&')
                 . '?controller=allegro&action=maintenance&account=' . rawurlencode((string) $account['slug'])
                 . '&queue_limit=100';
+            $previewAutoEndOffers = $previewBase . '&account=' . rawurlencode((string) $account['slug']);
+            $autoEndOffers = $autoEndBase . '&account=' . rawurlencode((string) $account['slug']);
 
             $links['accounts'][] = array(
                 'id' => (int) $account['id'],
@@ -191,6 +197,9 @@ class AllegroService
                 'sync' => $trigger,
                 'maintenance' => $maintenance,
                 'queue_only' => $queueOnly,
+                'preview_auto_end_offers' => $previewAutoEndOffers,
+                'auto_end_offers' => $autoEndOffers,
+                'auto_end_offers_mail_example' => $autoEndOffers . '&mail_to=twoj%40adres.pl',
             );
         }
 
@@ -215,6 +224,198 @@ class AllegroService
     public function offerDetails(int $id)
     {
         return $this->storage->findOfferById($id);
+    }
+
+    public function previewAutoEndOffers(array $options = array()): array
+    {
+        $accountSelector = trim((string) ($options['account'] ?? ''));
+        $offerIdentifier = trim((string) ($options['offer_id'] ?? ''));
+        $accountId = null;
+        $accountMeta = null;
+
+        if ($offerIdentifier !== '') {
+            $diagnostic = $this->storage->diagnoseAutoEndOffer($offerIdentifier);
+            if ($diagnostic === null) {
+                throw new RuntimeException('Nie znaleziono oferty Allegro do diagnozy.');
+            }
+
+            return array(
+                'mode' => 'preview_single_offer',
+                'generated_at' => date('Y-m-d H:i:s'),
+                'item' => $diagnostic,
+            );
+        }
+
+        if ($accountSelector !== '') {
+            $account = $this->resolveAccount($accountSelector);
+            if (!$account) {
+                throw new RuntimeException('Nie znaleziono konta Allegro do podgladu konczenia ofert.');
+            }
+
+            $accountId = (int) ($account['id'] ?? 0);
+            $accountMeta = array(
+                'id' => $accountId,
+                'name' => (string) ($account['name'] ?? ''),
+                'slug' => (string) ($account['slug'] ?? ''),
+            );
+        }
+
+        $limit = max(1, min(10000, (int) ($options['limit'] ?? 2000)));
+        $scanLimit = max($limit, min(30000, (int) ($options['scan_limit'] ?? 10000)));
+        $preview = $this->storage->previewAutoEndOfferCandidates($accountId, $limit, $scanLimit);
+        $rows = isset($preview['items']) && is_array($preview['items']) ? $preview['items'] : array();
+        $scannedRows = isset($preview['scanned_rows']) ? (int) $preview['scanned_rows'] : count($rows);
+        $hasMoreCandidates = !empty($preview['has_more_candidates']);
+        $scanLimitReached = !empty($preview['scan_limit_reached']);
+        $eligible = array_values(array_filter($rows, static function (array $row): bool {
+            return !empty($row['can_end_offer']);
+        }));
+        $blocked = array_values(array_filter($rows, static function (array $row): bool {
+            return empty($row['can_end_offer']);
+        }));
+
+        return array(
+            'mode' => 'preview_only',
+            'account' => $accountMeta,
+            'limit' => $limit,
+            'scan_limit' => $scanLimit,
+            'generated_at' => date('Y-m-d H:i:s'),
+            'returned_items_count' => count($rows),
+            'matched_offer_count' => count($rows),
+            'end_offer_count' => count($eligible),
+            'summary' => array(
+                'matched_below_threshold' => count($rows),
+                'eligible_to_end' => count($eligible),
+                'blocked_by_duplicates' => count($blocked),
+                'scanned_rows' => $scannedRows,
+                'has_more_candidates' => $hasMoreCandidates,
+                'scan_limit_reached' => $scanLimitReached,
+                'returned_items_count' => count($rows),
+            ),
+            'items' => array_values(array_map(static function (array $row): array {
+                return array(
+                    'id' => (int) ($row['id'] ?? 0),
+                    'account_id' => (int) ($row['account_id'] ?? 0),
+                    'account_name' => (string) ($row['account_name'] ?? ''),
+                    'account_slug' => (string) ($row['account_slug'] ?? ''),
+                    'offer_id' => (string) ($row['offer_id'] ?? ''),
+                    'offer_name' => (string) ($row['name'] ?? ''),
+                    'offer_sku' => (string) ($row['sku'] ?? ''),
+                    'warehouse_product_id' => isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : null,
+                    'warehouse_sku' => (string) ($row['warehouse_sku'] ?? ''),
+                    'warehouse_product_name' => (string) ($row['warehouse_product_name'] ?? ''),
+                    'warehouse_category_id' => isset($row['warehouse_category_id']) ? (int) $row['warehouse_category_id'] : null,
+                    'warehouse_category_name' => (string) ($row['warehouse_category_name'] ?? ''),
+                    'warehouse_quantity' => isset($row['warehouse_quantity']) ? (int) $row['warehouse_quantity'] : 0,
+                    'warehouse_localization' => (string) ($row['warehouse_localization'] ?? ''),
+                    'end_offers_below_quantity' => isset($row['category_end_offers_below_quantity']) ? (int) $row['category_end_offers_below_quantity'] : null,
+                    'difference_to_threshold' => isset($row['difference_to_threshold']) ? (int) $row['difference_to_threshold'] : 0,
+                    'can_end_offer' => !empty($row['can_end_offer']),
+                    'duplicate_block' => isset($row['duplicate_block']) && is_array($row['duplicate_block']) ? $row['duplicate_block'] : null,
+                );
+            }, $rows)),
+        );
+    }
+
+    public function autoEndOffers(array $options = array()): array
+    {
+        $preview = $this->previewAutoEndOffers($options);
+        if ((string) ($preview['mode'] ?? '') !== 'preview_only') {
+            throw new RuntimeException('Tryb automatycznego konczenia obsluguje tylko liste ofert.');
+        }
+
+        $items = isset($preview['items']) && is_array($preview['items']) ? $preview['items'] : array();
+        $eligibleItems = array_values(array_filter($items, static function (array $item): bool {
+            return !empty($item['can_end_offer']);
+        }));
+        $targets = array_map(static function (array $item): array {
+            return array(
+                'id' => (int) ($item['id'] ?? 0),
+                'account_id' => (int) ($item['account_id'] ?? 0),
+                'offer_id' => (string) ($item['offer_id'] ?? ''),
+            );
+        }, $eligibleItems);
+
+        $existingMap = $this->storage->existingQueuedOfferOperationMap($targets, 'end_offer', array('pending', 'retry', 'processing'));
+        $newTargets = array();
+        $alreadyQueued = array();
+
+        foreach ($eligibleItems as $item) {
+            $offerRowId = isset($item['id']) ? (int) $item['id'] : 0;
+            if ($offerRowId <= 0) {
+                continue;
+            }
+
+            if (isset($existingMap[$offerRowId])) {
+                $item['queue_status'] = (string) ($existingMap[$offerRowId]['status'] ?? '');
+                $item['queue_id'] = (int) ($existingMap[$offerRowId]['queue_id'] ?? 0);
+                $alreadyQueued[] = $item;
+                continue;
+            }
+
+            $newTargets[] = array(
+                'id' => $offerRowId,
+                'account_id' => (int) ($item['account_id'] ?? 0),
+                'offer_id' => (string) ($item['offer_id'] ?? ''),
+            );
+        }
+
+        $queued = 0;
+        if ($newTargets !== array()) {
+            $queued = $this->storage->enqueueOfferChanges($newTargets, 'end_offer', array(), null, true);
+        }
+
+        $queuedIds = array();
+        foreach ($newTargets as $target) {
+            $queuedIds[(int) ($target['id'] ?? 0)] = true;
+        }
+
+        $resultItems = array();
+        foreach ($eligibleItems as $item) {
+            $offerRowId = isset($item['id']) ? (int) $item['id'] : 0;
+            if ($offerRowId <= 0) {
+                continue;
+            }
+
+            if (isset($existingMap[$offerRowId])) {
+                $item['queue_action'] = 'already_queued';
+                $item['queue_status'] = (string) ($existingMap[$offerRowId]['status'] ?? '');
+                $item['queue_id'] = (int) ($existingMap[$offerRowId]['queue_id'] ?? 0);
+            } elseif (isset($queuedIds[$offerRowId])) {
+                $item['queue_action'] = 'queued_now';
+                $item['queue_status'] = 'pending';
+                $item['queue_id'] = null;
+            } else {
+                $item['queue_action'] = 'skipped';
+                $item['queue_status'] = null;
+                $item['queue_id'] = null;
+            }
+
+            $resultItems[] = $item;
+        }
+
+        return array(
+            'mode' => 'auto_end_offers',
+            'account' => $preview['account'] ?? null,
+            'limit' => $preview['limit'] ?? null,
+            'scan_limit' => $preview['scan_limit'] ?? null,
+            'generated_at' => date('Y-m-d H:i:s'),
+            'matched_offer_count' => isset($preview['matched_offer_count']) ? (int) $preview['matched_offer_count'] : count($items),
+            'end_offer_count' => count($eligibleItems),
+            'queued_now_count' => $queued,
+            'already_queued_count' => count($alreadyQueued),
+            'summary' => array(
+                'matched_below_threshold' => isset($preview['summary']['matched_below_threshold']) ? (int) $preview['summary']['matched_below_threshold'] : count($items),
+                'eligible_to_end' => count($eligibleItems),
+                'queued_now' => $queued,
+                'already_queued' => count($alreadyQueued),
+                'blocked_by_duplicates' => isset($preview['summary']['blocked_by_duplicates']) ? (int) $preview['summary']['blocked_by_duplicates'] : 0,
+                'scanned_rows' => isset($preview['summary']['scanned_rows']) ? (int) $preview['summary']['scanned_rows'] : count($items),
+                'has_more_candidates' => !empty($preview['summary']['has_more_candidates']),
+                'scan_limit_reached' => !empty($preview['summary']['scan_limit_reached']),
+            ),
+            'items' => $resultItems,
+        );
     }
 
     public function triggerUrl(array $account, string $baseUrl): string

@@ -122,6 +122,10 @@ class AdminController extends Controller
 
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $baseUrl);
+            $account['auto_end_offers'] = rtrim($baseUrl, '?&')
+                . '?controller=allegro&action=autoendoffers&format=json&account='
+                . rawurlencode((string) ($account['slug'] ?? ''));
+            $account['auto_end_offers_mail_example'] = (string) $account['auto_end_offers'] . '&mail_to=twoj%40adres.pl';
         }
         unset($account);
 

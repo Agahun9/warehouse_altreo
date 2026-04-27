@@ -437,6 +437,21 @@ class AllegroStorageRepository
     public function listOffers(array $filters, int $page, int $perPage, string $sortBy, string $sortDir): array
     {
         $offset = max(0, ($page - 1) * $perPage);
+        $effectiveWarehouseQuantityFilter = $this->effectiveWarehouseQuantityFilter($filters);
+        if (!empty($effectiveWarehouseQuantityFilter['active'])) {
+            $matchingOfferIds = $this->matchingOfferIdsForEffectiveWarehouseQuantityFilter($filters, $sortBy, $sortDir);
+            if ($matchingOfferIds === array()) {
+                return array();
+            }
+
+            $offerIds = array_slice($matchingOfferIds, $offset, $perPage);
+            if ($offerIds === array()) {
+                return array();
+            }
+
+            return $this->loadOfferRowsByIds($offerIds, trim((string) ($filters['duplicates'] ?? '')) === '1', $filters);
+        }
+
         $params = array();
         $analysis = $this->analyzeOfferFilters($filters, $sortBy);
         $includeDuplicateMeta = trim((string) ($filters['duplicates'] ?? '')) === '1';
@@ -467,6 +482,44 @@ class AllegroStorageRepository
             return (int) ($row['id'] ?? 0);
         }, $idRows);
 
+        return $this->loadOfferRowsByIds($offerIds, $includeDuplicateMeta, $filters);
+    }
+
+    public function countOffers(array $filters): int
+    {
+        $effectiveWarehouseQuantityFilter = $this->effectiveWarehouseQuantityFilter($filters);
+        if (!empty($effectiveWarehouseQuantityFilter['active'])) {
+            return count($this->matchingOfferIdsForEffectiveWarehouseQuantityFilter($filters));
+        }
+
+        $cacheKey = $this->offerCountCacheKey($filters);
+        $cached = $this->getCache($cacheKey);
+        if (is_array($cached) && isset($cached['total'])) {
+            return (int) $cached['total'];
+        }
+
+        $params = array();
+        $analysis = $this->analyzeOfferFilters($filters);
+        $whereSql = $this->buildOfferWhere($filters, $params);
+        $sql = 'SELECT COUNT(*) FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id';
+
+        if ($analysis['needs_warehouse']) {
+            $sql .= $this->liveWarehouseJoinSql();
+        }
+
+        if ($analysis['needs_shared_stock']) {
+            $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+        }
+
+        $total = (int) $this->database->fetchColumn($sql . $whereSql, $params);
+        $this->putCache($cacheKey, array('total' => $total), self::OFFER_COUNT_CACHE_TTL);
+
+        return $total;
+    }
+
+    private function loadOfferRowsByIds(array $offerIds, bool $includeDuplicateMeta, array $filters): array
+    {
         $detailParams = array();
         $placeholders = $this->buildIntegerPlaceholders('offer_id', $offerIds, $detailParams);
         $sql = 'SELECT offers.id, offers.account_id, offers.offer_id, offers.sku, offers.external_id, offers.warehouse_product_id,'
@@ -520,35 +573,83 @@ class AllegroStorageRepository
             $orderedRows[$index] = $this->normalizeOfferViewData($orderedRows[$index]);
         }
 
-        return $orderedRows;
+        return $this->applyEffectiveWarehouseStockToRows($orderedRows);
     }
 
-    public function countOffers(array $filters): int
+    private function matchingOfferIdsForEffectiveWarehouseQuantityFilter(array $filters, string $sortBy = 'id', string $sortDir = 'desc'): array
     {
-        $cacheKey = $this->offerCountCacheKey($filters);
-        $cached = $this->getCache($cacheKey);
-        if (is_array($cached) && isset($cached['total'])) {
-            return (int) $cached['total'];
+        $filter = $this->effectiveWarehouseQuantityFilter($filters);
+        if (empty($filter['active'])) {
+            return array();
         }
 
+        $baseFilters = $this->filtersWithoutWarehouseQuantity($filters);
         $params = array();
-        $analysis = $this->analyzeOfferFilters($filters);
-        $whereSql = $this->buildOfferWhere($filters, $params);
-        $sql = 'SELECT COUNT(*) FROM allegro_offers offers'
-            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id';
-
-        if ($analysis['needs_warehouse']) {
-            $sql .= $this->liveWarehouseJoinSql();
-        }
+        $analysis = $this->analyzeOfferFilters($baseFilters, $sortBy);
+        $whereSql = $this->buildOfferWhere($baseFilters, $params);
+        $sortSql = $sortBy === 'warehouse_quantity'
+            ? 'offers.id DESC'
+            : $this->buildOfferSort($sortBy, $sortDir);
+        $sql = 'SELECT offers.id, warehouse.id AS warehouse_product_live_id'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . $this->liveWarehouseJoinSql();
 
         if ($analysis['needs_shared_stock']) {
             $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
         }
 
-        $total = (int) $this->database->fetchColumn($sql . $whereSql, $params);
-        $this->putCache($cacheKey, array('total' => $total), self::OFFER_COUNT_CACHE_TTL);
+        $sql .= $whereSql . ' ORDER BY ' . $sortSql;
 
-        return $total;
+        $candidateRows = $this->database->fetchAll($sql, $params);
+        if ($candidateRows === array()) {
+            return array();
+        }
+
+        $productIds = array_values(array_unique(array_filter(array_map(static function (array $row): int {
+            return isset($row['warehouse_product_live_id']) ? (int) $row['warehouse_product_live_id'] : 0;
+        }, $candidateRows), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        $effectiveStock = array();
+        if ($productIds !== array()) {
+            $products = new ProductRepository($this->database);
+            $products->ensureSchema();
+            $effectiveStock = $products->effectiveStockByProductIds($productIds);
+        }
+
+        $matchingRows = array();
+        foreach ($candidateRows as $row) {
+            $productId = isset($row['warehouse_product_live_id']) ? (int) $row['warehouse_product_live_id'] : 0;
+            if ($productId <= 0 || !isset($effectiveStock[$productId])) {
+                continue;
+            }
+
+            $quantity = isset($effectiveStock[$productId]['quantity']) ? (int) $effectiveStock[$productId]['quantity'] : 0;
+            if (!$this->matchesEffectiveWarehouseQuantityFilter($quantity, $filter)) {
+                continue;
+            }
+
+            $row['effective_warehouse_quantity'] = $quantity;
+            $matchingRows[] = $row;
+        }
+
+        if ($sortBy === 'warehouse_quantity') {
+            $direction = strtolower($sortDir) === 'asc' ? 1 : -1;
+            usort($matchingRows, static function (array $left, array $right) use ($direction): int {
+                $quantityComparison = ((int) ($left['effective_warehouse_quantity'] ?? 0)) <=> ((int) ($right['effective_warehouse_quantity'] ?? 0));
+                if ($quantityComparison !== 0) {
+                    return $quantityComparison * $direction;
+                }
+
+                return ((int) ($right['id'] ?? 0)) <=> ((int) ($left['id'] ?? 0));
+            });
+        }
+
+        return array_values(array_map(static function (array $row): int {
+            return (int) ($row['id'] ?? 0);
+        }, $matchingRows));
     }
 
     public function offerStats(?int $accountId = null): array
@@ -625,7 +726,7 @@ class AllegroStorageRepository
         $row['product_set'] = $this->decodeJsonList($row['product_set_json'] ?? null);
         $row['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
 
-        return $this->normalizeOfferViewData($row);
+        return $this->applyEffectiveWarehouseStockToRow($this->normalizeOfferViewData($row));
     }
 
     public function findOfferByAccountAndOfferId(int $accountId, string $offerId)
@@ -662,7 +763,7 @@ class AllegroStorageRepository
         $row['product_set'] = $this->decodeJsonList($row['product_set_json'] ?? null);
         $row['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
 
-        return $this->normalizeOfferViewData($row);
+        return $this->applyEffectiveWarehouseStockToRow($this->normalizeOfferViewData($row));
     }
 
     public function findOfferChecksums(int $accountId, array $offerIds): array
@@ -942,6 +1043,329 @@ class AllegroStorageRepository
         return $this->database->fetchAll($sql, $params);
     }
 
+    public function previewAutoEndOfferCandidates(?int $accountId = null, int $limit = 1000, int $scanLimit = 3000): array
+    {
+        $limit = max(1, min(5000, $limit));
+        $scanLimit = max($limit, min(20000, $scanLimit));
+
+        $productRows = $this->previewAutoEndCandidateProducts($scanLimit);
+        if ($productRows === array()) {
+            return array(
+                'items' => array(),
+                'scanned_rows' => 0,
+                'has_more_candidates' => false,
+                'scan_limit_reached' => false,
+            );
+        }
+
+        $productIds = array_map(static function (array $row): int {
+            return (int) ($row['id'] ?? 0);
+        }, $productRows);
+        $products = new ProductRepository($this->database);
+        $products->ensureSchema();
+        $effectiveStock = $products->effectiveStockByProductIds($productIds);
+
+        $eligibleProducts = array();
+        foreach ($productRows as $row) {
+            $productId = isset($row['id']) ? (int) $row['id'] : 0;
+            if ($productId <= 0 || !isset($effectiveStock[$productId])) {
+                continue;
+            }
+
+            $threshold = isset($row['category_end_offers_below_quantity']) ? (int) $row['category_end_offers_below_quantity'] : null;
+            if ($threshold === null) {
+                continue;
+            }
+
+            $quantity = isset($effectiveStock[$productId]['quantity']) ? (int) $effectiveStock[$productId]['quantity'] : 0;
+            if ($quantity > $threshold) {
+                continue;
+            }
+
+            $eligibleProducts[$productId] = array(
+                'id' => $productId,
+                'sku' => (string) ($row['sku'] ?? ''),
+                'old_sku' => (string) ($row['old_sku'] ?? ''),
+                'product_name' => (string) ($row['product_name'] ?? ''),
+                'category_id' => isset($row['category_id']) ? (int) $row['category_id'] : null,
+                'category_name' => (string) ($row['category_name'] ?? ''),
+                'category_end_offers_below_quantity' => $threshold,
+                'warehouse_quantity' => $quantity,
+                'warehouse_localization' => (string) ($effectiveStock[$productId]['localization'] ?? ''),
+                'difference_to_threshold' => $threshold - $quantity,
+            );
+        }
+
+        if ($eligibleProducts === array()) {
+            return array(
+                'items' => array(),
+                'scanned_rows' => count($productRows),
+                'has_more_candidates' => count($productRows) >= $scanLimit,
+                'scan_limit_reached' => count($productRows) >= $scanLimit,
+            );
+        }
+
+        $offerRows = $this->previewAutoEndOffersForProducts($eligibleProducts, $accountId, $limit);
+        if ($offerRows === array()) {
+            return array(
+                'items' => array(),
+                'scanned_rows' => count($productRows),
+                'has_more_candidates' => count($productRows) >= $scanLimit,
+                'scan_limit_reached' => count($productRows) >= $scanLimit,
+            );
+        }
+
+        foreach ($offerRows as $index => $row) {
+            $productId = isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : 0;
+            if ($productId > 0 && isset($eligibleProducts[$productId])) {
+                $offerRows[$index]['warehouse_quantity'] = $eligibleProducts[$productId]['warehouse_quantity'];
+                $offerRows[$index]['warehouse_localization'] = $eligibleProducts[$productId]['warehouse_localization'];
+                $offerRows[$index]['category_end_offers_below_quantity'] = $eligibleProducts[$productId]['category_end_offers_below_quantity'];
+                $offerRows[$index]['difference_to_threshold'] = $eligibleProducts[$productId]['difference_to_threshold'];
+            }
+        }
+
+        $targets = array_map(static function (array $row): array {
+            return array(
+                'id' => (int) ($row['id'] ?? 0),
+                'account_id' => (int) ($row['account_id'] ?? 0),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+            );
+        }, $offerRows);
+
+        $duplicateResult = $this->filterTerminableEndOfferTargets($targets);
+        $allowedMap = array();
+        foreach ($duplicateResult['allowed'] ?? array() as $target) {
+            $allowedMap[(int) ($target['id'] ?? 0)] = true;
+        }
+
+        $blockedMap = array();
+        foreach ($duplicateResult['blocked'] ?? array() as $blocked) {
+            $blockedMap[(int) ($blocked['id'] ?? 0)] = $blocked;
+        }
+
+        foreach ($offerRows as $index => $row) {
+            $offerRowId = isset($row['id']) ? (int) $row['id'] : 0;
+            $offerRows[$index]['can_end_offer'] = isset($allowedMap[$offerRowId]);
+            $offerRows[$index]['duplicate_block'] = $blockedMap[$offerRowId] ?? null;
+        }
+
+        return array(
+            'items' => array_slice($offerRows, 0, $limit),
+            'scanned_rows' => count($productRows),
+            'has_more_candidates' => count($productRows) >= $scanLimit || count($offerRows) >= $limit,
+            'scan_limit_reached' => count($productRows) >= $scanLimit,
+        );
+    }
+
+    private function previewAutoEndCandidateProducts(int $scanLimit): array
+    {
+        $params = array(
+            'old_sku_slug' => 'old_sku',
+        );
+        $sql = 'SELECT products.id, products.sku, products.product_name, products.category_id,'
+            . ' categories.name AS category_name, categories.end_offers_below_quantity AS category_end_offers_below_quantity,'
+            . ' old_sku_values.value AS old_sku'
+            . ' FROM products'
+            . ' INNER JOIN categories ON categories.id = products.category_id'
+            . ' LEFT JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.slug = :old_sku_slug'
+            . ' LEFT JOIN product_custom_field_values old_sku_values'
+            . '   ON old_sku_values.product_id = products.id AND old_sku_values.definition_id = old_sku_definition.id'
+            . ' WHERE products.deleted_at IS NULL'
+            . '   AND categories.end_offers_below_quantity IS NOT NULL'
+            . ' ORDER BY products.id DESC'
+            . ' LIMIT ' . $scanLimit;
+
+        return $this->database->fetchAll($sql, $params);
+    }
+
+    private function previewAutoEndOffersForProducts(array $eligibleProducts, ?int $accountId, int $limit): array
+    {
+        if ($eligibleProducts === array()) {
+            return array();
+        }
+
+        $skuToProduct = array();
+        $skuValues = array();
+        foreach ($eligibleProducts as $productId => $product) {
+            $sku = trim((string) ($product['sku'] ?? ''));
+            $oldSku = trim((string) ($product['old_sku'] ?? ''));
+            if ($sku !== '') {
+                $skuToProduct[$sku] = (int) $productId;
+                $skuValues[$sku] = $sku;
+            }
+            if ($oldSku !== '') {
+                $skuToProduct[$oldSku] = (int) $productId;
+                $skuValues[$oldSku] = $oldSku;
+            }
+        }
+
+        if ($skuValues === array()) {
+            return array();
+        }
+
+        $rows = array();
+        foreach (array_chunk(array_values($skuValues), 200) as $chunkIndex => $skuChunk) {
+            $params = array();
+            $placeholders = array();
+            foreach ($skuChunk as $skuIndex => $skuValue) {
+                $key = 'preview_sku_' . $chunkIndex . '_' . $skuIndex;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $skuValue;
+            }
+
+            if ($placeholders === array()) {
+                continue;
+            }
+
+            $sql = 'SELECT offers.id, offers.account_id, offers.offer_id, offers.sku, offers.name, offers.publication_status,'
+                . ' offers.linked_by, accounts.name AS account_name, accounts.slug AS account_slug'
+                . ' FROM allegro_offers offers'
+                . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+                . ' WHERE accounts.is_active = 1'
+                . '   AND offers.publication_status = "ACTIVE"'
+                . '   AND offers.sku IN (' . implode(', ', $placeholders) . ')';
+
+            if ($accountId !== null && $accountId > 0) {
+                $sql .= ' AND offers.account_id = :account_id';
+                $params['account_id'] = $accountId;
+            }
+
+            $sql .= ' ORDER BY offers.id DESC';
+            $chunkRows = $this->database->fetchAll($sql, $params);
+            foreach ($chunkRows as $row) {
+                $offerSku = trim((string) ($row['sku'] ?? ''));
+                $productId = $skuToProduct[$offerSku] ?? 0;
+                if ($productId <= 0 || !isset($eligibleProducts[$productId])) {
+                    continue;
+                }
+
+                $product = $eligibleProducts[$productId];
+                $rows[] = array(
+                    'id' => (int) ($row['id'] ?? 0),
+                    'account_id' => (int) ($row['account_id'] ?? 0),
+                    'offer_id' => (string) ($row['offer_id'] ?? ''),
+                    'sku' => (string) ($row['sku'] ?? ''),
+                    'name' => (string) ($row['name'] ?? ''),
+                    'publication_status' => (string) ($row['publication_status'] ?? ''),
+                    'warehouse_product_live_id' => $productId,
+                    'warehouse_product_id' => $productId,
+                    'linked_by' => (string) ($row['linked_by'] ?? 'sku'),
+                    'warehouse_sku' => (string) ($product['sku'] ?? ''),
+                    'warehouse_product_name' => (string) ($product['product_name'] ?? ''),
+                    'warehouse_category_id' => $product['category_id'] ?? null,
+                    'warehouse_category_name' => (string) ($product['category_name'] ?? ''),
+                    'account_name' => (string) ($row['account_name'] ?? ''),
+                    'account_slug' => (string) ($row['account_slug'] ?? ''),
+                );
+            }
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            return ((int) ($right['id'] ?? 0)) <=> ((int) ($left['id'] ?? 0));
+        });
+
+        return array_slice($rows, 0, $limit);
+    }
+
+    public function diagnoseAutoEndOffer(string $offerIdentifier): ?array
+    {
+        $offerIdentifier = trim($offerIdentifier);
+        if ($offerIdentifier === '') {
+            return null;
+        }
+
+        $params = array(
+            'offer_identifier_offer_id' => $offerIdentifier,
+            'offer_identifier_sku' => $offerIdentifier,
+        );
+        $sql = 'SELECT offers.id, offers.account_id, offers.offer_id, offers.sku, offers.name, offers.publication_status,'
+            . ' offers.warehouse_product_id, offers.linked_by,'
+            . ' accounts.name AS account_name, accounts.slug AS account_slug,'
+            . ' warehouse.id AS warehouse_product_live_id, warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name,'
+            . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name,'
+            . ' warehouse_categories.end_offers_below_quantity AS category_end_offers_below_quantity,'
+            . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
+            . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . $this->liveWarehouseJoinSql()
+            . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
+            . ' WHERE offers.offer_id = :offer_identifier_offer_id OR offers.sku = :offer_identifier_sku';
+
+        if (ctype_digit($offerIdentifier)) {
+            $sql .= ' OR offers.id = :offer_row_id';
+            $params['offer_row_id'] = (int) $offerIdentifier;
+        }
+
+        $sql .= ' ORDER BY offers.id DESC LIMIT 1';
+        $row = $this->database->fetch($sql, $params);
+        if (!$row) {
+            return null;
+        }
+
+        $row = $this->normalizeOfferViewData($row);
+        $row = $this->applyEffectiveWarehouseStockToRow($row);
+
+        $reasons = array();
+        $isActive = strtoupper((string) ($row['publication_status'] ?? '')) === 'ACTIVE';
+        if (!$isActive) {
+            $reasons[] = 'status_not_active';
+        }
+
+        $hasLiveWarehouseLink = !empty($row['warehouse_product_id']);
+        if (!$hasLiveWarehouseLink) {
+            $reasons[] = 'missing_live_warehouse_link';
+        }
+
+        $thresholdRaw = $row['category_end_offers_below_quantity'] ?? null;
+        $threshold = $thresholdRaw !== null && $thresholdRaw !== '' ? (int) $thresholdRaw : null;
+        if ($threshold === null) {
+            $reasons[] = 'missing_category_threshold';
+        }
+
+        $quantity = isset($row['warehouse_quantity']) ? (int) $row['warehouse_quantity'] : 0;
+        if ($threshold !== null && $quantity > $threshold) {
+            $reasons[] = 'quantity_above_threshold';
+        }
+
+        $duplicateMeta = $this->filterTerminableEndOfferTargets(array(array(
+            'id' => (int) ($row['id'] ?? 0),
+            'account_id' => (int) ($row['account_id'] ?? 0),
+            'offer_id' => (string) ($row['offer_id'] ?? ''),
+        )));
+        $duplicateBlock = null;
+        if (!empty($duplicateMeta['blocked'][0])) {
+            $duplicateBlock = $duplicateMeta['blocked'][0];
+            $reasons[] = 'blocked_by_duplicates';
+        }
+
+        $eligible = $reasons === array();
+
+        return array(
+            'id' => (int) ($row['id'] ?? 0),
+            'account_id' => (int) ($row['account_id'] ?? 0),
+            'account_name' => (string) ($row['account_name'] ?? ''),
+            'account_slug' => (string) ($row['account_slug'] ?? ''),
+            'offer_id' => (string) ($row['offer_id'] ?? ''),
+            'offer_name' => (string) ($row['name'] ?? ''),
+            'offer_sku' => (string) ($row['sku'] ?? ''),
+            'publication_status' => (string) ($row['publication_status'] ?? ''),
+            'warehouse_product_id' => isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : null,
+            'warehouse_sku' => (string) ($row['warehouse_sku'] ?? ''),
+            'warehouse_product_name' => (string) ($row['warehouse_product_name'] ?? ''),
+            'warehouse_category_id' => isset($row['warehouse_category_id']) ? (int) $row['warehouse_category_id'] : null,
+            'warehouse_category_name' => (string) ($row['warehouse_category_name'] ?? ''),
+            'warehouse_quantity' => $quantity,
+            'warehouse_localization' => (string) ($row['warehouse_localization'] ?? ''),
+            'end_offers_below_quantity' => $threshold,
+            'can_end_offer' => $eligible,
+            'reasons' => $reasons,
+            'duplicate_block' => $duplicateBlock,
+        );
+    }
+
     public function enqueueOfferChanges(array $targets, string $operation, array $payload, ?string $availableAt = null, bool $deduplicatePending = false): int
     {
         $queued = 0;
@@ -958,7 +1382,7 @@ class AllegroStorageRepository
             if ($deduplicatePending) {
                 $existing = $this->database->fetch(
                     'SELECT id FROM allegro_offer_change_queue'
-                    . ' WHERE offer_row_id = :offer_row_id AND operation = :operation AND status IN ("pending", "retry")'
+                    . ' WHERE offer_row_id = :offer_row_id AND operation = :operation AND status IN ("pending", "retry", "processing")'
                     . ' ORDER BY id DESC LIMIT 1',
                     array(
                         'offer_row_id' => $offerRowId,
@@ -967,19 +1391,27 @@ class AllegroStorageRepository
                 );
 
                 if ($existing && !empty($existing['id'])) {
-                    $this->database->update(
-                        'allegro_offer_change_queue',
-                        array(
-                            'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                            'status' => 'pending',
-                            'attempts' => 0,
-                            'error_message' => null,
-                            'available_at' => $availableAt,
-                            'processed_at' => null,
-                        ),
-                        'id = :id',
+                    $existingRow = $this->database->fetch(
+                        'SELECT status FROM allegro_offer_change_queue WHERE id = :id LIMIT 1',
                         array('id' => (int) $existing['id'])
                     );
+                    $existingStatus = strtolower(trim((string) ($existingRow['status'] ?? '')));
+
+                    if ($existingStatus === 'pending' || $existingStatus === 'retry') {
+                        $this->database->update(
+                            'allegro_offer_change_queue',
+                            array(
+                                'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                                'status' => 'pending',
+                                'attempts' => 0,
+                                'error_message' => null,
+                                'available_at' => $availableAt,
+                                'processed_at' => null,
+                            ),
+                            'id = :id',
+                            array('id' => (int) $existing['id'])
+                        );
+                    }
                     $queued++;
                     continue;
                 }
@@ -998,6 +1430,74 @@ class AllegroStorageRepository
         }
 
         return $queued;
+    }
+
+    public function existingQueuedOfferOperationMap(array $targets, string $operation, array $statuses = array('pending', 'retry', 'processing')): array
+    {
+        $offerRowIds = array_values(array_unique(array_filter(array_map(static function ($target): int {
+            return isset($target['id']) ? (int) $target['id'] : 0;
+        }, $targets), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($offerRowIds === array()) {
+            return array();
+        }
+
+        $normalizedStatuses = array_values(array_unique(array_filter(array_map(static function ($status): string {
+            return strtolower(trim((string) $status));
+        }, $statuses), static function (string $status): bool {
+            return in_array($status, array('pending', 'retry', 'processing', 'done', 'error'), true);
+        })));
+
+        if ($normalizedStatuses === array()) {
+            return array();
+        }
+
+        $offerPlaceholders = array();
+        $statusPlaceholders = array();
+        $params = array(
+            'operation' => $operation,
+        );
+
+        foreach ($offerRowIds as $index => $offerRowId) {
+            $key = 'offer_row_id_' . $index;
+            $offerPlaceholders[] = ':' . $key;
+            $params[$key] = $offerRowId;
+        }
+
+        foreach ($normalizedStatuses as $index => $status) {
+            $key = 'status_' . $index;
+            $statusPlaceholders[] = ':' . $key;
+            $params[$key] = $status;
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT offer_row_id, id, status, available_at, created_at'
+            . ' FROM allegro_offer_change_queue'
+            . ' WHERE operation = :operation'
+            . '   AND offer_row_id IN (' . implode(', ', $offerPlaceholders) . ')'
+            . '   AND status IN (' . implode(', ', $statusPlaceholders) . ')'
+            . ' ORDER BY id DESC',
+            $params
+        );
+
+        $map = array();
+        foreach ($rows as $row) {
+            $offerRowId = isset($row['offer_row_id']) ? (int) $row['offer_row_id'] : 0;
+            if ($offerRowId <= 0 || isset($map[$offerRowId])) {
+                continue;
+            }
+
+            $map[$offerRowId] = array(
+                'queue_id' => isset($row['id']) ? (int) $row['id'] : 0,
+                'status' => (string) ($row['status'] ?? ''),
+                'available_at' => (string) ($row['available_at'] ?? ''),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+            );
+        }
+
+        return $map;
     }
 
     public function clearQueueForOffers(array $targets): int
@@ -1234,7 +1734,7 @@ class AllegroStorageRepository
             $rows[$index] = $this->normalizeOfferViewData($rows[$index]);
         }
 
-        return $rows;
+        return $this->applyEffectiveWarehouseStockToRows($rows);
     }
 
     public function queueCounts(): array
@@ -1628,14 +2128,22 @@ class AllegroStorageRepository
             $params['invoice'] = $invoice;
         }
 
-        $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
-        if ($warehouseQuantity !== '') {
-            $this->appendQuantityFilter($whereParts, $params, $warehouseQuantity, 'COALESCE(shared_stock_groups.quantity, warehouse.quantity)', 'warehouse_quantity');
-        }
-
-        $allegroQuantity = isset($filters['allegro_quantity']) ? trim((string) $filters['allegro_quantity']) : '';
-        if ($allegroQuantity !== '') {
-            $this->appendQuantityFilter($whereParts, $params, $allegroQuantity, 'offers.stock_available', 'allegro_quantity');
+        $warehouseQuantityFrom = isset($filters['warehouse_quantity_from']) ? trim((string) $filters['warehouse_quantity_from']) : '';
+        $warehouseQuantityTo = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
+        if ($warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '') {
+            $this->appendQuantityRangeFilter(
+                $whereParts,
+                $params,
+                $warehouseQuantityFrom,
+                $warehouseQuantityTo,
+                'COALESCE(shared_stock_groups.quantity, warehouse.quantity)',
+                'warehouse_quantity'
+            );
+        } else {
+            $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
+            if ($warehouseQuantity !== '') {
+                $this->appendQuantityFilter($whereParts, $params, $warehouseQuantity, 'COALESCE(shared_stock_groups.quantity, warehouse.quantity)', 'warehouse_quantity');
+            }
         }
 
         return ' WHERE ' . implode(' AND ', $whereParts);
@@ -1728,10 +2236,12 @@ class AllegroStorageRepository
     private function analyzeOfferFilters(array $filters, string $sortBy = ''): array
     {
         $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
+        $warehouseQuantityFrom = isset($filters['warehouse_quantity_from']) ? trim((string) $filters['warehouse_quantity_from']) : '';
+        $warehouseQuantityTo = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
 
         $needsWarehouse = false;
-        $needsSharedStock = $warehouseQuantity !== '';
+        $needsSharedStock = $warehouseQuantity !== '' || $warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '';
 
         if (in_array($sortBy, array('warehouse_quantity', 'warehouse_sku', 'linked'), true)) {
             $needsWarehouse = true;
@@ -1847,6 +2357,41 @@ class AllegroStorageRepository
         $row['queue_meta'] = $this->normalizeQueueMetaForView(isset($row['queue_meta']) && is_array($row['queue_meta']) ? $row['queue_meta'] : array());
 
         return $row;
+    }
+
+    private function applyEffectiveWarehouseStockToRows(array $rows): array
+    {
+        $productIds = array_values(array_unique(array_filter(array_map(static function (array $row): int {
+            return isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : 0;
+        }, $rows), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($productIds === array()) {
+            return $rows;
+        }
+
+        $products = new ProductRepository($this->database);
+        $products->ensureSchema();
+        $effectiveStock = $products->effectiveStockByProductIds($productIds);
+
+        foreach ($rows as $index => $row) {
+            $productId = isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : 0;
+            if ($productId <= 0 || !isset($effectiveStock[$productId])) {
+                continue;
+            }
+
+            $rows[$index]['warehouse_quantity'] = $effectiveStock[$productId]['quantity'];
+            $rows[$index]['warehouse_localization'] = $effectiveStock[$productId]['localization'];
+        }
+
+        return $rows;
+    }
+
+    private function applyEffectiveWarehouseStockToRow(array $row): array
+    {
+        $rows = $this->applyEffectiveWarehouseStockToRows(array($row));
+        return isset($rows[0]) ? $rows[0] : $row;
     }
 
     private function duplicateMetaForOffers(array $offerIds, array $filters = array()): array
@@ -2459,6 +3004,102 @@ class AllegroStorageRepository
 
         $whereParts[] = 'CAST(' . $columnSql . ' AS CHAR) ' . ($negated ? 'NOT LIKE' : 'LIKE') . ' :' . $prefix;
         $params[$prefix] = '%' . $value . '%';
+    }
+
+    private function appendQuantityRangeFilter(
+        array &$whereParts,
+        array &$params,
+        string $fromRaw,
+        string $toRaw,
+        string $columnSql,
+        string $prefix
+    ): void {
+        $fromRaw = trim($fromRaw);
+        $toRaw = trim($toRaw);
+
+        $hasFrom = $fromRaw !== '' && preg_match('/^\d+$/', $fromRaw) === 1;
+        $hasTo = $toRaw !== '' && preg_match('/^\d+$/', $toRaw) === 1;
+
+        if (!$hasFrom && !$hasTo) {
+            return;
+        }
+
+        if ($hasFrom && $hasTo) {
+            $from = (int) $fromRaw;
+            $to = (int) $toRaw;
+            if ($from > $to) {
+                $tmp = $from;
+                $from = $to;
+                $to = $tmp;
+            }
+            $whereParts[] = $columnSql . ' BETWEEN :' . $prefix . '_from AND :' . $prefix . '_to';
+            $params[$prefix . '_from'] = $from;
+            $params[$prefix . '_to'] = $to;
+            return;
+        }
+
+        if ($hasFrom) {
+            $whereParts[] = $columnSql . ' >= :' . $prefix . '_from';
+            $params[$prefix . '_from'] = (int) $fromRaw;
+            return;
+        }
+
+        $whereParts[] = $columnSql . ' <= :' . $prefix . '_to';
+        $params[$prefix . '_to'] = (int) $toRaw;
+    }
+
+    private function effectiveWarehouseQuantityFilter(array $filters): array
+    {
+        $fromRaw = isset($filters['warehouse_quantity_from']) ? trim((string) $filters['warehouse_quantity_from']) : '';
+        $toRaw = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
+
+        $hasFrom = $fromRaw !== '' && preg_match('/^\d+$/', $fromRaw) === 1;
+        $hasTo = $toRaw !== '' && preg_match('/^\d+$/', $toRaw) === 1;
+
+        if (!$hasFrom && !$hasTo) {
+            return array(
+                'active' => false,
+                'from' => null,
+                'to' => null,
+            );
+        }
+
+        $from = $hasFrom ? (int) $fromRaw : null;
+        $to = $hasTo ? (int) $toRaw : null;
+        if ($from !== null && $to !== null && $from > $to) {
+            $tmp = $from;
+            $from = $to;
+            $to = $tmp;
+        }
+
+        return array(
+            'active' => true,
+            'from' => $from,
+            'to' => $to,
+        );
+    }
+
+    private function filtersWithoutWarehouseQuantity(array $filters): array
+    {
+        unset($filters['warehouse_quantity_from'], $filters['warehouse_quantity_to'], $filters['warehouse_quantity']);
+        return $filters;
+    }
+
+    private function matchesEffectiveWarehouseQuantityFilter(int $quantity, array $filter): bool
+    {
+        if (empty($filter['active'])) {
+            return true;
+        }
+
+        if (isset($filter['from']) && $filter['from'] !== null && $quantity < (int) $filter['from']) {
+            return false;
+        }
+
+        if (isset($filter['to']) && $filter['to'] !== null && $quantity > (int) $filter['to']) {
+            return false;
+        }
+
+        return true;
     }
 
     private function buildIntegerPlaceholders(string $prefix, array $values, array &$params): array

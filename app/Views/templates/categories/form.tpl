@@ -46,7 +46,7 @@
                 <div class="form-text">Uzywany do automatycznego nadawania SKU, np. AGD-000123.</div>
               </div>
               <div class="col-md-6">
-                <label for="end_offers_below_quantity" class="form-label">Zakanczaj aukcje przy sztuk mniej niz</label>
+                <label for="end_offers_below_quantity" class="form-label">Zakanczaj aukcje przy sztuk tyle i mniej</label>
                 <input type="number" min="0" step="1" class="form-control" id="end_offers_below_quantity" name="end_offers_below_quantity" value="{$category.end_offers_below_quantity|default:''|escape}" placeholder="np. 2">
                 <div class="form-text">Na razie tylko zapis do kategorii. Pozniej podepniemy pod automatyzacje Allegro.</div>
               </div>

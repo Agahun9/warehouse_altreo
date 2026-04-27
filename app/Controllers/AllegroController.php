@@ -26,7 +26,10 @@ class AllegroController extends Controller
 
     public function index(): void
     {
-        $this->requireModule('allegro');
+        $currentUser = $this->requireModule('allegro');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
 
         $accounts = $this->allegro->listAccounts();
         $filters = $this->offerFilters();
@@ -75,8 +78,15 @@ class AllegroController extends Controller
 
         $triggerBaseUrl = $this->absoluteBaseUrl();
         $currentListUrl = $this->buildOfferIndexUrl($filters, $sortBy, $sortDir, $page, $perPage);
+        $autoEndOffersUrl = $triggerBaseUrl . '?controller=allegro&action=autoendoffers&format=json';
+        $selectedAccountId = isset($filters['account_id']) && ctype_digit((string) $filters['account_id'])
+            ? (int) $filters['account_id']
+            : 0;
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $triggerBaseUrl);
+            if ($selectedAccountId > 0 && (int) ($account['id'] ?? 0) === $selectedAccountId) {
+                $autoEndOffersUrl .= '&account=' . rawurlencode((string) ($account['slug'] ?? ''));
+            }
         }
         unset($account);
 
@@ -85,6 +95,9 @@ class AllegroController extends Controller
             'contentTitle' => 'Integracja Allegro',
             'pageDescription' => 'Wielokontowa autoryzacja, szybki import ofert i listing pod cron.',
             'breadcrumbCurrent' => 'Allegro',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'accounts' => $accounts,
             'offers' => $offers,
             'filters' => $filters,
@@ -102,6 +115,7 @@ class AllegroController extends Controller
             'currentListUrl' => $currentListUrl,
             'duplicatesOnly' => (($filters['duplicates'] ?? '') === '1'),
             'defaultRedirectUri' => $triggerBaseUrl . '?controller=allegro&action=callback',
+            'autoEndOffersUrl' => $autoEndOffersUrl,
         ));
     }
 
@@ -274,6 +288,57 @@ class AllegroController extends Controller
                 $this->sendMaintenanceErrorReport($mailRecipients, $exception->getMessage());
             }
 
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function previewautoendoffers(): void
+    {
+        if (!$this->authorizeSyncRequest()) {
+            $this->jsonResponse(array('error' => 'Brak autoryzacji do podgladu konczenia ofert Allegro.'), 403);
+            return;
+        }
+
+        $this->releaseSessionLock();
+
+        try {
+            $mailRecipients = $this->previewAutoEndMailRecipients();
+            $result = $this->allegro->previewAutoEndOffers(array(
+                'account' => $this->input('account', ''),
+                'offer_id' => $this->input('offer_id', ''),
+                'limit' => (int) $this->input('limit', 2000),
+                'scan_limit' => (int) $this->input('scan_limit', 10000),
+            ));
+            if ($mailRecipients !== array() && (string) ($result['mode'] ?? '') === 'preview_only') {
+                $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
+            }
+            $this->jsonResponse($result);
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function autoendoffers(): void
+    {
+        if (!$this->authorizeSyncRequest()) {
+            $this->jsonResponse(array('error' => 'Brak autoryzacji do automatycznego konczenia ofert Allegro.'), 403);
+            return;
+        }
+
+        $this->releaseSessionLock();
+
+        try {
+            $mailRecipients = $this->previewAutoEndMailRecipients();
+            $result = $this->allegro->autoEndOffers(array(
+                'account' => $this->input('account', ''),
+                'limit' => (int) $this->input('limit', 2000),
+                'scan_limit' => (int) $this->input('scan_limit', 10000),
+            ));
+            if ($mailRecipients !== array()) {
+                $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
+            }
+            $this->jsonResponse($result);
+        } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
     }
@@ -537,6 +602,25 @@ class AllegroController extends Controller
 
     private function offerFilters(): array
     {
+        $warehouseQuantity = trim((string) $this->input('warehouse_quantity', ''));
+        $warehouseQuantityFrom = trim((string) $this->input('warehouse_quantity_from', ''));
+        $warehouseQuantityTo = trim((string) $this->input('warehouse_quantity_to', ''));
+
+        if ($warehouseQuantityFrom === '' && $warehouseQuantityTo === '' && preg_match('/^\s*(\d+)\s*\-\s*(\d+)\s*$/', $warehouseQuantity, $matches) === 1) {
+            $warehouseQuantityFrom = (string) $matches[1];
+            $warehouseQuantityTo = (string) $matches[2];
+        }
+
+        if ($warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '') {
+            if ($warehouseQuantityFrom !== '' && $warehouseQuantityTo !== '') {
+                $warehouseQuantity = $warehouseQuantityFrom . '-' . $warehouseQuantityTo;
+            } elseif ($warehouseQuantityFrom !== '') {
+                $warehouseQuantity = $warehouseQuantityFrom;
+            } else {
+                $warehouseQuantity = $warehouseQuantityTo;
+            }
+        }
+
         return array(
             'account_id' => trim((string) $this->input('account_id', '')),
             'q' => trim((string) $this->input('q', '')),
@@ -547,8 +631,9 @@ class AllegroController extends Controller
             'linked' => trim((string) $this->input('linked', '')),
             'market' => trim((string) $this->input('market', '')),
             'invoice' => trim((string) $this->input('invoice', '')),
-            'warehouse_quantity' => trim((string) $this->input('warehouse_quantity', '')),
-            'allegro_quantity' => trim((string) $this->input('allegro_quantity', '')),
+            'warehouse_quantity' => $warehouseQuantity,
+            'warehouse_quantity_from' => $warehouseQuantityFrom,
+            'warehouse_quantity_to' => $warehouseQuantityTo,
         );
     }
 
@@ -580,6 +665,28 @@ class AllegroController extends Controller
             $raw = trim((string) $this->input('mail_to', ''));
         }
 
+        if ($raw === '') {
+            return array();
+        }
+
+        $items = preg_split('/[\s,;]+/', $raw) ?: array();
+        $recipients = array();
+
+        foreach ($items as $item) {
+            $email = trim((string) $item);
+            if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                continue;
+            }
+
+            $recipients[] = $email;
+        }
+
+        return array_values(array_unique($recipients));
+    }
+
+    private function previewAutoEndMailRecipients(): array
+    {
+        $raw = trim((string) $this->input('mail_to', ''));
         if ($raw === '') {
             return array();
         }
@@ -642,6 +749,68 @@ class AllegroController extends Controller
         foreach ($recipients as $recipient) {
             $this->mail->send($recipient, $subject, $html, $message);
         }
+    }
+
+    private function sendPreviewAutoEndReport(array $recipients, array $result): array
+    {
+        $account = isset($result['account']) && is_array($result['account']) ? $result['account'] : null;
+        $accountLabel = $account !== null && trim((string) ($account['name'] ?? '')) !== ''
+            ? (string) ($account['name'] ?? '')
+            : 'wszystkie konta';
+        $items = isset($result['items']) && is_array($result['items']) ? $result['items'] : array();
+        $eligibleItems = array_values(array_filter($items, static function (array $item): bool {
+            return !empty($item['can_end_offer']);
+        }));
+        $count = isset($result['end_offer_count']) ? (int) $result['end_offer_count'] : count($eligibleItems);
+        $subject = 'Allegro oferty do zakonczenia: ' . $count
+            . ($account !== null && trim((string) ($account['slug'] ?? '')) !== '' ? ' [' . (string) $account['slug'] . ']' : '');
+
+        $html = '<p>Znaleziono <strong>' . htmlspecialchars((string) $count, ENT_QUOTES, 'UTF-8') . '</strong> ofert do zakonczenia.</p>'
+            . '<p><strong>Konto:</strong> ' . htmlspecialchars($accountLabel, ENT_QUOTES, 'UTF-8') . '<br>'
+            . '<strong>Data:</strong> ' . htmlspecialchars((string) ($result['generated_at'] ?? date('Y-m-d H:i:s')), ENT_QUOTES, 'UTF-8') . '</p>'
+            . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;">'
+            . '<thead><tr style="background:#f3f4f6;">'
+            . '<th align="left">Konto</th>'
+            . '<th align="left">Offer ID</th>'
+            . '<th align="left">Nazwa</th>'
+            . '<th align="left">SKU</th>'
+            . '</tr></thead><tbody>';
+        $text = "Znaleziono ofert do zakonczenia: " . $count . "\n"
+            . 'Konto: ' . $accountLabel . "\n"
+            . 'Data: ' . (string) ($result['generated_at'] ?? date('Y-m-d H:i:s')) . "\n\n";
+
+        if ($eligibleItems === array()) {
+            $html .= '<tr><td colspan="4">Brak ofert do zakonczenia.</td></tr>';
+            $text .= "Brak ofert do zakonczenia.\n";
+        } else {
+            foreach ($eligibleItems as $item) {
+                $accountName = (string) ($item['account_name'] ?? '');
+                $offerId = (string) ($item['offer_id'] ?? '');
+                $offerName = (string) ($item['offer_name'] ?? '');
+                $offerSku = (string) ($item['offer_sku'] ?? '');
+
+                $html .= '<tr>'
+                    . '<td>' . htmlspecialchars($accountName, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td>' . htmlspecialchars($offerId, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td>' . htmlspecialchars($offerName, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td>' . htmlspecialchars($offerSku, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '</tr>';
+                $text .= '- ' . $accountName . ' | ' . $offerId . ' | ' . $offerSku . ' | ' . $offerName . "\n";
+            }
+        }
+
+        $html .= '</tbody></table>';
+
+        $sent = array();
+        foreach ($recipients as $recipient) {
+            $sent[$recipient] = $this->mail->send($recipient, $subject, $html, $text);
+        }
+
+        return array(
+            'requested' => $recipients,
+            'sent' => $sent,
+            'eligible_count' => $count,
+        );
     }
 
     private function notifyRefreshTokenFailuresFromBatch(array $results): void
