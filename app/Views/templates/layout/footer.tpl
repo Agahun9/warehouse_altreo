@@ -18,6 +18,146 @@
   ></script>
   <script>
     (function () {
+      var loader = document.getElementById('appPageLoader');
+      var loaderText = document.getElementById('appPageLoaderText');
+      var body = document.body;
+      var hideTimer = null;
+      var showTimer = null;
+      var loaderVisible = false;
+      var loaderDelayMs = 700;
+      var loaderEnabled = {if !$currentUser || $currentUser.loader_enabled|default:1}true{else}false{/if};
+
+      function setReadyState() {
+        body.classList.add('app-ready');
+      }
+
+      function showLoader(message) {
+        if (!loader || !loaderEnabled) {
+          return;
+        }
+
+        if (hideTimer) {
+          window.clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+
+        if (showTimer) {
+          window.clearTimeout(showTimer);
+          showTimer = null;
+        }
+
+        if (loaderText) {
+          loaderText.textContent = message || 'Trwa pobieranie danych i odswiezanie ekranu.';
+        }
+
+        showTimer = window.setTimeout(function () {
+          loader.classList.add('is-active');
+          loader.setAttribute('aria-hidden', 'false');
+          body.classList.add('page-is-loading');
+          loaderVisible = true;
+        }, loaderDelayMs);
+      }
+
+      function hideLoader() {
+        if (showTimer) {
+          window.clearTimeout(showTimer);
+          showTimer = null;
+        }
+
+        if (!loader) {
+          setReadyState();
+          return;
+        }
+
+        if (loaderVisible) {
+          loader.classList.remove('is-active');
+          loader.setAttribute('aria-hidden', 'true');
+          body.classList.remove('page-is-loading');
+          loaderVisible = false;
+        }
+
+        hideTimer = window.setTimeout(function () {
+          setReadyState();
+        }, 40);
+      }
+
+      function shouldHandleLink(link, event) {
+        if (!link || event.defaultPrevented) {
+          return false;
+        }
+
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+          return false;
+        }
+
+        if (link.hasAttribute('download')) {
+          return false;
+        }
+
+        if ((link.getAttribute('target') || '').toLowerCase() === '_blank') {
+          return false;
+        }
+
+        if (link.getAttribute('data-no-page-loader') === '1') {
+          return false;
+        }
+
+        var href = String(link.getAttribute('href') || '').trim();
+        if (href === '' || href === '#' || href.indexOf('javascript:') === 0) {
+          return false;
+        }
+
+        try {
+          var url = new URL(link.href, window.location.href);
+          if (url.origin !== window.location.origin) {
+            return false;
+          }
+
+          if (url.href === window.location.href) {
+            return false;
+          }
+        } catch (error) {
+          return false;
+        }
+
+        return true;
+      }
+
+      window.showPageLoader = showLoader;
+      window.hidePageLoader = hideLoader;
+
+      window.addEventListener('load', hideLoader);
+      window.addEventListener('pageshow', hideLoader);
+
+      document.addEventListener('click', function (event) {
+        var link = event.target.closest('a');
+        if (!shouldHandleLink(link, event)) {
+          return;
+        }
+
+        showLoader(link.getAttribute('data-loader-label') || 'Ladowanie strony...');
+      });
+
+      document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form || event.defaultPrevented) {
+          return;
+        }
+
+        if (form.getAttribute('data-no-page-loader') === '1') {
+          return;
+        }
+
+        var target = (form.getAttribute('target') || '').toLowerCase();
+        if (target !== '' && target !== '_self') {
+          return;
+        }
+
+        showLoader(form.getAttribute('data-loader-label') || 'Ladowanie danych...');
+      });
+    })();
+
+    (function () {
       var input = document.getElementById('globalProductSearchInput');
       var results = document.getElementById('globalProductSearchResults');
       var form = document.getElementById('globalProductSearchForm');
@@ -105,6 +245,8 @@
 
         timer = setTimeout(function () {
           activeQuery = query;
+          results.innerHTML = '<div class="px-3 py-2 text-secondary small">Szukanie produktow...</div>';
+          results.style.display = 'block';
 
           fetch(endpoint + '&q=' + encodeURIComponent(query), {
             headers: { 'Accept': 'application/json' }

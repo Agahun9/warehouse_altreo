@@ -12,6 +12,7 @@ class AllegroStorageRepository
     private const SCHEMA_CACHE_KEY = 'schema:allegro_storage:v3';
     private const OFFER_COUNT_CACHE_TTL = 30;
     private const STATS_CACHE_TTL = 60;
+    private const QUEUE_COUNT_CACHE_TTL = 15;
     /** @var bool */
     private static $schemaEnsured = false;
 
@@ -266,26 +267,28 @@ class AllegroStorageRepository
 
     private function liveWarehouseJoinSql(): string
     {
-        return ' LEFT JOIN products warehouse ON warehouse.id = ('
-            . ' CASE'
-            . ' WHEN offers.sku REGEXP "[A-Za-z]" THEN ('
-            . '   SELECT MIN(products_sku.id)'
-            . '   FROM products products_sku'
-            . '   WHERE products_sku.deleted_at IS NULL'
-            . '     AND products_sku.sku = offers.sku'
-            . ' )'
-            . ' WHEN offers.sku REGEXP "^[0-9]+$" THEN ('
-            . '   SELECT MIN(products_old.id)'
-            . '   FROM products products_old'
-            . '   INNER JOIN product_custom_field_values old_sku_values ON old_sku_values.product_id = products_old.id'
-            . '   INNER JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.id = old_sku_values.definition_id'
-            . '   WHERE products_old.deleted_at IS NULL'
-            . '     AND old_sku_definition.slug = "old_sku"'
-            . '     AND old_sku_values.value = offers.sku'
-            . ' )'
-            . ' ELSE NULL'
-            . ' END'
-            . ' )';
+        return ' LEFT JOIN products warehouse_sku'
+            . '   ON offers.sku IS NOT NULL'
+            . '  AND offers.sku <> ""'
+            . '  AND offers.sku REGEXP "[A-Za-z]"'
+            . '  AND warehouse_sku.deleted_at IS NULL'
+            . '  AND warehouse_sku.sku = offers.sku'
+            . ' LEFT JOIN ('
+            . '   SELECT old_sku_values.value AS old_sku_value, MIN(products_old.id) AS product_id'
+            . '   FROM product_custom_field_values old_sku_values'
+            . '   INNER JOIN product_custom_field_definitions old_sku_definition'
+            . '     ON old_sku_definition.id = old_sku_values.definition_id'
+            . '    AND old_sku_definition.slug = "old_sku"'
+            . '   INNER JOIN products products_old'
+            . '     ON products_old.id = old_sku_values.product_id'
+            . '    AND products_old.deleted_at IS NULL'
+            . '   GROUP BY old_sku_values.value'
+            . ' ) old_sku_lookup'
+            . '   ON offers.sku IS NOT NULL'
+            . '  AND offers.sku REGEXP "^[0-9]+$"'
+            . '  AND old_sku_lookup.old_sku_value = offers.sku'
+            . ' LEFT JOIN products warehouse'
+            . '   ON warehouse.id = COALESCE(warehouse_sku.id, old_sku_lookup.product_id)';
     }
 
     public function allAccounts(): array
@@ -1739,6 +1742,12 @@ class AllegroStorageRepository
 
     public function queueCounts(): array
     {
+        $cacheKey = 'allegro:queue-counts:v1';
+        $cached = $this->getCache($cacheKey);
+        if (is_array($cached) && isset($cached['pending'])) {
+            return $cached;
+        }
+
         $rows = $this->database->fetchAll(
             'SELECT status, COUNT(*) AS total FROM allegro_offer_change_queue GROUP BY status'
         );
@@ -1758,6 +1767,7 @@ class AllegroStorageRepository
             }
         }
 
+        $this->putCache($cacheKey, $result, self::QUEUE_COUNT_CACHE_TTL);
         return $result;
     }
 

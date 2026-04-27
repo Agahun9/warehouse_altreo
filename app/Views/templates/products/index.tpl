@@ -404,7 +404,7 @@
 
         <div class="card-body p-0">
           <div class="table-responsive">
-            <form method="get" action="{$baseUrl}" id="productsFiltersForm">
+            <form method="get" action="{$baseUrl}" id="productsFiltersForm" data-loader-label="Ladowanie listy produktow...">
               <input type="hidden" name="controller" value="products">
               <input type="hidden" name="action" value="index">
               <input type="hidden" name="sort_by" value="{$sortBy|default:''|escape}">

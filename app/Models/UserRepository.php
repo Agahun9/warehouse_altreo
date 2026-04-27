@@ -41,6 +41,7 @@ class UserRepository
             . "password_hash VARCHAR(255) NOT NULL,\n"
             . "role VARCHAR(20) NOT NULL DEFAULT 'user',\n"
             . "permission_level VARCHAR(20) NOT NULL DEFAULT 'edit',\n"
+            . "loader_enabled TINYINT(1) NOT NULL DEFAULT 1,\n"
             . "is_active TINYINT(1) NOT NULL DEFAULT 0,\n"
             . "is_blocked TINYINT(1) NOT NULL DEFAULT 0,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
@@ -115,6 +116,7 @@ class UserRepository
         $this->ensureUserColumn('first_name', "ALTER TABLE users ADD COLUMN first_name VARCHAR(120) DEFAULT NULL AFTER email");
         $this->ensureUserColumn('last_name', "ALTER TABLE users ADD COLUMN last_name VARCHAR(120) DEFAULT NULL AFTER first_name");
         $this->ensureUserColumn('permission_level', "ALTER TABLE users ADD COLUMN permission_level VARCHAR(20) NOT NULL DEFAULT 'edit' AFTER role");
+        $this->ensureUserColumn('loader_enabled', "ALTER TABLE users ADD COLUMN loader_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER permission_level");
         self::$schemaEnsured = true;
     }
 
@@ -161,7 +163,7 @@ class UserRepository
     public function latest(int $limit = 5): array
     {
         $limit = max(1, min(20, $limit));
-        return $this->database->fetchAll('SELECT id, email, first_name, last_name, role, permission_level, is_active, is_blocked, created_at FROM users ORDER BY created_at DESC, id DESC LIMIT ' . $limit);
+        return $this->database->fetchAll('SELECT id, email, first_name, last_name, role, permission_level, loader_enabled, is_active, is_blocked, created_at FROM users ORDER BY created_at DESC, id DESC LIMIT ' . $limit);
     }
 
     public function updateUser($id, array $data): int

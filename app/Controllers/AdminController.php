@@ -78,6 +78,7 @@ class AdminController extends Controller
             $lastName = trim((string) $this->input('last_name', ''));
             $password = (string) $this->input('new_password', '');
             $permissionLevel = (string) $this->input('permission_level', 'edit');
+            $loaderEnabled = $this->input('loader_enabled', '1') === '1' ? 1 : 0;
             $isActive = $this->input('is_active', '0') === '1' ? 1 : 0;
             $blocked = $this->input('is_blocked', '0') === '1' ? 1 : 0;
             $modules = $this->input('modules', array());
@@ -90,6 +91,7 @@ class AdminController extends Controller
                 'first_name' => ($firstName !== '' ? $firstName : null),
                 'last_name' => ($lastName !== '' ? $lastName : null),
                 'permission_level' => ($permissionLevel === 'read' ? 'read' : 'edit'),
+                'loader_enabled' => $loaderEnabled,
                 'is_active' => $isActive,
                 'is_blocked' => $blocked,
             );

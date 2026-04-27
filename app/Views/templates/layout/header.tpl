@@ -11,6 +11,145 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <style>
+    :root {
+      --app-accent: #0d6efd;
+      --app-accent-soft: rgba(13, 110, 253, 0.12);
+      --app-loader-bg: rgba(248, 250, 252, 0.82);
+      --app-loader-surface: rgba(255, 255, 255, 0.92);
+      --app-loader-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+    }
+
+    body {
+      transition: background-color 0.28s ease;
+    }
+
+    body.page-is-loading {
+      overflow: hidden;
+    }
+
+    .app-main {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+      will-change: opacity, transform;
+    }
+
+    body.app-ready .app-main {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .card,
+    .products-page-header-shell,
+    .allegro-pagination-panel {
+      transition: transform 0.24s ease, box-shadow 0.24s ease, opacity 0.24s ease;
+    }
+
+    .card:hover,
+    .products-page-header-shell:hover,
+    .allegro-pagination-panel:hover {
+      transform: translateY(-1px);
+    }
+
+    .app-page-loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background:
+        radial-gradient(circle at top, rgba(13, 110, 253, 0.12), transparent 40%),
+        var(--app-loader-bg);
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.22s ease, visibility 0.22s ease;
+      z-index: 2000;
+    }
+
+    .app-page-loader.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .app-page-loader-card {
+      min-width: min(360px, 92vw);
+      max-width: 420px;
+      padding: 1.15rem 1.2rem;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 1.15rem;
+      background: var(--app-loader-surface);
+      box-shadow: var(--app-loader-shadow);
+    }
+
+    .app-page-loader-top {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .app-page-loader-spinner {
+      width: 3rem;
+      height: 3rem;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      border: 3px solid rgba(13, 110, 253, 0.16);
+      border-top-color: var(--app-accent);
+      animation: appPageLoaderSpin 0.9s linear infinite;
+    }
+
+    .app-page-loader-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .app-page-loader-text {
+      margin: 0.18rem 0 0;
+      font-size: 0.88rem;
+      color: #64748b;
+    }
+
+    .app-page-loader-progress {
+      margin-top: 0.95rem;
+      height: 0.45rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.18);
+    }
+
+    .app-page-loader-progress-bar {
+      height: 100%;
+      width: 38%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0d6efd, #60a5fa);
+      animation: appPageLoaderPulse 1.2s ease-in-out infinite;
+      transform-origin: left center;
+    }
+
+    @keyframes appPageLoaderSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes appPageLoaderPulse {
+      0%,
+      100% {
+        transform: translateX(0) scaleX(0.85);
+        opacity: 0.82;
+      }
+
+      50% {
+        transform: translateX(145%) scaleX(1.25);
+        opacity: 1;
+      }
+    }
+
     .table thead th {
       vertical-align: middle;
       white-space: nowrap;
@@ -159,6 +298,20 @@
   </style>
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
+  <div id="appPageLoader" class="app-page-loader" aria-live="polite" aria-hidden="true">
+    <div class="app-page-loader-card">
+      <div class="app-page-loader-top">
+        <div class="app-page-loader-spinner" aria-hidden="true"></div>
+        <div>
+          <p class="app-page-loader-title">Ladowanie widoku</p>
+          <p class="app-page-loader-text" id="appPageLoaderText">Trwa pobieranie danych i odswiezanie ekranu.</p>
+        </div>
+      </div>
+      <div class="app-page-loader-progress" aria-hidden="true">
+        <div class="app-page-loader-progress-bar"></div>
+      </div>
+    </div>
+  </div>
   <div class="app-wrapper">
     <nav class="app-header navbar navbar-expand bg-body">
       <div class="container-fluid">

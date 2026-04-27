@@ -62,6 +62,12 @@ class ProductCustomFieldRepository
             . "CONSTRAINT fk_product_custom_field_definition FOREIGN KEY (definition_id) REFERENCES product_custom_field_definitions(id) ON DELETE CASCADE\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        $this->ensureIndex(
+            'product_custom_field_values',
+            'idx_product_custom_field_definition_value',
+            'CREATE INDEX idx_product_custom_field_definition_value ON product_custom_field_values (definition_id, value(191), product_id)'
+        );
         self::$schemaEnsured = true;
     }
 
@@ -264,5 +270,29 @@ class ProductCustomFieldRepository
         $value = strtolower($value);
         $value = preg_replace('/[^a-z0-9]+/', '_', $value);
         return trim((string) $value, '_');
+    }
+
+    private function ensureIndex(string $table, string $indexName, string $sql): void
+    {
+        $config = Config::get('database');
+        $schema = isset($config['database']) ? (string) $config['database'] : '';
+        if ($schema === '') {
+            return;
+        }
+
+        $exists = (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name',
+            array(
+                'schema' => $schema,
+                'table_name' => $table,
+                'index_name' => $indexName,
+            )
+        ) > 0;
+
+        if ($exists) {
+            return;
+        }
+
+        $this->database->query($sql);
     }
 }

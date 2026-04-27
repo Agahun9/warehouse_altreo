@@ -338,7 +338,7 @@
           </div>
         </div>
         <div class="card-body border-bottom">
-          <form method="get" action="{$baseUrl}" class="row g-2">
+          <form method="get" action="{$baseUrl}" class="row g-2" id="allegroFiltersForm" data-loader-label="Ladowanie ofert Allegro...">
             <input type="hidden" name="controller" value="allegro">
             <input type="hidden" name="action" value="index">
             <input type="hidden" name="sort_by" value="{$sortBy|escape}">
@@ -796,7 +796,7 @@
                   </td>
                   <td style="width:80px;">
                     {if $offer.primary_image_url}
-                      <img src="{$offer.primary_image_url|escape}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
+                      <img src="{$offer.primary_image_url|escape}" alt="" loading="lazy" decoding="async" style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
                     {else}
                       <span class="text-secondary small">brak</span>
                     {/if}

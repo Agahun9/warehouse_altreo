@@ -11,6 +11,8 @@ use RuntimeException;
 
 class EmpikService
 {
+    private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
+
     /** @var array */
     private $config;
 
@@ -23,7 +25,7 @@ class EmpikService
         $this->config = isset($app['empik']) && is_array($app['empik']) ? $app['empik'] : array();
         $this->storage = new EmpikStorageRepository(Database::instance());
         $this->storage->ensureSchema();
-        $this->storage->cleanupExpiredCache();
+        $this->maybeCleanupExpiredCache();
     }
 
     public function listAccounts(): array
@@ -966,5 +968,17 @@ class EmpikService
     private function configValue(string $key, $default)
     {
         return array_key_exists($key, $this->config) ? $this->config[$key] : $default;
+    }
+
+    private function maybeCleanupExpiredCache(): void
+    {
+        $cacheKey = 'empik:cache-cleanup-throttle:v1';
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached) && !empty($cached['done'])) {
+            return;
+        }
+
+        $this->storage->cleanupExpiredCache();
+        $this->storage->putCache($cacheKey, array('done' => 1), self::CACHE_CLEANUP_THROTTLE_SECONDS);
     }
 }

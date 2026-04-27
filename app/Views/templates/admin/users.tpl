@@ -244,6 +244,20 @@
                     </div>
 
                     <div class="col-md-6">
+                      <label class="form-label">Loader aplikacji</label>
+                      <select name="loader_enabled" class="form-select">
+                        <option value="1"{if $user.loader_enabled|default:1 neq 0} selected{/if}>wlaczony</option>
+                        <option value="0"{if $user.loader_enabled|default:1 eq 0} selected{/if}>wylaczony</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="row g-3 mb-4">
+                    <div class="col-md-12">
+                      <div class="small text-secondary">Loader pojawia sie tylko wtedy, gdy ladowanie trwa dluzej niz 0.7 sekundy.</div>
+                    </div>
+
+                    <div class="col-md-6">
                       <label class="form-label">Nowe haslo</label>
                       <input type="password" class="form-control" name="new_password" placeholder="pozostaw puste, aby nie zmieniac">
                     </div>

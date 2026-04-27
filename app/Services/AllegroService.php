@@ -15,6 +15,8 @@ use RuntimeException;
 
 class AllegroService
 {
+    private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
+
     /** @var array<string, string> */
     private $imageHashCache = array();
 
@@ -32,7 +34,7 @@ class AllegroService
         $this->storage->ensureSchema();
         $customFields = new ProductCustomFieldRepository(Database::instance());
         $customFields->ensureSchema();
-        $this->storage->cleanupExpiredCache();
+        $this->maybeCleanupExpiredCache();
         $this->disableStoredWarehouseLinks();
     }
 
@@ -2565,6 +2567,18 @@ class AllegroService
 
         $this->storage->clearStoredOfferLinks();
         $this->storage->putCache($cacheKey, array('done' => 1), 31536000);
+    }
+
+    private function maybeCleanupExpiredCache(): void
+    {
+        $cacheKey = 'allegro:cache-cleanup-throttle:v1';
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached) && !empty($cached['done'])) {
+            return;
+        }
+
+        $this->storage->cleanupExpiredCache();
+        $this->storage->putCache($cacheKey, array('done' => 1), self::CACHE_CLEANUP_THROTTLE_SECONDS);
     }
 
     private function patchImagesFromOffer(array $offer): array
