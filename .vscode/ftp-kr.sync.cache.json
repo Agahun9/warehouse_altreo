@@ -218,14 +218,14 @@
                 "Controllers": {
                   "AdminController.php": {
                     "type": "-",
-                    "size": 9253,
-                    "lmtime": 1776864153322.4978,
+                    "size": 11331,
+                    "lmtime": 1777285395030.4448,
                     "modified": false
                   },
                   "AllegroController.php": {
                     "type": "-",
-                    "size": 28742,
-                    "lmtime": 1776864446198.4707,
+                    "size": 36637,
+                    "lmtime": 1777284916597.8674,
                     "modified": false
                   },
                   "AuthController.php": {
@@ -236,41 +236,47 @@
                   },
                   "CategoryController.php": {
                     "type": "-",
-                    "size": 8685,
-                    "lmtime": 1776864411140.412,
+                    "size": 11629,
+                    "lmtime": 1777274190453.787,
                     "modified": false
                   },
                   "CsvTemplateController.php": {
                     "type": "-",
-                    "size": 92447,
+                    "size": 100621,
                     "lmtime": 1776864427638.816,
+                    "modified": true
+                  },
+                  "EmpikController.php": {
+                    "type": "-",
+                    "size": 5904,
+                    "lmtime": 1777285395030.4448,
                     "modified": false
                   },
                   "IndexController.php": {
                     "type": "-",
-                    "size": 8564,
-                    "lmtime": 1776864801708.023,
+                    "size": 8803,
+                    "lmtime": 1777285395019.5017,
                     "modified": false
                   },
                   "ProductController.php": {
                     "type": "-",
-                    "size": 577851,
+                    "size": 601402,
                     "lmtime": 1776864405296.6262,
-                    "modified": false
+                    "modified": true
                   },
                   "SellasistController.php": {
                     "type": "-",
-                    "size": 4208,
+                    "size": 4960,
                     "lmtime": 1776864435293.5232,
-                    "modified": false
+                    "modified": true
                   }
                 },
                 "Core": {
                   "Application.php": {
                     "type": "-",
-                    "size": 2440,
+                    "size": 2578,
                     "lmtime": 1776857680758.359,
-                    "modified": false
+                    "modified": true
                   },
                   "Config.php": {
                     "type": "-",
@@ -280,8 +286,8 @@
                   },
                   "Controller.php": {
                     "type": "-",
-                    "size": 5563,
-                    "lmtime": 1776865407511.6777,
+                    "size": 5901,
+                    "lmtime": 1777284916597.8674,
                     "modified": false
                   },
                   "Database.php": {
@@ -314,14 +320,14 @@
                 "Models": {
                   "AllegroStorageRepository.php": {
                     "type": "-",
-                    "size": 94561,
-                    "lmtime": 1776865457862.555,
+                    "size": 128638,
+                    "lmtime": 1777284778335.1218,
                     "modified": false
                   },
                   "CategoryRepository.php": {
                     "type": "-",
-                    "size": 7023,
-                    "lmtime": 1776865428927.6343,
+                    "size": 9036,
+                    "lmtime": 1777274175306.4978,
                     "modified": false
                   },
                   "CsvImportProfileRepository.php": {
@@ -348,11 +354,17 @@
                     "lmtime": 1776865478086.2036,
                     "modified": false
                   },
+                  "EmpikStorageRepository.php": {
+                    "type": "-",
+                    "size": 10973,
+                    "lmtime": 0,
+                    "modified": false
+                  },
                   "ProductAllegroParameterRepository.php": {
                     "type": "-",
-                    "size": 6145,
+                    "size": 7205,
                     "lmtime": 1776865483221.69,
-                    "modified": false
+                    "modified": true
                   },
                   "ProductChangeLogRepository.php": {
                     "type": "-",
@@ -366,10 +378,16 @@
                     "lmtime": 1776865504334.053,
                     "modified": false
                   },
+                  "ProductEmpikParameterRepository.php": {
+                    "type": "-",
+                    "size": 6680,
+                    "lmtime": 0,
+                    "modified": false
+                  },
                   "ProductRepository.php": {
                     "type": "-",
-                    "size": 167305,
-                    "lmtime": 1776865424725.6726,
+                    "size": 181271,
+                    "lmtime": 1777276749832.6946,
                     "modified": false
                   },
                   "SellasistOrderSyncRepository.php": {
@@ -400,8 +418,8 @@
                 "Services": {
                   "AllegroService.php": {
                     "type": "-",
-                    "size": 103213,
-                    "lmtime": 1776851730782.0771,
+                    "size": 117859,
+                    "lmtime": 1777284778336.1226,
                     "modified": false
                   },
                   "ComputedFunctions.php": {
@@ -412,8 +430,14 @@
                   },
                   "CsvExportService.php": {
                     "type": "-",
-                    "size": 7127,
+                    "size": 9407,
                     "lmtime": 1776087602311.1191,
+                    "modified": true
+                  },
+                  "EmpikService.php": {
+                    "type": "-",
+                    "size": 34504,
+                    "lmtime": 0,
                     "modified": false
                   },
                   "JwtService.php": {
@@ -436,15 +460,15 @@
                   },
                   "SellasistService.php": {
                     "type": "-",
-                    "size": 35264,
-                    "lmtime": 1776924186825.8809,
+                    "size": 39558,
+                    "lmtime": 1777269003909.5955,
                     "modified": false
                   },
                   "TemplateParser.php": {
                     "type": "-",
-                    "size": 3453,
+                    "size": 3815,
                     "lmtime": 1776087602414.2715,
-                    "modified": false
+                    "modified": true
                   },
                   "TokenService.php": {
                     "type": "-",
@@ -454,9 +478,9 @@
                   },
                   "ValueResolver.php": {
                     "type": "-",
-                    "size": 18114,
+                    "size": 31669,
                     "lmtime": 1776087602546.364,
-                    "modified": false
+                    "modified": true
                   }
                 },
                 "Storage": {
@@ -529,8 +553,8 @@
                       },
                       "automation.tpl": {
                         "type": "-",
-                        "size": 19447,
-                        "lmtime": 1776857680771.8674,
+                        "size": 27836,
+                        "lmtime": 1777284778339.636,
                         "modified": false
                       },
                       "users.tpl": {
@@ -543,15 +567,15 @@
                     "allegro": {
                       "index.tpl": {
                         "type": "-",
-                        "size": 98815,
-                        "lmtime": 1776838879642.4277,
+                        "size": 100223,
+                        "lmtime": 1777284778338.6355,
                         "modified": false
                       },
                       "offer.tpl": {
                         "type": "-",
-                        "size": 16707,
+                        "size": 8563,
                         "lmtime": 1776679679275.5466,
-                        "modified": false
+                        "modified": true
                       }
                     },
                     "auth": {
@@ -583,14 +607,14 @@
                     "categories": {
                       "form.tpl": {
                         "type": "-",
-                        "size": 11443,
-                        "lmtime": 1776851404887.6995,
+                        "size": 14685,
+                        "lmtime": 1777280631742.8923,
                         "modified": false
                       },
                       "index.tpl": {
                         "type": "-",
-                        "size": 4163,
-                        "lmtime": 1774535617504.362,
+                        "size": 4591,
+                        "lmtime": 1777274196925.962,
                         "modified": false
                       }
                     },
@@ -635,14 +659,14 @@
                     "layout": {
                       "footer.tpl": {
                         "type": "-",
-                        "size": 3443,
-                        "lmtime": 1774536183573.4612,
-                        "modified": true
+                        "size": 5001,
+                        "lmtime": 1777274943072.0366,
+                        "modified": false
                       },
                       "header.tpl": {
                         "type": "-",
-                        "size": 9748,
-                        "lmtime": 1776857680779.4944,
+                        "size": 12985,
+                        "lmtime": 1777274834408.2007,
                         "modified": false
                       }
                     },
@@ -669,15 +693,15 @@
                       },
                       "stickers.tpl": {
                         "type": "-",
-                        "size": 3958,
-                        "lmtime": 1776860272937.4465,
+                        "size": 3866,
+                        "lmtime": 1777269420078.7275,
                         "modified": false
                       },
                       "subtract_stock_result.tpl": {
                         "type": "-",
-                        "size": 2079,
+                        "size": 2204,
                         "lmtime": 1776861898161.3513,
-                        "modified": false
+                        "modified": true
                       }
                     }
                   },
@@ -1083,9 +1107,9 @@
               },
               ".gitignore": {
                 "type": "-",
-                "size": 76,
+                "size": 149,
                 "lmtime": 1776924061759.4783,
-                "modified": false
+                "modified": true
               },
               "index.html": {
                 "type": "-",
