@@ -32,7 +32,7 @@
       width: 5cm;
     }
     .center-box {
-      width: 7cm;
+      width: 6.5cm;
       text-align: center;
       margin:0 auto;
     }
@@ -60,8 +60,8 @@
       text-decoration: underline;
       position: relative;
       float: right;
-      top: 0.2cm;
-      right: 0.8cm;
+      top: 0cm;
+      right: 0.3cm;
       transform: rotate(90deg);
       font-size: 25px;
     }
@@ -93,7 +93,7 @@
           </div>
         </div>
         <hr>
-        <span><strong style="text-decoration: underline; position: relative; float: right; top: 0.8cm; right: 0.8cm; font-size: 30px;">{$sticker.glass_number|escape}</strong></span>
+        <span><strong class="big-glass-no">{$sticker.glass_number|escape}</strong></span>
       </div>
     {/for}
   {/foreach}
