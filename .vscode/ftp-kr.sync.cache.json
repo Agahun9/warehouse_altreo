@@ -204,8 +204,8 @@
                 "Config": {
                   "app.php": {
                     "type": "-",
-                    "size": 786,
-                    "lmtime": 1776923447787.797,
+                    "size": 922,
+                    "lmtime": 1777286362889.489,
                     "modified": false
                   },
                   "database.php": {
@@ -218,14 +218,14 @@
                 "Controllers": {
                   "AdminController.php": {
                     "type": "-",
-                    "size": 11331,
-                    "lmtime": 1777285395030.4448,
+                    "size": 11167,
+                    "lmtime": 1777286363010.7798,
                     "modified": false
                   },
                   "AllegroController.php": {
                     "type": "-",
-                    "size": 36637,
-                    "lmtime": 1777284916597.8674,
+                    "size": 37570,
+                    "lmtime": 1777286363151.6206,
                     "modified": false
                   },
                   "AuthController.php": {
@@ -243,40 +243,40 @@
                   "CsvTemplateController.php": {
                     "type": "-",
                     "size": 100621,
-                    "lmtime": 1776864427638.816,
-                    "modified": true
+                    "lmtime": 1777286363295.51,
+                    "modified": false
                   },
                   "EmpikController.php": {
                     "type": "-",
-                    "size": 5904,
-                    "lmtime": 1777285395030.4448,
+                    "size": 5849,
+                    "lmtime": 1777286363401.717,
                     "modified": false
                   },
                   "IndexController.php": {
                     "type": "-",
-                    "size": 8803,
-                    "lmtime": 1777285395019.5017,
+                    "size": 8782,
+                    "lmtime": 1777286363516.645,
                     "modified": false
                   },
                   "ProductController.php": {
                     "type": "-",
-                    "size": 601402,
-                    "lmtime": 1776864405296.6262,
-                    "modified": true
+                    "size": 603572,
+                    "lmtime": 1777286363701.6199,
+                    "modified": false
                   },
                   "SellasistController.php": {
                     "type": "-",
-                    "size": 4960,
-                    "lmtime": 1776864435293.5232,
-                    "modified": true
+                    "size": 5117,
+                    "lmtime": 1777286363813.141,
+                    "modified": false
                   }
                 },
                 "Core": {
                   "Application.php": {
                     "type": "-",
-                    "size": 2578,
-                    "lmtime": 1776857680758.359,
-                    "modified": true
+                    "size": 2670,
+                    "lmtime": 1777286363927.9622,
+                    "modified": false
                   },
                   "Config.php": {
                     "type": "-",
@@ -286,8 +286,8 @@
                   },
                   "Controller.php": {
                     "type": "-",
-                    "size": 5901,
-                    "lmtime": 1777284916597.8674,
+                    "size": 6116,
+                    "lmtime": 1777286364040.6245,
                     "modified": false
                   },
                   "Database.php": {
@@ -312,8 +312,8 @@
                   },
                   "products.sql": {
                     "type": "-",
-                    "size": 3543,
-                    "lmtime": 1776168845948.1982,
+                    "size": 3642,
+                    "lmtime": 1777286364156.603,
                     "modified": false
                   }
                 },
@@ -357,14 +357,14 @@
                   "EmpikStorageRepository.php": {
                     "type": "-",
                     "size": 10973,
-                    "lmtime": 0,
+                    "lmtime": 1777008169415.9856,
                     "modified": false
                   },
                   "ProductAllegroParameterRepository.php": {
                     "type": "-",
                     "size": 7205,
-                    "lmtime": 1776865483221.69,
-                    "modified": true
+                    "lmtime": 1777286364280.9246,
+                    "modified": false
                   },
                   "ProductChangeLogRepository.php": {
                     "type": "-",
@@ -381,7 +381,7 @@
                   "ProductEmpikParameterRepository.php": {
                     "type": "-",
                     "size": 6680,
-                    "lmtime": 0,
+                    "lmtime": 1777021181738.746,
                     "modified": false
                   },
                   "ProductRepository.php": {
@@ -431,13 +431,13 @@
                   "CsvExportService.php": {
                     "type": "-",
                     "size": 9407,
-                    "lmtime": 1776087602311.1191,
-                    "modified": true
+                    "lmtime": 1777286364398.7056,
+                    "modified": false
                   },
                   "EmpikService.php": {
                     "type": "-",
                     "size": 34504,
-                    "lmtime": 0,
+                    "lmtime": 1777008170072.5354,
                     "modified": false
                   },
                   "JwtService.php": {
@@ -467,8 +467,8 @@
                   "TemplateParser.php": {
                     "type": "-",
                     "size": 3815,
-                    "lmtime": 1776087602414.2715,
-                    "modified": true
+                    "lmtime": 1777286364492.2544,
+                    "modified": false
                   },
                   "TokenService.php": {
                     "type": "-",
@@ -479,16 +479,88 @@
                   "ValueResolver.php": {
                     "type": "-",
                     "size": 31669,
-                    "lmtime": 1776087602546.364,
-                    "modified": true
+                    "lmtime": 1777286364631.8838,
+                    "modified": false
                   }
                 },
                 "Storage": {
                   "imports": {
+                    "0fcc5728c0015b872a154946478f2a37.csv": {
+                      "type": "-",
+                      "size": 149607,
+                      "lmtime": 1777008170606.9282,
+                      "modified": false
+                    },
+                    "14f00e213bbc35bc2359ed835e7c3b31.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008170775.0227,
+                      "modified": false
+                    },
+                    "1a52b283d8bd34c913989cfe35633aae.csv": {
+                      "type": "-",
+                      "size": 36056,
+                      "lmtime": 1777008170918.0862,
+                      "modified": false
+                    },
+                    "266df4516055783e2b4c69b5754724c8.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008171107.9607,
+                      "modified": false
+                    },
+                    "29e622b6976a0c7c8f40f4fbca662810.csv": {
+                      "type": "-",
+                      "size": 131507,
+                      "lmtime": 1777008171304.3694,
+                      "modified": false
+                    },
+                    "2b388f72cd0269ec29d3a79475c7be27.csv": {
+                      "type": "-",
+                      "size": 50405,
+                      "lmtime": 1777286364779.5603,
+                      "modified": false
+                    },
+                    "384194cd3c9c574c6ca26d7ee5e86086.csv": {
+                      "type": "-",
+                      "size": 148553,
+                      "lmtime": 1777008171464.1729,
+                      "modified": false
+                    },
                     "3b72141fe4ada89dbe8c3bd16870e0c6.csv": {
                       "type": "-",
                       "size": 277006,
                       "lmtime": 1776679676777.4143,
+                      "modified": false
+                    },
+                    "407eb582551eec92cbfe48df4f853e9b.csv": {
+                      "type": "-",
+                      "size": 141668,
+                      "lmtime": 1777008171630.8525,
+                      "modified": false
+                    },
+                    "47bc80c4894655a6f670912a426b1459.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008171826.462,
+                      "modified": false
+                    },
+                    "4921d67968b8888ea52436fc2197d4d5.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008171992.607,
+                      "modified": false
+                    },
+                    "49b8d8b6a3663dfb9b0e88ce5230fe7d.csv": {
+                      "type": "-",
+                      "size": 149607,
+                      "lmtime": 1777008172213.247,
+                      "modified": false
+                    },
+                    "501abc91f87cdb279be75b53dc6e5a06.csv": {
+                      "type": "-",
+                      "size": 537675,
+                      "lmtime": 1777286365029.2925,
                       "modified": false
                     },
                     "51935318d5231ff2cf88c237b2e285d4.csv": {
@@ -497,10 +569,82 @@
                       "lmtime": 1776679677078.5083,
                       "modified": false
                     },
+                    "5717ba9d0b238df37254ee23878289bc.csv": {
+                      "type": "-",
+                      "size": 146609,
+                      "lmtime": 1777008172402.4546,
+                      "modified": false
+                    },
+                    "5874f5dad8f4260fe1c7fda2b0c43781.csv": {
+                      "type": "-",
+                      "size": 149607,
+                      "lmtime": 1777008172556.5005,
+                      "modified": false
+                    },
+                    "5a8b0604af4981916ee16aca5a4b30a6.csv": {
+                      "type": "-",
+                      "size": 131507,
+                      "lmtime": 1777008172728.7202,
+                      "modified": false
+                    },
                     "5af05631d607bf5765cb69a03f7f3a74.csv": {
                       "type": "-",
                       "size": 277006,
                       "lmtime": 1776679677342.3328,
+                      "modified": false
+                    },
+                    "696f6b107946e74d3486a737ecd8aa08.csv": {
+                      "type": "-",
+                      "size": 141668,
+                      "lmtime": 1777008172934.0576,
+                      "modified": false
+                    },
+                    "699b43742782b76779d8beb3f95a2315.csv": {
+                      "type": "-",
+                      "size": 50405,
+                      "lmtime": 1777286365183.6736,
+                      "modified": false
+                    },
+                    "73d0bc6d10a2644e705f9ad78c924aed.csv": {
+                      "type": "-",
+                      "size": 6407,
+                      "lmtime": 1777008173031.4434,
+                      "modified": false
+                    },
+                    "791ec8dbda5ff69b74f518c4be1cec5d.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008173225.3,
+                      "modified": false
+                    },
+                    "7aba34b0e5dced0138c58b31c2754d8a.csv": {
+                      "type": "-",
+                      "size": 1290,
+                      "lmtime": 1777008173320.9421,
+                      "modified": false
+                    },
+                    "7fddc42a15f72a5be0a125349006df83.csv": {
+                      "type": "-",
+                      "size": 133428,
+                      "lmtime": 1777008173514.041,
+                      "modified": false
+                    },
+                    "80adf5750b42b50eeac0d7fadde78bae.csv": {
+                      "type": "-",
+                      "size": 178090,
+                      "lmtime": 1777008173676.6323,
+                      "modified": false
+                    },
+                    "8ceeac75d3a071f97b1c5f438e627661.csv": {
+                      "type": "-",
+                      "size": 36604,
+                      "lmtime": 1777008173816.7942,
+                      "modified": false
+                    },
+                    "8eb8f6860afb5820dce442ed48bc1e6f.csv": {
+                      "type": "-",
+                      "size": 134932,
+                      "lmtime": 1777008173995.9392,
                       "modified": false
                     },
                     "9fb757f6a34454bbc539059f11a4955f.csv": {
@@ -509,18 +653,96 @@
                       "lmtime": 1776679677654.7651,
                       "modified": false
                     },
+                    "a0c7962f2e8300f2dfb032187385ee65.csv": {
+                      "type": "-",
+                      "size": 36056,
+                      "lmtime": 1777008174130.5474,
+                      "modified": false
+                    },
+                    "a23cf7ebbdf337683933cf342a916d04.csv": {
+                      "type": "-",
+                      "size": 10357,
+                      "lmtime": 1777008174248.77,
+                      "modified": false
+                    },
+                    "a366bff5ba5ae59b0b1ab14a243d63da.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008174419.7,
+                      "modified": false
+                    },
                     "a7fe729bcdcd5634229fb7157b394b05.csv": {
                       "type": "-",
                       "size": 277006,
                       "lmtime": 1776679677966.2615,
+                      "modified": false
+                    },
+                    "adaadd26ec97b086d181f3de9c3f5ee2.csv": {
+                      "type": "-",
+                      "size": 36056,
+                      "lmtime": 1777008174603.3955,
+                      "modified": false
+                    },
+                    "c2c438fe74ae87236f2c3755ad164040.csv": {
+                      "type": "-",
+                      "size": 135910,
+                      "lmtime": 1777008174802.3298,
+                      "modified": false
+                    },
+                    "cdd72d31bc00fbea6fc38c9dfd07f5f3.csv": {
+                      "type": "-",
+                      "size": 143425,
+                      "lmtime": 1777008174992.3357,
+                      "modified": false
+                    },
+                    "d22936b5a02ee0d9a2d3d98428698647.csv": {
+                      "type": "-",
+                      "size": 19563,
+                      "lmtime": 1777008175136.839,
+                      "modified": false
+                    },
+                    "da54dacc8789bfe31ef60f6256ac5344.csv": {
+                      "type": "-",
+                      "size": 36056,
+                      "lmtime": 1777008175270.751,
+                      "modified": false
+                    },
+                    "db8741c61d0cd959b801899572c0995e.csv": {
+                      "type": "-",
+                      "size": 143425,
+                      "lmtime": 1777008175457.5176,
+                      "modified": false
+                    },
+                    "e1e448a09d986addcf7908f52a438de0.csv": {
+                      "type": "-",
+                      "size": 149192,
+                      "lmtime": 1777008175622.0454,
+                      "modified": false
+                    },
+                    "f31ac258a9eb8d6a4fefeebe1c9627b5.csv": {
+                      "type": "-",
+                      "size": 149607,
+                      "lmtime": 1777008175976.7092,
+                      "modified": false
+                    },
+                    "f43ff63cc94645c9268f89fdbb281027.csv": {
+                      "type": "-",
+                      "size": 19563,
+                      "lmtime": 1777008176114.5,
                       "modified": false
                     }
                   },
                   "logs": {
                     "app.log": {
                       "type": "-",
-                      "size": 504977,
-                      "lmtime": 1776679678231.0344,
+                      "size": 2981830,
+                      "lmtime": 1777286365501.2417,
+                      "modified": false
+                    },
+                    "test.log": {
+                      "type": "-",
+                      "size": 34,
+                      "lmtime": 1774530871695.0823,
                       "modified": false
                     }
                   },
@@ -574,8 +796,8 @@
                       "offer.tpl": {
                         "type": "-",
                         "size": 8563,
-                        "lmtime": 1776679679275.5466,
-                        "modified": true
+                        "lmtime": 1777286365758.4258,
+                        "modified": false
                       }
                     },
                     "auth": {
@@ -621,8 +843,8 @@
                     "csv_templates": {
                       "form.tpl": {
                         "type": "-",
-                        "size": 24213,
-                        "lmtime": 1776087602798.7603,
+                        "size": 38024,
+                        "lmtime": 1777286365928.407,
                         "modified": false
                       },
                       "import.tpl": {
@@ -639,21 +861,35 @@
                       },
                       "title_form.tpl": {
                         "type": "-",
-                        "size": 5314,
-                        "lmtime": 1776087603015.5664,
+                        "size": 6567,
+                        "lmtime": 1777286366045.4985,
                         "modified": false
                       },
                       "title_generator.tpl": {
                         "type": "-",
-                        "size": 4318,
-                        "lmtime": 1776087603134.0632,
+                        "size": 4800,
+                        "lmtime": 1777286366165.8462,
+                        "modified": false
+                      }
+                    },
+                    "empik": {
+                      "index.tpl": {
+                        "type": "-",
+                        "size": 14408,
+                        "lmtime": 1777008177575.0461,
+                        "modified": false
+                      },
+                      "offer.tpl": {
+                        "type": "-",
+                        "size": 3258,
+                        "lmtime": 1777008177684.7544,
                         "modified": false
                       }
                     },
                     "index.tpl": {
                       "type": "-",
-                      "size": 19546,
-                      "lmtime": 1776864834777.1238,
+                      "size": 19778,
+                      "lmtime": 1777286365646.747,
                       "modified": false
                     },
                     "layout": {
@@ -671,16 +907,22 @@
                       }
                     },
                     "products": {
+                      "contours_manager.tpl": {
+                        "type": "-",
+                        "size": 14635,
+                        "lmtime": 1777013685421.4243,
+                        "modified": false
+                      },
                       "form.tpl": {
                         "type": "-",
-                        "size": 99379,
-                        "lmtime": 1776849458888.0605,
+                        "size": 110648,
+                        "lmtime": 1777286366369.2603,
                         "modified": false
                       },
                       "index.tpl": {
                         "type": "-",
-                        "size": 51865,
-                        "lmtime": 1776850132735.528,
+                        "size": 67647,
+                        "lmtime": 1777286366531.7715,
                         "modified": false
                       }
                     },
@@ -700,22 +942,28 @@
                       "subtract_stock_result.tpl": {
                         "type": "-",
                         "size": 2204,
-                        "lmtime": 1776861898161.3513,
-                        "modified": true
+                        "lmtime": 1777286366639.194,
+                        "modified": false
                       }
                     }
                   },
                   "templates_c": {
                     "023d65e3c2920fd6ca8aef1a9138b5ddc84cceaf_0.file_header.tpl.php": {
                       "type": "-",
-                      "size": 12408,
-                      "lmtime": 1776679680050.8584,
+                      "size": 16181,
+                      "lmtime": 1777286366769.6501,
                       "modified": false
                     },
                     "02533e9cc958a2a6e70c86b1e60e87fd62c29874_0.file_index.tpl.php": {
                       "type": "-",
-                      "size": 20400,
-                      "lmtime": 1776679680210.3523,
+                      "size": 27416,
+                      "lmtime": 1777286366902.5317,
+                      "modified": false
+                    },
+                    "03252e5056fa783efa4b1763798757b941f304cf_0.file_subtract_stock_result.tpl.php": {
+                      "type": "-",
+                      "size": 4966,
+                      "lmtime": 1777008178734.1963,
                       "modified": false
                     },
                     "10168ca54f182d8c489e61c2bb765bde991772bc_0.file_login.tpl.php": {
@@ -724,82 +972,130 @@
                       "lmtime": 1776679680345.0063,
                       "modified": false
                     },
+                    "2a2e193b4aa47ec02c3dbad78f81ca394b543241_0.file_stickers.tpl.php": {
+                      "type": "-",
+                      "size": 8763,
+                      "lmtime": 1777008178850.5913,
+                      "modified": false
+                    },
                     "502315d5d78695b6467a1f900dd9a75a1e10fc71_0.file_footer.tpl.php": {
                       "type": "-",
-                      "size": 4972,
-                      "lmtime": 1776679680522.9104,
+                      "size": 5190,
+                      "lmtime": 1777286367017.3137,
                       "modified": false
                     },
                     "54d38f9d655b661a92fdec3277b15f15c5cec84c_0.file_index.tpl.php": {
                       "type": "-",
-                      "size": 102237,
-                      "lmtime": 1776679680741.038,
+                      "size": 130117,
+                      "lmtime": 1777286367188.2783,
+                      "modified": false
+                    },
+                    "5cd6ae51e81a5b958cc191e51002ab7eece55835_0.file_offer.tpl.php": {
+                      "type": "-",
+                      "size": 6546,
+                      "lmtime": 1777008179241.6096,
                       "modified": false
                     },
                     "6142553e695ced20795c75a42368bce89299fcef_0.file_offer.tpl.php": {
                       "type": "-",
-                      "size": 23863,
-                      "lmtime": 1776679681048.653,
-                      "modified": true
+                      "size": 23923,
+                      "lmtime": 1777286367314.459,
+                      "modified": false
                     },
                     "6561e12d064ccd9e70d2ea244a63aed8a9063cdd_0.file_index.tpl.php": {
                       "type": "-",
-                      "size": 7024,
-                      "lmtime": 1776679681158.8916,
+                      "size": 7325,
+                      "lmtime": 1777286367423.8433,
                       "modified": false
                     },
                     "6bfd0f057b66356dfeee73cc34de0e5fe8e58427_0.file_form.tpl.php": {
                       "type": "-",
-                      "size": 111830,
-                      "lmtime": 1776679681379.62,
+                      "size": 125342,
+                      "lmtime": 1777286367599.6775,
+                      "modified": false
+                    },
+                    "755b0b3e1ab0a4aac9ac3cf158326e99ac4f92a0_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 7851,
+                      "lmtime": 1777008179795.3298,
+                      "modified": false
+                    },
+                    "7d5f5b4a891d18a3bc6afb376fc4a5f63d0f063f_0.file_register.tpl.php": {
+                      "type": "-",
+                      "size": 3997,
+                      "lmtime": 1777008179909.3867,
                       "modified": false
                     },
                     "807196f3270880e814131e8bcbee4600214e99c5_0.file_users.tpl.php": {
                       "type": "-",
-                      "size": 9436,
-                      "lmtime": 1776679681540.5398,
+                      "size": 15495,
+                      "lmtime": 1777286367705.8547,
                       "modified": false
                     },
                     "a2898781edb2ea2b8195d307caff03baaa1c7873_0.file_import.tpl.php": {
                       "type": "-",
-                      "size": 18874,
-                      "lmtime": 1776679681758.1936,
+                      "size": 32009,
+                      "lmtime": 1777286367841.4922,
                       "modified": false
                     },
                     "b9a27070405671bb36c554b2aab5c91b342f3fc0_0.file_form.tpl.php": {
                       "type": "-",
-                      "size": 27667,
-                      "lmtime": 1776679681947.9307,
+                      "size": 37464,
+                      "lmtime": 1777286367981.7383,
+                      "modified": false
+                    },
+                    "c118a6f7de2847652bf27ae01191d0451a53e3f7_0.file_reset_password.tpl.php": {
+                      "type": "-",
+                      "size": 3130,
+                      "lmtime": 1777008180374.3225,
                       "modified": false
                     },
                     "cf6c84308aca063c09cf8eb4c7105f50da6ac696_0.file_form.tpl.php": {
                       "type": "-",
-                      "size": 13212,
-                      "lmtime": 1776679682086.009,
+                      "size": 16734,
+                      "lmtime": 1777286368107.6978,
                       "modified": false
                     },
                     "d2981eed000731be57d9054d8d07fea0bf40a49b_0.file_automation.tpl.php": {
                       "type": "-",
-                      "size": 23162,
-                      "lmtime": 1776679682260.5007,
+                      "size": 33951,
+                      "lmtime": 1777286368237.3208,
+                      "modified": false
+                    },
+                    "dd81b8e6ee7142fe18de986aab85387bd1224b98_0.file_forgot_password.tpl.php": {
+                      "type": "-",
+                      "size": 2765,
+                      "lmtime": 1777008180712.016,
                       "modified": false
                     },
                     "e1c5313662276ce2e4c90812cbd4e80c8fa11eac_0.file_index.tpl.php": {
                       "type": "-",
-                      "size": 66722,
-                      "lmtime": 1776679682448.5212,
+                      "size": 77773,
+                      "lmtime": 1777286368400.6746,
                       "modified": false
                     },
                     "e4e4d9adc211cbda30d04c5462841c3a8b41a8c6_0.file_title_generator.tpl.php": {
                       "type": "-",
-                      "size": 7355,
-                      "lmtime": 1776679682647.388,
+                      "size": 7744,
+                      "lmtime": 1777286368509.6162,
+                      "modified": false
+                    },
+                    "ef4474d3ee61f79024261acc471461a79f038434_0.file_index.tpl.php": {
+                      "type": "-",
+                      "size": 22322,
+                      "lmtime": 1777008181085.8604,
                       "modified": false
                     },
                     "f276a3c6c1a59e1472e244e9a7c33972573e60c5_0.file_title_form.tpl.php": {
                       "type": "-",
-                      "size": 8339,
-                      "lmtime": 1776679682810.4497,
+                      "size": 9734,
+                      "lmtime": 1777286368612.8845,
+                      "modified": false
+                    },
+                    "f4751a2506e98d3f96eef429bb853d5d662b8270_0.file_contours_manager.tpl.php": {
+                      "type": "-",
+                      "size": 18091,
+                      "lmtime": 1777286368734.4568,
                       "modified": false
                     },
                     "f4db1bb889b2381e1a84317604c257104ca5826f_0.file_index.tpl.php": {
@@ -1108,8 +1404,8 @@
               ".gitignore": {
                 "type": "-",
                 "size": 149,
-                "lmtime": 1776924061759.4783,
-                "modified": true
+                "lmtime": 1777286362754.584,
+                "modified": false
               },
               "index.html": {
                 "type": "-",
@@ -2232,7 +2528,38 @@
                     }
                   }
                 }
-              }
+              },
+              ".vs": {
+                "magazyn_new.slnx": {
+                  "v18": {
+                    "DocumentLayout.json": {
+                      "type": "-",
+                      "size": 215,
+                      "lmtime": 1777286368961.8958,
+                      "modified": false
+                    },
+                    ".wsuo": {
+                      "type": "-",
+                      "size": 12288,
+                      "lmtime": 1776403263161,
+                      "modified": false
+                    }
+                  }
+                },
+                "slnx.sqlite": {
+                  "type": "-",
+                  "size": 122880,
+                  "lmtime": 1776403263624.6929,
+                  "modified": false
+                },
+                "VSWorkspaceState.json": {
+                  "type": "-",
+                  "size": 73,
+                  "lmtime": 1777286368850.5671,
+                  "modified": false
+                }
+              },
+              ".vscode": {}
             },
             "new_version111": {},
             "OSS.csv": {
@@ -2290,7 +2617,7 @@
             },
             "stan_magazynu.php": {
               "type": "-",
-              "size": 47332,
+              "size": 50391,
               "lmtime": 0,
               "modified": true
             },
@@ -2310,7 +2637,7 @@
             },
             "tmp_login_debug.log": {
               "type": "-",
-              "size": 45380,
+              "size": 52618,
               "lmtime": 0,
               "modified": true
             },
