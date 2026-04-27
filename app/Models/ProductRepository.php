@@ -461,34 +461,40 @@ class ProductRepository
         }
 
         $limit = max(1, min(20, $limit));
+        $params = array(
+            'quick_search_exact' => $query,
+            'quick_search_prefix' => $query . '%',
+            'quick_search_name_exact' => $query,
+            'quick_search_name_prefix' => $query . '%',
+            'quick_search_old_sku_exact' => $query,
+            'quick_search_old_sku_prefix' => $query . '%',
+        );
+        $whereParts = array('products.deleted_at IS NULL');
+        $this->appendGlobalProductFilterCondition($whereParts, $params, $query, 'quick_search');
 
         return $this->database->fetchAll(
-            'SELECT products.id, products.sku, products.product_name, old_sku_values.value AS old_sku'
+            'SELECT products.id, products.sku, products.product_name, old_sku_values.value AS old_sku,'
+            . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
+            . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.slug = "old_sku"'
             . ' LEFT JOIN product_custom_field_values old_sku_values'
             . '   ON old_sku_values.product_id = products.id AND old_sku_values.definition_id = old_sku_definition.id'
-            . ' WHERE products.deleted_at IS NULL'
-            . '   AND (products.sku LIKE :query OR products.product_name LIKE :query_name OR old_sku_values.value LIKE :query_old_sku)'
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
+            . ' WHERE ' . implode(' AND ', $whereParts)
             . ' ORDER BY'
             . '   CASE'
-            . '     WHEN products.sku = :query_exact THEN 0'
-            . '     WHEN old_sku_values.value = :query_old_sku_exact THEN 1'
-            . '     WHEN products.sku LIKE :query_prefix THEN 2'
-            . '     WHEN old_sku_values.value LIKE :query_old_sku_prefix THEN 3'
-            . '     ELSE 4'
+            . '     WHEN products.sku = :quick_search_exact THEN 0'
+            . '     WHEN old_sku_values.value = :quick_search_old_sku_exact THEN 1'
+            . '     WHEN products.product_name = :quick_search_name_exact THEN 2'
+            . '     WHEN products.sku LIKE :quick_search_prefix THEN 3'
+            . '     WHEN old_sku_values.value LIKE :quick_search_old_sku_prefix THEN 4'
+            . '     WHEN products.product_name LIKE :quick_search_name_prefix THEN 5'
+            . '     ELSE 6'
             . '   END,'
             . ' products.id DESC'
             . ' LIMIT ' . $limit,
-            array(
-                'query' => '%' . $query . '%',
-                'query_name' => '%' . $query . '%',
-                'query_old_sku' => '%' . $query . '%',
-                'query_exact' => $query,
-                'query_old_sku_exact' => $query,
-                'query_prefix' => $query . '%',
-                'query_old_sku_prefix' => $query . '%',
-            )
+            $params
         );
     }
 
@@ -499,21 +505,58 @@ class ProductRepository
             return;
         }
 
-        $whereParts[] = '('
-            . 'products.sku LIKE :' . $paramPrefix . '_sku'
-            . ' OR products.product_name LIKE :' . $paramPrefix . '_name'
-            . ' OR EXISTS ('
-            . '   SELECT 1'
-            . '   FROM product_custom_field_values cfv'
-            . '   INNER JOIN product_custom_field_definitions cfd ON cfd.id = cfv.definition_id'
-            . '   WHERE cfv.product_id = products.id'
-            . '     AND cfd.slug = "old_sku"'
-            . '     AND cfv.value LIKE :' . $paramPrefix . '_old_sku'
-            . ' )'
-            . ')';
-        $params[$paramPrefix . '_sku'] = '%' . $value . '%';
-        $params[$paramPrefix . '_name'] = '%' . $value . '%';
-        $params[$paramPrefix . '_old_sku'] = '%' . $value . '%';
+        $tokens = $this->searchTokens($value);
+        if ($tokens === array()) {
+            $tokens = array($value);
+        }
+
+        $tokenClauses = array();
+        foreach ($tokens as $index => $token) {
+            $key = $paramPrefix . '_token_' . $index;
+            $tokenClauses[] = '('
+                . 'products.sku LIKE :' . $key . '_sku'
+                . ' OR products.product_name LIKE :' . $key . '_name'
+                . ' OR EXISTS ('
+                . '   SELECT 1'
+                . '   FROM product_custom_field_values cfv'
+                . '   INNER JOIN product_custom_field_definitions cfd ON cfd.id = cfv.definition_id'
+                . '   WHERE cfv.product_id = products.id'
+                . '     AND cfd.slug = "old_sku"'
+                . '     AND cfv.value LIKE :' . $key . '_old_sku'
+                . ' )'
+                . ')';
+            $params[$key . '_sku'] = '%' . $token . '%';
+            $params[$key . '_name'] = '%' . $token . '%';
+            $params[$key . '_old_sku'] = '%' . $token . '%';
+        }
+
+        $whereParts[] = '(' . implode(' AND ', $tokenClauses) . ')';
+    }
+
+    private function searchTokens(string $value): array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return array();
+        }
+
+        $parts = preg_split('/[\s\-_,.;:\/\\\\|()+]+/u', mb_strtolower($value, 'UTF-8'));
+        if (!is_array($parts)) {
+            return array($value);
+        }
+
+        $tokens = array();
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part === '') {
+                continue;
+            }
+            if (!in_array($part, $tokens, true)) {
+                $tokens[] = $part;
+            }
+        }
+
+        return $tokens;
     }
 
     public function searchForAllegroSku(string $query = '', string $offerName = '', int $limit = 12): array

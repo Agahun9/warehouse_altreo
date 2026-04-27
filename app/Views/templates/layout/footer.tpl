@@ -29,6 +29,17 @@
       var timer = null;
       var activeQuery = '';
       var endpoint = '{$baseUrl|escape:'javascript'}?controller=products&action=quicksearch';
+      var productsIndexUrl = '{$baseUrl|escape:'javascript'}?controller=products&action=index';
+      var productsEditBaseUrl = '{$baseUrl|escape:'javascript'}?controller=products&action=edit&id=';
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
 
       function hideResults() {
         results.style.display = 'none';
@@ -45,16 +56,35 @@
         var html = '';
         for (var i = 0; i < items.length; i++) {
           var item = items[i];
+          var id = String(item.id || '');
           var sku = String(item.sku || '');
           var name = String(item.product_name || '');
           var oldSku = String(item.old_sku || '');
-          html += '<a class="quick-search-item" href="{$baseUrl|escape:'javascript'}?controller=products&action=index&filter_global=' + encodeURIComponent(query || sku) + '">';
-          html += '<div class="fw-semibold">' + sku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
-          html += '<div class="small text-secondary">' + name.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          var quantity = String(item.quantity != null ? item.quantity : '-');
+          var localization = String(item.localization || '-');
+          var filterUrl = productsIndexUrl + '&filter_global=' + encodeURIComponent(query || sku);
+          var editUrl = productsEditBaseUrl + encodeURIComponent(id);
+
+          html += '<div class="quick-search-item">';
+          html += '<a class="quick-search-item-main" href="' + filterUrl + '">';
+          html += '<div class="quick-search-topline">';
+          html += '<span class="quick-search-sku">' + escapeHtml(sku || 'BRAK SKU') + '</span>';
           if (oldSku) {
-            html += '<div class="small text-secondary">OLD_SKU: ' + oldSku.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+            html += '<span class="quick-search-old-sku">OLD_SKU: ' + escapeHtml(oldSku) + '</span>';
           }
+          html += '</div>';
+          html += '<div class="quick-search-name">' + escapeHtml(name) + '</div>';
+          html += '<div class="quick-search-meta">';
+          html += '<span class="quick-search-meta-chip"><i class="bi bi-box-seam"></i> szt.: ' + escapeHtml(quantity) + '</span>';
+          html += '<span class="quick-search-meta-chip"><i class="bi bi-geo-alt"></i> ' + escapeHtml(localization) + '</span>';
+          html += '</div>';
           html += '</a>';
+          html += '<div class="quick-search-actions">';
+          if (id) {
+            html += '<a class="btn btn-sm btn-primary" href="' + editUrl + '">Edytuj</a>';
+          }
+          html += '</div>';
+          html += '</div>';
         }
 
         results.innerHTML = html;

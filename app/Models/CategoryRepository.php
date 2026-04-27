@@ -42,6 +42,7 @@ class CategoryRepository
             . "sku_prefix VARCHAR(20) NOT NULL DEFAULT 'PRD',\n"
             . "allegro_category_id VARCHAR(64) DEFAULT NULL,\n"
             . "empik_category_id VARCHAR(190) DEFAULT NULL,\n"
+            . "end_offers_below_quantity INT UNSIGNED DEFAULT NULL,\n"
             . "description TEXT DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -79,6 +80,15 @@ class CategoryRepository
 
             if (!$hasEmpikColumn) {
                 $this->database->query("ALTER TABLE categories ADD COLUMN empik_category_id VARCHAR(190) NULL AFTER allegro_category_id");
+            }
+
+            $hasEndOffersColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'end_offers_below_quantity')
+            ) > 0;
+
+            if (!$hasEndOffersColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN end_offers_below_quantity INT UNSIGNED NULL AFTER empik_category_id");
             }
         }
 
@@ -170,6 +180,7 @@ class CategoryRepository
             'sku_prefix' => 'PRD',
             'allegro_category_id' => null,
             'empik_category_id' => null,
+            'end_offers_below_quantity' => null,
             'description' => 'Domyslna kategoria systemowa.',
         ));
     }
@@ -222,6 +233,20 @@ class CategoryRepository
         $value = trim((string) $value);
 
         return $value !== '' ? mb_substr($value, 0, 190, 'UTF-8') : null;
+    }
+
+    public function normalizeEndOffersBelowQuantity($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (!preg_match('/^\d+$/', $value)) {
+            return null;
+        }
+
+        return max(0, (int) $value);
     }
 
     public function slugify($text): string

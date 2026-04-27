@@ -42,8 +42,7 @@
 
     .quick-search-item {
       display: block;
-      padding: 0.5rem 0.75rem;
-      text-decoration: none;
+      padding: 0.7rem 0.8rem;
       color: inherit;
       border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     }
@@ -54,6 +53,75 @@
 
     .quick-search-item:hover {
       background: rgba(13, 110, 253, 0.08);
+    }
+
+    .quick-search-item-main {
+      display: block;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .quick-search-item-main:hover {
+      color: inherit;
+    }
+
+    .quick-search-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+    }
+
+    .quick-search-topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+      margin-bottom: 0.3rem;
+    }
+
+    .quick-search-sku {
+      font-size: 0.74rem;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #0d6efd;
+      background: rgba(13, 110, 253, 0.08);
+      border: 1px solid rgba(13, 110, 253, 0.14);
+      border-radius: 999px;
+      padding: 0.24rem 0.48rem;
+    }
+
+    .quick-search-old-sku {
+      font-size: 0.72rem;
+      color: #6c757d;
+    }
+
+    .quick-search-name {
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: #17202a;
+      line-height: 1.25;
+    }
+
+    .quick-search-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.45rem;
+    }
+
+    .quick-search-meta-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      background: #f3f5f7;
+      color: #334155;
+      font-size: 0.74rem;
+      font-weight: 600;
     }
 
     .topbar-user-link {
@@ -136,6 +204,7 @@
                   placeholder="Szybkie wyszukiwanie SKU lub nazwy..."
                   minlength="2"
                 >
+                <button type="submit" class="btn btn-primary">Szukaj</button>
               </div>
             </form>
             <div id="globalProductSearchResults" class="quick-search-results" aria-live="polite"></div>
