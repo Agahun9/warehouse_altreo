@@ -539,8 +539,15 @@ class AllegroService
                 $summary['done']++;
             } catch (RuntimeException $exception) {
                 $attempts = (int) ($item['attempts'] ?? 0) + 1;
-                $this->storage->markQueueRetry($queueId, $exception->getMessage(), $attempts, $attempts * 60);
-                if ($attempts >= 5) {
+                $retryPolicy = $this->queueRetryPolicy($item, $exception, $attempts);
+                $this->storage->markQueueRetry(
+                    $queueId,
+                    $exception->getMessage(),
+                    $attempts,
+                    (int) $retryPolicy['delay_seconds'],
+                    isset($retryPolicy['status']) ? (string) $retryPolicy['status'] : null
+                );
+                if (($retryPolicy['status'] ?? '') === 'error') {
                     $summary['error']++;
                 } else {
                     $summary['retry']++;
@@ -550,6 +557,27 @@ class AllegroService
 
         $summary['counts'] = $this->storage->queueCounts();
         return $summary;
+    }
+
+    private function queueRetryPolicy(array $item, RuntimeException $exception, int $attempts): array
+    {
+        $operation = trim((string) ($item['operation'] ?? ''));
+        $message = trim($exception->getMessage());
+
+        if (
+            $operation === 'remove_from_system_forever'
+            && stripos($message, 'Oferta nie jest jeszcze zakonczona') !== false
+        ) {
+            return array(
+                'status' => 'retry',
+                'delay_seconds' => max(900, min(7200, $attempts * 900)),
+            );
+        }
+
+        return array(
+            'status' => $attempts >= 5 ? 'error' : 'retry',
+            'delay_seconds' => $attempts * 60,
+        );
     }
 
     public function syncAccount(string $accountSelector, array $options = array()): array
@@ -1068,7 +1096,7 @@ class AllegroService
             $summary = $this->normalizeOfferSummary($details);
             $status = strtoupper((string) ($summary['publication_status'] ?? ''));
 
-            if ($status !== 'ENDED') {
+            if (!in_array($status, array('ENDED', 'INACTIVE'), true)) {
                 $this->changePublicationAction($account, $offerId, 'END');
                 $this->refreshOfferSnapshotFromApi($account, (int) $offer['id'], $offerId);
                 throw new RuntimeException('Oferta nie jest jeszcze zakończona. Wysłano zakończenie i ponowimy sprawdzenie.');

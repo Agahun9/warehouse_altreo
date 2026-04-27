@@ -473,7 +473,7 @@ class AllegroStorageRepository
             . ' offers.linked_by, warehouse.id AS warehouse_product_live_id, offers.name, offers.primary_image_url, offers.primary_image_hash, offers.image_count,'
             . ' offers.price_amount, offers.price_currency, offers.publication_status, offers.publication_ended_by,'
             . ' offers.stock_available, offers.stock_sold, offers.invoice_type, offers.allegro_product_id,'
-            . ' offers.category_id, offers.category_name, offers.marketplaces_json, offers.parameters_json,'
+            . ' offers.category_id, offers.category_name, offers.marketplaces_json,'
             . ' offers.last_synced_at, offers.created_at, offers.updated_at,'
             . ' accounts.name AS account_name, accounts.slug AS account_slug,'
             . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross, warehouse.vat_rate AS warehouse_vat_rate,'
@@ -501,7 +501,6 @@ class AllegroStorageRepository
         }
 
         foreach ($orderedRows as &$row) {
-            $row['parameters'] = $this->decodeJsonList($row['parameters_json'] ?? null);
             $row['marketplaces'] = $this->decodeJsonList($row['marketplaces_json'] ?? null);
         }
 
@@ -1264,11 +1263,22 @@ class AllegroStorageRepository
 
     public function fetchQueueBatch(int $limit = 100, ?int $accountId = null): array
     {
-        $params = array('now' => date('Y-m-d H:i:s'));
+        $params = array(
+            'now' => date('Y-m-d H:i:s'),
+            'remove_forever_retry_error' => '%Oferta nie jest jeszcze%',
+        );
         $sql = 'SELECT queue.*, offers.warehouse_product_id, offers.sku, offers.name'
             . ' FROM allegro_offer_change_queue queue'
             . ' INNER JOIN allegro_offers offers ON offers.id = queue.offer_row_id'
-            . ' WHERE queue.status IN ("pending", "retry") AND queue.available_at <= :now';
+            . ' WHERE ('
+            . '   queue.status IN ("pending", "retry")'
+            . '   OR ('
+            . '     queue.status = "error"'
+            . '     AND queue.operation = "remove_from_system_forever"'
+            . '     AND queue.error_message LIKE :remove_forever_retry_error'
+            . '   )'
+            . ' )'
+            . ' AND queue.available_at <= :now';
 
         if ($accountId !== null) {
             $sql .= ' AND queue.account_id = :account_id';
@@ -1312,12 +1322,16 @@ class AllegroStorageRepository
         );
     }
 
-    public function markQueueRetry(int $queueId, string $errorMessage, int $attempts, int $delaySeconds): void
+    public function markQueueRetry(int $queueId, string $errorMessage, int $attempts, int $delaySeconds, ?string $statusOverride = null): void
     {
+        $status = $statusOverride !== null && in_array($statusOverride, array('retry', 'error', 'pending', 'processing', 'done'), true)
+            ? $statusOverride
+            : ($attempts >= 5 ? 'error' : 'retry');
+
         $this->database->update(
             'allegro_offer_change_queue',
             array(
-                'status' => $attempts >= 5 ? 'error' : 'retry',
+                'status' => $status,
                 'attempts' => $attempts,
                 'error_message' => $errorMessage,
                 'available_at' => date('Y-m-d H:i:s', time() + max(30, $delaySeconds)),
@@ -1536,17 +1550,14 @@ class AllegroStorageRepository
                     continue;
                 }
 
-                $includeClauses[] = '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
-                    . ' OR offers.sku LIKE :' . $tokenKey . '_offer_sku'
-                    . ' OR offers.name LIKE :' . $tokenKey . '_offer_name'
-                    . ' OR warehouse.sku LIKE :' . $tokenKey . '_warehouse_sku'
-                    . ' OR warehouse.product_name LIKE :' . $tokenKey . '_warehouse_name)';
+                $includeClauses[] = $this->buildOfferSearchIncludeClause($tokenKey);
                 $tokenLike = '%' . $token . '%';
                 $params[$tokenKey . '_offer_id'] = $tokenLike;
                 $params[$tokenKey . '_offer_sku'] = $tokenLike;
                 $params[$tokenKey . '_offer_name'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_sku'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_name'] = $tokenLike;
+                $params[$tokenKey . '_old_sku_definition'] = 'old_sku';
             }
 
             if ($includeClauses !== array()) {
@@ -1556,17 +1567,14 @@ class AllegroStorageRepository
 
             foreach ($searchTokens['exclude'] as $index => $token) {
                 $tokenKey = 'q_ex_' . $index;
-                $whereParts[] = '(offers.offer_id NOT LIKE :' . $tokenKey . '_offer_id'
-                    . ' AND offers.sku NOT LIKE :' . $tokenKey . '_offer_sku'
-                    . ' AND offers.name NOT LIKE :' . $tokenKey . '_offer_name'
-                    . ' AND (warehouse.sku IS NULL OR warehouse.sku NOT LIKE :' . $tokenKey . '_warehouse_sku)'
-                    . ' AND (warehouse.product_name IS NULL OR warehouse.product_name NOT LIKE :' . $tokenKey . '_warehouse_name))';
+                $whereParts[] = $this->buildOfferSearchExcludeClause($tokenKey);
                 $tokenLike = '%' . $token . '%';
                 $params[$tokenKey . '_offer_id'] = $tokenLike;
                 $params[$tokenKey . '_offer_sku'] = $tokenLike;
                 $params[$tokenKey . '_offer_name'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_sku'] = $tokenLike;
                 $params[$tokenKey . '_warehouse_name'] = $tokenLike;
+                $params[$tokenKey . '_old_sku_definition'] = 'old_sku';
             }
         }
 
@@ -1719,12 +1727,10 @@ class AllegroStorageRepository
 
     private function analyzeOfferFilters(array $filters, string $sortBy = ''): array
     {
-        $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
         $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
-        $duplicates = isset($filters['duplicates']) ? trim((string) $filters['duplicates']) : '';
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
 
-        $needsWarehouse = $query !== '';
+        $needsWarehouse = false;
         $needsSharedStock = $warehouseQuantity !== '';
 
         if (in_array($sortBy, array('warehouse_quantity', 'warehouse_sku', 'linked'), true)) {
@@ -1746,6 +1752,46 @@ class AllegroStorageRepository
             'needs_warehouse' => $needsWarehouse,
             'needs_shared_stock' => $needsSharedStock,
         );
+    }
+
+    private function buildOfferSearchIncludeClause(string $tokenKey): string
+    {
+        return '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
+            . ' OR offers.sku LIKE :' . $tokenKey . '_offer_sku'
+            . ' OR offers.name LIKE :' . $tokenKey . '_offer_name'
+            . ' OR EXISTS ('
+            . '   SELECT 1'
+            . '   FROM products warehouse_search'
+            . '   LEFT JOIN product_custom_field_definitions warehouse_old_definition'
+            . '     ON warehouse_old_definition.slug = :' . $tokenKey . '_old_sku_definition'
+            . '   LEFT JOIN product_custom_field_values warehouse_old_values'
+            . '     ON warehouse_old_values.product_id = warehouse_search.id'
+            . '    AND warehouse_old_values.definition_id = warehouse_old_definition.id'
+            . '   WHERE warehouse_search.deleted_at IS NULL'
+            . '     AND (warehouse_search.sku = offers.sku OR warehouse_old_values.value = offers.sku)'
+            . '     AND (warehouse_search.sku LIKE :' . $tokenKey . '_warehouse_sku'
+            . '       OR warehouse_search.product_name LIKE :' . $tokenKey . '_warehouse_name)'
+            . ' ))';
+    }
+
+    private function buildOfferSearchExcludeClause(string $tokenKey): string
+    {
+        return '(offers.offer_id NOT LIKE :' . $tokenKey . '_offer_id'
+            . ' AND offers.sku NOT LIKE :' . $tokenKey . '_offer_sku'
+            . ' AND offers.name NOT LIKE :' . $tokenKey . '_offer_name'
+            . ' AND NOT EXISTS ('
+            . '   SELECT 1'
+            . '   FROM products warehouse_search'
+            . '   LEFT JOIN product_custom_field_definitions warehouse_old_definition'
+            . '     ON warehouse_old_definition.slug = :' . $tokenKey . '_old_sku_definition'
+            . '   LEFT JOIN product_custom_field_values warehouse_old_values'
+            . '     ON warehouse_old_values.product_id = warehouse_search.id'
+            . '    AND warehouse_old_values.definition_id = warehouse_old_definition.id'
+            . '   WHERE warehouse_search.deleted_at IS NULL'
+            . '     AND (warehouse_search.sku = offers.sku OR warehouse_old_values.value = offers.sku)'
+            . '     AND (warehouse_search.sku LIKE :' . $tokenKey . '_warehouse_sku'
+            . '       OR warehouse_search.product_name LIKE :' . $tokenKey . '_warehouse_name)'
+            . ' ))';
     }
 
     private function buildOfferSort(string $sortBy, string $sortDir): string

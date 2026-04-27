@@ -15,6 +15,7 @@ use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductEmpikParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
+use App\Services\AllegroService;
 use App\Services\CsvExportService;
 use RuntimeException;
 use Throwable;
@@ -614,7 +615,7 @@ class CsvTemplateController extends Controller
 
         try {
             $result = $this->prepareExportResponseData((int) $this->input('template_id', 0), false);
-            $this->sendCsvDownload($result['csv'], $result['template']);
+            $this->sendCsvDownload($result['csv'], $result['template'], $result['rows'], $result['export_options']);
             return;
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
@@ -638,7 +639,7 @@ class CsvTemplateController extends Controller
         try {
             $templateId = (int) $this->input('id', 0);
             $result = $this->prepareExportResponseData($templateId, true);
-            $this->sendCsvDownload($result['csv'], $result['template']);
+            $this->sendCsvDownload($result['csv'], $result['template'], $result['rows'], $result['export_options']);
         } catch (Throwable $exception) {
             http_response_code(422);
             header('Content-Type: application/json; charset=utf-8');
@@ -2158,11 +2159,14 @@ class CsvTemplateController extends Controller
             }
         }
 
-        $csv = $this->exportService->buildCsv($template, $rows, 0, $this->exportOptionsFromInput($requestData));
+        $exportOptions = $this->exportOptionsFromInput($requestData);
+        $csv = $this->exportService->buildCsv($template, $rows, 0, $exportOptions);
 
         return array(
             'template' => $template,
             'csv' => $csv,
+            'rows' => $rows,
+            'export_options' => $exportOptions,
         );
     }
 
@@ -2216,20 +2220,115 @@ class CsvTemplateController extends Controller
         return array_values(array_unique($productIds));
     }
 
-    private function sendCsvDownload(string $csv, array $template): void
+    private function sendCsvDownload(string $csv, array $template, array $rows = array(), array $exportOptions = array()): void
     {
-        $filenameBase = trim((string) ($template['name'] ?? 'produkty'));
-        $filenameBase = preg_replace('/[^A-Za-z0-9\-_]+/', '-', $filenameBase);
-        $filenameBase = trim((string) $filenameBase, '-');
-
-        if ($filenameBase === '') {
-            $filenameBase = 'produkty';
-        }
-
-        $filename = $filenameBase . '-' . date('Ymd-His') . '.csv';
+        $filename = $this->buildExportFilename($template, $rows, $exportOptions);
         header('Content-Type: text/csv; charset=' . ($template['encoding'] ?? 'UTF-8'));
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         echo $csv;
+    }
+
+    private function buildExportFilename(array $template, array $rows, array $exportOptions): string
+    {
+        $brand = $rows !== array() ? $this->csvExportBrandFromProduct($rows[0]) : '';
+        $collectionCode = trim((string) ($exportOptions['image_collection_code'] ?? ''));
+        $templateName = trim((string) ($template['name'] ?? 'produkty'));
+
+        $prefix = trim($brand . ' ' . $collectionCode);
+        $base = $prefix !== '' ? $prefix . '-' . $templateName : $templateName;
+        $base = preg_replace('/[^A-Za-z0-9\-_ ]+/', '-', $base);
+        $base = preg_replace('/\s+/', ' ', (string) $base);
+        $base = trim((string) $base, ' -_');
+        $base = str_replace(' ', '_', $base);
+
+        if ($base === '') {
+            $base = 'produkty';
+        }
+
+        return $base . '_' . date('Ymd-His') . '.csv';
+    }
+
+    private function csvExportBrandFromProduct(array $product): string
+    {
+        $categoryAllegroId = trim((string) ($product['category_allegro_id'] ?? ''));
+        $raw = isset($product['allegro_parameters_raw']) && is_array($product['allegro_parameters_raw']) ? $product['allegro_parameters_raw'] : array();
+        if ($categoryAllegroId === '' || $raw === array()) {
+            return '';
+        }
+
+        try {
+            $definitions = (new AllegroService())->categoryParameters($categoryAllegroId);
+        } catch (Throwable $exception) {
+            return '';
+        }
+
+        $candidateNames = array(
+            'dedykowana marka',
+            'marka dedykowana',
+            'marka',
+            'producent',
+        );
+        $normalizedCandidates = array();
+        foreach ($candidateNames as $candidateName) {
+            $normalized = $this->normalizeCsvFilenameLabel($candidateName);
+            if ($normalized !== '') {
+                $normalizedCandidates[$normalized] = true;
+            }
+        }
+
+        foreach ($definitions as $definition) {
+            if (!is_array($definition) || empty($definition['id']) || !isset($definition['name'])) {
+                continue;
+            }
+
+            $normalizedName = $this->normalizeCsvFilenameLabel((string) $definition['name']);
+            if ($normalizedName === '' || !isset($normalizedCandidates[$normalizedName])) {
+                continue;
+            }
+
+            $parameterId = (string) $definition['id'];
+            if (!array_key_exists($parameterId, $raw)) {
+                continue;
+            }
+
+            return $this->stringifyCsvFilenameValue($raw[$parameterId]);
+        }
+
+        return '';
+    }
+
+    private function stringifyCsvFilenameValue($value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $parts[] = $item;
+                }
+            }
+
+            return trim(implode(' ', $parts));
+        }
+
+        return trim((string) $value);
+    }
+
+    private function normalizeCsvFilenameLabel(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if ($transliterated !== false) {
+            $value = $transliterated;
+        }
+
+        $value = strtolower($value);
+        $value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+        return trim((string) $value);
     }
 
     private function exportOptionsFromInput(array $requestData = array()): array
