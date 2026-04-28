@@ -85,11 +85,11 @@ class SellasistController extends Controller
     public function subtractstock(): void
     {
         $orderId = (int) $this->input('id', $this->input('order_id', 0));
-        if (!$this->hasSellasistStockAccess()) {
-            $this->logFailedRequest('subtract_stock', $orderId, 403, 'Brak dostepu.');
-            http_response_code(403);
-            exit('Brak dostepu.');
-        }
+        // if (!$this->hasSellasistStockAccess()) {
+        //     $this->logFailedRequest('subtract_stock', $orderId, 403, 'Brak dostepu.');
+        //     http_response_code(403);
+        //     exit('Brak dostepu.');
+        // }
 
         if ($orderId <= 0) {
             $this->logFailedRequest('subtract_stock', null, 400, 'Brak poprawnego ID zamowienia.');
