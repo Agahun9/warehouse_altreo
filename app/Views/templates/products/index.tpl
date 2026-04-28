@@ -619,7 +619,7 @@
 <div class="modal fade" id="csvExportModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <form method="post" action="{$baseUrl}?controller=csvtemplates&action=exportcsv" id="csvExportForm">
+      <form method="post" action="{$baseUrl}?controller=csvtemplates&action=exportcsv" id="csvExportForm" data-no-page-loader="1">
         <div class="modal-header">
           <h5 class="modal-title">Eksport CSV</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

@@ -91,9 +91,17 @@ class CsvExportService
 
     private function resolveColumnValue(array $product, array $column, string $arraySeparator, array $exportOptions = array()): string
     {
-        $sourceType = $column['source_type'];
-        $sourceValue = $column['source_value'];
+        $sourceType = strtolower(trim((string) ($column['source_type'] ?? 'field')));
+        $sourceValue = (string) ($column['source_value'] ?? '');
         $settings = isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
+
+        if ($sourceType !== 'computed' && in_array($sourceType, array('concat', 'upper', 'lower', 'trim'), true)) {
+            if (!isset($settings['function']) || trim((string) $settings['function']) === '') {
+                $settings['function'] = $sourceType;
+            }
+
+            $sourceType = 'computed';
+        }
 
         if (isset($settings['array_separator']) && (string) $settings['array_separator'] !== '') {
             $arraySeparator = (string) $settings['array_separator'];

@@ -2,10 +2,6 @@
 
 declare(strict_types=1);
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 spl_autoload_register(static function (string $className): void {
     $prefix = 'App\\';
 

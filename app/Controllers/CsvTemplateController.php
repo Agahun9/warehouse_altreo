@@ -472,7 +472,7 @@ class CsvTemplateController extends Controller
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
-            'templateColumnsJson' => json_encode(isset($template['columns']) ? $template['columns'] : array()),
+            'templateColumnsJson' => json_encode($this->columnsForPreview(isset($template['columns']) ? $template['columns'] : array())),
         ));
     }
 
@@ -2366,17 +2366,54 @@ class CsvTemplateController extends Controller
                 continue;
             }
 
+            $normalized = $this->normalizeLegacyColumnDefinition($column);
+
             $result[] = array(
                 'id' => $index + 1,
-                'header_name' => (string) ($column['header_name'] ?? ''),
-                'source_type' => (string) ($column['source_type'] ?? 'field'),
-                'source_value' => $this->normalizeLegacySourceValue((string) ($column['source_value'] ?? ''), (string) ($column['source_type'] ?? 'field')),
-                'settings' => isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array(),
-                'mappings' => isset($column['mappings']) && is_array($column['mappings']) ? $column['mappings'] : array(),
+                'header_name' => (string) ($normalized['header_name'] ?? ''),
+                'source_type' => (string) ($normalized['source_type'] ?? 'field'),
+                'source_value' => (string) ($normalized['source_value'] ?? ''),
+                'settings' => isset($normalized['settings']) && is_array($normalized['settings']) ? $normalized['settings'] : array(),
+                'mappings' => isset($normalized['mappings']) && is_array($normalized['mappings']) ? $normalized['mappings'] : array(),
             );
         }
 
         return $result;
+    }
+
+    private function normalizeLegacyColumnDefinition(array $column): array
+    {
+        $sourceType = strtolower(trim((string) ($column['source_type'] ?? 'field')));
+        $sourceValue = trim((string) ($column['source_value'] ?? ''));
+        $settings = isset($column['settings']) && is_array($column['settings'])
+            ? $this->normalizeColumnSettings($column['settings'])
+            : $this->normalizeColumnSettings(array());
+
+        $computedFunctions = $this->availableComputedFunctions();
+        if ($sourceType !== 'computed' && isset($computedFunctions[$sourceType])) {
+            if ($settings['function'] === '') {
+                $settings['function'] = $sourceType;
+            }
+
+            $sourceType = 'computed';
+            if ($sourceValue === '' || strtolower($sourceValue) === $settings['function']) {
+                $sourceValue = 'computed';
+            }
+        }
+
+        if ($sourceType === 'computed' && $sourceValue === '') {
+            $sourceValue = 'computed';
+        }
+
+        if ($sourceType === 'field') {
+            $sourceValue = $this->normalizeLegacySourceValue($sourceValue, $sourceType);
+        }
+
+        $column['source_type'] = $sourceType;
+        $column['source_value'] = $sourceValue;
+        $column['settings'] = $settings;
+
+        return $column;
     }
 
     private function presetDefinitions(): array

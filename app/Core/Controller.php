@@ -192,6 +192,10 @@ abstract class Controller
             ? $data['flashError']
             : $this->getFlash('error');
 
+        // Flash messages are already loaded, so we can release the session lock
+        // before template rendering to avoid blocking parallel browser requests.
+        $this->releaseSessionLock();
+
         $defaultData = array(
             'assetBase' => 'dist',
             'appName' => 'ALTREO CRM',

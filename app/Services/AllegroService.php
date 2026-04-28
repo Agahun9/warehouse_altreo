@@ -908,6 +908,7 @@ class AllegroService
         try {
             $state = $this->storage->syncState($accountId);
             $cycle = !empty($state['current_cycle']) ? (string) $state['current_cycle'] : $this->uuidV4();
+            $runtimeLimitReached = false;
 
             $this->storage->updateSyncState($accountId, array(
                 'mode' => 'full',
@@ -945,6 +946,12 @@ class AllegroService
                 $excludedOfferIds = array_fill_keys($this->storage->excludedOfferIds($accountId, array_column($offers, 'id')), true);
 
                 foreach ($offers as $offer) {
+                    if ((time() - $startTime) >= $maxRuntime) {
+                        $summary['status'] = 'partial';
+                        $runtimeLimitReached = true;
+                        break;
+                    }
+
                     $normalized = $this->normalizeOfferSummary($offer);
                     if ($normalized['offer_id'] === '') {
                         continue;
@@ -974,6 +981,12 @@ class AllegroService
                     }
 
                     $summary['offers_processed']++;
+
+                    if (($summary['offers_processed'] % 10) === 0) {
+                        $this->storage->updateSyncState($accountId, array(
+                            'heartbeat_at' => date('Y-m-d H:i:s'),
+                        ));
+                    }
                 }
 
                 $offset += $offerLimit;
@@ -984,6 +997,10 @@ class AllegroService
                     'heartbeat_at' => date('Y-m-d H:i:s'),
                     'last_incremental_sync_at' => date('Y-m-d H:i:s'),
                 ));
+
+                if ($runtimeLimitReached) {
+                    break;
+                }
 
                 if (count($offers) < $offerLimit) {
                     $this->finalizeFullCycle($accountId, $cycle);

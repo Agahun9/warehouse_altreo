@@ -19,16 +19,72 @@
 
   <div class="app-content">
     <div class="container-fluid">
+      <style>
+        .csv-title-generator-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 1rem 1.25rem;
+          align-items: start;
+        }
+
+        .csv-title-generator-hero-copy {
+          min-width: 0;
+        }
+
+        .csv-title-generator-hero-copy .card-title,
+        .csv-title-generator-help .card-title {
+          line-height: 1.2;
+        }
+
+        .csv-title-generator-hero-copy .text-secondary,
+        .csv-title-generator-help ol {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .csv-title-generator-actions {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          min-width: min(100%, 22rem);
+        }
+
+        .csv-title-generator-actions .btn {
+          white-space: nowrap;
+        }
+
+        .csv-title-generator-help ol li + li {
+          margin-top: 0.35rem;
+        }
+
+        @media (max-width: 767.98px) {
+          .csv-title-generator-hero {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .csv-title-generator-actions {
+            min-width: 0;
+            justify-content: stretch;
+          }
+
+          .csv-title-generator-actions .btn {
+            flex: 1 1 100%;
+            white-space: normal;
+          }
+        }
+      </style>
+
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
 
       <div class="card mb-4">
-        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div>
+        <div class="card-body csv-title-generator-hero">
+          <div class="csv-title-generator-hero-copy">
             <h3 class="card-title mb-1">Szablony tytulow</h3>
-            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> używanego podczas eksportu CSV.</div>
+            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> uzywanego podczas eksportu CSV.</div>
           </div>
-          <div class="d-flex gap-2">
+          <div class="csv-title-generator-actions">
             <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Szablony CSV</a>
             <a href="{$baseUrl}?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
           </div>
@@ -36,7 +92,7 @@
       </div>
 
       <div class="card mb-4">
-        <div class="card-body">
+        <div class="card-body csv-title-generator-help">
           <h3 class="card-title mb-2">Jak tego uzyc</h3>
           <ol class="small mb-0 ps-3">
             <li>W szablonie CSV dodaj kolumne typu <code>field</code>.</li>
