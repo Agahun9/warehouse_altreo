@@ -197,8 +197,8 @@
               "app": {
                 "bootstrap.php": {
                   "type": "-",
-                  "size": 761,
-                  "lmtime": 1774531236398.5396,
+                  "size": 692,
+                  "lmtime": 1777355417729.8618,
                   "modified": false
                 },
                 "Config": {
@@ -218,14 +218,14 @@
                 "Controllers": {
                   "AdminController.php": {
                     "type": "-",
-                    "size": 11167,
+                    "size": 11814,
                     "lmtime": 1777286363010.7798,
-                    "modified": false
+                    "modified": true
                   },
                   "AllegroController.php": {
                     "type": "-",
-                    "size": 37570,
-                    "lmtime": 1777286363151.6206,
+                    "size": 41494,
+                    "lmtime": 1777354943643.5117,
                     "modified": false
                   },
                   "AuthController.php": {
@@ -236,71 +236,77 @@
                   },
                   "CategoryController.php": {
                     "type": "-",
-                    "size": 11629,
+                    "size": 11628,
                     "lmtime": 1777274190453.787,
-                    "modified": false
+                    "modified": true
                   },
                   "CsvTemplateController.php": {
                     "type": "-",
-                    "size": 100621,
-                    "lmtime": 1777286363295.51,
+                    "size": 102004,
+                    "lmtime": 1777355686199.3076,
                     "modified": false
                   },
                   "EmpikController.php": {
                     "type": "-",
-                    "size": 5849,
+                    "size": 6117,
                     "lmtime": 1777286363401.717,
-                    "modified": false
+                    "modified": true
                   },
                   "IndexController.php": {
                     "type": "-",
-                    "size": 8782,
+                    "size": 9035,
                     "lmtime": 1777286363516.645,
-                    "modified": false
+                    "modified": true
                   },
                   "ProductController.php": {
                     "type": "-",
-                    "size": 603572,
+                    "size": 603839,
                     "lmtime": 1777286363701.6199,
-                    "modified": false
+                    "modified": true
                   },
                   "SellasistController.php": {
                     "type": "-",
-                    "size": 5117,
+                    "size": 4960,
                     "lmtime": 1777286363813.141,
-                    "modified": false
+                    "modified": true
                   }
                 },
                 "Core": {
                   "Application.php": {
                     "type": "-",
-                    "size": 2670,
+                    "size": 2578,
                     "lmtime": 1777286363927.9622,
-                    "modified": false
+                    "modified": true
                   },
                   "Config.php": {
                     "type": "-",
-                    "size": 547,
+                    "size": 546,
                     "lmtime": 1774519686427.2651,
-                    "modified": false
+                    "modified": true
                   },
                   "Controller.php": {
                     "type": "-",
-                    "size": 6116,
-                    "lmtime": 1777286364040.6245,
+                    "size": 6306,
+                    "lmtime": 1777355422969.6707,
                     "modified": false
                   },
                   "Database.php": {
                     "type": "-",
-                    "size": 6714,
+                    "size": 6713,
                     "lmtime": 1776682701129.1145,
+                    "modified": true
+                  },
+                  "PerformanceLogger.php": {
+                    "type": "-",
+                    "size": 2294,
+                    "lmtime": 1777354907223.8555,
                     "modified": false
                   },
                   "SmartyFactory.php": {
                     "type": "-",
-                    "size": 890,
+                    "size": 889,
                     "lmtime": 1774519023186.3835,
-                    "modified": false
+                    "modified": true
                   }
                 },
                 "Database": {
@@ -320,15 +326,15 @@
                 "Models": {
                   "AllegroStorageRepository.php": {
                     "type": "-",
-                    "size": 128638,
-                    "lmtime": 1777284778335.1218,
+                    "size": 131196,
+                    "lmtime": 1777355080673.392,
                     "modified": false
                   },
                   "CategoryRepository.php": {
                     "type": "-",
-                    "size": 9036,
+                    "size": 9034,
                     "lmtime": 1777274175306.4978,
-                    "modified": false
+                    "modified": true
                   },
                   "CsvImportProfileRepository.php": {
                     "type": "-",
@@ -338,9 +344,9 @@
                   },
                   "CsvTemplateRepository.php": {
                     "type": "-",
-                    "size": 9545,
+                    "size": 9544,
                     "lmtime": 1776865488849.0293,
-                    "modified": false
+                    "modified": true
                   },
                   "CsvTitleTemplateRepository.php": {
                     "type": "-",
@@ -350,9 +356,9 @@
                   },
                   "DerivedStockLinkRepository.php": {
                     "type": "-",
-                    "size": 10332,
+                    "size": 10331,
                     "lmtime": 1776865478086.2036,
-                    "modified": false
+                    "modified": true
                   },
                   "EmpikStorageRepository.php": {
                     "type": "-",
@@ -374,9 +380,9 @@
                   },
                   "ProductCustomFieldRepository.php": {
                     "type": "-",
-                    "size": 9289,
+                    "size": 10323,
                     "lmtime": 1776865504334.053,
-                    "modified": false
+                    "modified": true
                   },
                   "ProductEmpikParameterRepository.php": {
                     "type": "-",
@@ -410,16 +416,16 @@
                   },
                   "UserRepository.php": {
                     "type": "-",
-                    "size": 10038,
+                    "size": 10269,
                     "lmtime": 1776865413780.442,
-                    "modified": false
+                    "modified": true
                   }
                 },
                 "Services": {
                   "AllegroService.php": {
                     "type": "-",
-                    "size": 117859,
-                    "lmtime": 1777284778336.1226,
+                    "size": 123599,
+                    "lmtime": 1777356039494.2576,
                     "modified": false
                   },
                   "ComputedFunctions.php": {
@@ -430,27 +436,27 @@
                   },
                   "CsvExportService.php": {
                     "type": "-",
-                    "size": 9407,
-                    "lmtime": 1777286364398.7056,
+                    "size": 9793,
+                    "lmtime": 1777355703688.0796,
                     "modified": false
                   },
                   "EmpikService.php": {
                     "type": "-",
-                    "size": 34504,
+                    "size": 34975,
                     "lmtime": 1777008170072.5354,
-                    "modified": false
+                    "modified": true
                   },
                   "JwtService.php": {
                     "type": "-",
-                    "size": 2066,
+                    "size": 2065,
                     "lmtime": 1774521598763.9778,
-                    "modified": false
+                    "modified": true
                   },
                   "MailService.php": {
                     "type": "-",
-                    "size": 1518,
+                    "size": 1517,
                     "lmtime": 1774521599157.3157,
-                    "modified": false
+                    "modified": true
                   },
                   "ProductChangeAuditService.php": {
                     "type": "-",
@@ -460,21 +466,21 @@
                   },
                   "SellasistService.php": {
                     "type": "-",
-                    "size": 39558,
+                    "size": 38431,
                     "lmtime": 1777269003909.5955,
-                    "modified": false
+                    "modified": true
                   },
                   "TemplateParser.php": {
                     "type": "-",
-                    "size": 3815,
+                    "size": 3814,
                     "lmtime": 1777286364492.2544,
-                    "modified": false
+                    "modified": true
                   },
                   "TokenService.php": {
                     "type": "-",
-                    "size": 471,
+                    "size": 470,
                     "lmtime": 1774521598759.9702,
-                    "modified": false
+                    "modified": true
                   },
                   "ValueResolver.php": {
                     "type": "-",
@@ -843,8 +849,8 @@
                     "csv_templates": {
                       "form.tpl": {
                         "type": "-",
-                        "size": 38024,
-                        "lmtime": 1777286365928.407,
+                        "size": 38383,
+                        "lmtime": 1777355801646.9836,
                         "modified": false
                       },
                       "import.tpl": {
@@ -855,9 +861,9 @@
                       },
                       "index.tpl": {
                         "type": "-",
-                        "size": 4855,
+                        "size": 4854,
                         "lmtime": 1776679679441.11,
-                        "modified": false
+                        "modified": true
                       },
                       "title_form.tpl": {
                         "type": "-",
@@ -867,8 +873,8 @@
                       },
                       "title_generator.tpl": {
                         "type": "-",
-                        "size": 4800,
-                        "lmtime": 1777286366165.8462,
+                        "size": 6206,
+                        "lmtime": 1777355243151.1472,
                         "modified": false
                       }
                     },
@@ -895,14 +901,14 @@
                     "layout": {
                       "footer.tpl": {
                         "type": "-",
-                        "size": 5001,
+                        "size": 8986,
                         "lmtime": 1777274943072.0366,
-                        "modified": false
+                        "modified": true
                       },
                       "header.tpl": {
                         "type": "-",
-                        "size": 12985,
-                        "lmtime": 1777274834408.2007,
+                        "size": 16983,
+                        "lmtime": 1777363618727.4126,
                         "modified": false
                       }
                     },
@@ -915,14 +921,14 @@
                       },
                       "form.tpl": {
                         "type": "-",
-                        "size": 110648,
+                        "size": 110249,
                         "lmtime": 1777286366369.2603,
-                        "modified": false
+                        "modified": true
                       },
                       "index.tpl": {
                         "type": "-",
-                        "size": 67647,
-                        "lmtime": 1777286366531.7715,
+                        "size": 69000,
+                        "lmtime": 1777363274250.3977,
                         "modified": false
                       }
                     },
@@ -1403,9 +1409,9 @@
               },
               ".gitignore": {
                 "type": "-",
-                "size": 149,
+                "size": 181,
                 "lmtime": 1777286362754.584,
-                "modified": false
+                "modified": true
               },
               "index.html": {
                 "type": "-",

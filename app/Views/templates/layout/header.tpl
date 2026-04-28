@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <style>
@@ -19,7 +19,16 @@
       --app-loader-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
     }
 
+    html {
+      font-size: 85%;
+    }
+
     body {
+      font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+      font-weight: 400;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: subpixel-antialiased;
+      -moz-osx-font-smoothing: auto;
       transition: background-color 0.28s ease;
     }
 
@@ -29,26 +38,23 @@
 
     .app-main {
       opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.35s ease, transform 0.35s ease;
-      will-change: opacity, transform;
+      transition: opacity 0.24s ease;
     }
 
     body.app-ready .app-main {
       opacity: 1;
-      transform: translateY(0);
     }
 
     .card,
     .products-page-header-shell,
     .allegro-pagination-panel {
-      transition: transform 0.24s ease, box-shadow 0.24s ease, opacity 0.24s ease;
+      transition: box-shadow 0.24s ease, opacity 0.24s ease;
     }
 
     .card:hover,
     .products-page-header-shell:hover,
     .allegro-pagination-panel:hover {
-      transform: translateY(-1px);
+      box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
     }
 
     .app-page-loader {

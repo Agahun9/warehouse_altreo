@@ -580,6 +580,13 @@ class ValueResolver
             return '';
         }
 
+        $format = '';
+        $formatPos = strrpos($expression, '=');
+        if ($formatPos !== false) {
+            $format = trim(substr($expression, $formatPos + 1));
+            $expression = trim(substr($expression, 0, $formatPos));
+        }
+
         $fieldPath = $expression;
         $operationPos = strpos($expression, '+');
         $replacements = array();
@@ -617,7 +624,45 @@ class ValueResolver
             $resolved = str_replace($replacement['find'], $replacement['replace'], $resolved);
         }
 
-        return $resolved;
+        return $this->applyTitleExpressionFormat($resolved, $format);
+    }
+
+    private function applyTitleExpressionFormat(string $value, string $format): string
+    {
+        $format = trim($format);
+        if ($format === '') {
+            return $value;
+        }
+
+        if ($format === 'upper') {
+            return function_exists('mb_strtoupper') ? mb_strtoupper($value, 'UTF-8') : strtoupper($value);
+        }
+
+        if ($format === 'lower') {
+            return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        }
+
+        if ($format === 'trim') {
+            return trim($value);
+        }
+
+        if (strpos($format, 'date:') === 0) {
+            $phpFormat = substr($format, 5);
+            $timestamp = strtotime($value);
+
+            return $timestamp !== false ? date($phpFormat !== '' ? $phpFormat : 'Y-m-d', $timestamp) : $value;
+        }
+
+        if (strpos($format, 'number:') === 0) {
+            $parts = explode(':', $format);
+            $decimals = isset($parts[1]) ? (int) $parts[1] : 2;
+            $decimalPoint = isset($parts[2]) && $parts[2] !== '' ? $parts[2] : ',';
+            $thousandsSeparator = isset($parts[3]) ? $parts[3] : ' ';
+
+            return number_format((float) $value, $decimals, $decimalPoint, $thousandsSeparator);
+        }
+
+        return $value;
     }
 
     private function allegroParameterValueByNames(array $product, array $candidateNames): string

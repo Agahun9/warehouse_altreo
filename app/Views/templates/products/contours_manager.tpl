@@ -180,6 +180,15 @@
             <div class="small text-uppercase fw-semibold text-success mb-2">OBRYSY_GENERATOR</div>
             <h4 class="mb-1">Foldery obrysow i wrzutka plikow</h4>
             <p class="text-secondary mb-0">Wybierz folder z listy, zmien mu nazwe, usun go albo przerzuc pliki bezposrednio do wybranego katalogu.</p>
+            {if $selectedContourDirectory}
+              <div class="small mt-2 {if $selectedContourDirectoryWritable}text-success{else}text-danger{/if}">
+                {if $selectedContourDirectoryWritable}
+                  Wybrany folder ma uprawnienia do zapisu.
+                {else}
+                  Wybrany folder nie ma uprawnien do zapisu albo serwer nie moze do niego wejsc.
+                {/if}
+              </div>
+            {/if}
           </div>
           <div class="d-flex gap-2">
             <a href="{$baseUrl}?controller=products&action=index" class="btn btn-outline-secondary">Wroc do produktow</a>
@@ -286,7 +295,7 @@
             </div>
             <div class="card-body">
               {if $selectedContourDirectory}
-                <form method="post" action="{$baseUrl}?controller=products&action=uploadcontourfiles" enctype="multipart/form-data" class="contours-manager-form">
+                <form method="post" action="{$contoursUploadUrl|escape}" enctype="multipart/form-data" class="contours-manager-form" id="contoursUploadForm" data-no-page-loader="1">
                   <input type="hidden" name="directory" value="{$selectedContourDirectory|escape}">
                   <label class="contours-upload-dropzone" id="contoursUploadDropzone">
                     <input type="file" name="contour_files[]" id="contourFiles" multiple>
@@ -294,6 +303,7 @@
                     <div class="small text-secondary">Pliki zostana zapisane bezposrednio w folderze <strong>{$selectedContourDirectory|escape}</strong>.</div>
                     <div class="small mt-2 text-secondary" id="contourFilesSummary">Nie wybrano jeszcze plikow.</div>
                   </label>
+                  <div class="small mt-2 d-none" id="contourUploadStatus" role="status" aria-live="polite"></div>
                   <div>
                     <button type="submit" class="btn btn-success">Wgraj pliki</button>
                   </div>
@@ -314,9 +324,21 @@
     var input = document.getElementById('contourFiles');
     var summary = document.getElementById('contourFilesSummary');
     var dropzone = document.getElementById('contoursUploadDropzone');
+    var uploadForm = document.getElementById('contoursUploadForm');
+    var uploadStatus = document.getElementById('contourUploadStatus');
     var searchInput = document.getElementById('contoursDirectorySearch');
     var directoryItems = Array.prototype.slice.call(document.querySelectorAll('[data-directory-item]'));
     var emptyState = document.getElementById('contoursDirectoryEmpty');
+
+    function setUploadStatus(message, type) {
+      if (!uploadStatus) {
+        return;
+      }
+
+      uploadStatus.classList.remove('d-none', 'text-secondary', 'text-success', 'text-danger');
+      uploadStatus.classList.add(type === 'error' ? 'text-danger' : (type === 'success' ? 'text-success' : 'text-secondary'));
+      uploadStatus.textContent = message || '';
+    }
 
     function renderSummary() {
       if (!summary || !input) {
@@ -387,6 +409,62 @@
 
         input.files = event.dataTransfer.files;
         renderSummary();
+      });
+    }
+
+    if (uploadForm && input && window.fetch && window.FormData) {
+      uploadForm.addEventListener('submit', function (event) {
+        if (!input.files || !input.files.length) {
+          return;
+        }
+
+        event.preventDefault();
+        setUploadStatus('Trwa wysylanie plikow...', 'info');
+
+        var submitButton = uploadForm.querySelector('button[type="submit"]');
+        if (submitButton) {
+          submitButton.disabled = true;
+        }
+
+        fetch(uploadForm.action, {
+          method: 'POST',
+          body: new FormData(uploadForm),
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        })
+          .then(function (response) {
+            return response.json()
+              .catch(function () {
+                return { error: 'Serwer zwrocil nieczytelna odpowiedz.', status: response.status };
+              })
+              .then(function (payload) {
+                return { ok: response.ok, status: response.status, payload: payload || {} };
+              });
+          })
+          .then(function (result) {
+            if (!result.ok || result.payload.error) {
+              throw new Error(result.payload.error || ('Upload nie udal sie. Kod: ' + result.status));
+            }
+
+            setUploadStatus(result.payload.message || 'Pliki zostaly wgrane.', 'success');
+            input.value = '';
+            renderSummary();
+
+            window.setTimeout(function () {
+              window.location.href = result.payload.redirect || window.location.href;
+            }, 450);
+          })
+          .catch(function (error) {
+            setUploadStatus(error && error.message ? error.message : 'Przegladarka zablokowala wysylke lub serwer odrzucil upload.', 'error');
+          })
+          .finally(function () {
+            if (submitButton) {
+              submitButton.disabled = false;
+            }
+          });
       });
     }
   })();

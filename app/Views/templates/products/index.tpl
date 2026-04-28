@@ -177,6 +177,43 @@
       line-height: 1.2;
     }
 
+    .product-quantity-cell {
+      width: 118px;
+      min-width: 118px;
+    }
+
+    .product-timestamps-cell {
+      width: 170px;
+      min-width: 170px;
+      white-space: normal;
+      line-height: 1.35;
+    }
+
+    .product-timestamp-stack {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+    }
+
+    .product-timestamp-item {
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+    }
+
+    .product-timestamp-label {
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+
+    .product-timestamp-value {
+      color: #1f2937;
+      word-break: break-word;
+    }
+
     .product-sku-secondary {
       display: block;
       margin-top: .2rem;
@@ -467,14 +504,13 @@
                     <th style="width: 100px; min-width: 100px;">
                       <a href="{$sortUrls.category|escape}" class="link-dark text-decoration-none">Kategoria {if $sortIndicators.category eq 'asc'}&uarr;{elseif $sortIndicators.category eq 'desc'}&darr;{else}&harr;{/if}</a>
                     </th>
-                    <th class="product-compact-cell"><a href="{$sortUrls.quantity|escape}" class="link-dark text-decoration-none">Ilosc {if $sortIndicators.quantity eq 'asc'}&uarr;{elseif $sortIndicators.quantity eq 'desc'}&darr;{else}&harr;{/if}</a></th>
+                    <th class="product-quantity-cell"><a href="{$sortUrls.quantity|escape}" class="link-dark text-decoration-none">Ilosc {if $sortIndicators.quantity eq 'asc'}&uarr;{elseif $sortIndicators.quantity eq 'desc'}&darr;{else}&harr;{/if}</a></th>
                     <th style="width: 100px; min-width: 100px;"><a href="{$sortUrls.localization|escape}" class="link-dark text-decoration-none">Lokalizacja {if $sortIndicators.localization eq 'asc'}&uarr;{elseif $sortIndicators.localization eq 'desc'}&darr;{else}&harr;{/if}</a></th>
                     <th style="width: 100px; min-width: 100px;">Wymiary</th>
                     <th class="product-contours-cell">Obrys</th>
                     <th class="product-compact-cell">Zdjecie</th>
                     <th class="product-price-cell">Cena</th>
-                    <th class="product-compact-cell">Utworzono</th>
-                    <th class="product-compact-cell">Zmieniono</th>
+                    <th class="product-timestamps-cell">Utworzono / zmieniono</th>
                     <th class="text-end product-actions-cell">Akcje</th>
                   </tr>
                   <tr>
@@ -498,7 +534,7 @@
                         <span class="products-filter-hint">Mozesz zaznaczyc wiele kategorii jednoczesnie.</span>
                       </div>
                     </th>
-                    <th><input type="text" name="filter_quantity" value="{$filters.quantity|default:''|escape}" class="form-control form-control-sm" placeholder="np. 10 lub 10-50"></th>
+                    <th class="product-quantity-cell"><input type="text" name="filter_quantity" value="{$filters.quantity|default:''|escape}" class="form-control form-control-sm" placeholder="np. 10 lub 10-50"></th>
                     <th><input type="text" name="filter_localization" value="{$filters.localization|default:''|escape}" class="form-control form-control-sm" placeholder="lokalizacja"></th>
                     <th>
                       <select name="filter_with_glass" class="form-select form-select-sm">
@@ -507,7 +543,7 @@
                         <option value="0"{if $withGlassFilter eq '0'} selected{/if}>produkty bez szkła</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="6">
+                    <th class="text-end" colspan="5">
                     <a href="{$clearFiltersUrl|escape}" class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
                 </thead>
@@ -567,7 +603,7 @@
                           <span class="quick-edit-status js-quick-edit-status"></span>
                         </td>
                         <td >{if $product.category_name}<span class="badge text-bg-info">{$product.category_name|escape}</span>{else}-{/if}</td>
-                        <td>
+                        <td class="product-quantity-cell">
                           <input type="number" min="0" class="quick-edit-input quick-edit-number js-quick-edit-field" data-field="quantity" value="{$product.quantity|escape}" aria-label="Ilosc">
                         </td>
                         <td>
@@ -582,8 +618,18 @@
                           <div><strong>B:</strong> {$product.price_gross}</div>
                           <div class="small text-secondary"><strong>N:</strong> {$product.price_net}</div>
                         </td>
-                        <td class="product-compact-cell">{$product.created_at|default:'-'}</td>
-                        <td class="js-updated-at-cell product-compact-cell">{$product.updated_at|default:'-'}</td>
+                        <td class="product-timestamps-cell">
+                          <div class="product-timestamp-stack">
+                            <div class="product-timestamp-item">
+                              <span class="product-timestamp-label">Utworzono</span>
+                              <span class="product-timestamp-value">{$product.created_at|default:'-'}</span>
+                            </div>
+                            <div class="product-timestamp-item">
+                              <span class="product-timestamp-label">Zmieniono</span>
+                              <span class="js-updated-at-cell product-timestamp-value">{$product.updated_at|default:'-'}</span>
+                            </div>
+                          </div>
+                        </td>
                         <td class="text-end product-actions-cell">
                           <div class="quick-edit-actions">
                             <button type="button" class="btn btn-sm btn-primary quick-edit-save js-quick-edit-save">Zapisz</button>
@@ -595,7 +641,7 @@
                       </tr>
                     {/foreach}
                   {else}
-                    <tr><td colspan="14" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="13" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   {/if}
                 </tbody>
               </table>
