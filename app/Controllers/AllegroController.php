@@ -390,7 +390,7 @@ class AllegroController extends Controller
                 'limit' => (int) $this->input('limit', 2000),
                 'scan_limit' => (int) $this->input('scan_limit', 10000),
             ));
-            if ($mailRecipients !== array()) {
+            if ($mailRecipients !== array() && $this->shouldSendAutoEndReport($result)) {
                 $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
             }
             PerformanceLogger::logIfSlow('allegro.controller.autoEndOffers', $requestStartedAt, array(
@@ -885,6 +885,22 @@ class AllegroController extends Controller
             'sent' => $sent,
             'eligible_count' => $count,
         );
+    }
+
+    private function shouldSendAutoEndReport(array $result): bool
+    {
+        if (isset($result['end_offer_count']) && (int) $result['end_offer_count'] > 0) {
+            return true;
+        }
+
+        $items = isset($result['items']) && is_array($result['items']) ? $result['items'] : array();
+        foreach ($items as $item) {
+            if (is_array($item) && !empty($item['can_end_offer'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function notifyRefreshTokenFailuresFromBatch(array $results): void
