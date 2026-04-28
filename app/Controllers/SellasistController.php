@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\SmartyFactory;
+use App\Models\SellasistOrderSyncRepository;
 use App\Services\SellasistService;
 use Throwable;
 
@@ -14,9 +15,14 @@ class SellasistController extends Controller
     /** @var SellasistService */
     private $sellasist;
 
+    /** @var SellasistOrderSyncRepository */
+    private $syncLogs;
+
     public function __construct()
     {
         $this->sellasist = new SellasistService($this->db());
+        $this->syncLogs = new SellasistOrderSyncRepository($this->db());
+        $this->syncLogs->ensureSchema();
     }
 
     public function index(): void
@@ -78,13 +84,15 @@ class SellasistController extends Controller
 
     public function subtractstock(): void
     {
+        $orderId = (int) $this->input('id', $this->input('order_id', 0));
         if (!$this->hasSellasistStockAccess()) {
+            $this->logFailedRequest('subtract_stock', $orderId, 403, 'Brak dostepu.');
             http_response_code(403);
             exit('Brak dostepu.');
         }
 
-        $orderId = (int) $this->input('id', $this->input('order_id', 0));
         if ($orderId <= 0) {
+            $this->logFailedRequest('subtract_stock', null, 400, 'Brak poprawnego ID zamowienia.');
             http_response_code(400);
             exit('Brak poprawnego ID zamowienia.');
         }
@@ -98,6 +106,7 @@ class SellasistController extends Controller
                 'result' => $result,
             ));
         } catch (Throwable $exception) {
+            $this->logFailedRequest('subtract_stock', $orderId, 500, $exception->getMessage());
             http_response_code(500);
             echo 'Blad: ' . $exception->getMessage();
         }
@@ -105,13 +114,15 @@ class SellasistController extends Controller
 
     public function addstock(): void
     {
+        $orderId = (int) $this->input('id', $this->input('order_id', 0));
         if (!$this->hasSellasistStockAccess()) {
+            $this->logFailedRequest('add_stock', $orderId, 403, 'Brak dostepu.');
             http_response_code(403);
             exit('Brak dostepu.');
         }
 
-        $orderId = (int) $this->input('id', $this->input('order_id', 0));
         if ($orderId <= 0) {
+            $this->logFailedRequest('add_stock', null, 400, 'Brak poprawnego ID zamowienia.');
             http_response_code(400);
             exit('Brak poprawnego ID zamowienia.');
         }
@@ -125,6 +136,7 @@ class SellasistController extends Controller
                 'result' => $result,
             ));
         } catch (Throwable $exception) {
+            $this->logFailedRequest('add_stock', $orderId, 500, $exception->getMessage());
             http_response_code(500);
             echo 'Blad: ' . $exception->getMessage();
         }
@@ -149,5 +161,22 @@ class SellasistController extends Controller
         }
 
         return $this->moduleAccessLevel($user, 'sellasist') === 'edit';
+    }
+
+    private function logFailedRequest(string $operation, ?int $orderId, int $status, string $message): void
+    {
+        try {
+            $this->syncLogs->logFailedRequest(
+                $operation,
+                (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'),
+                $orderId !== null && $orderId > 0 ? $orderId : null,
+                $status,
+                $message,
+                (string) ($_SERVER['REQUEST_URI'] ?? ''),
+                (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+                (string) ($_SERVER['HTTP_USER_AGENT'] ?? '')
+            );
+        } catch (Throwable $ignored) {
+        }
     }
 }

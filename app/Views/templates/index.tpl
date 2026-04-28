@@ -431,6 +431,70 @@
       {if $currentUser.role eq 'admin'}
         <div class="row">
           <div class="col-12">
+            <div class="card mb-4 border-warning">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                  <h3 class="card-title mb-0">Bledne wywolania Sellasist</h3>
+                  <div class="small text-secondary mt-1">
+                    Ostatnie nieudane wejscia na odejmowanie i dodawanie stanu. Ostatnie 24h:
+                    <strong>{$sellasistFailedRequestsSummary.total|default:0}</strong>
+                    {if $sellasistFailedRequestsSummary.latest_at|default:'' neq ''}
+                      , ostatnie: {$sellasistFailedRequestsSummary.latest_at|escape}
+                    {/if}
+                  </div>
+                </div>
+                <a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="btn btn-sm btn-outline-warning">Otworz Sellasist</a>
+              </div>
+              <div class="card-body p-0">
+                <div class="table-responsive">
+                  <table class="table table-sm table-striped table-hover table-bordered mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Kiedy</th>
+                        <th>Operacja</th>
+                        <th>Zamowienie</th>
+                        <th>Metoda</th>
+                        <th>Status</th>
+                        <th>Blad</th>
+                        <th>IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {if $sellasistFailedRequests}
+                        {foreach $sellasistFailedRequests as $failure}
+                          <tr>
+                            <td class="text-nowrap">{$failure.created_at|default:'-'|escape}</td>
+                            <td>
+                              <span class="badge text-bg-{if $failure.operation eq 'add_stock'}info{else}warning{/if}">
+                                {$failure.operation|escape}
+                              </span>
+                            </td>
+                            <td>
+                              {if $failure.order_id|default:0 > 0}
+                                <strong>#{$failure.order_id}</strong>
+                              {else}
+                                <span class="text-secondary">brak</span>
+                              {/if}
+                            </td>
+                            <td><code>{$failure.request_method|default:'-'|escape}</code></td>
+                            <td><span class="badge text-bg-danger">{$failure.response_status|default:'-'|escape}</span></td>
+                            <td class="small">{$failure.error_message|default:'-'|escape}</td>
+                            <td class="small text-nowrap">{$failure.remote_addr|default:'-'|escape}</td>
+                          </tr>
+                        {/foreach}
+                      {else}
+                        <tr>
+                          <td colspan="7" class="text-center py-3">Brak zapisanych blednych wywolan Sellasist.</td>
+                        </tr>
+                      {/if}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
             <div class="card mb-4">
               <div class="card-header d-flex justify-content-between align-items-center">
                 <h3 class="card-title mb-0">Ostatnio dodani uzytkownicy</h3>

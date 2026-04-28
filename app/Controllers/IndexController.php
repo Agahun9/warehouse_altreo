@@ -50,6 +50,11 @@ class IndexController extends Controller
             'y_axis_orders' => array(0, 1),
             'y_axis_value' => array(0.0, 1.0),
         );
+        $sellasistFailedRequests = array();
+        $sellasistFailedRequestsSummary = array(
+            'total' => 0,
+            'latest_at' => '',
+        );
 
         try {
             $products = new ProductRepository($this->db());
@@ -114,6 +119,8 @@ class IndexController extends Controller
             $sellasistTodayStats = $sellasistSync->todaySummary('subtract_stock');
             $sellasistDailySeries = $sellasistSync->dailySeries('subtract_stock', 7);
             $sellasistChart = $this->buildSellasistChart($sellasistDailySeries);
+            $sellasistFailedRequests = $sellasistSync->latestFailedRequests(15);
+            $sellasistFailedRequestsSummary = $sellasistSync->failedRequestsSummary(24);
         } catch (Throwable $exception) {
             $sellasistTodayStats = array(
                 'orders_count' => 0,
@@ -121,6 +128,11 @@ class IndexController extends Controller
                 'currency' => 'PLN',
             );
             $sellasistDailySeries = array();
+            $sellasistFailedRequests = array();
+            $sellasistFailedRequestsSummary = array(
+                'total' => 0,
+                'latest_at' => '',
+            );
         }
 
         $stats = array(
@@ -151,6 +163,8 @@ class IndexController extends Controller
             'sellasistTodayStats' => $sellasistTodayStats,
             'sellasistDailySeries' => $sellasistDailySeries,
             'sellasistChart' => $sellasistChart,
+            'sellasistFailedRequests' => $sellasistFailedRequests,
+            'sellasistFailedRequestsSummary' => $sellasistFailedRequestsSummary,
             'activities' => array(
                 'Sprawdz stany niskie i brakujace, aby unikac opoznien wysylek.',
                 'Monitoruj dzisiejsze odjecia Sellasist i kolejke Allegro.',
