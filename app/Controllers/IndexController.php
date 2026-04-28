@@ -18,6 +18,9 @@ class IndexController extends Controller
     public function index(): void
     {
         $currentUser = $this->requireAuth();
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
 
         $productCount = null;
         $lowStockCount = null;
@@ -138,6 +141,9 @@ class IndexController extends Controller
             'contentTitle' => 'Panel glowny',
             'pageDescription' => 'Szybki podglad najwazniejszych danych magazynu i kont uzytkownikow.',
             'breadcrumbCurrent' => 'Dashboard',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'stats' => $stats,
             'recentProductChanges' => $recentProductChanges,
             'recentUsers' => $recentUsers,

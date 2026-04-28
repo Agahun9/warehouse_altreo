@@ -39,6 +39,9 @@ class AdminController extends Controller
     public function users(): void
     {
         $currentUser = $this->requireRole('admin');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
         $users = $this->users->allUsers();
         $modules = $this->users->availableModules();
 
@@ -51,6 +54,9 @@ class AdminController extends Controller
             'contentTitle' => 'Uzytkownicy',
             'pageDescription' => 'Zarzadzaj kontami, rolami i modulami.',
             'breadcrumbCurrent' => 'Admin',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'users' => $users,
             'modules' => $modules,
             'currentAdminId' => (int) $currentUser['id'],
@@ -116,7 +122,10 @@ class AdminController extends Controller
 
     public function automation(): void
     {
-        $this->requireRole('admin');
+        $currentUser = $this->requireRole('admin');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
 
         $baseUrl = $this->absoluteBaseUrl();
         $accounts = $this->allegro->listAccounts();
@@ -136,6 +145,9 @@ class AdminController extends Controller
             'contentTitle' => 'Administracja',
             'pageDescription' => 'Gotowe linki do cronow Allegro oraz opcjonalny auto-worker uruchamiany z panelu.',
             'breadcrumbCurrent' => 'Administracja',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'automation' => $this->allegro->automationLinks($baseUrl),
             'queueStats' => $this->allegro->queueCounts(),
             'accounts' => $accounts,

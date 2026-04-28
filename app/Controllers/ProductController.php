@@ -82,7 +82,10 @@ class ProductController extends Controller
 
     public function index(): void
     {
-        $this->requireModule('products');
+        $currentUser = $this->requireModule('products');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
 
         $filters = array(
             'id' => trim((string) $this->input('filter_id', '')),
@@ -130,6 +133,9 @@ class ProductController extends Controller
             'contentTitle' => 'Lista produktow',
             'pageDescription' => 'Pelny listing produktow z mozliwoscia edycji i usuwania rekordow.',
             'breadcrumbCurrent' => 'Produkty',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'products' => $products,
             'totalProducts' => $totalProducts,
             'filters' => $filters,

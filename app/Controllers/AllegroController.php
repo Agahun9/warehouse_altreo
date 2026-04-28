@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Core\PerformanceLogger;
 use App\Models\ProductRepository;
 use App\Services\AllegroService;
 use App\Services\MailService;
@@ -26,12 +27,17 @@ class AllegroController extends Controller
 
     public function index(): void
     {
+        $requestStartedAt = PerformanceLogger::start();
         $currentUser = $this->requireModule('allegro');
         $flashSuccess = $this->getFlash('success');
         $flashError = $this->getFlash('error');
         $this->releaseSessionLock();
 
+        $accountsStartedAt = PerformanceLogger::start();
         $accounts = $this->allegro->listAccounts();
+        PerformanceLogger::logIfSlow('allegro.controller.index.listAccounts', $accountsStartedAt, array(
+            'accounts_count' => count($accounts),
+        ), 500.0);
         $filters = $this->offerFilters();
         $page = max(1, (int) $this->input('page', 1));
         $allowedPerPage = array(50, 100, 200, 5000, 10000);
@@ -42,12 +48,35 @@ class AllegroController extends Controller
         if ($sortDir !== 'asc' && $sortDir !== 'desc') {
             $sortDir = 'desc';
         }
+        $countStartedAt = PerformanceLogger::start();
         $total = $this->allegro->countOffers($filters);
+        PerformanceLogger::logIfSlow('allegro.controller.index.countOffers', $countStartedAt, array(
+            'total' => $total,
+            'filters' => $filters,
+        ));
+        $offersStartedAt = PerformanceLogger::start();
         $offers = $this->allegro->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
+        PerformanceLogger::logIfSlow('allegro.controller.index.offersPage', $offersStartedAt, array(
+            'page' => $page,
+            'per_page' => $perPage,
+            'sort_by' => $sortBy,
+            'sort_dir' => $sortDir,
+            'offers_count' => count($offers),
+            'filters' => $filters,
+        ));
         $totalPages = max(1, (int) ceil($total / max(1, $perPage)));
         if ($page > $totalPages) {
             $page = $totalPages;
+            $offersStartedAt = PerformanceLogger::start();
             $offers = $this->allegro->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
+            PerformanceLogger::logIfSlow('allegro.controller.index.offersPage.adjusted', $offersStartedAt, array(
+                'page' => $page,
+                'per_page' => $perPage,
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+                'offers_count' => count($offers),
+                'filters' => $filters,
+            ));
         }
         $pageWindow = $this->buildPageWindow($page, $totalPages);
         $sortableColumns = array(
@@ -117,6 +146,14 @@ class AllegroController extends Controller
             'defaultRedirectUri' => $triggerBaseUrl . '?controller=allegro&action=callback',
             'autoEndOffersUrl' => $autoEndOffersUrl,
         ));
+
+        PerformanceLogger::logIfSlow('allegro.controller.index.total', $requestStartedAt, array(
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'offers_count' => count($offers),
+            'filters' => $filters,
+        ), 1500.0);
     }
 
     public function saveaccount(): void
@@ -261,6 +298,7 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
+        $requestStartedAt = PerformanceLogger::start();
 
         try {
             $result = $this->allegro->maintenance(array(
@@ -274,6 +312,15 @@ class AllegroController extends Controller
                 'max_runtime' => (int) $this->input('max_runtime', 20),
                 'force_details' => $this->input('force_details', '0') === '1',
             ));
+
+            PerformanceLogger::logIfSlow('allegro.controller.maintenance', $requestStartedAt, array(
+                'account' => (string) $this->input('account', ''),
+                'queue_limit' => (int) $this->input('queue_limit', 100),
+                'sync' => $this->input('sync', '0') === '1' ? 1 : 0,
+                'queue_done' => (int) ($result['queue']['done'] ?? 0),
+                'queue_retry' => (int) ($result['queue']['retry'] ?? 0),
+                'queue_error' => (int) ($result['queue']['error'] ?? 0),
+            ), 1000.0);
 
             $mailRecipients = $this->maintenanceMailRecipients();
             if ($mailRecipients !== array() && $this->maintenanceMailOnSuccess()) {
@@ -300,6 +347,7 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
+        $requestStartedAt = PerformanceLogger::start();
 
         try {
             $mailRecipients = $this->previewAutoEndMailRecipients();
@@ -312,6 +360,13 @@ class AllegroController extends Controller
             if ($mailRecipients !== array() && (string) ($result['mode'] ?? '') === 'preview_only') {
                 $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
             }
+            PerformanceLogger::logIfSlow('allegro.controller.previewAutoEndOffers', $requestStartedAt, array(
+                'account' => (string) $this->input('account', ''),
+                'limit' => (int) $this->input('limit', 2000),
+                'scan_limit' => (int) $this->input('scan_limit', 10000),
+                'matched_offer_count' => (int) ($result['matched_offer_count'] ?? 0),
+                'end_offer_count' => (int) ($result['end_offer_count'] ?? 0),
+            ), 1000.0);
             $this->jsonResponse($result);
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
@@ -326,6 +381,7 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
+        $requestStartedAt = PerformanceLogger::start();
 
         try {
             $mailRecipients = $this->previewAutoEndMailRecipients();
@@ -337,6 +393,14 @@ class AllegroController extends Controller
             if ($mailRecipients !== array()) {
                 $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
             }
+            PerformanceLogger::logIfSlow('allegro.controller.autoEndOffers', $requestStartedAt, array(
+                'account' => (string) $this->input('account', ''),
+                'limit' => (int) $this->input('limit', 2000),
+                'scan_limit' => (int) $this->input('scan_limit', 10000),
+                'matched_offer_count' => (int) ($result['matched_offer_count'] ?? 0),
+                'end_offer_count' => (int) ($result['end_offer_count'] ?? 0),
+                'queued_now_count' => (int) ($result['queued_now_count'] ?? 0),
+            ), 1000.0);
             $this->jsonResponse($result);
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
@@ -430,12 +494,22 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
+        $requestStartedAt = PerformanceLogger::start();
 
         try {
             $result = $this->allegro->processQueue(array(
                 'account' => $this->input('account', ''),
                 'limit' => (int) $this->input('limit', 100),
             ));
+
+            PerformanceLogger::logIfSlow('allegro.controller.processQueue', $requestStartedAt, array(
+                'account' => (string) $this->input('account', ''),
+                'limit' => (int) $this->input('limit', 100),
+                'processed' => (int) ($result['processed'] ?? 0),
+                'done' => (int) ($result['done'] ?? 0),
+                'retry' => (int) ($result['retry'] ?? 0),
+                'error' => (int) ($result['error'] ?? 0),
+            ), 1000.0);
 
             if ($this->wantsJson()) {
                 $this->jsonResponse($result);

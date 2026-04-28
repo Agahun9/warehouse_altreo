@@ -20,7 +20,10 @@ class EmpikController extends Controller
 
     public function index(): void
     {
-        $this->requireModule('empik');
+        $currentUser = $this->requireModule('empik');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->releaseSessionLock();
 
         $filters = $this->offerFilters();
         $page = max(1, (int) $this->input('page', 1));
@@ -40,6 +43,9 @@ class EmpikController extends Controller
             'contentTitle' => 'Integracja Empik Marketplace',
             'pageDescription' => 'Mirakl Seller API: konfiguracja kont, synchronizacja ofert i wyszukiwanie kategorii Empik.',
             'breadcrumbCurrent' => 'Empik',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
             'accounts' => $this->empik->listAccounts(),
             'offers' => $offers,
             'filters' => $filters,

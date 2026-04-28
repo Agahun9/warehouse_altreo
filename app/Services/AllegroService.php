@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Config;
 use App\Core\Database;
+use App\Core\PerformanceLogger;
 use App\Models\AllegroStorageRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductRepository;
@@ -28,6 +29,7 @@ class AllegroService
 
     public function __construct()
     {
+        $startedAt = PerformanceLogger::start();
         $app = Config::get('app');
         $this->config = isset($app['allegro']) && is_array($app['allegro']) ? $app['allegro'] : array();
         $this->storage = new AllegroStorageRepository(Database::instance());
@@ -36,6 +38,7 @@ class AllegroService
         $customFields->ensureSchema();
         $this->maybeCleanupExpiredCache();
         $this->disableStoredWarehouseLinks();
+        PerformanceLogger::logIfSlow('allegro.service.construct', $startedAt, array(), 500.0);
     }
 
     public function listAccounts(): array
@@ -230,6 +233,7 @@ class AllegroService
 
     public function previewAutoEndOffers(array $options = array()): array
     {
+        $startedAt = PerformanceLogger::start();
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $offerIdentifier = trim((string) ($options['offer_id'] ?? ''));
         $accountId = null;
@@ -264,7 +268,14 @@ class AllegroService
 
         $limit = max(1, min(10000, (int) ($options['limit'] ?? 2000)));
         $scanLimit = max($limit, min(30000, (int) ($options['scan_limit'] ?? 10000)));
+        $storageStartedAt = PerformanceLogger::start();
         $preview = $this->storage->previewAutoEndOfferCandidates($accountId, $limit, $scanLimit);
+        PerformanceLogger::logIfSlow('allegro.service.previewAutoEndOffers.storage', $storageStartedAt, array(
+            'account_id' => $accountId,
+            'limit' => $limit,
+            'scan_limit' => $scanLimit,
+            'scanned_rows' => (int) ($preview['scanned_rows'] ?? 0),
+        ));
         $rows = isset($preview['items']) && is_array($preview['items']) ? $preview['items'] : array();
         $scannedRows = isset($preview['scanned_rows']) ? (int) $preview['scanned_rows'] : count($rows);
         $hasMoreCandidates = !empty($preview['has_more_candidates']);
@@ -276,7 +287,7 @@ class AllegroService
             return empty($row['can_end_offer']);
         }));
 
-        return array(
+        $result = array(
             'mode' => 'preview_only',
             'account' => $accountMeta,
             'limit' => $limit,
@@ -317,10 +328,22 @@ class AllegroService
                 );
             }, $rows)),
         );
+
+        PerformanceLogger::logIfSlow('allegro.service.previewAutoEndOffers.total', $startedAt, array(
+            'account' => $accountSelector,
+            'limit' => $limit,
+            'scan_limit' => $scanLimit,
+            'matched_offer_count' => count($rows),
+            'end_offer_count' => count($eligible),
+            'blocked_count' => count($blocked),
+        ));
+
+        return $result;
     }
 
     public function autoEndOffers(array $options = array()): array
     {
+        $startedAt = PerformanceLogger::start();
         $preview = $this->previewAutoEndOffers($options);
         if ((string) ($preview['mode'] ?? '') !== 'preview_only') {
             throw new RuntimeException('Tryb automatycznego konczenia obsluguje tylko liste ofert.');
@@ -396,7 +419,7 @@ class AllegroService
             $resultItems[] = $item;
         }
 
-        return array(
+        $result = array(
             'mode' => 'auto_end_offers',
             'account' => $preview['account'] ?? null,
             'limit' => $preview['limit'] ?? null,
@@ -418,6 +441,15 @@ class AllegroService
             ),
             'items' => $resultItems,
         );
+
+        PerformanceLogger::logIfSlow('allegro.service.autoEndOffers.total', $startedAt, array(
+            'account' => (string) ($options['account'] ?? ''),
+            'eligible_to_end' => count($eligibleItems),
+            'queued_now' => $queued,
+            'already_queued' => count($alreadyQueued),
+        ));
+
+        return $result;
     }
 
     public function triggerUrl(array $account, string $baseUrl): string
@@ -480,17 +512,36 @@ class AllegroService
 
     public function maintenance(array $options = array()): array
     {
+        $startedAt = PerformanceLogger::start();
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $queueLimit = max(1, min(1000, (int) ($options['queue_limit'] ?? 100)));
 
+        $refreshStartedAt = PerformanceLogger::start();
+        $refreshedTokens = $accountSelector !== ''
+            ? array($this->refreshAccountToken($accountSelector))
+            : $this->refreshAllTokens(true);
+        PerformanceLogger::logIfSlow('allegro.service.maintenance.refreshTokens', $refreshStartedAt, array(
+            'account' => $accountSelector,
+            'refreshed_count' => count($refreshedTokens),
+        ), 500.0);
+
+        $queueStartedAt = PerformanceLogger::start();
+        $queueResult = $this->processQueue(array(
+            'limit' => $queueLimit,
+            'account' => $accountSelector !== '' ? $accountSelector : null,
+        ));
+        PerformanceLogger::logIfSlow('allegro.service.maintenance.processQueue', $queueStartedAt, array(
+            'account' => $accountSelector,
+            'queue_limit' => $queueLimit,
+            'processed' => (int) ($queueResult['processed'] ?? 0),
+            'done' => (int) ($queueResult['done'] ?? 0),
+            'retry' => (int) ($queueResult['retry'] ?? 0),
+            'error' => (int) ($queueResult['error'] ?? 0),
+        ), 500.0);
+
         $result = array(
-            'refreshed_tokens' => $accountSelector !== ''
-                ? array($this->refreshAccountToken($accountSelector))
-                : $this->refreshAllTokens(true),
-            'queue' => $this->processQueue(array(
-                'limit' => $queueLimit,
-                'account' => $accountSelector !== '' ? $accountSelector : null,
-            )),
+            'refreshed_tokens' => $refreshedTokens,
+            'queue' => $queueResult,
         );
 
         if (!empty($options['sync'])) {
@@ -502,7 +553,14 @@ class AllegroService
             );
 
             if ($accountSelector !== '') {
+                $syncStartedAt = PerformanceLogger::start();
                 $result['sync'] = $this->syncAccount($accountSelector, $syncOptions);
+                PerformanceLogger::logIfSlow('allegro.service.maintenance.syncSingle', $syncStartedAt, array(
+                    'account' => $accountSelector,
+                    'offers_processed' => (int) ($result['sync']['offers_processed'] ?? 0),
+                    'details_refreshed' => (int) ($result['sync']['details_refreshed'] ?? 0),
+                    'events_processed' => (int) ($result['sync']['events_processed'] ?? 0),
+                ));
             } else {
                 $result['sync'] = array();
                 foreach ($this->listAccounts() as $account) {
@@ -511,10 +569,14 @@ class AllegroService
                     }
 
                     try {
+                        $syncStartedAt = PerformanceLogger::start();
                         $result['sync'][] = array(
                             'account' => (string) $account['name'],
                             'result' => $this->syncAccount((string) $account['slug'], $syncOptions),
                         );
+                        PerformanceLogger::logIfSlow('allegro.service.maintenance.syncBatchItem', $syncStartedAt, array(
+                            'account' => (string) $account['slug'],
+                        ));
                     } catch (RuntimeException $exception) {
                         $result['sync'][] = array(
                             'account' => (string) $account['name'],
@@ -526,12 +588,24 @@ class AllegroService
         }
 
         if (!empty($options['compact_offers'])) {
+            $compactStartedAt = PerformanceLogger::start();
             $result['offer_compaction'] = $this->compactStoredOffers(array(
                 'account' => $accountSelector !== '' ? $accountSelector : null,
                 'limit' => (int) ($options['compact_limit'] ?? 500),
             ));
+            PerformanceLogger::logIfSlow('allegro.service.maintenance.compactOffers', $compactStartedAt, array(
+                'account' => $accountSelector,
+                'processed' => (int) ($result['offer_compaction']['processed'] ?? 0),
+                'updated' => (int) ($result['offer_compaction']['updated'] ?? 0),
+            ), 500.0);
         }
 
+        PerformanceLogger::logIfSlow('allegro.service.maintenance.total', $startedAt, array(
+            'account' => $accountSelector,
+            'queue_limit' => $queueLimit,
+            'sync_enabled' => !empty($options['sync']) ? 1 : 0,
+            'compact_offers' => !empty($options['compact_offers']) ? 1 : 0,
+        ));
         return $result;
     }
 
@@ -708,6 +782,7 @@ class AllegroService
 
     public function processQueue(array $options = array()): array
     {
+        $startedAt = PerformanceLogger::start();
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $accountId = null;
         if ($accountSelector !== '') {
@@ -759,6 +834,14 @@ class AllegroService
         }
 
         $summary['counts'] = $this->storage->queueCounts();
+        PerformanceLogger::logIfSlow('allegro.service.processQueue.total', $startedAt, array(
+            'account' => $accountSelector,
+            'limit' => $limit,
+            'processed' => $summary['processed'],
+            'done' => $summary['done'],
+            'retry' => $summary['retry'],
+            'error' => $summary['error'],
+        ), 500.0);
         return $summary;
     }
 
@@ -2559,18 +2642,23 @@ class AllegroService
 
     private function disableStoredWarehouseLinks(): void
     {
+        $startedAt = PerformanceLogger::start();
         $cacheKey = 'allegro:warehouse-links-disabled:v1';
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached) && !empty($cached['done'])) {
             return;
         }
 
-        $this->storage->clearStoredOfferLinks();
+        $cleared = $this->storage->clearStoredOfferLinks();
         $this->storage->putCache($cacheKey, array('done' => 1), 31536000);
+        PerformanceLogger::log('allegro.service.disableStoredWarehouseLinks', (microtime(true) - $startedAt) * 1000, array(
+            'cleared_rows' => $cleared,
+        ), 'WARNING');
     }
 
     private function maybeCleanupExpiredCache(): void
     {
+        $startedAt = PerformanceLogger::start();
         $cacheKey = 'allegro:cache-cleanup-throttle:v1';
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached) && !empty($cached['done'])) {
@@ -2579,6 +2667,7 @@ class AllegroService
 
         $this->storage->cleanupExpiredCache();
         $this->storage->putCache($cacheKey, array('done' => 1), self::CACHE_CLEANUP_THROTTLE_SECONDS);
+        PerformanceLogger::logIfSlow('allegro.service.cleanupExpiredCache', $startedAt, array(), 250.0);
     }
 
     private function patchImagesFromOffer(array $offer): array

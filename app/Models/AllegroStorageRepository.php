@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Core\Config;
 use App\Core\Database;
+use App\Core\PerformanceLogger;
 
 class AllegroStorageRepository
 {
@@ -439,6 +440,7 @@ class AllegroStorageRepository
 
     public function listOffers(array $filters, int $page, int $perPage, string $sortBy, string $sortDir): array
     {
+        $startedAt = PerformanceLogger::start();
         $offset = max(0, ($page - 1) * $perPage);
         $effectiveWarehouseQuantityFilter = $this->effectiveWarehouseQuantityFilter($filters);
         if (!empty($effectiveWarehouseQuantityFilter['active'])) {
@@ -452,7 +454,16 @@ class AllegroStorageRepository
                 return array();
             }
 
-            return $this->loadOfferRowsByIds($offerIds, trim((string) ($filters['duplicates'] ?? '')) === '1', $filters);
+            $rows = $this->loadOfferRowsByIds($offerIds, trim((string) ($filters['duplicates'] ?? '')) === '1', $filters);
+            PerformanceLogger::logIfSlow('allegro.storage.listOffers.effectiveWarehouseQuantity', $startedAt, array(
+                'page' => $page,
+                'per_page' => $perPage,
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+                'filters' => $filters,
+                'rows_count' => count($rows),
+            ));
+            return $rows;
         }
 
         $params = array();
@@ -485,14 +496,31 @@ class AllegroStorageRepository
             return (int) ($row['id'] ?? 0);
         }, $idRows);
 
-        return $this->loadOfferRowsByIds($offerIds, $includeDuplicateMeta, $filters);
+        $rows = $this->loadOfferRowsByIds($offerIds, $includeDuplicateMeta, $filters);
+        PerformanceLogger::logIfSlow('allegro.storage.listOffers', $startedAt, array(
+            'page' => $page,
+            'per_page' => $perPage,
+            'sort_by' => $sortBy,
+            'sort_dir' => $sortDir,
+            'needs_warehouse' => $analysis['needs_warehouse'] ? 1 : 0,
+            'needs_shared_stock' => $analysis['needs_shared_stock'] ? 1 : 0,
+            'filters' => $filters,
+            'rows_count' => count($rows),
+        ));
+        return $rows;
     }
 
     public function countOffers(array $filters): int
     {
+        $startedAt = PerformanceLogger::start();
         $effectiveWarehouseQuantityFilter = $this->effectiveWarehouseQuantityFilter($filters);
         if (!empty($effectiveWarehouseQuantityFilter['active'])) {
-            return count($this->matchingOfferIdsForEffectiveWarehouseQuantityFilter($filters));
+            $total = count($this->matchingOfferIdsForEffectiveWarehouseQuantityFilter($filters));
+            PerformanceLogger::logIfSlow('allegro.storage.countOffers.effectiveWarehouseQuantity', $startedAt, array(
+                'filters' => $filters,
+                'total' => $total,
+            ));
+            return $total;
         }
 
         $cacheKey = $this->offerCountCacheKey($filters);
@@ -517,6 +545,12 @@ class AllegroStorageRepository
 
         $total = (int) $this->database->fetchColumn($sql . $whereSql, $params);
         $this->putCache($cacheKey, array('total' => $total), self::OFFER_COUNT_CACHE_TTL);
+        PerformanceLogger::logIfSlow('allegro.storage.countOffers', $startedAt, array(
+            'needs_warehouse' => $analysis['needs_warehouse'] ? 1 : 0,
+            'needs_shared_stock' => $analysis['needs_shared_stock'] ? 1 : 0,
+            'filters' => $filters,
+            'total' => $total,
+        ));
 
         return $total;
     }
@@ -1048,6 +1082,7 @@ class AllegroStorageRepository
 
     public function previewAutoEndOfferCandidates(?int $accountId = null, int $limit = 1000, int $scanLimit = 3000): array
     {
+        $startedAt = PerformanceLogger::start();
         $limit = max(1, min(5000, $limit));
         $scanLimit = max($limit, min(20000, $scanLimit));
 
@@ -1153,12 +1188,23 @@ class AllegroStorageRepository
             $offerRows[$index]['duplicate_block'] = $blockedMap[$offerRowId] ?? null;
         }
 
-        return array(
+        $result = array(
             'items' => array_slice($offerRows, 0, $limit),
             'scanned_rows' => count($productRows),
             'has_more_candidates' => count($productRows) >= $scanLimit || count($offerRows) >= $limit,
             'scan_limit_reached' => count($productRows) >= $scanLimit,
         );
+
+        PerformanceLogger::logIfSlow('allegro.storage.previewAutoEndOfferCandidates', $startedAt, array(
+            'account_id' => $accountId,
+            'limit' => $limit,
+            'scan_limit' => $scanLimit,
+            'product_rows' => count($productRows),
+            'eligible_products' => count($eligibleProducts),
+            'offer_rows' => count($offerRows),
+        ));
+
+        return $result;
     }
 
     private function previewAutoEndCandidateProducts(int $scanLimit): array
