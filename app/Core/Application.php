@@ -13,6 +13,7 @@ use App\Controllers\EmpikController;
 use App\Controllers\IndexController;
 use App\Controllers\ProductController;
 use App\Controllers\SellasistController;
+use App\Controllers\TaskboardController;
 
 class Application
 {
@@ -53,6 +54,9 @@ class Application
                 break;
             case 'sellasist':
                 $controller = new SellasistController();
+                break;
+            case 'taskboard':
+                $controller = new TaskboardController();
                 break;
             default:
                 http_response_code(404);

@@ -362,6 +362,9 @@
               {if $currentUser.role eq 'admin' or $currentUser.module_permissions.categories|default:'' eq 'edit'}
                 <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-outline-dark">Dodaj kategorie</a>
               {/if}
+              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.taskboard|default:'' neq ''}
+                <a href="{$baseUrl}?controller=taskboard&action=index" class="btn btn-outline-primary">Otworz taskboard</a>
+              {/if}
               {if $currentUser.role eq 'admin'}
                 <a href="{$baseUrl}?controller=admin&action=users" class="btn btn-outline-secondary">Zarzadzaj uzytkownikami</a>
               {/if}

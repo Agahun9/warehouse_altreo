@@ -345,6 +345,9 @@
             {if $currentUser.role eq 'admin' or in_array('csvtemplates', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link">Szablony CSV</a></li>
             {/if}
+            {if $currentUser.role eq 'admin' or in_array('taskboard', $currentUser.modules)}
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=taskboard&action=index" class="nav-link">Taskboard</a></li>
+            {/if}
             {if $currentUser.role eq 'admin'}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=users" class="nav-link">Admin</a></li>
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=automation" class="nav-link">Administracja</a></li>
@@ -460,6 +463,14 @@
                   <a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link{if $currentController eq 'csvtemplates'} active{/if}">
                     <i class="nav-icon bi bi-file-earmark-spreadsheet"></i>
                     <p>Szablony CSV</p>
+                  </a>
+                </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('taskboard', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=taskboard&action=index" class="nav-link{if $currentController eq 'taskboard'} active{/if}">
+                    <i class="nav-icon bi bi-kanban"></i>
+                    <p>Taskboard</p>
                   </a>
                 </li>
               {/if}
