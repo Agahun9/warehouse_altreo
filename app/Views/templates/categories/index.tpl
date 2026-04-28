@@ -24,6 +24,7 @@
       {if $flashError}
         <div class="alert alert-danger">{$flashError|escape}</div>
       {/if}
+      {assign var=canWriteCategories value=$currentUser.role eq 'admin' or $currentUser.module_permissions.categories|default:'' eq 'edit'}
 
       <div class="card mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -31,7 +32,11 @@
             <h3 class="card-title mb-1">Wszystkie kategorie</h3>
             <div class="text-secondary small">Kategorie sa wykorzystywane przy tworzeniu i edycji produktow.</div>
           </div>
-          <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-success">Dodaj kategorie</a>
+          {if $canWriteCategories}
+            <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-success">Dodaj kategorie</a>
+          {else}
+            <span class="badge text-bg-warning">Tryb odczytu</span>
+          {/if}
         </div>
       </div>
 
@@ -71,14 +76,18 @@
                       <td>{$category.created_at|default:'-'}</td>
                       <td>{$category.updated_at|default:'-'}</td>
                       <td class="text-end">
-                        <a href="{$baseUrl}?controller=categories&action=edit&id={$category.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
-                        {if $category.products_count|default:0 > 0}
-                          <button type="button" class="btn btn-sm btn-outline-danger" disabled>Usun</button>
+                        {if $canWriteCategories}
+                          <a href="{$baseUrl}?controller=categories&action=edit&id={$category.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
+                          {if $category.products_count|default:0 > 0}
+                            <button type="button" class="btn btn-sm btn-outline-danger" disabled>Usun</button>
+                          {else}
+                            <form method="post" action="{$baseUrl}?controller=categories&action=delete" class="d-inline">
+                              <input type="hidden" name="id" value="{$category.id}">
+                              <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Usunac te kategorie?');">Usun</button>
+                            </form>
+                          {/if}
                         {else}
-                          <form method="post" action="{$baseUrl}?controller=categories&action=delete" class="d-inline">
-                            <input type="hidden" name="id" value="{$category.id}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Usunac te kategorie?');">Usun</button>
-                          </form>
+                          <span class="badge text-bg-light border">Odczyt</span>
                         {/if}
                       </td>
                     </tr>

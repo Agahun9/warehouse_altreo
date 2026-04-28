@@ -32,7 +32,7 @@ class CategoryController extends Controller
 
     public function index(): void
     {
-        $this->requireRole('admin');
+        $this->requireModule('categories');
         $categories = $this->categories->all();
         foreach ($categories as $index => $category) {
             $categories[$index]['products_count'] = $this->categories->productsCount((int) $category['id']);
@@ -49,7 +49,7 @@ class CategoryController extends Controller
 
     public function create(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('categories');
         $this->renderForm('Dodaj kategorie', 'Nowa kategoria', array(
             'name' => '',
             'sku_prefix' => '',
@@ -62,8 +62,7 @@ class CategoryController extends Controller
 
     public function store(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('categories');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=categories&action=index');
         }
@@ -114,7 +113,7 @@ class CategoryController extends Controller
 
     public function edit(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('categories');
         $id = (int) $this->input('id', 0);
         $category = $this->categories->findById($id);
 
@@ -128,8 +127,7 @@ class CategoryController extends Controller
 
     public function update(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('categories');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=categories&action=index');
         }
@@ -188,8 +186,7 @@ class CategoryController extends Controller
 
     public function setallegro(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('categories');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=categories&action=index');
         }
@@ -220,8 +217,7 @@ class CategoryController extends Controller
 
     public function setempik(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('categories');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=categories&action=index');
         }
@@ -264,8 +260,7 @@ class CategoryController extends Controller
 
     public function delete(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('categories');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=categories&action=index');
         }

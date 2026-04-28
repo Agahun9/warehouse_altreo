@@ -77,6 +77,7 @@
 
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+      {assign var=canWriteCsvTemplates value=$currentUser.role eq 'admin' or $currentUser.module_permissions.csvtemplates|default:'' eq 'edit'}
 
       <div class="card mb-4">
         <div class="card-body csv-title-generator-hero">
@@ -86,7 +87,9 @@
           </div>
           <div class="csv-title-generator-actions">
             <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Szablony CSV</a>
-            <a href="{$baseUrl}?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
+            {if $canWriteCsvTemplates}
+              <a href="{$baseUrl}?controller=csvtemplates&action=createtitle" class="btn btn-primary">Dodaj szablon tytulu</a>
+            {/if}
           </div>
         </div>
       </div>
@@ -129,11 +132,15 @@
                       <td>{$titleTemplate.created_at|default:'-'|escape}</td>
                       <td>{$titleTemplate.updated_at|default:'-'|escape}</td>
                       <td class="text-end">
-                        <a href="{$baseUrl}?controller=csvtemplates&action=edittitle&id={$titleTemplate.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
-                        <form method="post" action="{$baseUrl}?controller=csvtemplates&action=deletetitle" class="d-inline" onsubmit="return confirm('Usunac szablon tytulu {$titleTemplate.name|escape:'javascript'}?');">
-                          <input type="hidden" name="id" value="{$titleTemplate.id}">
-                          <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
-                        </form>
+                        {if $canWriteCsvTemplates}
+                          <a href="{$baseUrl}?controller=csvtemplates&action=edittitle&id={$titleTemplate.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
+                          <form method="post" action="{$baseUrl}?controller=csvtemplates&action=deletetitle" class="d-inline" onsubmit="return confirm('Usunac szablon tytulu {$titleTemplate.name|escape:'javascript'}?');">
+                            <input type="hidden" name="id" value="{$titleTemplate.id}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+                          </form>
+                        {else}
+                          <span class="badge text-bg-light border">Odczyt</span>
+                        {/if}
                       </td>
                     </tr>
                   {/foreach}

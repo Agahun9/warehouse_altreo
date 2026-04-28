@@ -9,6 +9,10 @@ use App\Core\Database;
 
 class UserRepository
 {
+    private const MODULE_ACCESS_NONE = 'none';
+    private const MODULE_ACCESS_READ = 'read';
+    private const MODULE_ACCESS_EDIT = 'edit';
+
     /** @var bool */
     private static $schemaEnsured = false;
 
@@ -97,26 +101,20 @@ class UserRepository
             . "id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
             . "user_id INT UNSIGNED NOT NULL,\n"
             . "module_code VARCHAR(50) NOT NULL,\n"
+            . "access_level VARCHAR(20) NOT NULL DEFAULT 'edit',\n"
             . "PRIMARY KEY (id),\n"
             . "UNIQUE KEY ux_user_modules_pair (user_id, module_code),\n"
             . "KEY idx_user_modules_module (module_code)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
-        $appConfig = Config::get('app');
-        $modules = isset($appConfig['modules']) && is_array($appConfig['modules']) ? $appConfig['modules'] : array();
-        foreach ($modules as $module) {
-            $code = strtolower((string) $module);
-            $exists = $this->database->fetchColumn('SELECT COUNT(*) FROM modules WHERE code = :code', array('code' => $code));
-            if ((int) $exists === 0) {
-                $this->database->insert('modules', array('code' => $code, 'name' => (string) $module));
-            }
-        }
-
         $this->ensureUserColumn('first_name', "ALTER TABLE users ADD COLUMN first_name VARCHAR(120) DEFAULT NULL AFTER email");
         $this->ensureUserColumn('last_name', "ALTER TABLE users ADD COLUMN last_name VARCHAR(120) DEFAULT NULL AFTER first_name");
         $this->ensureUserColumn('permission_level', "ALTER TABLE users ADD COLUMN permission_level VARCHAR(20) NOT NULL DEFAULT 'edit' AFTER role");
         $this->ensureUserColumn('loader_enabled', "ALTER TABLE users ADD COLUMN loader_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER permission_level");
+        $this->ensureUserModulesColumn('access_level', "ALTER TABLE user_modules ADD COLUMN access_level VARCHAR(20) DEFAULT NULL AFTER module_code");
+        $this->syncAvailableModules();
+        $this->backfillLegacyModuleAccessLevels();
         self::$schemaEnsured = true;
     }
 
@@ -212,25 +210,67 @@ class UserRepository
 
     public function modulesForUser($userId): array
     {
-        $rows = $this->database->fetchAll('SELECT module_code FROM user_modules WHERE user_id = :user_id ORDER BY module_code', array('user_id' => $userId));
-        return array_column($rows, 'module_code');
+        return array_keys($this->modulePermissionsForUser($userId));
+    }
+
+    public function modulePermissionsForUser($userId): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT module_code, access_level FROM user_modules WHERE user_id = :user_id ORDER BY module_code',
+            array('user_id' => $userId)
+        );
+
+        $permissions = array();
+        foreach ($rows as $row) {
+            $moduleCode = strtolower(trim((string) ($row['module_code'] ?? '')));
+            $accessLevel = $this->normalizeModuleAccessLevel($row['access_level'] ?? self::MODULE_ACCESS_NONE);
+            if ($moduleCode === '' || $accessLevel === self::MODULE_ACCESS_NONE) {
+                continue;
+            }
+
+            $permissions[$moduleCode] = $accessLevel;
+        }
+
+        return $permissions;
     }
 
     public function replaceModules($userId, array $modules): void
     {
+        $permissions = array();
+        foreach ($modules as $moduleCode) {
+            $normalizedCode = strtolower(trim((string) $moduleCode));
+            if ($normalizedCode === '') {
+                continue;
+            }
+
+            $permissions[$normalizedCode] = self::MODULE_ACCESS_EDIT;
+        }
+
+        $this->replaceModulePermissions($userId, $permissions);
+    }
+
+    public function replaceModulePermissions($userId, array $permissions): void
+    {
         $this->database->delete('user_modules', 'user_id = :user_id', array('user_id' => $userId));
 
-        foreach ($modules as $moduleCode) {
+        foreach ($permissions as $moduleCode => $accessLevel) {
+            $normalizedCode = strtolower(trim((string) $moduleCode));
+            $normalizedAccessLevel = $this->normalizeModuleAccessLevel($accessLevel);
+            if ($normalizedCode === '' || $normalizedAccessLevel === self::MODULE_ACCESS_NONE) {
+                continue;
+            }
+
             $this->database->insert('user_modules', array(
                 'user_id' => $userId,
-                'module_code' => strtolower((string) $moduleCode),
+                'module_code' => $normalizedCode,
+                'access_level' => $normalizedAccessLevel,
             ));
         }
     }
 
     public function availableModules(): array
     {
-        return $this->database->fetchAll('SELECT * FROM modules ORDER BY name ASC');
+        return $this->configuredModules();
     }
 
     public function deleteUserById(int $id): int
@@ -260,6 +300,104 @@ class UserRepository
         if ($exists <= 0) {
             $this->database->query($ddl);
         }
+    }
+
+    private function ensureUserModulesColumn(string $columnName, string $ddl): void
+    {
+        $exists = (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS'
+            . ' WHERE TABLE_SCHEMA = DATABASE()'
+            . ' AND TABLE_NAME = :table_name'
+            . ' AND COLUMN_NAME = :column_name',
+            array(
+                'table_name' => 'user_modules',
+                'column_name' => $columnName,
+            )
+        );
+
+        if ($exists <= 0) {
+            $this->database->query($ddl);
+        }
+    }
+
+    private function syncAvailableModules(): void
+    {
+        foreach ($this->configuredModules() as $module) {
+            $code = (string) ($module['code'] ?? '');
+            $name = (string) ($module['name'] ?? $code);
+            if ($code === '' || $name === '') {
+                continue;
+            }
+
+            $existing = $this->database->fetch('SELECT id, name FROM modules WHERE code = :code LIMIT 1', array('code' => $code));
+            if ($existing) {
+                if ((string) ($existing['name'] ?? '') !== $name) {
+                    $this->database->update('modules', array('name' => $name), 'id = :id', array('id' => (int) $existing['id']));
+                }
+                continue;
+            }
+
+            $this->database->insert('modules', array(
+                'code' => $code,
+                'name' => $name,
+            ));
+        }
+    }
+
+    private function backfillLegacyModuleAccessLevels(): void
+    {
+        $this->database->query(
+            'UPDATE user_modules user_modules'
+            . ' INNER JOIN users users ON users.id = user_modules.user_id'
+            . ' SET user_modules.access_level = CASE'
+            . '   WHEN LOWER(TRIM(COALESCE(users.permission_level, "edit"))) = "read" THEN "read"'
+            . '   ELSE "edit"'
+            . ' END'
+            . ' WHERE user_modules.access_level IS NULL OR TRIM(user_modules.access_level) = ""'
+        );
+    }
+
+    private function configuredModules(): array
+    {
+        $appConfig = Config::get('app');
+        $modules = isset($appConfig['modules']) && is_array($appConfig['modules']) ? $appConfig['modules'] : array();
+        $normalized = array();
+
+        foreach ($modules as $module) {
+            if (is_array($module)) {
+                $code = strtolower(trim((string) ($module['code'] ?? '')));
+                $name = trim((string) ($module['name'] ?? $code));
+            } else {
+                $raw = trim((string) $module);
+                $code = strtolower($raw);
+                $name = $raw;
+            }
+
+            if ($code === '' || $name === '') {
+                continue;
+            }
+
+            $normalized[$code] = array(
+                'code' => $code,
+                'name' => $name,
+            );
+        }
+
+        return array_values($normalized);
+    }
+
+    private function normalizeModuleAccessLevel($accessLevel): string
+    {
+        $normalized = strtolower(trim((string) $accessLevel));
+        if ($normalized === self::MODULE_ACCESS_READ) {
+            return self::MODULE_ACCESS_READ;
+        }
+
+        if ($normalized === self::MODULE_ACCESS_EDIT) {
+            return self::MODULE_ACCESS_EDIT;
+        }
+
+        return self::MODULE_ACCESS_NONE;
     }
 }
 

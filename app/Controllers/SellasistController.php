@@ -144,14 +144,10 @@ class SellasistController extends Controller
     private function hasSellasistStockAccess(): bool
     {
         $user = $this->currentUser();
-        if (is_array($user)) {
-            $modules = isset($user['modules']) && is_array($user['modules']) ? $user['modules'] : array();
-            $permissionLevel = strtolower(trim((string) ($user['permission_level'] ?? 'edit')));
-            if ($permissionLevel !== 'read' && ((string) ($user['role'] ?? '') === 'admin' || in_array('sellasist', $modules, true))) {
-                return true;
-            }
+        if (!is_array($user)) {
+            return false;
         }
 
-        return true;
+        return $this->moduleAccessLevel($user, 'sellasist') === 'edit';
     }
 }

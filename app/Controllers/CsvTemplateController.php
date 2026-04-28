@@ -99,7 +99,7 @@ class CsvTemplateController extends Controller
 
     public function index(): void
     {
-        $this->requireRole('admin');
+        $this->requireModule('csvtemplates');
 
         $this->render('csv_templates/index', array(
             'pageTitle' => 'Szablony CSV',
@@ -113,7 +113,7 @@ class CsvTemplateController extends Controller
 
     public function importproducts(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         $this->renderImportPage(array(
             'flashError' => $this->getFlash('error'),
@@ -123,7 +123,7 @@ class CsvTemplateController extends Controller
 
     public function previewimport(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=importproducts');
@@ -158,7 +158,7 @@ class CsvTemplateController extends Controller
 
     public function remapimport(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=importproducts');
@@ -207,8 +207,7 @@ class CsvTemplateController extends Controller
 
     public function runimport(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=importproducts');
@@ -273,7 +272,7 @@ class CsvTemplateController extends Controller
 
     public function create(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         $presetKey = trim((string) $this->input('preset', ''));
         $template = $this->defaultTemplateFormData();
@@ -302,7 +301,7 @@ class CsvTemplateController extends Controller
 
     public function titlegenerator(): void
     {
-        $this->requireRole('admin');
+        $this->requireModule('csvtemplates');
 
         $this->render('csv_templates/title_generator', array(
             'pageTitle' => 'Generator tytulow CSV',
@@ -316,7 +315,7 @@ class CsvTemplateController extends Controller
 
     public function createtitle(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         $this->render('csv_templates/title_form', array(
             'pageTitle' => 'Nowy szablon tytulu',
@@ -331,8 +330,7 @@ class CsvTemplateController extends Controller
 
     public function storetitle(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=titlegenerator');
@@ -354,7 +352,7 @@ class CsvTemplateController extends Controller
 
     public function edittitle(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         $id = (int) $this->input('id', 0);
         $titleTemplate = $this->titleTemplates->findById($id);
@@ -377,8 +375,7 @@ class CsvTemplateController extends Controller
 
     public function updatetitle(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=titlegenerator');
@@ -407,8 +404,7 @@ class CsvTemplateController extends Controller
 
     public function deletetitle(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=titlegenerator');
@@ -431,8 +427,7 @@ class CsvTemplateController extends Controller
 
     public function store(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=index');
@@ -456,7 +451,7 @@ class CsvTemplateController extends Controller
 
     public function edit(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         $id = (int) $this->input('id', 0);
         $template = $this->templates->findFullById($id);
@@ -485,8 +480,7 @@ class CsvTemplateController extends Controller
 
     public function update(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=index');
@@ -518,8 +512,7 @@ class CsvTemplateController extends Controller
 
     public function delete(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=index');
@@ -542,8 +535,7 @@ class CsvTemplateController extends Controller
 
     public function duplicate(): void
     {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=index');
@@ -566,7 +558,7 @@ class CsvTemplateController extends Controller
 
     public function preview(): void
     {
-        $this->requireRole('admin');
+        $this->requireModuleWrite('csvtemplates');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=csvtemplates&action=index');

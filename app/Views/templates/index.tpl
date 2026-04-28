@@ -356,9 +356,13 @@
           <div class="card mb-4">
             <div class="card-header"><h3 class="card-title mb-0">Szybkie akcje</h3></div>
             <div class="card-body d-grid gap-2">
-              <a href="{$baseUrl}?controller=products&action=create" class="btn btn-primary">Dodaj produkt</a>
-              {if $currentUser.role eq 'admin'}
+              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.products|default:'' eq 'edit'}
+                <a href="{$baseUrl}?controller=products&action=create" class="btn btn-primary">Dodaj produkt</a>
+              {/if}
+              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.categories|default:'' eq 'edit'}
                 <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-outline-dark">Dodaj kategorie</a>
+              {/if}
+              {if $currentUser.role eq 'admin'}
                 <a href="{$baseUrl}?controller=admin&action=users" class="btn btn-outline-secondary">Zarzadzaj uzytkownikami</a>
               {/if}
             </div>

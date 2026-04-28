@@ -87,30 +87,29 @@
 
         .users-admin-modules {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 0.75rem;
         }
 
         .users-admin-module {
           display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          min-height: 4rem;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0.7rem;
+          min-height: 5.5rem;
           padding: 0.95rem 1rem;
           border: 1px solid rgba(15, 23, 42, 0.08);
           border-radius: 1rem;
           background: linear-gradient(180deg, #fff, #f8fafc);
         }
 
-        .users-admin-module input {
-          width: 1.1rem;
-          height: 1.1rem;
-          flex: 0 0 auto;
-        }
-
         .users-admin-module span {
           font-weight: 600;
           line-height: 1.2;
+        }
+
+        .users-admin-module select {
+          min-height: 2.5rem;
         }
 
         .users-admin-meta {
@@ -167,7 +166,7 @@
         <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
           <div>
             <h3 class="users-admin-summary-title">Lista kont</h3>
-            <p class="users-admin-summary-text">Edytujesz dane osobowe, role, status konta, dostep do modulow oraz tryb odczyt lub edycja.</p>
+            <p class="users-admin-summary-text">Dla kazdego modulu ustawiasz osobno brak dostepu, sam odczyt albo pelna edycje. To pozwala np. dac edycje Szablonow CSV bez prawa ruszania listy produktow.</p>
           </div>
           <div class="users-admin-summary-actions">
             <a href="{$baseUrl}?controller=admin&action=automation" class="btn btn-light btn-sm">Administracja</a>
@@ -264,13 +263,17 @@
                   </div>
 
                   <div class="mb-3">
-                    <label class="form-label fs-5 fw-semibold mb-3">Dostep do modulow</label>
+                    <label class="form-label fs-5 fw-semibold mb-3">Uprawnienia modulow</label>
                     <div class="users-admin-modules">
                       {foreach $modules as $module}
-                        <label class="users-admin-module" for="mod_{$user.id}_{$module.code|escape}">
-                          <input class="form-check-input mt-0" type="checkbox" name="modules[]" value="{$module.code|escape}" id="mod_{$user.id}_{$module.code|escape}"{if in_array($module.code, $user.modules)} checked{/if}>
+                        <div class="users-admin-module">
                           <span>{$module.name|escape}</span>
-                        </label>
+                          <select class="form-select" name="module_permissions[{$module.code|escape}]">
+                            <option value="none"{if $user.module_permissions[$module.code]|default:'none' eq 'none'} selected{/if}>brak dostepu</option>
+                            <option value="read"{if $user.module_permissions[$module.code]|default:'' eq 'read'} selected{/if}>tylko odczyt</option>
+                            <option value="edit"{if $user.module_permissions[$module.code]|default:'' eq 'edit'} selected{/if}>odczyt i edycja</option>
+                          </select>
+                        </div>
                       {/foreach}
                     </div>
                   </div>

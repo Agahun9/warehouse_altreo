@@ -17,6 +17,7 @@ use RuntimeException;
 class AllegroService
 {
     private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
+    private const TOKEN_REFRESH_LOG_MARGIN_SECONDS = 60;
 
     /** @var array<string, string> */
     private $imageHashCache = array();
@@ -480,6 +481,16 @@ class AllegroService
         );
     }
 
+    public function ensureAccountTokenFresh(string $accountSelector): array
+    {
+        $account = $this->resolveAccount($accountSelector);
+        if (!$account) {
+            throw new RuntimeException('Nie znaleziono konta Allegro do sprawdzenia tokena.');
+        }
+
+        return $this->ensureTokenFreshForAccount($account);
+    }
+
     public function refreshAllTokens(bool $activeOnly = true): array
     {
         $results = array();
@@ -510,6 +521,30 @@ class AllegroService
         return $results;
     }
 
+    public function ensureAllTokensFresh(bool $activeOnly = true): array
+    {
+        $results = array();
+
+        foreach ($this->listAccounts() as $account) {
+            if ($activeOnly && (int) ($account['is_active'] ?? 0) !== 1) {
+                continue;
+            }
+
+            try {
+                $results[] = $this->ensureTokenFreshForAccount($account);
+            } catch (RuntimeException $exception) {
+                $results[] = array(
+                    'account' => (string) $account['name'],
+                    'status' => 'error',
+                    'message' => $exception->getMessage(),
+                    'refreshed' => false,
+                );
+            }
+        }
+
+        return $results;
+    }
+
     public function maintenance(array $options = array()): array
     {
         $startedAt = PerformanceLogger::start();
@@ -518,11 +553,15 @@ class AllegroService
 
         $refreshStartedAt = PerformanceLogger::start();
         $refreshedTokens = $accountSelector !== ''
-            ? array($this->refreshAccountToken($accountSelector))
-            : $this->refreshAllTokens(true);
+            ? array($this->ensureAccountTokenFresh($accountSelector))
+            : $this->ensureAllTokensFresh(true);
+        $refreshedNow = count(array_filter($refreshedTokens, static function (array $result): bool {
+            return !empty($result['refreshed']);
+        }));
         PerformanceLogger::logIfSlow('allegro.service.maintenance.refreshTokens', $refreshStartedAt, array(
             'account' => $accountSelector,
             'refreshed_count' => count($refreshedTokens),
+            'refreshed_now_count' => $refreshedNow,
         ), 500.0);
 
         $queueStartedAt = PerformanceLogger::start();
@@ -2153,6 +2192,67 @@ class AllegroService
 
         $this->saveTokenPayload($accountId, $response);
         return (string) ($response['access_token'] ?? '');
+    }
+
+    private function ensureTokenFreshForAccount(array $account): array
+    {
+        $accountId = (int) ($account['id'] ?? 0);
+        $tokenRowBefore = $accountId > 0 ? $this->storage->tokenRowForAccount($accountId) : null;
+        $expiresAtBefore = $tokenRowBefore['expires_at'] ?? null;
+        $needsRefresh = $this->tokenNeedsRefresh($tokenRowBefore);
+
+        if ($needsRefresh) {
+            $this->forceRefreshAccessToken($account);
+        }
+
+        $tokenRowAfter = $accountId > 0 ? $this->storage->tokenRowForAccount($accountId) : null;
+
+        return array(
+            'account' => (string) ($account['name'] ?? ''),
+            'status' => 'ok',
+            'token_expires_at' => (string) ($tokenRowAfter['expires_at'] ?? ''),
+            'token_updated_at' => (string) ($tokenRowAfter['updated_at'] ?? ''),
+            'refreshed' => $needsRefresh,
+            'refresh_reason' => $needsRefresh ? $this->tokenRefreshReason($tokenRowBefore) : 'not_needed',
+            'expires_at_before' => $expiresAtBefore !== null ? (string) $expiresAtBefore : '',
+        );
+    }
+
+    private function tokenNeedsRefresh($tokenRow): bool
+    {
+        if (!is_array($tokenRow) || empty($tokenRow['access_token']) || empty($tokenRow['expires_at'])) {
+            return true;
+        }
+
+        $expiresAt = strtotime((string) $tokenRow['expires_at']);
+        if ($expiresAt === false) {
+            return true;
+        }
+
+        $refreshMargin = (int) $this->configValue('token_refresh_margin', 60);
+        return ($expiresAt - $refreshMargin) <= time();
+    }
+
+    private function tokenRefreshReason($tokenRow): string
+    {
+        if (!is_array($tokenRow) || empty($tokenRow['access_token'])) {
+            return 'missing_access_token';
+        }
+
+        if (empty($tokenRow['expires_at'])) {
+            return 'missing_expiry';
+        }
+
+        $expiresAt = strtotime((string) $tokenRow['expires_at']);
+        if ($expiresAt === false) {
+            return 'invalid_expiry';
+        }
+
+        if (($expiresAt - self::TOKEN_REFRESH_LOG_MARGIN_SECONDS) <= time()) {
+            return 'expiring';
+        }
+
+        return 'stale';
     }
 
     private function oauthTokenForAccount(array $account, array $params): array

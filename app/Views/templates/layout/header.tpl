@@ -339,9 +339,13 @@
             {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
             {/if}
-            {if $currentUser.role eq 'admin'}
+            {if $currentUser.role eq 'admin' or in_array('categories', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=categories&action=index" class="nav-link">Kategorie</a></li>
+            {/if}
+            {if $currentUser.role eq 'admin' or in_array('csvtemplates', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link">Szablony CSV</a></li>
+            {/if}
+            {if $currentUser.role eq 'admin'}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=users" class="nav-link">Admin</a></li>
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=automation" class="nav-link">Administracja</a></li>
             {/if}
@@ -443,19 +447,23 @@
                   </a>
                 </li>
               {/if}
-              {if $currentUser.role eq 'admin'}
+              {if $currentUser.role eq 'admin' or in_array('categories', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=categories&action=index" class="nav-link{if $currentController eq 'categories'} active{/if}">
                     <i class="nav-icon bi bi-tags"></i>
                     <p>Lista kategorii</p>
                   </a>
                 </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('csvtemplates', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link{if $currentController eq 'csvtemplates'} active{/if}">
                     <i class="nav-icon bi bi-file-earmark-spreadsheet"></i>
                     <p>Szablony CSV</p>
                   </a>
                 </li>
+              {/if}
+              {if $currentUser.role eq 'admin'}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=admin&action=users" class="nav-link{if $currentController eq 'admin' and $currentAction neq 'automation'} active{/if}">
                     <i class="nav-icon bi bi-people"></i>

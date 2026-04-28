@@ -47,6 +47,7 @@ class AdminController extends Controller
 
         foreach ($users as $index => $user) {
             $users[$index]['modules'] = $this->users->modulesForUser((int) $user['id']);
+            $users[$index]['module_permissions'] = $this->users->modulePermissionsForUser((int) $user['id']);
         }
 
         $this->render('admin/users', array(
@@ -87,9 +88,9 @@ class AdminController extends Controller
             $loaderEnabled = $this->input('loader_enabled', '1') === '1' ? 1 : 0;
             $isActive = $this->input('is_active', '0') === '1' ? 1 : 0;
             $blocked = $this->input('is_blocked', '0') === '1' ? 1 : 0;
-            $modules = $this->input('modules', array());
-            if (!is_array($modules)) {
-                $modules = array();
+            $modulePermissions = $this->input('module_permissions', array());
+            if (!is_array($modulePermissions)) {
+                $modulePermissions = array();
             }
 
             $update = array(
@@ -111,7 +112,7 @@ class AdminController extends Controller
             }
 
             $this->users->updateUser($id, $update);
-            $this->users->replaceModules($id, $modules);
+            $this->users->replaceModulePermissions($id, $modulePermissions);
             $this->setFlash('success', 'Dane uzytkownika zostaly zaktualizowane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());

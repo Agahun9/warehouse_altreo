@@ -110,7 +110,8 @@ abstract class Controller
             return null;
         }
 
-        $user['modules'] = $users->modulesForUser((int) $user['id']);
+        $user['module_permissions'] = $users->modulePermissionsForUser((int) $user['id']);
+        $user['modules'] = array_keys($user['module_permissions']);
         $this->currentUserCache = $user;
         return $this->currentUserCache;
     }
@@ -142,9 +143,9 @@ abstract class Controller
     protected function requireModule($module)
     {
         $user = $this->requireAuth();
-        $modules = isset($user['modules']) && is_array($user['modules']) ? $user['modules'] : array();
+        $accessLevel = $this->moduleAccessLevel($user, (string) $module);
 
-        if (($user['role'] !== 'admin') && !in_array($module, $modules, true)) {
+        if (($user['role'] !== 'admin') && $accessLevel === 'none') {
             http_response_code(403);
             exit('Brak dostepu do modulu.');
         }
@@ -168,14 +169,37 @@ abstract class Controller
     protected function requireModuleWrite($module)
     {
         $user = $this->requireModule($module);
-        $permissionLevel = strtolower(trim((string) ($user['permission_level'] ?? 'edit')));
+        $accessLevel = $this->moduleAccessLevel($user, (string) $module);
 
-        if ($permissionLevel === 'read') {
+        if (($user['role'] !== 'admin') && $accessLevel !== 'edit') {
             http_response_code(403);
-            exit('To konto ma dostep tylko do odczytu.');
+            exit('To konto ma dostep do tego modulu tylko w trybie odczytu.');
         }
 
         return $user;
+    }
+
+    protected function moduleAccessLevel(array $user, string $module): string
+    {
+        if ((string) ($user['role'] ?? '') === 'admin') {
+            return 'edit';
+        }
+
+        $modulePermissions = isset($user['module_permissions']) && is_array($user['module_permissions'])
+            ? $user['module_permissions']
+            : array();
+        $moduleCode = strtolower(trim($module));
+        $accessLevel = strtolower(trim((string) ($modulePermissions[$moduleCode] ?? 'none')));
+
+        if ($accessLevel === 'edit') {
+            return 'edit';
+        }
+
+        if ($accessLevel === 'read') {
+            return 'read';
+        }
+
+        return 'none';
     }
 
     protected function render(string $template, array $data = array()): void

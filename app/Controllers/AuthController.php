@@ -93,18 +93,25 @@ class AuthController extends Controller
             ));
 
             $moduleRows = $this->users->availableModules();
-            $moduleCodes = array();
+            $modulePermissions = array();
             foreach ($moduleRows as $moduleRow) {
-                $moduleCodes[] = $moduleRow['code'];
+                $moduleCode = strtolower(trim((string) ($moduleRow['code'] ?? '')));
+                if ($moduleCode === '') {
+                    continue;
+                }
+
+                $modulePermissions[$moduleCode] = 'edit';
             }
 
             if ($role === 'admin') {
-                $this->users->replaceModules((int) $userId, $moduleCodes);
+                $this->users->replaceModulePermissions((int) $userId, $modulePermissions);
                 $this->setFlash('success', 'Pierwsze konto zostalo utworzone jako admin i jest aktywne. Mozesz sie zalogowac.');
                 $this->redirect('https://magazyn.altreo.pl/crm/new_version/index.php?controller=auth&action=login');
             }
 
-            $this->users->replaceModules((int) $userId, array('products'));
+            $this->users->replaceModulePermissions((int) $userId, array(
+                'products' => 'edit',
+            ));
             $token = $this->tokens->generate();
             $ttl = (int) Config::get('app')['email_verification_ttl'];
             $expiresAt = date('Y-m-d H:i:s', time() + $ttl);

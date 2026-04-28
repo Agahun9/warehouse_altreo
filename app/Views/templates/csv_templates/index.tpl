@@ -20,6 +20,7 @@
     <div class="container-fluid">
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+      {assign var=canWriteCsvTemplates value=$currentUser.role eq 'admin' or $currentUser.module_permissions.csvtemplates|default:'' eq 'edit'}
 
       <div class="card mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -28,13 +29,20 @@
             <div class="text-secondary small">Tworzenie i zarzadzanie konfiguracjami CSV do eksportu produktów.</div>
           </div>
           <div class="d-flex gap-2">
-            <a href="{$baseUrl}?controller=csvtemplates&action=importproducts" class="btn btn-outline-primary">Import produktow</a>
+            {if $canWriteCsvTemplates}
+              <a href="{$baseUrl}?controller=csvtemplates&action=importproducts" class="btn btn-outline-primary">Import produktow</a>
+            {/if}
             <a href="{$baseUrl}?controller=csvtemplates&action=titlegenerator" class="btn btn-outline-secondary">Generator tytulow</a>
-            <a href="{$baseUrl}?controller=csvtemplates&action=create" class="btn btn-primary">Dodaj szablon</a>
+            {if $canWriteCsvTemplates}
+              <a href="{$baseUrl}?controller=csvtemplates&action=create" class="btn btn-primary">Dodaj szablon</a>
+            {else}
+              <span class="badge text-bg-warning align-self-center">Tryb odczytu</span>
+            {/if}
           </div>
         </div>
       </div>
 
+      {if $canWriteCsvTemplates}
       <div class="card mb-4">
         <div class="card-header"><h3 class="card-title mb-0">Presety</h3></div>
         <div class="card-body d-flex flex-wrap gap-2">
@@ -43,6 +51,7 @@
           {/foreach}
         </div>
       </div>
+      {/if}
 
       <div class="card">
         <div class="card-body p-0">
@@ -73,15 +82,19 @@
                       <td>{$template.created_at|default:'-'|escape}</td>
                       <td>{$template.updated_at|default:'-'|escape}</td>
                       <td class="text-end">
-                        <a href="{$baseUrl}?controller=csvtemplates&action=edit&id={$template.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
-                        <form method="post" action="{$baseUrl}?controller=csvtemplates&action=duplicate" class="d-inline">
-                          <input type="hidden" name="id" value="{$template.id}">
-                          <button type="submit" class="btn btn-sm btn-outline-secondary">Duplikuj</button>
-                        </form>
-                        <form method="post" action="{$baseUrl}?controller=csvtemplates&action=delete" class="d-inline" onsubmit="return confirm('Usunac szablon {$template.name|escape:'javascript'}?');">
-                          <input type="hidden" name="id" value="{$template.id}">
-                          <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
-                        </form>
+                        {if $canWriteCsvTemplates}
+                          <a href="{$baseUrl}?controller=csvtemplates&action=edit&id={$template.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
+                          <form method="post" action="{$baseUrl}?controller=csvtemplates&action=duplicate" class="d-inline">
+                            <input type="hidden" name="id" value="{$template.id}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">Duplikuj</button>
+                          </form>
+                          <form method="post" action="{$baseUrl}?controller=csvtemplates&action=delete" class="d-inline" onsubmit="return confirm('Usunac szablon {$template.name|escape:'javascript'}?');">
+                            <input type="hidden" name="id" value="{$template.id}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+                          </form>
+                        {else}
+                          <span class="badge text-bg-light border">Odczyt</span>
+                        {/if}
                       </td>
                     </tr>
                   {/foreach}

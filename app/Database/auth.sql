@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS user_modules (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_id INT UNSIGNED NOT NULL,
     module_code VARCHAR(50) NOT NULL,
+    access_level VARCHAR(20) NOT NULL DEFAULT 'edit',
     PRIMARY KEY (id),
     UNIQUE KEY ux_user_modules_pair (user_id, module_code),
     KEY idx_user_modules_module (module_code)

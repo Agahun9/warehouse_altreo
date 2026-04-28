@@ -523,6 +523,18 @@ class AllegroStorageRepository
             return $total;
         }
 
+        $statsAccountId = $this->statsOnlyAccountFilterId($filters);
+        if ($statsAccountId !== null) {
+            $stats = $this->offerStats($statsAccountId > 0 ? $statsAccountId : null);
+            $total = (int) ($stats['all'] ?? 0);
+            PerformanceLogger::logIfSlow('allegro.storage.countOffers.statsFastPath', $startedAt, array(
+                'account_id' => $statsAccountId > 0 ? $statsAccountId : null,
+                'filters' => $filters,
+                'total' => $total,
+            ), 250.0);
+            return $total;
+        }
+
         $cacheKey = $this->offerCountCacheKey($filters);
         $cached = $this->getCache($cacheKey);
         if (is_array($cached) && isset($cached['total'])) {
@@ -2975,6 +2987,7 @@ class AllegroStorageRepository
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_account_stock', 'CREATE INDEX idx_allegro_offers_account_stock ON allegro_offers (account_id, stock_available)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_status_updated', 'CREATE INDEX idx_allegro_offers_status_updated ON allegro_offers (publication_status, updated_at)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_status_id', 'CREATE INDEX idx_allegro_offers_status_id ON allegro_offers (publication_status, id)');
+        $this->ensureIndex('allegro_offers', 'idx_allegro_offers_status_sku_id', 'CREATE INDEX idx_allegro_offers_status_sku_id ON allegro_offers (publication_status, sku, id)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_account_status_id', 'CREATE INDEX idx_allegro_offers_account_status_id ON allegro_offers (account_id, publication_status, id)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_duplicate_probe', 'CREATE INDEX idx_allegro_offers_duplicate_probe ON allegro_offers (allegro_product_id, primary_image_hash)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_duplicate_name_image', 'CREATE INDEX idx_allegro_offers_duplicate_name_image ON allegro_offers (account_id, publication_status, name, primary_image_url(191))');
@@ -3182,5 +3195,32 @@ class AllegroStorageRepository
         ksort($normalized);
 
         return 'allegro:offers:count:' . sha1((string) json_encode($normalized));
+    }
+
+    private function statsOnlyAccountFilterId(array $filters): ?int
+    {
+        $normalized = array();
+        foreach ($filters as $key => $value) {
+            $normalized[(string) $key] = trim((string) $value);
+        }
+
+        $nonEmpty = array_filter($normalized, static function (string $value, string $key): bool {
+            if ($key === 'account_id') {
+                return false;
+            }
+
+            return $value !== '';
+        }, ARRAY_FILTER_USE_BOTH);
+
+        if ($nonEmpty !== array()) {
+            return null;
+        }
+
+        $accountId = $normalized['account_id'] ?? '';
+        if ($accountId === '') {
+            return 0;
+        }
+
+        return ctype_digit($accountId) ? (int) $accountId : null;
     }
 }
