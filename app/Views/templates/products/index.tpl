@@ -569,7 +569,7 @@
                               {/if}
                             {/foreach}
                           {/if}
-                          {if $hasSharedPeers || ($product.derived_stock_enabled|default:false)}
+                          {if $hasSharedPeers || ($product.derived_stock_enabled|default:false) || ($product.has_derived_dependents|default:false)}
                             <div class="product-relation-stack">
                               {if $hasSharedPeers}
                                 <div class="product-relation-item shared">
@@ -583,6 +583,12 @@
                                       {/if}
                                     {/foreach}
                                   </div>
+                                </div>
+                              {/if}
+                              {if $product.has_derived_dependents|default:false}
+                                <div class="product-relation-item derived">
+                                  <div class="product-relation-label">Powiazanie</div>
+                                  <div class="product-relation-value">Ma pochodne</div>
                                 </div>
                               {/if}
                               {if $product.derived_stock_enabled|default:false}
@@ -764,6 +770,20 @@
               Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu.
             </div>
           </div>
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+            <button type="submit" class="btn btn-primary"{if !$exportTemplates} disabled{/if}>Generuj CSV</button>
+          </div>
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+              <label class="form-label mb-0">Ostatnie ustawienia eksportu</label>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" id="csvExportRecentPresetsRefresh" class="btn btn-sm btn-outline-secondary">Odswiez</button>
+                <span id="csvExportRecentPresetsStatus" class="small text-secondary">Lista zaladuje sie po otwarciu okna.</span>
+              </div>
+            </div>
+            <div id="csvExportRecentPresets" class="mt-2"></div>
+          </div>
           <div id="selectedProductIdsContainer"></div>
           <input type="hidden" name="filter_id" value="{$filters.id|default:''|escape}">
           <input type="hidden" name="filter_global" value="{$filters.global|default:''|escape}">
@@ -773,10 +793,6 @@
           <input type="hidden" name="filter_quantity" value="{$filters.quantity|default:''|escape}">
           <input type="hidden" name="filter_localization" value="{$filters.localization|default:''|escape}">
           <input type="hidden" name="filter_with_glass" value="{$filters.with_glass|default:''|escape}">
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
-          <button type="submit" class="btn btn-primary"{if !$exportTemplates} disabled{/if}>Generuj CSV</button>
         </div>
       </form>
     </div>
@@ -951,15 +967,27 @@ document.addEventListener('DOMContentLoaded', function() {
   var quickEditRows = document.querySelectorAll('.js-quick-edit-row');
   var selectedCount = document.getElementById('selectedCount');
   var exportForm = document.getElementById('csvExportForm');
+  var csvExportModalEl = document.getElementById('csvExportModal');
   var selectedContainer = document.getElementById('selectedProductIdsContainer');
   var exportSelected = document.getElementById('exportSelected');
   var exportFiltered = document.getElementById('exportFiltered');
+  var exportTemplateSelect = document.querySelector('select[name="template_id"]');
   var titleTemplateSelect = document.querySelector('select[name="title_template_id"]');
   var collectionNameInput = document.getElementById('csvExportCollectionName');
+  var imageCollectionCodeInput = document.querySelector('input[name="image_collection_code"]');
+  var priceToCsvInput = document.querySelector('input[name="price_to_csv"]');
+  var thumbnailCountInput = document.querySelector('input[name="thumbnail_count"]');
+  var mockupCountInput = document.querySelector('input[name="mockup_count"]');
+  var imageCountInput = document.querySelector('input[name="image_count"]');
+  var imageBaseDirectoryInput = document.querySelector('input[name="image_base_directory"]');
   var generatedTitlePreview = document.getElementById('csvGeneratedTitlePreviewText');
   var generatedTitleLength = document.getElementById('csvGeneratedTitleLength');
   var generatedTitlePreviewBox = document.getElementById('csvGeneratedTitlePreview');
   var generatedTitlePreviewUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=previewgeneratedtitle';
+  var csvExportPresetsUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportpresets';
+  var csvExportRecentPresets = document.getElementById('csvExportRecentPresets');
+  var csvExportRecentPresetsStatus = document.getElementById('csvExportRecentPresetsStatus');
+  var csvExportRecentPresetsRefresh = document.getElementById('csvExportRecentPresetsRefresh');
   var productsFiltersForm = document.getElementById('productsFiltersForm');
   var categoryFilterSerialized = document.getElementById('filterCategoryIdSerialized');
   var categoryFilterSearch = document.getElementById('filterCategorySearch');
@@ -988,6 +1016,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var bulkSharedForm = document.getElementById('bulkSharedForm');
   var quickUpdateUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=quickupdate';
   var lastCheckedCheckbox = null;
+  var csvRecentPresetItems = [];
 
   function syncCategoryFilterValue() {
     if (!categoryFilterSerialized || !categoryFilterUi) {
@@ -1071,6 +1100,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     productList += '</ul>';
     return productList;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function fillSelectedProductsContainer(containerId, ids) {
@@ -1301,6 +1339,188 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
+  function setSelectValueIfExists(selectElement, value) {
+    if (!selectElement) {
+      return false;
+    }
+
+    var normalizedValue = String(value || '');
+    var hasOption = false;
+    for (var optionIndex = 0; optionIndex < selectElement.options.length; optionIndex++) {
+      if (String(selectElement.options[optionIndex].value || '') === normalizedValue) {
+        hasOption = true;
+        break;
+      }
+    }
+
+    selectElement.value = hasOption ? normalizedValue : '';
+    return hasOption;
+  }
+
+  function applyRecentExportPresetByIndex(index) {
+    var item = csvRecentPresetItems[index];
+    if (!item) {
+      return;
+    }
+
+    var hasTemplate = setSelectValueIfExists(exportTemplateSelect, item.template_id || '');
+    setSelectValueIfExists(titleTemplateSelect, item.title_template_id || '');
+    if (collectionNameInput) {
+      collectionNameInput.value = String(item.collection_name || '');
+    }
+    if (imageCollectionCodeInput) {
+      imageCollectionCodeInput.value = String(item.image_collection_code || '');
+    }
+    if (priceToCsvInput) {
+      priceToCsvInput.value = String(item.price_to_csv || '');
+    }
+    if (thumbnailCountInput) {
+      thumbnailCountInput.value = String(item.thumbnail_count || 0);
+    }
+    if (mockupCountInput) {
+      mockupCountInput.value = String(item.mockup_count || 0);
+    }
+    if (imageCountInput) {
+      imageCountInput.value = String(item.image_count || 0);
+    }
+    if (imageBaseDirectoryInput) {
+      imageBaseDirectoryInput.value = String(item.image_base_directory || '');
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = hasTemplate
+        ? 'Wczytano ustawienia do formularza.'
+        : 'Wczytano ustawienia, ale powiazany szablon eksportu nie istnieje juz na liscie.';
+    }
+
+    updateGeneratedTitlePreview();
+  }
+
+  function applyPartialRecentExportPresetByIndex(index) {
+    var item = csvRecentPresetItems[index];
+    if (!item) {
+      return;
+    }
+
+    if (collectionNameInput) {
+      collectionNameInput.value = String(item.collection_name || '');
+    }
+    if (imageCollectionCodeInput) {
+      imageCollectionCodeInput.value = String(item.image_collection_code || '');
+    }
+    if (thumbnailCountInput) {
+      thumbnailCountInput.value = String(item.thumbnail_count || 0);
+    }
+    if (mockupCountInput) {
+      mockupCountInput.value = String(item.mockup_count || 0);
+    }
+    if (imageCountInput) {
+      imageCountInput.value = String(item.image_count || 0);
+    }
+    if (imageBaseDirectoryInput) {
+      imageBaseDirectoryInput.value = String(item.image_base_directory || '');
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = 'Wczytano ustawienia makra obrazow.';
+    }
+
+    updateGeneratedTitlePreview();
+  }
+
+  function scheduleRecentExportPresetsReload() {
+    window.setTimeout(loadRecentExportPresets, 600);
+    window.setTimeout(loadRecentExportPresets, 1800);
+  }
+
+  function renderRecentExportPresets(items) {
+    if (!csvExportRecentPresets) {
+      return;
+    }
+
+    csvRecentPresetItems = Array.isArray(items) ? items : [];
+
+    if (csvRecentPresetItems.length === 0) {
+      csvExportRecentPresets.innerHTML = '<div class="small text-secondary border rounded-3 p-3">Brak zapisanych ustawien eksportu.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < csvRecentPresetItems.length; i++) {
+      var item = csvRecentPresetItems[i] || {};
+      var templateName = item.template_name ? String(item.template_name) : 'Bez nazwy';
+      var titleName = item.title_template_name ? String(item.title_template_name) : 'Brak';
+      var createdAt = item.created_at ? String(item.created_at) : '';
+
+      html += ''
+        + '<div class="border rounded-3 px-3 py-2 mb-2 bg-light-subtle">'
+        + '<div class="row g-2 align-items-center">'
+        + '<div class="col-lg-4">'
+        + '<div class="fw-semibold small">' + escapeHtml(templateName) + '</div>'
+        + '<div class="small text-secondary text-truncate">Tytul: ' + escapeHtml(titleName) + '</div>'
+        + '</div>'
+        + '<div class="col-lg-5">'
+        + '<div class="small text-secondary text-truncate">Kol. tytul: ' + escapeHtml(item.collection_name || '-') + '</div>'
+        + '<div class="small text-secondary text-truncate">Kol. nr: ' + escapeHtml(item.image_collection_code || '-') + ' | Min: ' + escapeHtml(item.thumbnail_count || 0) + ' | Mock: ' + escapeHtml(item.mockup_count || 0) + ' | Zdj: ' + escapeHtml(item.image_count || 0) + '</div>'
+        + '</div>'
+        + '<div class="col-lg-3">'
+        + '<div class="d-flex justify-content-lg-end gap-2 flex-wrap">'
+        + '<button type="button" class="btn btn-sm btn-primary js-csv-recent-preset-full" data-preset-index="' + i + '">Wszystko</button>'
+        + '<button type="button" class="btn btn-sm btn-outline-primary js-csv-recent-preset-partial" data-preset-index="' + i + '">Makro</button>'
+        + '</div>'
+        + '<div class="small text-secondary text-lg-end mt-1">' + escapeHtml(createdAt) + '</div>'
+        + '</div>'
+        + '</div>'
+        + '</div>';
+    }
+
+    csvExportRecentPresets.innerHTML = html;
+
+  }
+
+  function loadRecentExportPresets() {
+    if (!window.fetch || !csvExportRecentPresets) {
+      return;
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = 'Ladowanie...';
+    }
+
+    fetch(csvExportPresetsUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = {};
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (error) {
+            data = { error: text || ('HTTP ' + response.status) };
+          }
+          if (!response.ok) {
+            throw new Error(data && data.error ? data.error : ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        renderRecentExportPresets(data && data.items ? data.items : []);
+        if (csvExportRecentPresetsStatus) {
+          csvExportRecentPresetsStatus.textContent = 'Kliknij, aby wczytac ustawienia.';
+        }
+      })
+      .catch(function (error) {
+        renderRecentExportPresets([]);
+        if (csvExportRecentPresetsStatus) {
+          csvExportRecentPresetsStatus.textContent = error && error.message ? error.message : 'Nie udalo sie wczytac historii eksportu.';
+        }
+      });
+  }
+
   if (selectAll) {
     selectAll.addEventListener('change', function () {
       for (var i = 0; i < checkboxes.length; i++) {
@@ -1512,6 +1732,35 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  if (csvExportModalEl) {
+    csvExportModalEl.addEventListener('show.bs.modal', function () {
+      loadRecentExportPresets();
+    });
+  }
+
+  if (csvExportRecentPresets) {
+    csvExportRecentPresets.addEventListener('click', function (event) {
+      var fullButton = event.target.closest('.js-csv-recent-preset-full');
+      if (fullButton) {
+        event.preventDefault();
+        applyRecentExportPresetByIndex(Number(fullButton.getAttribute('data-preset-index') || '-1'));
+        return;
+      }
+
+      var partialButton = event.target.closest('.js-csv-recent-preset-partial');
+      if (partialButton) {
+        event.preventDefault();
+        applyPartialRecentExportPresetByIndex(Number(partialButton.getAttribute('data-preset-index') || '-1'));
+      }
+    });
+  }
+
+  if (csvExportRecentPresetsRefresh) {
+    csvExportRecentPresetsRefresh.addEventListener('click', function () {
+      loadRecentExportPresets();
+    });
+  }
+
   if (titleTemplateSelect) {
     titleTemplateSelect.addEventListener('change', updateGeneratedTitlePreview);
   }
@@ -1576,6 +1825,11 @@ document.addEventListener('DOMContentLoaded', function() {
       } else if (exportFiltered && exportFiltered.checked) {
         return;
       }
+
+      if (csvExportRecentPresetsStatus) {
+        csvExportRecentPresetsStatus.textContent = 'Zapisywanie ustawien eksportu...';
+      }
+      scheduleRecentExportPresetsReload();
     });
   }
 

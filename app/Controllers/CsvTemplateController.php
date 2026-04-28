@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\CategoryRepository;
+use App\Models\CsvExportPresetRepository;
 use App\Models\CsvImportProfileRepository;
 use App\Models\CsvTitleTemplateRepository;
 use App\Models\CsvTemplateRepository;
@@ -49,6 +50,9 @@ class CsvTemplateController extends Controller
     /** @var CsvImportProfileRepository */
     private $importProfiles;
 
+    /** @var CsvExportPresetRepository */
+    private $exportPresets;
+
     /** @var SharedStockGroupRepository */
     private $sharedStockGroups;
 
@@ -68,6 +72,9 @@ class CsvTemplateController extends Controller
 
         $this->importProfiles = new CsvImportProfileRepository($this->db());
         $this->importProfiles->ensureSchema();
+
+        $this->exportPresets = new CsvExportPresetRepository($this->db());
+        $this->exportPresets->ensureSchema();
 
         $this->allegroParameters = new ProductAllegroParameterRepository($this->db());
         $this->allegroParameters->ensureSchema();
@@ -605,7 +612,7 @@ class CsvTemplateController extends Controller
 
     public function exportcsv(): void
     {
-        $this->requireModule('products');
+        $currentUser = $this->requireModule('products');
 
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=products&action=index');
@@ -615,6 +622,7 @@ class CsvTemplateController extends Controller
 
         try {
             $result = $this->prepareExportResponseData((int) $this->input('template_id', 0), false);
+            $this->storeExportPreset($currentUser, $result['template'], $result['export_options']);
             $this->sendCsvDownload($result['csv'], $result['template'], $result['rows'], $result['export_options']);
             return;
         } catch (Throwable $exception) {
@@ -625,7 +633,7 @@ class CsvTemplateController extends Controller
 
     public function apiexport(): void
     {
-        $this->requireModule('products');
+        $currentUser = $this->requireModule('products');
 
         if (!$this->isPost()) {
             http_response_code(405);
@@ -639,12 +647,48 @@ class CsvTemplateController extends Controller
         try {
             $templateId = (int) $this->input('id', 0);
             $result = $this->prepareExportResponseData($templateId, true);
+            $this->storeExportPreset($currentUser, $result['template'], $result['export_options']);
             $this->sendCsvDownload($result['csv'], $result['template'], $result['rows'], $result['export_options']);
         } catch (Throwable $exception) {
             http_response_code(422);
             header('Content-Type: application/json; charset=utf-8');
             echo json_encode(array('error' => $exception->getMessage()));
         }
+    }
+
+    public function exportpresets(): void
+    {
+        $currentUser = $this->requireModule('products');
+        $this->releaseSessionLock();
+
+        $items = $this->exportPresets->latestForUser((int) ($currentUser['id'] ?? 0), 10);
+        $normalized = array();
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $normalized[] = array(
+                'id' => (int) ($item['id'] ?? 0),
+                'template_id' => (int) ($item['template_id'] ?? 0),
+                'template_name' => (string) ($item['template_name'] ?? ''),
+                'title_template_id' => (int) ($item['title_template_id'] ?? 0),
+                'title_template_name' => (string) ($item['title_template_name'] ?? ''),
+                'collection_name' => (string) ($item['collection_name'] ?? ''),
+                'image_collection_code' => (string) ($item['image_collection_code'] ?? ''),
+                'price_to_csv' => (string) ($item['price_to_csv'] ?? ''),
+                'thumbnail_count' => (int) ($item['thumbnail_count'] ?? 0),
+                'mockup_count' => (int) ($item['mockup_count'] ?? 0),
+                'image_count' => (int) ($item['image_count'] ?? 0),
+                'image_base_directory' => (string) ($item['image_base_directory'] ?? ''),
+                'created_at' => (string) ($item['created_at'] ?? ''),
+            );
+        }
+
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array('items' => $normalized));
     }
 
     private function validatedTemplateData(): array
@@ -2226,6 +2270,36 @@ class CsvTemplateController extends Controller
         header('Content-Type: text/csv; charset=' . ($template['encoding'] ?? 'UTF-8'));
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         echo $csv;
+    }
+
+    private function storeExportPreset(array $currentUser, array $template, array $exportOptions): void
+    {
+        $userId = (int) ($currentUser['id'] ?? 0);
+        $templateId = (int) ($template['id'] ?? 0);
+        if ($userId <= 0 || $templateId <= 0) {
+            return;
+        }
+
+        try {
+            $this->exportPresets->create(array(
+                'user_id' => $userId,
+                'template_id' => $templateId,
+                'title_template_id' => max(0, (int) ($exportOptions['title_template_id'] ?? 0)),
+                'collection_name' => trim((string) ($exportOptions['collection_name'] ?? '')),
+                'image_collection_code' => trim((string) ($exportOptions['image_collection_code'] ?? '')),
+                'price_to_csv' => trim((string) ($exportOptions['price_to_csv'] ?? '')),
+                'thumbnail_count' => max(0, (int) ($exportOptions['thumbnail_count'] ?? 0)),
+                'mockup_count' => max(0, (int) ($exportOptions['mockup_count'] ?? 0)),
+                'image_count' => max(0, (int) ($exportOptions['image_count'] ?? 0)),
+                'image_base_directory' => trim((string) ($exportOptions['image_base_directory'] ?? '')),
+            ));
+
+            $this->exportPresets->trimForUser($userId, 10);
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Nie udalo sie zapisac historii eksportu CSV: ' . $exception->getMessage(), 'WARNING');
+            }
+        }
     }
 
     private function buildExportFilename(array $template, array $rows, array $exportOptions): string

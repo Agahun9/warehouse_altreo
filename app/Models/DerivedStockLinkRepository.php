@@ -178,12 +178,12 @@ class DerivedStockLinkRepository
             return $rows;
         }
 
-        $ownerPlaceholders = array();
-        $ownerParams = array();
+        $productPlaceholders = array();
+        $productParams = array();
         foreach ($ownerIds as $index => $ownerId) {
-            $key = 'owner_id_' . $index;
-            $ownerPlaceholders[] = ':' . $key;
-            $ownerParams[$key] = $ownerId;
+            $key = 'product_id_' . $index;
+            $productPlaceholders[] = ':' . $key;
+            $productParams[$key] = $ownerId;
         }
 
         $linkRows = $this->database->fetchAll(
@@ -193,9 +193,17 @@ class DerivedStockLinkRepository
             . ' FROM product_derived_stock_links links'
             . ' INNER JOIN products source ON source.id = links.source_product_id AND source.deleted_at IS NULL'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = source.shared_stock_group_id'
-            . ' WHERE links.owner_product_id IN (' . implode(', ', $ownerPlaceholders) . ')'
+            . ' WHERE links.owner_product_id IN (' . implode(', ', $productPlaceholders) . ')'
             . ' ORDER BY source.product_name ASC, source.id ASC',
-            $ownerParams
+            $productParams
+        );
+
+        $dependentRows = $this->database->fetchAll(
+            'SELECT source_product_id, COUNT(*) AS dependents_count'
+            . ' FROM product_derived_stock_links'
+            . ' WHERE source_product_id IN (' . implode(', ', $productPlaceholders) . ')'
+            . ' GROUP BY source_product_id',
+            $productParams
         );
 
         $sourcesByOwner = array();
@@ -218,9 +226,25 @@ class DerivedStockLinkRepository
             );
         }
 
+        $dependentCountsBySource = array();
+        foreach ($dependentRows as $dependentRow) {
+            $sourceId = isset($dependentRow['source_product_id']) ? (int) $dependentRow['source_product_id'] : 0;
+            if ($sourceId <= 0) {
+                continue;
+            }
+
+            $dependentCountsBySource[$sourceId] = isset($dependentRow['dependents_count'])
+                ? max(0, (int) $dependentRow['dependents_count'])
+                : 0;
+        }
+
         foreach ($rows as $index => $row) {
             $ownerId = isset($row['id']) ? (int) $row['id'] : 0;
             $sources = isset($sourcesByOwner[$ownerId]) ? $sourcesByOwner[$ownerId] : array();
+            $dependentCount = isset($dependentCountsBySource[$ownerId]) ? (int) $dependentCountsBySource[$ownerId] : 0;
+
+            $rows[$index]['has_derived_dependents'] = $dependentCount > 0;
+            $rows[$index]['derived_dependents_count'] = $dependentCount;
 
             if ($sources === array()) {
                 $rows[$index]['derived_stock_enabled'] = false;

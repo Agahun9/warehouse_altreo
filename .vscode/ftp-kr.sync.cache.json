@@ -484,8 +484,8 @@
                   },
                   "ValueResolver.php": {
                     "type": "-",
-                    "size": 31669,
-                    "lmtime": 1777286364631.8838,
+                    "size": 33248,
+                    "lmtime": 1777365167461.9558,
                     "modified": false
                   }
                 },
@@ -867,8 +867,8 @@
                       },
                       "title_form.tpl": {
                         "type": "-",
-                        "size": 6567,
-                        "lmtime": 1777286366045.4985,
+                        "size": 8470,
+                        "lmtime": 1777365155342.189,
                         "modified": false
                       },
                       "title_generator.tpl": {
@@ -908,15 +908,15 @@
                       "header.tpl": {
                         "type": "-",
                         "size": 16983,
-                        "lmtime": 1777363618727.4126,
+                        "lmtime": 1777365161318.862,
                         "modified": false
                       }
                     },
                     "products": {
                       "contours_manager.tpl": {
                         "type": "-",
-                        "size": 14635,
-                        "lmtime": 1777013685421.4243,
+                        "size": 17729,
+                        "lmtime": 1777365163426.171,
                         "modified": false
                       },
                       "form.tpl": {
@@ -928,7 +928,7 @@
                       "index.tpl": {
                         "type": "-",
                         "size": 69000,
-                        "lmtime": 1777363274250.3977,
+                        "lmtime": 1777365164726.289,
                         "modified": false
                       }
                     },
