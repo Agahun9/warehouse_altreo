@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 22:20:34
+/* Smarty version 5.8.0, created on 2026-04-28 21:49:21
   from 'file:admin/automation.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69ea7f120bcf56_25664075',
+  'unifunc' => 'content_69f10f41b1b361_56715887',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'd2981eed000731be57d9054d8d07fea0bf40a49b' => 
     array (
       0 => 'admin/automation.tpl',
-      1 => 1776975629,
+      1 => 1777405713,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69ea7f120bcf56_25664075 (\Smarty\Template $_smarty_tpl) {
+function content_69f10f41b1b361_56715887 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/admin';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -462,6 +462,17 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <label class="form-label">Pelne maintenance co 5-15 minut</label>
             <input type="text" class="form-control" readonly value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('automation')['full_maintenance'], ENT_QUOTES, 'UTF-8', true);?>
 " id="globalMaintenanceUrl">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Cron konczenia ofert Allegro</label>
+            <input type="text" class="form-control" readonly value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('automation')['auto_end_offers'], ENT_QUOTES, 'UTF-8', true);?>
+">
+            <div class="form-text">Dodaje do kolejki tylko oferty kwalifikujace sie do zakonczenia i nie dubluje aktywnych zadan end_offer.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Cron konczenia + wysylka maila</label>
+            <input type="text" class="form-control" readonly value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('automation')['auto_end_offers'], ENT_QUOTES, 'UTF-8', true);?>
+&amp;mail_to=twoj%40adres.pl">
           </div>
           <div class="mb-0">
             <label class="form-label">Same refresh tokenow</label>

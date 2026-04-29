@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 11:27:40
+/* Smarty version 5.8.0, created on 2026-04-27 13:04:16
   from 'file:allegro/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e9e60c50e0e1_84259441',
+  'unifunc' => 'content_69ef42b04664d0_00525281',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '54d38f9d655b661a92fdec3277b15f15c5cec84c' => 
     array (
       0 => 'allegro/index.tpl',
-      1 => 1776936456,
+      1 => 1777287504,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e9e60c50e0e1_84259441 (\Smarty\Template $_smarty_tpl) {
+function content_69ef42b04664d0_00525281 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/allegro';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -293,8 +293,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=done&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="allegro-queue-mini-link text-success">gotowe <?php echo $_smarty_tpl->getValue('queueStats')['done'];?>
 </a>
               </div>
@@ -323,8 +323,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=pending&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="allegro-queue-mini-link text-warning">Oczekuje: <?php echo $_smarty_tpl->getValue('queueStats')['pending'];?>
 </a>
                 <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -339,8 +339,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=retry&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="allegro-queue-mini-link text-warning">Ponów: <?php echo $_smarty_tpl->getValue('queueStats')['retry'];?>
 </a>
                 <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -355,8 +355,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=error&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="allegro-queue-mini-link text-danger">Błąd: <?php echo $_smarty_tpl->getValue('queueStats')['error'];?>
 </a>
               </div>
@@ -418,8 +418,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=pending&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="text-warning text-decoration-none"><?php echo $_smarty_tpl->getValue('queueStats')['pending'];?>
 </a></div>
               </div>
@@ -439,8 +439,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=retry&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="text-warning text-decoration-none"><?php echo $_smarty_tpl->getValue('queueStats')['retry'];?>
 </a></div>
               </div>
@@ -460,8 +460,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=done&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="text-success text-decoration-none"><?php echo $_smarty_tpl->getValue('queueStats')['done'];?>
 </a></div>
               </div>
@@ -481,8 +481,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 &queue_status=error&linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 " class="text-danger text-decoration-none"><?php echo $_smarty_tpl->getValue('queueStats')['error'];?>
 </a></div>
               </div>
@@ -506,13 +506,15 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
               </div>
             </div>
             <div class="allegro-topbar-actions">
+              <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('autoEndOffersUrl'), ENT_QUOTES, 'UTF-8', true);?>
+" target="_blank" rel="noopener" class="btn btn-outline-warning">Cron konczenia</a>
               <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#allegroBulkModal">Akcje masowe</button>
             </div>
           </div>
         </div>
         <div class="card-body border-bottom">
           <form method="get" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-" class="row g-2">
+" class="row g-2" id="allegroFiltersForm" data-loader-label="Ladowanie ofert Allegro...">
             <input type="hidden" name="controller" value="allegro">
             <input type="hidden" name="action" value="index">
             <input type="hidden" name="sort_by" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortBy'), ENT_QUOTES, 'UTF-8', true);?>
@@ -589,16 +591,19 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                 <option value="NO_INVOICE"<?php if ($_smarty_tpl->getValue('filters')['invoice'] == 'NO_INVOICE') {?> selected<?php }?>>Brak</option>
               </select>
             </div>
-            <div class="col-xl-2 col-md-4">
+            <div class="col-xl-4 col-md-3">
               <label class="form-label">Stan magazyn</label>
-              <input type="text" name="warehouse_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity'], ENT_QUOTES, 'UTF-8', true);?>
-" class="form-control" placeholder="np. 0-5">
-              <div class="form-text">Negacja: <code>-0-5</code>, <code>!0</code>.</div>
-            </div>
-            <div class="col-xl-2 col-md-4">
-              <label class="form-label">Stan Allegro</label>
-              <input type="text" name="allegro_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['allegro_quantity'], ENT_QUOTES, 'UTF-8', true);?>
-" class="form-control" placeholder="np. 0-5">
+              <div class="row g-2">
+                <div class="col-6">
+                  <input type="number" min="0" step="1" name="warehouse_quantity_from" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from'], ENT_QUOTES, 'UTF-8', true);?>
+" class="form-control" placeholder="od">
+                </div>
+                <div class="col-6">
+                  <input type="number" min="0" step="1" name="warehouse_quantity_to" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to'], ENT_QUOTES, 'UTF-8', true);?>
+" class="form-control" placeholder="do">
+                </div>
+              </div>
+              <div class="form-text">Mozesz wpisac samo <code>0</code>, tylko <code>od</code>, tylko <code>do</code> albo oba pola.</div>
             </div>
             <div class="col-xl-2 col-md-4">
               <label class="form-label">Na strone</label>
@@ -649,8 +654,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Pierwsza</a>
                 <a class="btn btn-sm btn-outline-secondary<?php if ($_smarty_tpl->getValue('page') <= 1) {?> disabled<?php }?>" href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -666,8 +671,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Poprzednia</a>
                 <?php
@@ -690,8 +695,8 @@ $foreach1DoElse = false;
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 "><?php echo $_smarty_tpl->getValue('pageItem')['value'];?>
 </a>
@@ -714,8 +719,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Nastepna</a>
                 <a class="btn btn-sm btn-outline-secondary<?php if ($_smarty_tpl->getValue('page') >= $_smarty_tpl->getValue('totalPages')) {?> disabled<?php }?>" href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -731,8 +736,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Ostatnia</a>
               </div>
@@ -763,9 +768,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 ">
                 <input type="hidden" name="invoice" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['invoice'], ENT_QUOTES, 'UTF-8', true);?>
 ">
-                <input type="hidden" name="warehouse_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity'], ENT_QUOTES, 'UTF-8', true);?>
+                <input type="hidden" name="warehouse_quantity_from" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from'], ENT_QUOTES, 'UTF-8', true);?>
 ">
-                <input type="hidden" name="allegro_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['allegro_quantity'], ENT_QUOTES, 'UTF-8', true);?>
+                <input type="hidden" name="warehouse_quantity_to" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to'], ENT_QUOTES, 'UTF-8', true);?>
 ">
                 <input type="hidden" name="queue_status" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('queueStatusFilter'), ENT_QUOTES, 'UTF-8', true);?>
 ">
@@ -860,9 +865,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 ">
             <input type="hidden" name="invoice" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['invoice'], ENT_QUOTES, 'UTF-8', true);?>
 ">
-            <input type="hidden" name="warehouse_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity'], ENT_QUOTES, 'UTF-8', true);?>
+            <input type="hidden" name="warehouse_quantity_from" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from'], ENT_QUOTES, 'UTF-8', true);?>
 ">
-            <input type="hidden" name="allegro_quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['allegro_quantity'], ENT_QUOTES, 'UTF-8', true);?>
+            <input type="hidden" name="warehouse_quantity_to" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to'], ENT_QUOTES, 'UTF-8', true);?>
 ">
             <input type="hidden" name="queue_status" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('queueStatusFilter'), ENT_QUOTES, 'UTF-8', true);?>
 ">
@@ -1135,7 +1140,7 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['queue_meta']['row
                   <td style="width:80px;">
                     <?php if ($_smarty_tpl->getValue('offer')['primary_image_url']) {?>
                       <img src="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('offer')['primary_image_url'], ENT_QUOTES, 'UTF-8', true);?>
-" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
+" alt="" loading="lazy" decoding="async" style="width:56px;height:56px;object-fit:cover;border-radius:8px;">
                     <?php } else { ?>
                       <span class="text-secondary small">brak</span>
                     <?php }?>
@@ -1340,8 +1345,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Poprzednia</a>
               <a class="btn btn-sm btn-outline-secondary<?php if ($_smarty_tpl->getValue('page') >= $_smarty_tpl->getValue('totalPages')) {?> disabled<?php }?>" href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -1357,8 +1362,8 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 &linked=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['linked']);?>
 &market=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['market']);?>
 &invoice=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['invoice']);?>
-&warehouse_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity']);?>
-&allegro_quantity=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['allegro_quantity']);?>
+&warehouse_quantity_from=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_from']);?>
+&warehouse_quantity_to=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['warehouse_quantity_to']);?>
 &queue_status=<?php echo rawurlencode((string)$_smarty_tpl->getValue('filters')['queue_status']);?>
 ">Nastepna</a>
             </div>

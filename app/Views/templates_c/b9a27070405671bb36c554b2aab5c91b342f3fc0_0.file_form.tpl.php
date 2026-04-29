@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 22:53:20
+/* Smarty version 5.8.0, created on 2026-04-28 07:55:41
   from 'file:csv_templates/form.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69ea86c04eb140_70703395',
+  'unifunc' => 'content_69f04bddd52ad9_61084377',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'b9a27070405671bb36c554b2aab5c91b342f3fc0' => 
     array (
       0 => 'csv_templates/form.tpl',
-      1 => 1776977583,
+      1 => 1777355737,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69ea86c04eb140_70703395 (\Smarty\Template $_smarty_tpl) {
+function content_69f04bddd52ad9_61084377 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -146,8 +146,11 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
                   <p class="mb-2">W argumencie JSON mozesz uzywac tokenow typu <code>field:product.price_gross</code>.</p>
                   <p class="mb-1"><strong>Przyklad concat:</strong></p>
                   <pre class="bg-light border rounded p-2 small"><code>{"separator":" ","parts":["field:product.price_gross","PLN"]}</code></pre>
+                  <p class="mb-1"><strong>Przyklad concat z parametrem Allegro:</strong></p>
+                  <pre class="bg-light border rounded p-2 small"><code>{"separator":" | ","parts":["field:product.product_name","field:product.allegro_parameter.11748"]}</code></pre>
                   <p class="mb-1"><strong>Przyklad upper:</strong></p>
                   <pre class="bg-light border rounded p-2 small"><code>{"value":"field:product.product_name"}</code></pre>
+                  <p class="mb-0 text-secondary">Dokladny klucz parametru bierzesz z listy pol ponizej. Przy polach Allegro i Empik pokazuje sie teraz nazwa parametru, jego ID oraz nazwy kategorii, z ktorych jest brany.</p>
                 </div>
               </div>
               <div class="col-lg-6">
@@ -211,6 +214,10 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
             <div class="small text-secondary mb-2">
               Przeciagnij wiersze za uchwyt, aby zmienic kolejnosc. Dla funkcji obliczanych uzywaj tokenow typu
               <code>field:product.price_gross</code> lub <code>field:product.category_name</code>.
+            </div>
+            <div class="alert alert-info py-2 px-3 small">
+              Dla parametrow Allegro wpisuj w JSON dokladnie klucz z listy, np. <code>field:product.allegro_parameter.11748</code>.
+              Na liscie pola pokazujemy nazwe parametru, jego ID i kategorie, z ktorych pochodzi.
             </div>
             <div id="columnsBuilder" class="d-grid gap-2"></div>
           </div>
@@ -295,6 +302,14 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
     Object.keys(availableFields).forEach(function (key) {
       var isSelected = String(selected || '') === key ? ' selected' : '';
       html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(availableFields[key]) + '</option>';
+    });
+    return html;
+  }
+
+  function fieldInsertOptions() {
+    var html = '<option value="">Wybierz pole do wstawienia</option>';
+    Object.keys(availableFields).forEach(function (key) {
+      html += '<option value="' + escapeHtml(key) + '">' + escapeHtml(availableFields[key]) + '</option>';
     });
     return html;
   }
@@ -384,9 +399,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><input type="text" class="form-control form-control-sm col-field-search mb-1" placeholder="Szukaj pola"><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
       + '    <div class="col-md-3 static-wrap"><label class="form-label small">Wartosc stala</label><input type="text" class="form-control form-control-sm col-static" value="' + escapeHtml(data.source_value) + '"></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Funkcja</label><select class="form-select form-select-sm col-fn">' + functionOptions(data.settings.function) + '</select></div>'
-      + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="2">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea></div>'
       + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. date:Y-m-d lub number:2:,: " value="' + escapeHtml(data.settings.format || '') + '"></div>'
       + '    <div class="col-md-2"><label class="form-label small">Array sep.</label><input type="text" class="form-control form-control-sm col-array-sep" value="' + escapeHtml(data.settings.array_separator || '') + '"></div>'
+      + '    <div class="col-12 computed-wrap computed-json-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="3">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea><div class="border rounded bg-light-subtle p-2 mt-2"><div class="small fw-semibold mb-2">Wstaw parametr do JSON</div><div class="row g-2 align-items-end"><div class="col-lg-4"><label class="form-label small mb-1">Wyszukiwarka</label><input type="text" class="form-control form-control-sm col-fn-field-search" placeholder="Szukaj np. allegro_parameter, empik, sku"></div><div class="col-lg-6"><label class="form-label small mb-1">Pole / parametr</label><select class="form-select form-select-sm col-fn-field-insert">' + fieldInsertOptions() + '</select></div><div class="col-lg-2 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary insert-field-token">Wstaw do JSON</button></div></div><div class="form-text mb-0">Wstawia token w formacie <code>field:product.sku</code> albo <code>field:product.allegro_parameter.11748</code> w miejscu kursora.</div></div></div>'
       + '  </div>'
       + '  <div class="border rounded p-2 mt-2">'
       + '    <div class="small fw-semibold mb-2">Warunek</div>'
@@ -471,6 +486,25 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
       });
     }
 
+    var fnFieldSearchInput = card.querySelector('.col-fn-field-search');
+    var fnFieldSelect = card.querySelector('.col-fn-field-insert');
+    var fnArgsTextarea = card.querySelector('.col-fn-args');
+    if (fnFieldSearchInput && fnFieldSelect) {
+      fnFieldSearchInput.addEventListener('input', function () {
+        var query = String(fnFieldSearchInput.value || '').toLowerCase().trim();
+        var options = fnFieldSelect.querySelectorAll('option');
+        for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+          if (optionIndex === 0) {
+            options[optionIndex].hidden = false;
+            continue;
+          }
+
+          var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+          options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+        }
+      });
+    }
+
     card.querySelector('.remove-column').addEventListener('click', function () {
       card.remove();
     });
@@ -501,6 +535,23 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
         var layoutRow = event.target.closest('.image-layout-item');
         if (layoutRow) {
           layoutRow.remove();
+        }
+      }
+
+      if (event.target.classList.contains('insert-field-token')) {
+        if (!fnArgsTextarea || !fnFieldSelect || !fnFieldSelect.value) {
+          return;
+        }
+
+        var token = 'field:' + fnFieldSelect.value;
+        var start = typeof fnArgsTextarea.selectionStart === 'number' ? fnArgsTextarea.selectionStart : fnArgsTextarea.value.length;
+        var end = typeof fnArgsTextarea.selectionEnd === 'number' ? fnArgsTextarea.selectionEnd : fnArgsTextarea.value.length;
+        var currentValue = String(fnArgsTextarea.value || '');
+        fnArgsTextarea.value = currentValue.slice(0, start) + token + currentValue.slice(end);
+        fnArgsTextarea.focus();
+        var caretPosition = start + token.length;
+        if (typeof fnArgsTextarea.setSelectionRange === 'function') {
+          fnArgsTextarea.setSelectionRange(caretPosition, caretPosition);
         }
       }
 

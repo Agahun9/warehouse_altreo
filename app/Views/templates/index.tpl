@@ -23,6 +23,8 @@
 
       {assign var=allegroQueueTotal value=$allegroQueueStats.pending+$allegroQueueStats.processing+$allegroQueueStats.done+$allegroQueueStats.error+$allegroQueueStats.retry}
       {assign var=allegroQueueRemaining value=$allegroQueueStats.pending+$allegroQueueStats.processing+$allegroQueueStats.retry}
+      {assign var=sellasistFailureTotal value=$sellasistFailureStats.total_count|default:0}
+      {assign var=sellasistFailureLast24h value=$sellasistFailureStats.last_24h_count|default:0}
       {if $allegroQueueTotal > 0}
         {assign var=allegroQueueDonePercent value=($allegroQueueStats.done*100)/$allegroQueueTotal}
         {assign var=allegroQueueRemainingPercent value=($allegroQueueRemaining*100)/$allegroQueueTotal}
@@ -231,6 +233,30 @@
           font-size: 0.84rem;
           font-weight: 600;
         }
+
+        .dashboard-sellasist-failures .card-header {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+        }
+
+        .dashboard-sellasist-failures-title {
+          min-width: min(100%, 18rem);
+          flex: 1 1 18rem;
+        }
+
+        .dashboard-sellasist-failures-title .card-title {
+          float: none;
+          margin: 0 0 0.25rem;
+          line-height: 1.25;
+        }
+
+        .dashboard-sellasist-failures .badge {
+          flex: 0 0 auto;
+          white-space: nowrap;
+        }
       </style>
 
       <div class="row">
@@ -302,6 +328,58 @@
             </div>
           </div>
 
+          <div class="card mb-4 border-danger dashboard-sellasist-failures">
+            <div class="card-header">
+              <div class="dashboard-sellasist-failures-title">
+                <h3 class="card-title mb-1">Bledne wywolania Sellasist</h3>
+                <div class="small text-secondary">Ostatnie nieudane wejscia na odejmowanie i dodawanie stanu.</div>
+              </div>
+              <span class="badge text-bg-danger">Ostatnie 24h: {$sellasistFailureLast24h}</span>
+            </div>
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between gap-3 mb-3">
+                <div>
+                  <div class="small text-secondary">Wszystkie bledy</div>
+                  <div class="h4 mb-0">{$sellasistFailureTotal}</div>
+                </div>
+                <div class="text-sm-end">
+                  <div class="small text-secondary">Ostatnie</div>
+                  <div class="fw-semibold">{if $sellasistFailureStats.latest_at|default:''}{$sellasistFailureStats.latest_at|escape}{else}-{/if}</div>
+                </div>
+              </div>
+
+              {if $sellasistFailureStats.latest}
+                <div class="list-group list-group-flush border rounded mb-3">
+                  {foreach $sellasistFailureStats.latest as $failure}
+                    <div class="list-group-item px-3 py-2">
+                      <div class="d-flex justify-content-between gap-2">
+                        <span class="fw-semibold">{$failure.operation_label|escape}{if $failure.order_id|default:0} #{$failure.order_id}{/if}</span>
+                        <span class="small text-secondary text-nowrap">{$failure.created_at|escape}</span>
+                      </div>
+                      <div class="small text-secondary">
+                        {if $failure.request_method|default:''}{$failure.request_method|escape}{/if}
+                        {if $failure.response_status|default:''} {$failure.response_status|escape}{/if}
+                      </div>
+                      <div class="small text-secondary">{$failure.error_message|escape}</div>
+                    </div>
+                  {/foreach}
+                </div>
+              {else}
+                <div class="alert alert-success mb-3">Brak zapisanych blednych wywolan Sellasist.</div>
+              {/if}
+
+              {if $currentUser.permission_level neq 'read'}
+                {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
+                  <form method="post" action="{$baseUrl}?controller=index&action=clearsellasistfailures" onsubmit="return confirm('Usunac wszystkie zapisane bledne wywolania Sellasist z dashboardu?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" {if $sellasistFailureTotal <= 0}disabled{/if}>
+                      <i class="bi bi-trash"></i> Usun bledy Sellasist
+                    </button>
+                  </form>
+                {/if}
+              {/if}
+            </div>
+          </div>
+
           <div class="card dashboard-focus-card dashboard-focus-card-allegro mb-4">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
@@ -356,16 +434,9 @@
           <div class="card mb-4">
             <div class="card-header"><h3 class="card-title mb-0">Szybkie akcje</h3></div>
             <div class="card-body d-grid gap-2">
-              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.products|default:'' eq 'edit'}
-                <a href="{$baseUrl}?controller=products&action=create" class="btn btn-primary">Dodaj produkt</a>
-              {/if}
-              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.categories|default:'' eq 'edit'}
-                <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-outline-dark">Dodaj kategorie</a>
-              {/if}
-              {if $currentUser.role eq 'admin' or $currentUser.module_permissions.taskboard|default:'' neq ''}
-                <a href="{$baseUrl}?controller=taskboard&action=index" class="btn btn-outline-primary">Otworz taskboard</a>
-              {/if}
+              <a href="{$baseUrl}?controller=products&action=create" class="btn btn-primary">Dodaj produkt</a>
               {if $currentUser.role eq 'admin'}
+                <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-outline-dark">Dodaj kategorie</a>
                 <a href="{$baseUrl}?controller=admin&action=users" class="btn btn-outline-secondary">Zarzadzaj uzytkownikami</a>
               {/if}
             </div>
@@ -433,70 +504,6 @@
 
       {if $currentUser.role eq 'admin'}
         <div class="row">
-          <div class="col-12">
-            <div class="card mb-4 border-warning">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <div>
-                  <h3 class="card-title mb-0">Bledne wywolania Sellasist</h3>
-                  <div class="small text-secondary mt-1">
-                    Ostatnie nieudane wejscia na odejmowanie i dodawanie stanu. Ostatnie 24h:
-                    <strong>{$sellasistFailedRequestsSummary.total|default:0}</strong>
-                    {if $sellasistFailedRequestsSummary.latest_at|default:'' neq ''}
-                      , ostatnie: {$sellasistFailedRequestsSummary.latest_at|escape}
-                    {/if}
-                  </div>
-                </div>
-                <a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="btn btn-sm btn-outline-warning">Otworz Sellasist</a>
-              </div>
-              <div class="card-body p-0">
-                <div class="table-responsive">
-                  <table class="table table-sm table-striped table-hover table-bordered mb-0 align-middle">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Kiedy</th>
-                        <th>Operacja</th>
-                        <th>Zamowienie</th>
-                        <th>Metoda</th>
-                        <th>Status</th>
-                        <th>Blad</th>
-                        <th>IP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {if $sellasistFailedRequests}
-                        {foreach $sellasistFailedRequests as $failure}
-                          <tr>
-                            <td class="text-nowrap">{$failure.created_at|default:'-'|escape}</td>
-                            <td>
-                              <span class="badge text-bg-{if $failure.operation eq 'add_stock'}info{else}warning{/if}">
-                                {$failure.operation|escape}
-                              </span>
-                            </td>
-                            <td>
-                              {if $failure.order_id|default:0 > 0}
-                                <strong>#{$failure.order_id}</strong>
-                              {else}
-                                <span class="text-secondary">brak</span>
-                              {/if}
-                            </td>
-                            <td><code>{$failure.request_method|default:'-'|escape}</code></td>
-                            <td><span class="badge text-bg-danger">{$failure.response_status|default:'-'|escape}</span></td>
-                            <td class="small">{$failure.error_message|default:'-'|escape}</td>
-                            <td class="small text-nowrap">{$failure.remote_addr|default:'-'|escape}</td>
-                          </tr>
-                        {/foreach}
-                      {else}
-                        <tr>
-                          <td colspan="7" class="text-center py-3">Brak zapisanych blednych wywolan Sellasist.</td>
-                        </tr>
-                      {/if}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div class="col-12">
             <div class="card mb-4">
               <div class="card-header d-flex justify-content-between align-items-center">

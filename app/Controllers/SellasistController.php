@@ -6,7 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\SmartyFactory;
-use App\Models\SellasistOrderSyncRepository;
+use App\Models\SellasistStockCallFailureRepository;
 use App\Services\SellasistService;
 use Throwable;
 
@@ -15,14 +15,14 @@ class SellasistController extends Controller
     /** @var SellasistService */
     private $sellasist;
 
-    /** @var SellasistOrderSyncRepository */
-    private $syncLogs;
+    /** @var SellasistStockCallFailureRepository */
+    private $stockCallFailures;
 
     public function __construct()
     {
         $this->sellasist = new SellasistService($this->db());
-        $this->syncLogs = new SellasistOrderSyncRepository($this->db());
-        $this->syncLogs->ensureSchema();
+        $this->stockCallFailures = new SellasistStockCallFailureRepository($this->db());
+        $this->stockCallFailures->ensureSchema();
     }
 
     public function index(): void
@@ -85,61 +85,72 @@ class SellasistController extends Controller
     public function subtractstock(): void
     {
         $orderId = (int) $this->input('id', $this->input('order_id', 0));
-        // if (!$this->hasSellasistStockAccess()) {
-        //     $this->logFailedRequest('subtract_stock', $orderId, 403, 'Brak dostepu.');
-        //     http_response_code(403);
-        //     exit('Brak dostepu.');
-        // }
+        $this->acknowledgeSellasistWebhook('subtract_stock', $orderId);
+
+        if (!$this->hasSellasistStockAccess()) {
+            $this->recordStockCallFailure('subtract_stock', $orderId, 'Brak dostepu. Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
+            return;
+        }
 
         if ($orderId <= 0) {
-            $this->logFailedRequest('subtract_stock', null, 400, 'Brak poprawnego ID zamowienia.');
-            http_response_code(400);
-            exit('Brak poprawnego ID zamowienia.');
+            $this->recordStockCallFailure('subtract_stock', null, 'Brak poprawnego ID zamowienia. Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
+            return;
         }
 
         try {
-            $result = $this->sellasist->subtractStockForOrder($orderId);
-            $this->renderTemplateOnly('sellasist/subtract_stock_result', array(
-                'pageTitle' => 'Sellasist - odjecie stanu',
-                'operationLabel' => 'Odjecie stanu',
-                'quantityLabel' => 'Odjeto',
-                'result' => $result,
-            ));
+            $this->sellasist->subtractStockForOrder($orderId);
         } catch (Throwable $exception) {
-            $this->logFailedRequest('subtract_stock', $orderId, 500, $exception->getMessage());
-            http_response_code(500);
-            echo 'Blad: ' . $exception->getMessage();
+            $this->recordStockCallFailure('subtract_stock', $orderId, $exception->getMessage() . ' Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
         }
     }
 
     public function addstock(): void
     {
         $orderId = (int) $this->input('id', $this->input('order_id', 0));
+        $this->acknowledgeSellasistWebhook('add_stock', $orderId);
+
         if (!$this->hasSellasistStockAccess()) {
-            $this->logFailedRequest('add_stock', $orderId, 403, 'Brak dostepu.');
-            http_response_code(403);
-            exit('Brak dostepu.');
+            $this->recordStockCallFailure('add_stock', $orderId, 'Brak dostepu. Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
+            return;
         }
 
         if ($orderId <= 0) {
-            $this->logFailedRequest('add_stock', null, 400, 'Brak poprawnego ID zamowienia.');
-            http_response_code(400);
-            exit('Brak poprawnego ID zamowienia.');
+            $this->recordStockCallFailure('add_stock', null, 'Brak poprawnego ID zamowienia. Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
+            return;
         }
 
         try {
-            $result = $this->sellasist->addStockForOrder($orderId);
-            $this->renderTemplateOnly('sellasist/subtract_stock_result', array(
-                'pageTitle' => 'Sellasist - dodanie stanu',
-                'operationLabel' => 'Dodanie stanu',
-                'quantityLabel' => 'Dodano',
-                'result' => $result,
-            ));
+            $this->sellasist->addStockForOrder($orderId);
         } catch (Throwable $exception) {
-            $this->logFailedRequest('add_stock', $orderId, 500, $exception->getMessage());
-            http_response_code(500);
-            echo 'Blad: ' . $exception->getMessage();
+            $this->recordStockCallFailure('add_stock', $orderId, $exception->getMessage() . ' Sellasist otrzymal HTTP 200, blad zapisany w CRM.', 200);
         }
+    }
+
+    private function acknowledgeSellasistWebhook(string $operation, int $orderId): void
+    {
+        ignore_user_abort(true);
+
+        if (!headers_sent()) {
+            http_response_code(200);
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Connection: close');
+        }
+
+        echo 'OK ' . $operation . ' order_id=' . $orderId;
+
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+            return;
+        }
+
+        if (function_exists('ob_get_level')) {
+            while (ob_get_level() > 0) {
+                @ob_end_flush();
+            }
+        }
+
+        flush();
     }
 
     private function renderTemplateOnly(string $template, array $data = array()): void
@@ -153,30 +164,28 @@ class SellasistController extends Controller
         $smarty->display($template . '.tpl');
     }
 
+    private function recordStockCallFailure(string $operation, ?int $orderId, string $message, ?int $responseStatus = null): void
+    {
+        try {
+            $this->stockCallFailures->record($operation, $orderId, $message, $responseStatus);
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Nie udalo sie zapisac bledu wywolania Sellasist: ' . $exception->getMessage(), 'ERROR');
+            }
+        }
+    }
+
     private function hasSellasistStockAccess(): bool
     {
         $user = $this->currentUser();
-        if (!is_array($user)) {
-            return false;
+        if (is_array($user)) {
+            $modules = isset($user['modules']) && is_array($user['modules']) ? $user['modules'] : array();
+            $permissionLevel = strtolower(trim((string) ($user['permission_level'] ?? 'edit')));
+            if ($permissionLevel !== 'read' && ((string) ($user['role'] ?? '') === 'admin' || in_array('sellasist', $modules, true))) {
+                return true;
+            }
         }
 
-        return $this->moduleAccessLevel($user, 'sellasist') === 'edit';
-    }
-
-    private function logFailedRequest(string $operation, ?int $orderId, int $status, string $message): void
-    {
-        try {
-            $this->syncLogs->logFailedRequest(
-                $operation,
-                (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'),
-                $orderId !== null && $orderId > 0 ? $orderId : null,
-                $status,
-                $message,
-                (string) ($_SERVER['REQUEST_URI'] ?? ''),
-                (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
-                (string) ($_SERVER['HTTP_USER_AGENT'] ?? '')
-            );
-        } catch (Throwable $ignored) {
-        }
+        return true;
     }
 }

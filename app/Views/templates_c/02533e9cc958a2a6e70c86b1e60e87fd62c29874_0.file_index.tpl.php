@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 22:49:13
+/* Smarty version 5.8.0, created on 2026-04-28 21:41:23
   from 'file:index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69ea85c9ddc8b8_32500719',
+  'unifunc' => 'content_69f10d63cb8396_72873134',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '02533e9cc958a2a6e70c86b1e60e87fd62c29874' => 
     array (
       0 => 'index.tpl',
-      1 => 1776975198,
+      1 => 1777405237,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69ea85c9ddc8b8_32500719 (\Smarty\Template $_smarty_tpl) {
+function content_69f10d63cb8396_72873134 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -53,6 +53,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
       <?php $_smarty_tpl->assign('allegroQueueTotal', $_smarty_tpl->getValue('allegroQueueStats')['pending']+$_smarty_tpl->getValue('allegroQueueStats')['processing']+$_smarty_tpl->getValue('allegroQueueStats')['done']+$_smarty_tpl->getValue('allegroQueueStats')['error']+$_smarty_tpl->getValue('allegroQueueStats')['retry'], false, NULL);?>
       <?php $_smarty_tpl->assign('allegroQueueRemaining', $_smarty_tpl->getValue('allegroQueueStats')['pending']+$_smarty_tpl->getValue('allegroQueueStats')['processing']+$_smarty_tpl->getValue('allegroQueueStats')['retry'], false, NULL);?>
+      <?php $_smarty_tpl->assign('sellasistFailureTotal', (($tmp = $_smarty_tpl->getValue('sellasistFailureStats')['total_count'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp), false, NULL);?>
+      <?php $_smarty_tpl->assign('sellasistFailureLast24h', (($tmp = $_smarty_tpl->getValue('sellasistFailureStats')['last_24h_count'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp), false, NULL);?>
       <?php if ($_smarty_tpl->getValue('allegroQueueTotal') > 0) {?>
         <?php $_smarty_tpl->assign('allegroQueueDonePercent', ($_smarty_tpl->getValue('allegroQueueStats')['done']*100)/$_smarty_tpl->getValue('allegroQueueTotal'), false, NULL);?>
         <?php $_smarty_tpl->assign('allegroQueueRemainingPercent', ($_smarty_tpl->getValue('allegroQueueRemaining')*100)/$_smarty_tpl->getValue('allegroQueueTotal'), false, NULL);?>
@@ -261,6 +263,30 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
           font-size: 0.84rem;
           font-weight: 600;
         }
+
+        .dashboard-sellasist-failures .card-header {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+        }
+
+        .dashboard-sellasist-failures-title {
+          min-width: min(100%, 18rem);
+          flex: 1 1 18rem;
+        }
+
+        .dashboard-sellasist-failures-title .card-title {
+          float: none;
+          margin: 0 0 0.25rem;
+          line-height: 1.25;
+        }
+
+        .dashboard-sellasist-failures .badge {
+          flex: 0 0 auto;
+          white-space: nowrap;
+        }
       </style>
 
       <div class="row">
@@ -359,6 +385,77 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             </div>
           </div>
 
+          <div class="card mb-4 border-danger dashboard-sellasist-failures">
+            <div class="card-header">
+              <div class="dashboard-sellasist-failures-title">
+                <h3 class="card-title mb-1">Bledne wywolania Sellasist</h3>
+                <div class="small text-secondary">Ostatnie nieudane wejscia na odejmowanie i dodawanie stanu.</div>
+              </div>
+              <span class="badge text-bg-danger">Ostatnie 24h: <?php echo $_smarty_tpl->getValue('sellasistFailureLast24h');?>
+</span>
+            </div>
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between gap-3 mb-3">
+                <div>
+                  <div class="small text-secondary">Wszystkie bledy</div>
+                  <div class="h4 mb-0"><?php echo $_smarty_tpl->getValue('sellasistFailureTotal');?>
+</div>
+                </div>
+                <div class="text-sm-end">
+                  <div class="small text-secondary">Ostatnie</div>
+                  <div class="fw-semibold"><?php if ((($tmp = $_smarty_tpl->getValue('sellasistFailureStats')['latest_at'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {
+echo htmlspecialchars((string)$_smarty_tpl->getValue('sellasistFailureStats')['latest_at'], ENT_QUOTES, 'UTF-8', true);
+} else { ?>-<?php }?></div>
+                </div>
+              </div>
+
+              <?php if ($_smarty_tpl->getValue('sellasistFailureStats')['latest']) {?>
+                <div class="list-group list-group-flush border rounded mb-3">
+                  <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('sellasistFailureStats')['latest'], 'failure');
+$foreach2DoElse = true;
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('failure')->value) {
+$foreach2DoElse = false;
+?>
+                    <div class="list-group-item px-3 py-2">
+                      <div class="d-flex justify-content-between gap-2">
+                        <span class="fw-semibold"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('failure')['operation_label'], ENT_QUOTES, 'UTF-8', true);
+if ((($tmp = $_smarty_tpl->getValue('failure')['order_id'] ?? null)===null||$tmp==='' ? 0 ?? null : $tmp)) {?> #<?php echo $_smarty_tpl->getValue('failure')['order_id'];
+}?></span>
+                        <span class="small text-secondary text-nowrap"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('failure')['created_at'], ENT_QUOTES, 'UTF-8', true);?>
+</span>
+                      </div>
+                      <div class="small text-secondary">
+                        <?php if ((($tmp = $_smarty_tpl->getValue('failure')['request_method'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {
+echo htmlspecialchars((string)$_smarty_tpl->getValue('failure')['request_method'], ENT_QUOTES, 'UTF-8', true);
+}?>
+                        <?php if ((($tmp = $_smarty_tpl->getValue('failure')['response_status'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp)) {?> <?php echo htmlspecialchars((string)$_smarty_tpl->getValue('failure')['response_status'], ENT_QUOTES, 'UTF-8', true);
+}?>
+                      </div>
+                      <div class="small text-secondary"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('failure')['error_message'], ENT_QUOTES, 'UTF-8', true);?>
+</div>
+                    </div>
+                  <?php
+}
+$_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
+                </div>
+              <?php } else { ?>
+                <div class="alert alert-success mb-3">Brak zapisanych blednych wywolan Sellasist.</div>
+              <?php }?>
+
+              <?php if ($_smarty_tpl->getValue('currentUser')['permission_level'] != 'read') {?>
+                <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('sellasist',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+                  <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=index&action=clearsellasistfailures" onsubmit="return confirm('Usunac wszystkie zapisane bledne wywolania Sellasist z dashboardu?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" <?php if ($_smarty_tpl->getValue('sellasistFailureTotal') <= 0) {?>disabled<?php }?>>
+                      <i class="bi bi-trash"></i> Usun bledy Sellasist
+                    </button>
+                  </form>
+                <?php }?>
+              <?php }?>
+            </div>
+          </div>
+
           <div class="card dashboard-focus-card dashboard-focus-card-allegro mb-4">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
@@ -443,9 +540,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
               <ul class="list-group list-group-flush">
                 <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('activities'), 'activity');
-$foreach2DoElse = true;
+$foreach3DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('activity')->value) {
-$foreach2DoElse = false;
+$foreach3DoElse = false;
 ?>
                   <li class="list-group-item"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('activity'), ENT_QUOTES, 'UTF-8', true);?>
 </li>
@@ -480,9 +577,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                     <?php if ($_smarty_tpl->getValue('recentProductChanges')) {?>
                       <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('recentProductChanges'), 'change');
-$foreach3DoElse = true;
+$foreach4DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('change')->value) {
-$foreach3DoElse = false;
+$foreach4DoElse = false;
 ?>
                         <tr>
                           <td>
@@ -548,9 +645,9 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       <?php if ($_smarty_tpl->getValue('recentUsers')) {?>
                         <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('recentUsers'), 'user');
-$foreach4DoElse = true;
+$foreach5DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('user')->value) {
-$foreach4DoElse = false;
+$foreach5DoElse = false;
 ?>
                           <tr>
                             <td><?php echo $_smarty_tpl->getValue('user')['id'];?>

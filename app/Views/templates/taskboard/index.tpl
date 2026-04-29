@@ -42,6 +42,18 @@
           box-shadow: var(--taskboard-shadow);
         }
 
+        body.taskboard-edit-layer-active .app-main,
+        body.taskboard-edit-layer-active .app-header,
+        body.taskboard-edit-layer-active .app-sidebar {
+          filter: blur(3px);
+          transition: filter 0.18s ease;
+        }
+
+        body.taskboard-edit-layer-active .modal.show,
+        body.taskboard-edit-layer-active .offcanvas.show {
+          filter: none;
+        }
+
         .taskboard-shell::before,
         .taskboard-shell::after {
           content: '';
@@ -182,7 +194,7 @@
           align-items: center;
           justify-content: space-between;
           gap: 1rem;
-          padding: 1rem 1.1rem;
+          padding: 0px 1.1rem;
         }
 
         .taskboard-compact-actions {
@@ -195,8 +207,25 @@
         .taskboard-toolbar-filters {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.65rem;
+          gap: 0.35rem;
           align-items: center;
+        }
+
+        .taskboard-filter-strip {
+          padding: 0.45rem 0.55rem;
+          border-radius: 0.8rem;
+        }
+
+        .taskboard-filter-strip .taskboard-filters-collapse {
+          margin-top: 0;
+        }
+
+        .taskboard-filter-button {
+          min-height: 1.85rem;
+          padding: 0.22rem 0.5rem;
+          border-radius: 999px;
+          font-size: 0.76rem;
+          line-height: 1.1;
         }
 
         .taskboard-form-surface {
@@ -256,7 +285,7 @@
           text-decoration: none;
           transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
           animation: taskboardCardIn 0.32s ease both;
-          cursor: grab;
+          cursor: pointer;
         }
 
         .taskboard-task-card:hover,
@@ -270,12 +299,21 @@
         .taskboard-task-card.is-dragging {
           opacity: 0.5;
           transform: rotate(1deg) scale(0.98);
-          cursor: grabbing;
+          cursor: pointer;
         }
 
         .taskboard-task-card.is-overdue {
           border-color: rgba(220, 38, 38, 0.28);
           background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(254, 242, 242, 0.92));
+        }
+
+        .taskboard-task-card.is-newly-created {
+          animation: taskboardNewTaskIn 0.78s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+          border-color: rgba(16, 185, 129, 0.48);
+        }
+
+        .taskboard-task-card.is-panel-target {
+          box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.13), 0 18px 36px rgba(15, 23, 42, 0.1);
         }
 
         .taskboard-task-topline,
@@ -338,6 +376,12 @@
 
         .taskboard-offcanvas {
           --bs-offcanvas-width: min(560px, 94vw);
+          transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.34s ease;
+        }
+
+        .taskboard-offcanvas.showing,
+        .taskboard-offcanvas.show {
+          animation: taskboardPanelSlideGlow 0.42s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .taskboard-offcanvas .offcanvas-header,
@@ -405,10 +449,104 @@
           box-shadow: none;
         }
 
+        .taskboard-detail-card.is-animated .taskboard-detail-hero {
+          animation: taskboardDetailHeroIn 0.42s ease both;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section,
+        .taskboard-detail-card.is-animated .taskboard-detail-toolbar,
+        .taskboard-detail-card.is-animated .taskboard-subcopy,
+        .taskboard-detail-card.is-animated .taskboard-autosave-status {
+          animation: taskboardDetailSectionIn 0.42s ease both;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-toolbar {
+          animation-delay: 0.04s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-subcopy,
+        .taskboard-detail-card.is-animated .taskboard-autosave-status {
+          animation-delay: 0.08s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section:nth-of-type(1) {
+          animation-delay: 0.1s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section:nth-of-type(2) {
+          animation-delay: 0.14s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section:nth-of-type(3) {
+          animation-delay: 0.18s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section:nth-of-type(4) {
+          animation-delay: 0.22s;
+        }
+
+        .taskboard-detail-card.is-animated .taskboard-detail-section:nth-of-type(5) {
+          animation-delay: 0.26s;
+        }
+
+        .taskboard-detail-hero {
+          padding: 1rem;
+          margin-bottom: 0.95rem;
+          border-radius: 1.1rem;
+          border: 1px solid rgba(14, 116, 144, 0.2);
+          background: linear-gradient(135deg, rgba(240, 253, 250, 0.96), rgba(239, 246, 255, 0.96));
+        }
+
+        .taskboard-detail-hero-title {
+          font-size: 1.05rem;
+          font-weight: 800;
+          color: #0f172a;
+          line-height: 1.25;
+        }
+
+        .taskboard-detail-title-input {
+          min-height: 2.55rem;
+          border-color: rgba(15, 23, 42, 0.12);
+          font-size: 1.02rem;
+          font-weight: 800;
+        }
+
+        .taskboard-detail-badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+          margin-top: 0.7rem;
+        }
+
+        .taskboard-detail-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.35rem 0.6rem;
+          border-radius: 999px;
+          background: #fff;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          color: #334155;
+          font-size: 0.78rem;
+          font-weight: 700;
+        }
+
+        .taskboard-autosave-status {
+          min-height: 1.25rem;
+          font-size: 0.78rem;
+          color: #64748b;
+        }
+
+        .taskboard-detail-section {
+          padding: 0.95rem;
+          border-radius: 1rem;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: rgba(255, 255, 255, 0.92);
+          box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+        }
+
         .taskboard-detail-section + .taskboard-detail-section {
-          margin-top: 0.9rem;
-          padding-top: 0.9rem;
-          border-top: 1px solid rgba(148, 163, 184, 0.16);
+          margin-top: 0.85rem;
         }
 
         .taskboard-detail-toolbar {
@@ -442,6 +580,45 @@
           justify-content: space-between;
           gap: 0.75rem;
           margin-bottom: 0.75rem;
+        }
+
+        .taskboard-section-heading {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.55rem;
+          min-width: 0;
+        }
+
+        .taskboard-section-icon {
+          width: 2rem;
+          height: 2rem;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 0.75rem;
+          color: #fff;
+          background: #0d9488;
+          box-shadow: 0 8px 18px rgba(13, 148, 136, 0.24);
+        }
+
+        .taskboard-section-icon.-blue {
+          background: #2563eb;
+          box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+        }
+
+        .taskboard-section-icon.-amber {
+          background: #d97706;
+          box-shadow: 0 8px 18px rgba(217, 119, 6, 0.22);
+        }
+
+        .taskboard-section-icon.-violet {
+          background: #7c3aed;
+          box-shadow: 0 8px 18px rgba(124, 58, 237, 0.2);
+        }
+
+        .taskboard-section-icon.-green {
+          background: #16a34a;
+          box-shadow: 0 8px 18px rgba(22, 163, 74, 0.22);
         }
 
         .taskboard-checklist {
@@ -479,6 +656,16 @@
 
         .taskboard-subtask-label {
           font-size: 0.92rem;
+        }
+
+        .taskboard-item-delete {
+          width: 1.85rem;
+          height: 1.85rem;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border-radius: 999px;
         }
 
         .taskboard-note-list,
@@ -597,6 +784,15 @@
           animation: taskboardPulse 0.26s ease;
         }
 
+        #taskboardTaskDetailsBody.is-refreshing {
+          opacity: 0.72;
+          transition: opacity 0.16s ease;
+        }
+
+        #taskboardTaskDetailsBody.just-updated .taskboard-detail-card {
+          animation: taskboardPanelUpdated 0.52s ease;
+        }
+
         @keyframes taskboardCardIn {
           from {
             opacity: 0;
@@ -606,6 +802,64 @@
           to {
             opacity: 1;
             transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes taskboardNewTaskIn {
+          0% {
+            opacity: 0;
+            transform: translateY(-12px) scale(0.94);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+          }
+
+          42% {
+            opacity: 1;
+            transform: translateY(0) scale(1.025);
+            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.18), 0 20px 38px rgba(15, 23, 42, 0.12);
+          }
+
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+          }
+        }
+
+        @keyframes taskboardPanelSlideGlow {
+          0% {
+            filter: drop-shadow(-18px 0 26px rgba(13, 110, 253, 0));
+          }
+
+          55% {
+            filter: drop-shadow(-18px 0 26px rgba(13, 110, 253, 0.16));
+          }
+
+          100% {
+            filter: drop-shadow(-18px 0 26px rgba(13, 110, 253, 0));
+          }
+        }
+
+        @keyframes taskboardDetailHeroIn {
+          from {
+            opacity: 0;
+            transform: translateY(12px) scale(0.98);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes taskboardDetailSectionIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
           }
         }
 
@@ -620,6 +874,23 @@
 
           100% {
             transform: scale(1);
+          }
+        }
+
+        @keyframes taskboardPanelUpdated {
+          0% {
+            box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+            transform: translateY(0);
+          }
+
+          35% {
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+            transform: translateY(-2px);
+          }
+
+          100% {
+            box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+            transform: translateY(0);
           }
         }
 
@@ -646,59 +917,7 @@
 
       <div class="taskboard-shell">
         <div class="row g-4">
-          <div class="col-xl-3">
-            <div class="taskboard-sidebar-card mb-4">
-              <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-                <div>
-                  <div class="text-uppercase small fw-bold text-secondary">Tablice</div>
-                  <h4 class="h6 mb-0">Przestrzenie zespolu</h4>
-                </div>
-                <span class="badge text-bg-dark">{$boards|@count}</span>
-              </div>
-
-              <div class="taskboard-board-list">
-                {foreach $boards as $board}
-                  <a
-                    href="{$baseUrl}?controller=taskboard&action=index&board_id={$board.id}"
-                    class="taskboard-board-link{if $selectedBoardId eq $board.id} is-active{/if}"
-                    data-loader-label="Ladowanie tablicy {$board.name|escape:'htmlall'}"
-                  >
-                    <div class="taskboard-board-title">
-                      <span class="d-inline-flex align-items-center gap-2">
-                        <span class="taskboard-board-dot" style="background: {$board.accent_color|default:'#0d6efd'|escape};"></span>
-                        <span>{$board.name|escape}</span>
-                      </span>
-                      {if $board.is_archived|default:0}
-                        <span class="badge text-bg-secondary">Archiwum</span>
-                      {/if}
-                    </div>
-                    <div class="taskboard-board-meta">
-                      {$board.tasks_count|default:0} zadan
-                    </div>
-                    {if $board.description|default:'' neq ''}
-                      <div class="small text-secondary mt-2">{$board.description|truncate:90|escape}</div>
-                    {/if}
-                  </a>
-                {/foreach}
-              </div>
-            </div>
-
-            {if $canWriteTaskboard}
-              <div class="taskboard-sidebar-card">
-                <div class="taskboard-section-title mb-0">
-                  <div class="taskboard-header-mini">
-                    <h4 class="h6 mb-1">Zarzadzanie</h4>
-                    <div class="small text-secondary">Nowe tablice i szybkie akcje.</div>
-                  </div>
-                  <div class="taskboard-header-actions">
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#taskboardCreateBoardModal">Nowa tablica</button>
-                  </div>
-                </div>
-              </div>
-            {/if}
-          </div>
-
-          <div class="col-xl-9">
+          <div class="col-12">
             {if $selectedBoard}
               <div class="taskboard-sidebar-card mb-4">
                 <div class="taskboard-compact-head">
@@ -727,33 +946,18 @@
                         <i class="bi bi-gear"></i>
                       </button>
                     {/if}
-                    <button type="button" class="btn btn-light btn-sm" data-bs-toggle="collapse" data-bs-target="#taskboardTeamFilters" aria-expanded="false" aria-controls="taskboardTeamFilters" title="Filtry widoku">
-                      <i class="bi bi-sliders"></i>
-                    </button>
                   </div>
                 </div>
               </div>
 
-              <div class="taskboard-sidebar-card mb-4">
-                <div class="taskboard-toolbar">
-                  <div>
-                    <div class="text-uppercase small fw-bold text-secondary">Widok zespolowy</div>
-                    <h4 class="h6 mb-0">Filtry</h4>
-                  </div>
-                </div>
-                <div class="collapse taskboard-filters-collapse" id="taskboardTeamFilters">
+              <div class="taskboard-sidebar-card taskboard-filter-strip mb-3">
+                <div class="taskboard-filters-collapse show" id="taskboardTeamFilters">
                   <div class="taskboard-toolbar-filters">
-                    <input type="search" id="taskboardTaskSearch" class="form-control" placeholder="Szukaj po tytule lub opisie">
-                    <select id="taskboardAssigneeFilter" class="form-select">
-                      <option value="">Wszyscy</option>
-                      <option value="unassigned">Nieprzypisane</option>
-                      {foreach $activeUsers as $user}
-                        <option value="{$user.id}">
-                          {if $user.first_name|default:'' neq '' or $user.last_name|default:'' neq ''}{$user.first_name|default:''|escape} {$user.last_name|default:''|escape}{else}{$user.email|escape}{/if}
-                        </option>
-                      {/foreach}
-                    </select>
-                    <button type="button" id="taskboardClearFilters" class="btn btn-outline-secondary">Wyczysc</button>
+                    <button type="button" class="btn btn-primary btn-sm taskboard-filter-button" data-taskboard-assignee-filter="">Wszyscy</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm taskboard-filter-button" data-taskboard-assignee-filter="unassigned">Bez osoby</button>
+                    {foreach $assignedFilterUsers as $user}
+                      <button type="button" class="btn btn-outline-secondary btn-sm taskboard-filter-button" data-taskboard-assignee-filter="{$user.id}">{$user.label|truncate:18|escape}</button>
+                    {/foreach}
                   </div>
                 </div>
               </div>
@@ -779,6 +983,7 @@
                           {assign var=priorityMeta value=$priorityDefinitions[$task.priority]|default:$priorityDefinitions.medium}
                           <article
                             class="taskboard-task-card{if $selectedTask and $selectedTask.id eq $task.id} is-selected{/if}{if $task.due_at|default:'' neq '' and $task.status neq 'done' and $task.due_at < $smarty.now|date_format:'%Y-%m-%d %H:%M:%S'} is-overdue{/if}"
+                            {if $selectedTask and $selectedTask.id eq $task.id} data-newly-selected-task="1"{/if}
                             draggable="{if $canWriteTaskboard}true{else}false{/if}"
                             data-task-id="{$task.id}"
                             data-board-id="{$selectedBoard.id}"
@@ -875,7 +1080,7 @@
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#taskboardArchiveList"
-                    aria-expanded="false"
+                    aria-expanded="{if $openArchive|default:false}true{else}false{/if}"
                     aria-controls="taskboardArchiveList"
                   >
                     <span class="d-inline-flex align-items-center gap-2">
@@ -884,7 +1089,7 @@
                     </span>
                     <span class="badge text-bg-secondary">{$archivedTasks|@count}</span>
                   </button>
-                  <div class="collapse" id="taskboardArchiveList">
+                  <div class="collapse{if $openArchive|default:false} show{/if}" id="taskboardArchiveList">
                     <div class="taskboard-archive-list">
                       {if $archivedTasks}
                         {foreach $archivedTasks as $task}
@@ -957,7 +1162,7 @@
 </main>
 
 {if $selectedBoard}
-  <div class="offcanvas offcanvas-end taskboard-offcanvas" tabindex="-1" id="taskboardTaskDetails" aria-labelledby="taskboardTaskDetailsLabel">
+  <div class="offcanvas offcanvas-end taskboard-offcanvas" tabindex="-1" id="taskboardTaskDetails" aria-labelledby="taskboardTaskDetailsLabel" data-bs-backdrop="false" data-bs-scroll="true">
     <div class="offcanvas-header">
       <div>
         <h5 class="offcanvas-title mb-1" id="taskboardTaskDetailsLabel">{if $selectedTask}{$selectedTask.title|escape}{else}Szczegoly zadania{/if}</h5>
@@ -982,7 +1187,7 @@
 {/if}
 
 {if $selectedBoard and $canWriteTaskboard}
-  <div class="offcanvas offcanvas-end taskboard-offcanvas" tabindex="-1" id="taskboardBoardSettings" aria-labelledby="taskboardBoardSettingsLabel">
+  <div class="offcanvas offcanvas-end taskboard-offcanvas" tabindex="-1" id="taskboardBoardSettings" aria-labelledby="taskboardBoardSettingsLabel" data-bs-backdrop="false" data-bs-scroll="true">
     <div class="offcanvas-header">
       <h5 class="offcanvas-title" id="taskboardBoardSettingsLabel">Ustawienia tablicy</h5>
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
@@ -1046,7 +1251,7 @@
 {/if}
 
 {if $canWriteTaskboard}
-  <div class="modal fade taskboard-modal" id="taskboardCreateBoardModal" tabindex="-1" aria-labelledby="taskboardCreateBoardModalLabel" aria-hidden="true">
+  <div class="modal fade taskboard-modal" id="taskboardCreateBoardModal" tabindex="-1" aria-labelledby="taskboardCreateBoardModalLabel" aria-hidden="true" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1139,7 +1344,7 @@
 {/if}
 
 {if $selectedBoard and $canWriteTaskboard}
-  <div class="modal fade taskboard-modal" id="taskboardCreateTaskModal" tabindex="-1" aria-labelledby="taskboardCreateTaskModalLabel" aria-hidden="true">
+  <div class="modal fade taskboard-modal" id="taskboardCreateTaskModal" tabindex="-1" aria-labelledby="taskboardCreateTaskModalLabel" aria-hidden="true" data-bs-backdrop="false">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1205,16 +1410,138 @@
     var draggedCard = null;
     var hasDraggedCard = false;
     var movingRequest = null;
-    var searchInput = document.getElementById('taskboardTaskSearch');
-    var assigneeFilter = document.getElementById('taskboardAssigneeFilter');
-    var clearFiltersButton = document.getElementById('taskboardClearFilters');
+    var activeAssigneeFilter = '';
     var taskPanel = document.getElementById('taskboardTaskDetails');
     var taskPanelBody = document.getElementById('taskboardTaskDetailsBody');
     var taskPanelTitle = document.getElementById('taskboardTaskDetailsLabel');
     var taskPanelMeta = document.getElementById('taskboardTaskDetailsMeta');
-    var taskPanelInstance = taskPanel && window.bootstrap && window.bootstrap.Offcanvas
-      ? window.bootstrap.Offcanvas.getOrCreateInstance(taskPanel)
-      : null;
+    var createBoardModal = document.getElementById('taskboardCreateBoardModal');
+    var createTaskModal = document.getElementById('taskboardCreateTaskModal');
+    var boardSettingsPanel = document.getElementById('taskboardBoardSettings');
+    var taskPanelInstance = null;
+    var createBoardModalInstance = null;
+    var autosaveTimer = null;
+    var autosaveRequest = null;
+
+    function getTaskPanelInstance() {
+      if (!taskPanel || !window.bootstrap || !window.bootstrap.Offcanvas) {
+        return null;
+      }
+
+      if (!taskPanelInstance) {
+        taskPanelInstance = window.bootstrap.Offcanvas.getOrCreateInstance(taskPanel);
+      }
+
+      return taskPanelInstance;
+    }
+
+    function getCreateBoardModalInstance() {
+      if (!createBoardModal || !window.bootstrap || !window.bootstrap.Modal) {
+        return null;
+      }
+
+      if (!createBoardModalInstance) {
+        createBoardModalInstance = window.bootstrap.Modal.getOrCreateInstance(createBoardModal);
+      }
+
+      return createBoardModalInstance;
+    }
+
+    function closeBootstrapLayer(element) {
+      if (!element || !window.bootstrap) {
+        return;
+      }
+
+      if (element.classList.contains('modal') && window.bootstrap.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(element).hide();
+        return;
+      }
+
+      if (element.classList.contains('offcanvas') && window.bootstrap.Offcanvas) {
+        window.bootstrap.Offcanvas.getOrCreateInstance(element).hide();
+      }
+    }
+
+    function updateTaskboardEditLayerState() {
+      var editLayerOpen = false;
+      var editLayerSelectors = ['#taskboardBoardSettings', '#taskboardCreateBoardModal', '#taskboardCreateTaskModal'];
+      for (var i = 0; i < editLayerSelectors.length; i++) {
+        var layer = document.querySelector(editLayerSelectors[i]);
+        if (layer && layer.classList.contains('show')) {
+          editLayerOpen = true;
+          break;
+        }
+      }
+
+      document.body.classList.toggle('taskboard-edit-layer-active', editLayerOpen);
+    }
+
+    function bindTaskboardEditLayers() {
+      var layers = [boardSettingsPanel, createBoardModal, createTaskModal];
+      for (var i = 0; i < layers.length; i++) {
+        if (!layers[i]) {
+          continue;
+        }
+
+        layers[i].addEventListener('shown.bs.modal', updateTaskboardEditLayerState);
+        layers[i].addEventListener('hidden.bs.modal', updateTaskboardEditLayerState);
+        layers[i].addEventListener('shown.bs.offcanvas', updateTaskboardEditLayerState);
+        layers[i].addEventListener('hidden.bs.offcanvas', updateTaskboardEditLayerState);
+      }
+    }
+
+    function bindOutsideCloseForEditLayers() {
+      document.addEventListener('click', function (event) {
+        var openLayers = [boardSettingsPanel, createBoardModal, createTaskModal];
+        for (var i = 0; i < openLayers.length; i++) {
+          var layer = openLayers[i];
+          if (!layer || !layer.classList.contains('show')) {
+            continue;
+          }
+
+          var contentSelector = layer.classList.contains('modal') ? '.modal-dialog' : '.offcanvas-body, .offcanvas-header';
+          if (event.target.closest(contentSelector)) {
+            continue;
+          }
+
+          if (event.target.closest('[data-bs-target="#' + layer.id + '"]')) {
+            continue;
+          }
+
+          closeBootstrapLayer(layer);
+        }
+      });
+    }
+
+    function animateTaskDetails(root) {
+      var detailCard = root ? root.querySelector('.taskboard-detail-card') : null;
+      if (!detailCard) {
+        return;
+      }
+
+      detailCard.classList.remove('is-animated');
+      void detailCard.offsetWidth;
+      detailCard.classList.add('is-animated');
+    }
+
+    function animateSelectedTaskCard() {
+      var selectedCard = document.querySelector('.taskboard-task-card[data-newly-selected-task="1"]');
+      if (!selectedCard) {
+        return;
+      }
+
+      selectedCard.classList.add('is-newly-created', 'is-panel-target');
+      if (typeof selectedCard.scrollIntoView === 'function') {
+        selectedCard.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
+
+      window.setTimeout(function () {
+        selectedCard.classList.remove('is-newly-created');
+      }, 1100);
+      window.setTimeout(function () {
+        selectedCard.classList.remove('is-panel-target');
+      }, 2400);
+    }
 
     function serializeColumn(column) {
       var ids = [];
@@ -1236,8 +1563,15 @@
       for (var i = 0; i < columns.length; i++) {
         var column = columns[i];
         var cardsInColumn = column.querySelectorAll('.taskboard-task-card');
+        var visibleCards = 0;
         var emptyState = column.querySelector('.taskboard-empty-state');
-        if (cardsInColumn.length === 0) {
+        for (var c = 0; c < cardsInColumn.length; c++) {
+          if (cardsInColumn[c].style.display !== 'none') {
+            visibleCards++;
+          }
+        }
+
+        if (visibleCards === 0) {
           if (!emptyState) {
             column.appendChild(buildEmptyState());
           }
@@ -1416,11 +1750,25 @@
             throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie wkleic obrazu.');
           }
 
-          openTaskPanel('{$baseUrl|escape:'javascript'}?controller=taskboard&action=taskpanel&board_id=' + encodeURIComponent(boardId || '') + '&task_id=' + encodeURIComponent(taskId || ''), taskId, boardId, true);
+          refreshTaskPanel(boardId, taskId);
         }).catch(function (error) {
           window.alert(error && error.message ? error.message : 'Nie udalo sie wkleic obrazu.');
         });
       });
+    }
+
+    function markPanelUpdated() {
+      if (!taskPanelBody) {
+        return;
+      }
+
+      taskPanelBody.classList.remove('just-updated');
+      window.setTimeout(function () {
+        taskPanelBody.classList.add('just-updated');
+        window.setTimeout(function () {
+          taskPanelBody.classList.remove('just-updated');
+        }, 620);
+      }, 0);
     }
 
     function openTaskPanel(panelUrl, taskId, boardId, silent) {
@@ -1428,7 +1776,13 @@
         return;
       }
 
-      taskPanelBody.innerHTML = '<div class="py-4 text-center text-secondary">Ladowanie szczegolow zadania...</div>';
+      var panelBodyScroll = taskPanelBody.parentElement ? taskPanelBody.parentElement.scrollTop : 0;
+      if (silent && taskPanelBody.children.length > 0) {
+        taskPanelBody.classList.add('is-refreshing');
+      } else {
+        taskPanelBody.innerHTML = '<div class="py-4 text-center text-secondary">Ladowanie szczegolow zadania...</div>';
+      }
+
       fetch(panelUrl, {
         headers: {
           'Accept': 'application/json'
@@ -1441,6 +1795,7 @@
         }
 
         taskPanelBody.innerHTML = payload.html;
+        taskPanelBody.classList.remove('is-refreshing');
         if (taskPanelTitle) {
           taskPanelTitle.textContent = payload.title || 'Szczegoly zadania';
         }
@@ -1449,16 +1804,31 @@
         }
 
         bindSubtaskCheckboxes(taskPanelBody);
-        if (taskPanelInstance && !silent) {
-          taskPanelInstance.show();
-        } else if (taskPanelInstance && silent && !taskPanel.classList.contains('show')) {
-          taskPanelInstance.show();
+        bindTaskDetailAutosave(taskPanelBody);
+        bindSubtaskCreateForms(taskPanelBody);
+        bindRefreshPanelForms(taskPanelBody);
+        animateTaskDetails(taskPanelBody);
+        if (silent) {
+          window.requestAnimationFrame(function () {
+            if (taskPanelBody.parentElement) {
+              taskPanelBody.parentElement.scrollTop = panelBodyScroll;
+            }
+            markPanelUpdated();
+          });
+        }
+
+        var panelInstance = getTaskPanelInstance();
+        if (panelInstance && !silent) {
+          panelInstance.show();
+        } else if (panelInstance && silent && !taskPanel.classList.contains('show')) {
+          panelInstance.show();
         }
 
         if (window.history && typeof window.history.replaceState === 'function' && boardId && taskId) {
           window.history.replaceState({}, '', '{$baseUrl|escape:'javascript'}?controller=taskboard&action=index&board_id=' + encodeURIComponent(boardId) + '&task_id=' + encodeURIComponent(taskId));
         }
       }).catch(function (error) {
+        taskPanelBody.classList.remove('is-refreshing');
         taskPanelBody.innerHTML = '<div class="alert alert-danger mb-0">' + String(error && error.message ? error.message : 'Nie udalo sie pobrac szczegolow zadania.') + '</div>';
       });
     }
@@ -1478,6 +1848,25 @@
       openTaskPanel(panelUrl, taskId, boardId);
       return false;
     };
+
+    document.addEventListener('click', function (event) {
+      if (!taskPanel || !taskPanel.classList.contains('show')) {
+        return;
+      }
+
+      if (event.target.closest('#taskboardTaskDetails')) {
+        return;
+      }
+
+      if (event.target.closest('.taskboard-task-card, [data-taskboard-open], a, button, input, select, textarea, label, .modal.show, .offcanvas.show')) {
+        return;
+      }
+
+      var panelInstance = getTaskPanelInstance();
+      if (panelInstance) {
+        panelInstance.hide();
+      }
+    });
 
     function findDropTarget(column, clientY) {
       var columnCards = column.querySelectorAll('.taskboard-task-card:not(.is-dragging)');
@@ -1537,15 +1926,12 @@
     }
 
     function applyFilters() {
-      var query = searchInput ? String(searchInput.value || '').trim().toLowerCase() : '';
-      var assigned = assigneeFilter ? String(assigneeFilter.value || '') : '';
+      var assigned = String(activeAssigneeFilter || '');
       var taskCards = document.querySelectorAll('.taskboard-task-card');
 
       for (var i = 0; i < taskCards.length; i++) {
         var taskCard = taskCards[i];
-        var text = String(taskCard.getAttribute('data-title') || '').toLowerCase();
         var assignedUserId = String(taskCard.getAttribute('data-assigned-user-id') || '');
-        var visibleByText = query === '' || text.indexOf(query) !== -1;
         var visibleByAssignee = true;
 
         if (assigned === 'unassigned') {
@@ -1554,30 +1940,235 @@
           visibleByAssignee = assignedUserId === assigned;
         }
 
-        taskCard.style.display = visibleByText && visibleByAssignee ? '' : 'none';
+        taskCard.style.display = visibleByAssignee ? '' : 'none';
       }
 
       refreshColumnEmptyStates();
     }
 
-    if (searchInput) {
-      searchInput.addEventListener('input', applyFilters);
+    function setActiveFilterButton(value) {
+      var buttons = document.querySelectorAll('[data-taskboard-assignee-filter]');
+      for (var i = 0; i < buttons.length; i++) {
+        var button = buttons[i];
+        var isActive = String(button.getAttribute('data-taskboard-assignee-filter') || '') === String(value || '');
+        button.classList.toggle('btn-primary', isActive);
+        button.classList.toggle('btn-outline-secondary', !isActive);
+      }
     }
 
-    if (assigneeFilter) {
-      assigneeFilter.addEventListener('change', applyFilters);
-    }
-
-    if (clearFiltersButton) {
-      clearFiltersButton.addEventListener('click', function () {
-        if (searchInput) {
-          searchInput.value = '';
-        }
-        if (assigneeFilter) {
-          assigneeFilter.value = '';
-        }
+    document.addEventListener('click', function (event) {
+      var filterButton = event.target.closest('[data-taskboard-assignee-filter]');
+      if (filterButton) {
+        event.preventDefault();
+        activeAssigneeFilter = String(filterButton.getAttribute('data-taskboard-assignee-filter') || '');
+        setActiveFilterButton(activeAssigneeFilter);
         applyFilters();
+      }
+    });
+
+    function setAutosaveStatus(root, message, state) {
+      var status = root ? root.querySelector('[data-taskboard-autosave-status]') : null;
+      if (!status) {
+        return;
+      }
+
+      status.textContent = message || 'Zapis automatyczny';
+      status.classList.toggle('text-success', state === 'success');
+      status.classList.toggle('text-danger', state === 'error');
+      status.classList.toggle('text-secondary', !state);
+    }
+
+    function saveTaskDetails(form) {
+      if (!form) {
+        return;
+      }
+
+      var root = form.closest('[data-task-detail-root]');
+      var formData = new FormData(form);
+      formData.append('ajax', '1');
+      setAutosaveStatus(root, 'Zapisywanie...', null);
+
+      if (autosaveRequest && typeof autosaveRequest.abort === 'function') {
+        autosaveRequest.abort();
+      }
+
+      autosaveRequest = new AbortController();
+      fetch(form.getAttribute('action'), {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json'
+        },
+        signal: autosaveRequest.signal
+      }).then(function (response) {
+        return response.ok ? response.json() : Promise.reject(new Error('Nie udalo sie zapisac zadania.'));
+      }).then(function (payload) {
+        if (!payload || payload.ok !== true) {
+          throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie zapisac zadania.');
+        }
+
+        setAutosaveStatus(root, 'Zapisano automatycznie', 'success');
+        if (payload.title) {
+          if (taskPanelTitle) {
+            taskPanelTitle.textContent = payload.title;
+          }
+          var currentTaskId = payload.task_id || (root ? root.getAttribute('data-task-id') : '');
+          var taskCard = currentTaskId ? document.querySelector('.taskboard-task-card[data-task-id="' + String(currentTaskId) + '"]') : null;
+          var taskCardTitle = taskCard ? taskCard.querySelector('.taskboard-task-title') : null;
+          if (taskCardTitle) {
+            taskCardTitle.textContent = payload.title;
+          }
+        }
+      }).catch(function (error) {
+        if (error && error.name === 'AbortError') {
+          return;
+        }
+
+        setAutosaveStatus(root, error && error.message ? error.message : 'Nie udalo sie zapisac zadania.', 'error');
       });
+    }
+
+    function bindTaskDetailAutosave(root) {
+      var scope = root || document;
+      var forms = scope.querySelectorAll('[data-taskboard-autosave-form]');
+      for (var i = 0; i < forms.length; i++) {
+        if (forms[i].getAttribute('data-taskboard-bound') === '1') {
+          continue;
+        }
+
+        forms[i].setAttribute('data-taskboard-bound', '1');
+        forms[i].addEventListener('submit', function (event) {
+          event.preventDefault();
+          saveTaskDetails(this);
+        });
+        forms[i].addEventListener('change', function () {
+          saveTaskDetails(this);
+        });
+        forms[i].addEventListener('input', function (event) {
+          if (!event.target || (event.target.tagName !== 'TEXTAREA' && !event.target.hasAttribute('data-task-title-input'))) {
+            return;
+          }
+
+          var form = this;
+          if (autosaveTimer) {
+            window.clearTimeout(autosaveTimer);
+          }
+          autosaveTimer = window.setTimeout(function () {
+            saveTaskDetails(form);
+          }, 500);
+        });
+      }
+    }
+
+    function refreshTaskPanel(boardId, taskId) {
+      if (!boardId || !taskId) {
+        return;
+      }
+
+      openTaskPanel('{$baseUrl|escape:'javascript'}?controller=taskboard&action=taskpanel&board_id=' + encodeURIComponent(boardId) + '&task_id=' + encodeURIComponent(taskId), taskId, boardId, true);
+    }
+
+    function bindRefreshPanelForms(root) {
+      var scope = root || document;
+      var forms = scope.querySelectorAll('[data-taskboard-refresh-panel-form]');
+      for (var i = 0; i < forms.length; i++) {
+        if (forms[i].getAttribute('data-taskboard-bound') === '1') {
+          continue;
+        }
+
+        forms[i].setAttribute('data-taskboard-bound', '1');
+        forms[i].addEventListener('submit', function (event) {
+          event.preventDefault();
+
+          var form = this;
+          var message = form.getAttribute('data-confirm-message');
+          if (message && !window.confirm(message)) {
+            return;
+          }
+
+          var submitButton = document.activeElement && document.activeElement.getAttribute('form') === form.id ? document.activeElement : form.querySelector('[type="submit"]');
+          var formData = new FormData(form);
+          formData.append('ajax', '1');
+          if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.classList.add('disabled');
+          }
+
+          fetch(form.getAttribute('action'), {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Accept': 'application/json'
+            }
+          }).then(function (response) {
+            return response.ok ? response.json() : Promise.reject(new Error('Nie udalo sie wykonac operacji.'));
+          }).then(function (payload) {
+            if (!payload || payload.ok !== true) {
+              throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie wykonac operacji.');
+            }
+
+            refreshTaskPanel(payload.board_id || formData.get('board_id'), payload.task_id || formData.get('task_id'));
+          }).catch(function (error) {
+            window.alert(error && error.message ? error.message : 'Nie udalo sie wykonac operacji.');
+          }).finally(function () {
+            if (submitButton) {
+              submitButton.disabled = false;
+              submitButton.classList.remove('disabled');
+            }
+          });
+        });
+      }
+    }
+
+    function bindSubtaskCreateForms(root) {
+      var scope = root || document;
+      var forms = scope.querySelectorAll('[data-taskboard-subtask-form]');
+      for (var i = 0; i < forms.length; i++) {
+        if (forms[i].getAttribute('data-taskboard-bound') === '1') {
+          continue;
+        }
+
+        forms[i].setAttribute('data-taskboard-bound', '1');
+        forms[i].addEventListener('submit', function (event) {
+          event.preventDefault();
+
+          var form = this;
+          var detailRoot = form.closest('[data-task-detail-root]');
+          var boardId = detailRoot ? detailRoot.getAttribute('data-board-id') : '';
+          var taskId = detailRoot ? detailRoot.getAttribute('data-task-id') : '';
+          var boardInput = form.querySelector('[name="board_id"]');
+          var taskInput = form.querySelector('[name="task_id"]');
+          var labelInput = document.querySelector('[form="' + form.id + '"][name="label"]');
+          var formData = new FormData(form);
+          boardId = boardId || (boardInput ? boardInput.value : '');
+          taskId = taskId || (taskInput ? taskInput.value : '');
+          if (labelInput) {
+            formData.append('label', labelInput.value || '');
+          }
+          formData.append('ajax', '1');
+
+          fetch(form.getAttribute('action'), {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Accept': 'application/json'
+            }
+          }).then(function (response) {
+            return response.ok ? response.json() : Promise.reject(new Error('Nie udalo sie dodac podzadania.'));
+          }).then(function (payload) {
+            if (!payload || payload.ok !== true) {
+              throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie dodac podzadania.');
+            }
+
+            if (labelInput) {
+              labelInput.value = '';
+            }
+            refreshTaskPanel(boardId, taskId);
+          }).catch(function (error) {
+            window.alert(error && error.message ? error.message : 'Nie udalo sie dodac podzadania.');
+          });
+        });
+      }
     }
 
     function bindStatusBuilder() {
@@ -1675,7 +2266,7 @@
             throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie oznaczyc zadania jako zrobione.');
           }
 
-          window.location.href = '{$baseUrl|escape:'javascript'}?controller=taskboard&action=index&board_id=' + encodeURIComponent(doneBoardId);
+          window.location.href = '{$baseUrl|escape:'javascript'}?controller=taskboard&action=index&board_id=' + encodeURIComponent(doneBoardId) + '&archive=1';
         }).catch(function (error) {
           window.alert(error && error.message ? error.message : 'Nie udalo sie oznaczyc zadania jako zrobione.');
         });
@@ -1735,13 +2326,40 @@
     });
 
     {if $selectedBoard and $selectedTask}
-    var selectedTaskPanel = document.getElementById('taskboardTaskDetails');
-    if (selectedTaskPanel && window.bootstrap && window.bootstrap.Offcanvas) {
-      var selectedTaskOffcanvas = window.bootstrap.Offcanvas.getOrCreateInstance(selectedTaskPanel);
-      window.setTimeout(function () {
+    function showSelectedTaskPanel(attempt) {
+      var selectedTaskOffcanvas = getTaskPanelInstance();
+      if (selectedTaskOffcanvas) {
         selectedTaskOffcanvas.show();
-      }, 120);
+        animateTaskDetails(taskPanelBody || document);
+        return;
+      }
+
+      if (attempt < 20) {
+        window.setTimeout(function () {
+          showSelectedTaskPanel(attempt + 1);
+        }, 100);
+      }
     }
+
+    showSelectedTaskPanel(0);
+    {/if}
+
+    {if $canWriteTaskboard and $openCreateBoardModal|default:false}
+    function showCreateBoardModal(attempt) {
+      var modalInstance = getCreateBoardModalInstance();
+      if (modalInstance) {
+        modalInstance.show();
+        return;
+      }
+
+      if (attempt < 20) {
+        window.setTimeout(function () {
+          showCreateBoardModal(attempt + 1);
+        }, 100);
+      }
+    }
+
+    showCreateBoardModal(0);
     {/if}
 
     var audioContext = null;
@@ -1774,8 +2392,16 @@
     }
 
     bindSubtaskCheckboxes(document);
+    bindTaskDetailAutosave(document);
+    bindSubtaskCreateForms(document);
+    bindRefreshPanelForms(document);
     bindStatusBuilder();
     bindPasteUpload();
+    bindTaskboardEditLayers();
+    bindOutsideCloseForEditLayers();
+    updateTaskboardEditLayerState();
+    animateSelectedTaskCard();
+    animateTaskDetails(document);
     refreshColumnEmptyStates();
   })();
 </script>

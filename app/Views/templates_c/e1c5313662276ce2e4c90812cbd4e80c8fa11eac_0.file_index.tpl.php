@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 16:09:28
+/* Smarty version 5.8.0, created on 2026-04-28 12:03:14
   from 'file:products/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69ea2818f04ac5_52219120',
+  'unifunc' => 'content_69f085e2216785_79261921',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'e1c5313662276ce2e4c90812cbd4e80c8fa11eac' => 
     array (
       0 => 'products/index.tpl',
-      1 => 1776953365,
+      1 => 1777370568,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69ea2818f04ac5_52219120 (\Smarty\Template $_smarty_tpl) {
+function content_69f085e2216785_79261921 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/products';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -205,6 +205,43 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
       line-height: 1.2;
     }
 
+    .product-quantity-cell {
+      width: 118px;
+      min-width: 118px;
+    }
+
+    .product-timestamps-cell {
+      width: 170px;
+      min-width: 170px;
+      white-space: normal;
+      line-height: 1.35;
+    }
+
+    .product-timestamp-stack {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+    }
+
+    .product-timestamp-item {
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+    }
+
+    .product-timestamp-label {
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+
+    .product-timestamp-value {
+      color: #1f2937;
+      word-break: break-word;
+    }
+
     .product-sku-secondary {
       display: block;
       margin-top: .2rem;
@@ -260,6 +297,31 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
     .quick-edit-status.is-success {
       color: #027a48;
+    }
+
+    .products-category-filter {
+      min-width: 180px;
+    }
+
+    .products-category-filter-search {
+      margin-bottom: .35rem;
+    }
+
+    .products-category-filter-search .form-control {
+      border-radius: .65rem;
+    }
+
+    .products-category-filter select {
+      min-height: 120px;
+      border-radius: .75rem;
+    }
+
+    .products-filter-hint {
+      display: block;
+      margin-top: .3rem;
+      font-size: .72rem;
+      color: #6b7280;
+      line-height: 1.35;
     }
 
     .js-quick-edit-row {
@@ -363,6 +425,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
             <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('csvImportUrl'), ENT_QUOTES, 'UTF-8', true);?>
 " class="btn btn-outline-primary">Import CSV</a>
             <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=products&action=contoursmanager" class="btn btn-outline-dark">Manager obrysow</a>
+            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=create&return_url=<?php echo rawurlencode((string)$_smarty_tpl->getValue('currentListUrl'));?>
 " class="btn btn-success">Dodaj produkt</a>
          
@@ -393,6 +457,12 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
               <button type="button" id="bulkCopyBtn" class="btn btn-sm btn-outline-success" title="Skopiuj wszystkie zaznaczone produkty">
                 <i class="bi bi-files"></i> Kopiuj zaznaczone
               </button>
+              <button type="button" id="bulkCopySharedBtn" class="btn btn-sm btn-outline-success" title="Skopiuj zaznaczone i od razu powiaz jako wspolne">
+                <i class="bi bi-copy"></i> Kopiuj jako wspolny
+              </button>
+              <button type="button" id="bulkSharedBtn" class="btn btn-sm btn-outline-warning" title="Polacz zaznaczone produkty jako wspolne">
+                <i class="bi bi-diagram-3"></i> Polacz jako wspolne
+              </button>
               <button type="button" id="bulkCategoryBtn" class="btn btn-sm btn-outline-primary" title="Przypisz kategorię">
                 <i class="bi bi-tag"></i> Zmień kategorię
               </button>
@@ -410,7 +480,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
         <div class="card-body p-0">
           <div class="table-responsive">
             <form method="get" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-">
+" id="productsFiltersForm" data-loader-label="Ladowanie listy produktow...">
               <input type="hidden" name="controller" value="products">
               <input type="hidden" name="action" value="index">
               <input type="hidden" name="sort_by" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('sortBy') ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
@@ -418,6 +488,8 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
               <input type="hidden" name="sort_dir" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('sortDir') ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 ">
               <input type="hidden" name="filter_global" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['global'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+">
+              <input type="hidden" name="filter_category_id" id="filterCategoryIdSerialized" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 ">
               <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 pt-3">
                   <div class="d-flex align-items-center gap-2">
@@ -432,6 +504,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
                   </div>
                   <div class="small text-secondary">
                     Negacja filtrow: wpisz `!tekst`, np. `!9D` oznacza "nie zawiera 9D".
+                    W nazwie: spacja = AND, `|` = OR, `!` = wyklucz, cudzyslow = fraza.
                   </div>
                 <?php if ($_smarty_tpl->getValue('totalPages') > 1) {?>
                   <?php $_smarty_tpl->assign('prevPage', $_smarty_tpl->getValue('page')-1, false, NULL);?>
@@ -552,7 +625,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                       <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['category'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Kategoria <?php if ($_smarty_tpl->getValue('sortIndicators')['category'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['category'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a>
                     </th>
-                    <th class="product-compact-cell"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['quantity'], ENT_QUOTES, 'UTF-8', true);?>
+                    <th class="product-quantity-cell"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['quantity'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Ilosc <?php if ($_smarty_tpl->getValue('sortIndicators')['quantity'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['quantity'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
                     <th style="width: 100px; min-width: 100px;"><a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('sortUrls')['localization'], ENT_QUOTES, 'UTF-8', true);?>
 " class="link-dark text-decoration-none">Lokalizacja <?php if ($_smarty_tpl->getValue('sortIndicators')['localization'] == 'asc') {?>&uarr;<?php } elseif ($_smarty_tpl->getValue('sortIndicators')['localization'] == 'desc') {?>&darr;<?php } else { ?>&harr;<?php }?></a></th>
@@ -560,8 +633,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                     <th class="product-contours-cell">Obrys</th>
                     <th class="product-compact-cell">Zdjecie</th>
                     <th class="product-price-cell">Cena</th>
-                    <th class="product-compact-cell">Utworzono</th>
-                    <th class="product-compact-cell">Zmieniono</th>
+                    <th class="product-timestamps-cell">Utworzono / zmieniono</th>
                     <th class="text-end product-actions-cell">Akcje</th>
                   </tr>
                   <tr>
@@ -570,11 +642,17 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 " class="form-control form-control-sm" placeholder="np. 15"></th>
                     <th><input type="text" name="filter_sku" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['sku'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " class="form-control form-control-sm" placeholder="fragment SKU"></th>
-                    <th><input type="text" name="filter_product_name" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
-" class="form-control form-control-sm" placeholder="nazwa produktu"></th>
                     <th>
-                      <select name="filter_category_id" class="form-select form-select-sm">
-                        <option value="">wszystkie</option>
+                      <input type="text" name="filter_product_name" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['product_name'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+" class="form-control form-control-sm" placeholder='np. damska meska | "szklo hartowane" !czarna'>
+                      <span class="products-filter-hint">Spacja = AND, `|` = OR, `!` = bez frazy.</span>
+                    </th>
+                    <th>
+                      <div class="products-category-filter">
+                        <div class="products-category-filter-search">
+                          <input type="text" id="filterCategorySearch" class="form-control form-control-sm" placeholder="szukaj kategorii">
+                        </div>
+                        <select id="filterCategoryIdsUi" class="form-select form-select-sm" multiple>
                         <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('categories'), 'category');
 $foreach1DoElse = true;
@@ -582,14 +660,17 @@ foreach ($_from ?? [] as $_smarty_tpl->getVariable('category')->value) {
 $foreach1DoElse = false;
 ?>
                           <option value="<?php echo $_smarty_tpl->getValue('category')['id'];?>
-"<?php if ((($tmp = $_smarty_tpl->getValue('filters')['category_id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) == $_smarty_tpl->getValue('category')['id']) {?> selected<?php }?>><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('category')['name'], ENT_QUOTES, 'UTF-8', true);?>
+" data-category-label="<?php echo htmlspecialchars((string)mb_strtolower((string) $_smarty_tpl->getValue('category')['name'], 'UTF-8'), ENT_QUOTES, 'UTF-8', true);?>
+"<?php if ($_smarty_tpl->getSmarty()->getModifierCallback('in_array')($_smarty_tpl->getValue('category')['id'],(($tmp = $_smarty_tpl->getValue('selectedCategoryIds') ?? null)===null||$tmp==='' ? array() ?? null : $tmp))) {?> selected<?php }?>><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('category')['name'], ENT_QUOTES, 'UTF-8', true);?>
 </option>
                         <?php
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
-                      </select>
+                        </select>
+                        <span class="products-filter-hint">Mozesz zaznaczyc wiele kategorii jednoczesnie.</span>
+                      </div>
                     </th>
-                    <th><input type="text" name="filter_quantity" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['quantity'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+                    <th class="product-quantity-cell"><input type="text" name="filter_quantity" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['quantity'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " class="form-control form-control-sm" placeholder="np. 10 lub 10-50"></th>
                     <th><input type="text" name="filter_localization" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['localization'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 " class="form-control form-control-sm" placeholder="lokalizacja"></th>
@@ -600,7 +681,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                         <option value="0"<?php if ($_smarty_tpl->getValue('withGlassFilter') == '0') {?> selected<?php }?>>produkty bez szkła</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="6">
+                    <th class="text-end" colspan="5">
                     <a href="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('clearFiltersUrl'), ENT_QUOTES, 'UTF-8', true);?>
 " class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
@@ -645,7 +726,7 @@ $foreach3DoElse = false;
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                           <?php }?>
-                          <?php if ($_smarty_tpl->getValue('hasSharedPeers') || ((($tmp = $_smarty_tpl->getValue('product')['derived_stock_enabled'] ?? null)===null||$tmp==='' ? false ?? null : $tmp))) {?>
+                          <?php if ($_smarty_tpl->getValue('hasSharedPeers') || ((($tmp = $_smarty_tpl->getValue('product')['derived_stock_enabled'] ?? null)===null||$tmp==='' ? false ?? null : $tmp)) || ((($tmp = $_smarty_tpl->getValue('product')['has_derived_dependents'] ?? null)===null||$tmp==='' ? false ?? null : $tmp))) {?>
                             <div class="product-relation-stack">
                               <?php if ($_smarty_tpl->getValue('hasSharedPeers')) {?>
                                 <div class="product-relation-item shared">
@@ -668,6 +749,12 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('member')['product_name'], 
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                                   </div>
+                                </div>
+                              <?php }?>
+                              <?php if ((($tmp = $_smarty_tpl->getValue('product')['has_derived_dependents'] ?? null)===null||$tmp==='' ? false ?? null : $tmp)) {?>
+                                <div class="product-relation-item derived">
+                                  <div class="product-relation-label">Powiazanie</div>
+                                  <div class="product-relation-value">Ma pochodne</div>
                                 </div>
                               <?php }?>
                               <?php if ((($tmp = $_smarty_tpl->getValue('product')['derived_stock_enabled'] ?? null)===null||$tmp==='' ? false ?? null : $tmp)) {?>
@@ -699,7 +786,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                         </td>
                         <td ><?php if ($_smarty_tpl->getValue('product')['category_name']) {?><span class="badge text-bg-info"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['category_name'], ENT_QUOTES, 'UTF-8', true);?>
 </span><?php } else { ?>-<?php }?></td>
-                        <td>
+                        <td class="product-quantity-cell">
                           <input type="number" min="0" class="quick-edit-input quick-edit-number js-quick-edit-field" data-field="quantity" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('product')['quantity'], ENT_QUOTES, 'UTF-8', true);?>
 " aria-label="Ilosc">
                         </td>
@@ -722,10 +809,20 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                           <div class="small text-secondary"><strong>N:</strong> <?php echo $_smarty_tpl->getValue('product')['price_net'];?>
 </div>
                         </td>
-                        <td class="product-compact-cell"><?php echo (($tmp = $_smarty_tpl->getValue('product')['created_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
-</td>
-                        <td class="js-updated-at-cell product-compact-cell"><?php echo (($tmp = $_smarty_tpl->getValue('product')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
-</td>
+                        <td class="product-timestamps-cell">
+                          <div class="product-timestamp-stack">
+                            <div class="product-timestamp-item">
+                              <span class="product-timestamp-label">Utworzono</span>
+                              <span class="product-timestamp-value"><?php echo (($tmp = $_smarty_tpl->getValue('product')['created_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
+</span>
+                            </div>
+                            <div class="product-timestamp-item">
+                              <span class="product-timestamp-label">Zmieniono</span>
+                              <span class="js-updated-at-cell product-timestamp-value"><?php echo (($tmp = $_smarty_tpl->getValue('product')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp);?>
+</span>
+                            </div>
+                          </div>
+                        </td>
                         <td class="text-end product-actions-cell">
                           <div class="quick-edit-actions">
                             <button type="button" class="btn btn-sm btn-primary quick-edit-save js-quick-edit-save">Zapisz</button>
@@ -746,7 +843,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
                   <?php } else { ?>
-                    <tr><td colspan="14" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="13" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   <?php }?>
                 </tbody>
               </table>
@@ -799,7 +896,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
-?controller=csvtemplates&action=exportcsv" id="csvExportForm">
+?controller=csvtemplates&action=exportcsv" id="csvExportForm" data-no-page-loader="1">
         <div class="modal-header">
           <h5 class="modal-title">Eksport CSV</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -894,7 +991,7 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
               </div>
               <div class="col-md-8">
                 <label class="form-label small">Cena</label>
-                <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="35">
+                <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="Cena">
               </div>
               <div class="col-md-4">
                 <label class="form-label small">Ilosc miniatur</label>
@@ -910,12 +1007,26 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
               </div>
               <div class="col-12">
                 <label class="form-label small">Bazowy katalog</label>
-                <input type="text" name="image_base_directory" class="form-control form-control-sm" value="T:\wygnerowane_do_EU\">
+                <input type="text" name="image_base_directory" class="form-control form-control-sm" value="T:\wygenrowane_do_EU\">
               </div>
             </div>
             <div class="form-text">
               Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu.
             </div>
+          </div>
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+            <button type="submit" class="btn btn-primary"<?php if (!$_smarty_tpl->getValue('exportTemplates')) {?> disabled<?php }?>>Generuj CSV</button>
+          </div>
+          <div class="mt-4">
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+              <label class="form-label mb-0">Ostatnie ustawienia eksportu</label>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" id="csvExportRecentPresetsRefresh" class="btn btn-sm btn-outline-secondary">Odswiez</button>
+                <span id="csvExportRecentPresetsStatus" class="small text-secondary">Lista zaladuje sie po otwarciu okna.</span>
+              </div>
+            </div>
+            <div id="csvExportRecentPresets" class="mt-2"></div>
           </div>
           <div id="selectedProductIdsContainer"></div>
           <input type="hidden" name="filter_id" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['id'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
@@ -934,10 +1045,6 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
 ">
           <input type="hidden" name="filter_with_glass" value="<?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('filters')['with_glass'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 ">
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
-          <button type="submit" class="btn btn-primary"<?php if (!$_smarty_tpl->getValue('exportTemplates')) {?> disabled<?php }?>>Generuj CSV</button>
         </div>
       </form>
     </div>
@@ -1053,6 +1160,62 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
   </div>
 </div>
 
+<div class="modal fade" id="bulkCopySharedModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Kopiuj zaznaczone jako wspolne</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="bulkCopySharedForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=products&action=bulkcopyshared">
+        <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
+        <div class="modal-body">
+          <p><strong>Produktów do skopiowania: <span id="bulkCopySharedCount">0</span></strong></p>
+          <div id="bulkCopySharedProductList"></div>
+          <div id="bulkCopySharedProductIdsContainer"></div>
+          <div class="alert alert-warning" role="alert">
+            Kazda kopia zostanie od razu podpieta jako produkt wspolny z oryginalem. Nowa kopia nie dostanie relacji pochodnych.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Kopiuj jako wspolne</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="bulkSharedModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Polacz zaznaczone jako wspolne</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="bulkSharedForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=products&action=bulkshared">
+        <input type="hidden" name="return_url" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('currentListUrl'), ENT_QUOTES, 'UTF-8', true);?>
+">
+        <div class="modal-body">
+          <p><strong>Produktów do polaczenia: <span id="bulkSharedCount">0</span></strong></p>
+          <div id="bulkSharedProductList"></div>
+          <div id="bulkSharedProductIdsContainer"></div>
+          <div class="alert alert-info" role="alert">
+            Zaznaczone produkty trafia do jednej grupy wspolnego stanu. Jesli ktorys z nich ma stan pochodny, ta relacja zostanie usunieta.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-primary">Polacz jako wspolne</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <form id="deleteForm" method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=products&action=delete" style="display: none;">
   <input type="hidden" name="id" id="deleteId">
@@ -1078,11 +1241,19 @@ document.addEventListener('DOMContentLoaded', function() {
   var quickEditRows = document.querySelectorAll('.js-quick-edit-row');
   var selectedCount = document.getElementById('selectedCount');
   var exportForm = document.getElementById('csvExportForm');
+  var csvExportModalEl = document.getElementById('csvExportModal');
   var selectedContainer = document.getElementById('selectedProductIdsContainer');
   var exportSelected = document.getElementById('exportSelected');
   var exportFiltered = document.getElementById('exportFiltered');
+  var exportTemplateSelect = document.querySelector('select[name="template_id"]');
   var titleTemplateSelect = document.querySelector('select[name="title_template_id"]');
   var collectionNameInput = document.getElementById('csvExportCollectionName');
+  var imageCollectionCodeInput = document.querySelector('input[name="image_collection_code"]');
+  var priceToCsvInput = document.querySelector('input[name="price_to_csv"]');
+  var thumbnailCountInput = document.querySelector('input[name="thumbnail_count"]');
+  var mockupCountInput = document.querySelector('input[name="mockup_count"]');
+  var imageCountInput = document.querySelector('input[name="image_count"]');
+  var imageBaseDirectoryInput = document.querySelector('input[name="image_base_directory"]');
   var generatedTitlePreview = document.getElementById('csvGeneratedTitlePreviewText');
   var generatedTitleLength = document.getElementById('csvGeneratedTitleLength');
   var generatedTitlePreviewBox = document.getElementById('csvGeneratedTitlePreview');
@@ -1090,9 +1261,22 @@ document.addEventListener('DOMContentLoaded', function() {
 						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
 						"`" => "\\`", "\${" => "\\\$\{"));?>
 ?controller=products&action=previewgeneratedtitle';
+  var csvExportPresetsUrl = '<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
+						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
+						"`" => "\\`", "\${" => "\\\$\{"));?>
+?controller=csvtemplates&action=exportpresets';
+  var csvExportRecentPresets = document.getElementById('csvExportRecentPresets');
+  var csvExportRecentPresetsStatus = document.getElementById('csvExportRecentPresetsStatus');
+  var csvExportRecentPresetsRefresh = document.getElementById('csvExportRecentPresetsRefresh');
+  var productsFiltersForm = document.getElementById('productsFiltersForm');
+  var categoryFilterSerialized = document.getElementById('filterCategoryIdSerialized');
+  var categoryFilterSearch = document.getElementById('filterCategorySearch');
+  var categoryFilterUi = document.getElementById('filterCategoryIdsUi');
 
   // Bulk operations
   var bulkCopyBtn = document.getElementById('bulkCopyBtn');
+  var bulkCopySharedBtn = document.getElementById('bulkCopySharedBtn');
+  var bulkSharedBtn = document.getElementById('bulkSharedBtn');
   var bulkCategoryBtn = document.getElementById('bulkCategoryBtn');
   var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   var bulkExportBtn = document.getElementById('bulkExportBtn');
@@ -1102,15 +1286,48 @@ document.addEventListener('DOMContentLoaded', function() {
   var bulkCategoryModal = new bootstrap.Modal(document.getElementById('bulkCategoryModal'));
   var bulkDeleteModal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
   var bulkCopyModal = new bootstrap.Modal(document.getElementById('bulkCopyModal'));
+  var bulkCopySharedModal = new bootstrap.Modal(document.getElementById('bulkCopySharedModal'));
+  var bulkSharedModal = new bootstrap.Modal(document.getElementById('bulkSharedModal'));
 
   var bulkCategoryForm = document.getElementById('bulkCategoryForm');
   var bulkDeleteForm = document.getElementById('bulkDeleteForm');
   var bulkCopyForm = document.getElementById('bulkCopyForm');
+  var bulkCopySharedForm = document.getElementById('bulkCopySharedForm');
+  var bulkSharedForm = document.getElementById('bulkSharedForm');
   var quickUpdateUrl = '<?php echo strtr((string)$_smarty_tpl->getValue('baseUrl'), array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
 						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
 						"`" => "\\`", "\${" => "\\\$\{"));?>
 ?controller=products&action=quickupdate';
   var lastCheckedCheckbox = null;
+  var csvRecentPresetItems = [];
+
+  function syncCategoryFilterValue() {
+    if (!categoryFilterSerialized || !categoryFilterUi) {
+      return;
+    }
+
+    var values = [];
+    for (var i = 0; i < categoryFilterUi.options.length; i++) {
+      if (categoryFilterUi.options[i].selected) {
+        values.push(String(categoryFilterUi.options[i].value || ''));
+      }
+    }
+
+    categoryFilterSerialized.value = values.join(',');
+  }
+
+  function filterCategoryOptions() {
+    if (!categoryFilterSearch || !categoryFilterUi) {
+      return;
+    }
+
+    var query = String(categoryFilterSearch.value || '').trim().toLowerCase();
+    for (var i = 0; i < categoryFilterUi.options.length; i++) {
+      var option = categoryFilterUi.options[i];
+      var label = String(option.getAttribute('data-category-label') || option.text || '').toLowerCase();
+      option.hidden = query !== '' && label.indexOf(query) === -1;
+    }
+  }
 
   function setQuickEditStatus(row, message, state) {
     if (!row) {
@@ -1157,6 +1374,40 @@ document.addEventListener('DOMContentLoaded', function() {
       payload[fields[i].getAttribute('data-field')] = fields[i].value;
     }
     return payload;
+  }
+
+  function renderSelectedProductsList(products) {
+    var productList = '<ul>';
+    for (var i = 0; i < products.length; i++) {
+      productList += '<li>' + products[i].sku + ' - ' + products[i].name + '</li>';
+    }
+    productList += '</ul>';
+    return productList;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function fillSelectedProductsContainer(containerId, ids) {
+    var container = document.getElementById(containerId);
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = '';
+    for (var i = 0; i < ids.length; i++) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'product_ids[]';
+      input.value = ids[i];
+      container.appendChild(input);
+    }
   }
 
   function saveQuickEditRow(row) {
@@ -1371,6 +1622,188 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
+  function setSelectValueIfExists(selectElement, value) {
+    if (!selectElement) {
+      return false;
+    }
+
+    var normalizedValue = String(value || '');
+    var hasOption = false;
+    for (var optionIndex = 0; optionIndex < selectElement.options.length; optionIndex++) {
+      if (String(selectElement.options[optionIndex].value || '') === normalizedValue) {
+        hasOption = true;
+        break;
+      }
+    }
+
+    selectElement.value = hasOption ? normalizedValue : '';
+    return hasOption;
+  }
+
+  function applyRecentExportPresetByIndex(index) {
+    var item = csvRecentPresetItems[index];
+    if (!item) {
+      return;
+    }
+
+    var hasTemplate = setSelectValueIfExists(exportTemplateSelect, item.template_id || '');
+    setSelectValueIfExists(titleTemplateSelect, item.title_template_id || '');
+    if (collectionNameInput) {
+      collectionNameInput.value = String(item.collection_name || '');
+    }
+    if (imageCollectionCodeInput) {
+      imageCollectionCodeInput.value = String(item.image_collection_code || '');
+    }
+    if (priceToCsvInput) {
+      priceToCsvInput.value = String(item.price_to_csv || '');
+    }
+    if (thumbnailCountInput) {
+      thumbnailCountInput.value = String(item.thumbnail_count || 0);
+    }
+    if (mockupCountInput) {
+      mockupCountInput.value = String(item.mockup_count || 0);
+    }
+    if (imageCountInput) {
+      imageCountInput.value = String(item.image_count || 0);
+    }
+    if (imageBaseDirectoryInput) {
+      imageBaseDirectoryInput.value = String(item.image_base_directory || '');
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = hasTemplate
+        ? 'Wczytano ustawienia do formularza.'
+        : 'Wczytano ustawienia, ale powiazany szablon eksportu nie istnieje juz na liscie.';
+    }
+
+    updateGeneratedTitlePreview();
+  }
+
+  function applyPartialRecentExportPresetByIndex(index) {
+    var item = csvRecentPresetItems[index];
+    if (!item) {
+      return;
+    }
+
+    if (collectionNameInput) {
+      collectionNameInput.value = String(item.collection_name || '');
+    }
+    if (imageCollectionCodeInput) {
+      imageCollectionCodeInput.value = String(item.image_collection_code || '');
+    }
+    if (thumbnailCountInput) {
+      thumbnailCountInput.value = String(item.thumbnail_count || 0);
+    }
+    if (mockupCountInput) {
+      mockupCountInput.value = String(item.mockup_count || 0);
+    }
+    if (imageCountInput) {
+      imageCountInput.value = String(item.image_count || 0);
+    }
+    if (imageBaseDirectoryInput) {
+      imageBaseDirectoryInput.value = String(item.image_base_directory || '');
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = 'Wczytano ustawienia makra obrazow.';
+    }
+
+    updateGeneratedTitlePreview();
+  }
+
+  function scheduleRecentExportPresetsReload() {
+    window.setTimeout(loadRecentExportPresets, 600);
+    window.setTimeout(loadRecentExportPresets, 1800);
+  }
+
+  function renderRecentExportPresets(items) {
+    if (!csvExportRecentPresets) {
+      return;
+    }
+
+    csvRecentPresetItems = Array.isArray(items) ? items : [];
+
+    if (csvRecentPresetItems.length === 0) {
+      csvExportRecentPresets.innerHTML = '<div class="small text-secondary border rounded-3 p-3">Brak zapisanych ustawien eksportu.</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < csvRecentPresetItems.length; i++) {
+      var item = csvRecentPresetItems[i] || {};
+      var templateName = item.template_name ? String(item.template_name) : 'Bez nazwy';
+      var titleName = item.title_template_name ? String(item.title_template_name) : 'Brak';
+      var createdAt = item.created_at ? String(item.created_at) : '';
+
+      html += ''
+        + '<div class="border rounded-3 px-3 py-2 mb-2 bg-light-subtle">'
+        + '<div class="row g-2 align-items-center">'
+        + '<div class="col-lg-4">'
+        + '<div class="fw-semibold small">' + escapeHtml(templateName) + '</div>'
+        + '<div class="small text-secondary text-truncate">Tytul: ' + escapeHtml(titleName) + '</div>'
+        + '</div>'
+        + '<div class="col-lg-5">'
+        + '<div class="small text-secondary text-truncate">Kol. tytul: ' + escapeHtml(item.collection_name || '-') + '</div>'
+        + '<div class="small text-secondary text-truncate">Kol. nr: ' + escapeHtml(item.image_collection_code || '-') + ' | Min: ' + escapeHtml(item.thumbnail_count || 0) + ' | Mock: ' + escapeHtml(item.mockup_count || 0) + ' | Zdj: ' + escapeHtml(item.image_count || 0) + '</div>'
+        + '</div>'
+        + '<div class="col-lg-3">'
+        + '<div class="d-flex justify-content-lg-end gap-2 flex-wrap">'
+        + '<button type="button" class="btn btn-sm btn-primary js-csv-recent-preset-full" data-preset-index="' + i + '">Wszystko</button>'
+        + '<button type="button" class="btn btn-sm btn-outline-primary js-csv-recent-preset-partial" data-preset-index="' + i + '">Makro</button>'
+        + '</div>'
+        + '<div class="small text-secondary text-lg-end mt-1">' + escapeHtml(createdAt) + '</div>'
+        + '</div>'
+        + '</div>'
+        + '</div>';
+    }
+
+    csvExportRecentPresets.innerHTML = html;
+
+  }
+
+  function loadRecentExportPresets() {
+    if (!window.fetch || !csvExportRecentPresets) {
+      return;
+    }
+
+    if (csvExportRecentPresetsStatus) {
+      csvExportRecentPresetsStatus.textContent = 'Ladowanie...';
+    }
+
+    fetch(csvExportPresetsUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = {};
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (error) {
+            data = { error: text || ('HTTP ' + response.status) };
+          }
+          if (!response.ok) {
+            throw new Error(data && data.error ? data.error : ('HTTP ' + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        renderRecentExportPresets(data && data.items ? data.items : []);
+        if (csvExportRecentPresetsStatus) {
+          csvExportRecentPresetsStatus.textContent = 'Kliknij, aby wczytac ustawienia.';
+        }
+      })
+      .catch(function (error) {
+        renderRecentExportPresets([]);
+        if (csvExportRecentPresetsStatus) {
+          csvExportRecentPresetsStatus.textContent = error && error.message ? error.message : 'Nie udalo sie wczytac historii eksportu.';
+        }
+      });
+  }
+
   if (selectAll) {
     selectAll.addEventListener('change', function () {
       for (var i = 0; i < checkboxes.length; i++) {
@@ -1446,24 +1879,46 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       document.getElementById('bulkCopyCount').textContent = ids.length;
-      var productList = '<ul>';
-      for (var i = 0; i < products.length; i++) {
-        productList += '<li>' + products[i].sku + ' - ' + products[i].name + '</li>';
-      }
-      productList += '</ul>';
-      document.getElementById('bulkCopyProductList').innerHTML = productList;
-
-      var container = document.getElementById('bulkCopyProductIdsContainer');
-      container.innerHTML = '';
-      for (var i = 0; i < ids.length; i++) {
-        var input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'product_ids[]';
-        input.value = ids[i];
-        container.appendChild(input);
-      }
+      document.getElementById('bulkCopyProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkCopyProductIdsContainer', ids);
 
       bulkCopyModal.show();
+    });
+  }
+
+  if (bulkCopySharedBtn) {
+    bulkCopySharedBtn.addEventListener('click', function () {
+      var ids = getSelectedIds();
+      var products = getSelectedProductInfo();
+
+      if (ids.length === 0) {
+        alert('Zaznacz produkty do skopiowania jako wspolne.');
+        return;
+      }
+
+      document.getElementById('bulkCopySharedCount').textContent = ids.length;
+      document.getElementById('bulkCopySharedProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkCopySharedProductIdsContainer', ids);
+
+      bulkCopySharedModal.show();
+    });
+  }
+
+  if (bulkSharedBtn) {
+    bulkSharedBtn.addEventListener('click', function () {
+      var ids = getSelectedIds();
+      var products = getSelectedProductInfo();
+
+      if (ids.length < 2) {
+        alert('Zaznacz przynajmniej dwa produkty do polaczenia jako wspolne.');
+        return;
+      }
+
+      document.getElementById('bulkSharedCount').textContent = ids.length;
+      document.getElementById('bulkSharedProductList').innerHTML = renderSelectedProductsList(products);
+      fillSelectedProductsContainer('bulkSharedProductIdsContainer', ids);
+
+      bulkSharedModal.show();
     });
   }
 
@@ -1560,6 +2015,35 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  if (csvExportModalEl) {
+    csvExportModalEl.addEventListener('show.bs.modal', function () {
+      loadRecentExportPresets();
+    });
+  }
+
+  if (csvExportRecentPresets) {
+    csvExportRecentPresets.addEventListener('click', function (event) {
+      var fullButton = event.target.closest('.js-csv-recent-preset-full');
+      if (fullButton) {
+        event.preventDefault();
+        applyRecentExportPresetByIndex(Number(fullButton.getAttribute('data-preset-index') || '-1'));
+        return;
+      }
+
+      var partialButton = event.target.closest('.js-csv-recent-preset-partial');
+      if (partialButton) {
+        event.preventDefault();
+        applyPartialRecentExportPresetByIndex(Number(partialButton.getAttribute('data-preset-index') || '-1'));
+      }
+    });
+  }
+
+  if (csvExportRecentPresetsRefresh) {
+    csvExportRecentPresetsRefresh.addEventListener('click', function () {
+      loadRecentExportPresets();
+    });
+  }
+
   if (titleTemplateSelect) {
     titleTemplateSelect.addEventListener('change', updateGeneratedTitlePreview);
   }
@@ -1624,7 +2108,26 @@ document.addEventListener('DOMContentLoaded', function() {
       } else if (exportFiltered && exportFiltered.checked) {
         return;
       }
+
+      if (csvExportRecentPresetsStatus) {
+        csvExportRecentPresetsStatus.textContent = 'Zapisywanie ustawien eksportu...';
+      }
+      scheduleRecentExportPresetsReload();
     });
+  }
+
+  if (categoryFilterUi) {
+    categoryFilterUi.addEventListener('change', syncCategoryFilterValue);
+    syncCategoryFilterValue();
+  }
+
+  if (categoryFilterSearch) {
+    categoryFilterSearch.addEventListener('input', filterCategoryOptions);
+    filterCategoryOptions();
+  }
+
+  if (productsFiltersForm) {
+    productsFiltersForm.addEventListener('submit', syncCategoryFilterValue);
   }
 
   updateCount();

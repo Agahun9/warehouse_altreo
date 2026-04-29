@@ -136,11 +136,7 @@
                           <div class="small text-secondary mb-1">sync</div>
                           <input type="text" class="form-control form-control-sm mb-2" readonly value="{$account.trigger_url|escape}">
                           <div class="small text-secondary mb-1">maintenance + kolejka</div>
-                          <input type="text" class="form-control form-control-sm mb-2" readonly value="{$baseUrl}?controller=allegro&action=maintenance&account={$account.slug|escape:'url'}&sync=1&queue_limit=100">
-                          <div class="small text-secondary mb-1">cron konczenia ofert</div>
-                          <input type="text" class="form-control form-control-sm mb-2" readonly value="{$account.auto_end_offers|escape}">
-                          <div class="small text-secondary mb-1">cron konczenia + mail</div>
-                          <input type="text" class="form-control form-control-sm" readonly value="{$account.auto_end_offers_mail_example|escape}">
+                          <input type="text" class="form-control form-control-sm" readonly value="{$baseUrl}?controller=allegro&action=maintenance&account={$account.slug|escape:'url'}&sync=1&queue_limit=100">
                         </td>
                         <td class="text-nowrap">
                           <div class="d-grid gap-2">
@@ -363,13 +359,12 @@
           </div>
           <div class="mb-3">
             <label class="form-label">Cron konczenia ofert Allegro</label>
-            <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}" id="globalAutoEndOffersUrl">
-            <div class="form-text">Ten link dodaje do kolejki tylko oferty kwalifikujace sie do zakonczenia. Nie dubluje zadania <code>end_offer</code>, jesli dla tej oferty juz istnieje wpis <code>pending</code>, <code>retry</code> albo <code>processing</code>.</div>
+            <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}">
+            <div class="form-text">Dodaje do kolejki tylko oferty kwalifikujace sie do zakonczenia i nie dubluje aktywnych zadan end_offer.</div>
           </div>
           <div class="mb-3">
             <label class="form-label">Cron konczenia + wysylka maila</label>
-            <input type="text" class="form-control" readonly value="{$automation.auto_end_offers_mail_example|escape}" id="globalAutoEndOffersMailUrl">
-            <div class="form-text">Podmien <code>twoj@adres.pl</code> na swoj adres. Mail wysyla tabele ofert do zakonczenia: konto, offerid, nazwa, sku.</div>
+            <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}&amp;mail_to=twoj%40adres.pl">
           </div>
           <div class="mb-0">
             <label class="form-label">Same refresh tokenow</label>
@@ -420,7 +415,6 @@
                 <th>Sync</th>
                 <th>Kolejka</th>
                 <th>Maintenance</th>
-                <th>Cron konczenia</th>
               </tr>
             </thead>
             <tbody>
@@ -440,10 +434,9 @@
                   <td><input type="text" class="form-control form-control-sm" readonly value="{$item.sync|escape}"></td>
                   <td><input type="text" class="form-control form-control-sm" readonly value="{$item.queue_only|escape}"></td>
                   <td><input type="text" class="form-control form-control-sm" readonly value="{$item.maintenance|escape}"></td>
-                  <td><input type="text" class="form-control form-control-sm" readonly value="{$item.auto_end_offers_mail_example|escape}"></td>
                 </tr>
               {foreachelse}
-                <tr><td colspan="6" class="text-center text-secondary py-4">Brak kont Allegro do automatyzacji.</td></tr>
+                <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Allegro do automatyzacji.</td></tr>
               {/foreach}
             </tbody>
           </table>

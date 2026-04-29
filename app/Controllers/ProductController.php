@@ -188,15 +188,6 @@ class ProductController extends Controller
             $selectedDirectory = (string) ($directories[0]['name'] ?? '');
         }
 
-        $selectedDirectoryWritable = false;
-        if ($selectedDirectory !== '') {
-            try {
-                $selectedDirectoryWritable = is_writable($this->contourDirectoryPath($selectedDirectory, true));
-            } catch (Throwable $exception) {
-                $selectedDirectoryWritable = false;
-            }
-        }
-
         $this->render('products/contours_manager', array(
             'pageTitle' => 'Obrysy',
             'contentTitle' => 'Manager obrysow',
@@ -204,9 +195,7 @@ class ProductController extends Controller
             'breadcrumbCurrent' => 'Manager obrysow',
             'contourDirectories' => $directories,
             'selectedContourDirectory' => $selectedDirectory,
-            'selectedContourDirectoryWritable' => $selectedDirectoryWritable,
             'contoursManagerUrl' => './index.php?controller=products&action=contoursmanager',
-            'contoursUploadUrl' => './index.php?controller=products&action=savecontourfiles',
         ));
     }
 
@@ -295,22 +284,12 @@ class ProductController extends Controller
 
     public function uploadcontourfiles(): void
     {
-        $this->savecontourfiles();
-    }
-
-    public function savecontourfiles(): void
-    {
         $this->requireModuleWrite('products');
         if (!$this->isPost()) {
-            if ($this->wantsJsonResponse()) {
-                $this->jsonResponse(array('error' => 'Niedozwolona metoda.'), 405);
-                return;
-            }
             $this->redirect('./index.php?controller=products&action=contoursmanager');
         }
 
         $redirectDirectory = trim((string) $this->input('directory', ''));
-        $target = $redirectDirectory !== '' ? '&directory=' . urlencode($redirectDirectory) : '';
 
         try {
             $directory = $this->normalizeContourDirectoryName($this->input('directory', ''));
@@ -327,29 +306,12 @@ class ProductController extends Controller
                 $uploadedCount++;
             }
 
-            $message = 'Wgrano pliki do folderu obrysu: ' . $uploadedCount . '.';
-            if ($this->wantsJsonResponse()) {
-                $this->jsonResponse(array(
-                    'ok' => true,
-                    'message' => $message,
-                    'uploaded_count' => $uploadedCount,
-                    'redirect' => './index.php?controller=products&action=contoursmanager' . $target,
-                ));
-                return;
-            }
-
-            $this->setFlash('success', $message);
+            $this->setFlash('success', 'Wgrano pliki do folderu obrysu: ' . $uploadedCount . '.');
         } catch (Throwable $exception) {
-            if ($this->wantsJsonResponse()) {
-                $this->jsonResponse(array(
-                    'error' => $exception->getMessage(),
-                    'redirect' => './index.php?controller=products&action=contoursmanager' . $target,
-                ), 422);
-                return;
-            }
             $this->setFlash('error', $exception->getMessage());
         }
 
+        $target = $redirectDirectory !== '' ? '&directory=' . urlencode($redirectDirectory) : '';
         $this->redirect('./index.php?controller=products&action=contoursmanager' . $target);
     }
 
@@ -2212,15 +2174,6 @@ class ProductController extends Controller
     {
         return trim((string) $this->input('save_action', 'return')) === 'stay';
     }
-
-    private function wantsJsonResponse(): bool
-    {
-        $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
-        $requestedWith = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
-
-        return strpos($accept, 'application/json') !== false || $requestedWith === 'xmlhttprequest';
-    }
-
     private function jsonResponse(array $payload, int $status = 200): void
     {
         http_response_code($status);

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-17 09:07:40
+/* Smarty version 5.8.0, created on 2026-04-28 13:45:27
   from 'file:csv_templates/index.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e1dc3cee07d6_97118998',
+  'unifunc' => 'content_69f09dd785a050_33694478',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'f4db1bb889b2381e1a84317604c257104ca5826f' => 
     array (
       0 => 'csv_templates/index.tpl',
-      1 => 1776409273,
+      1 => 1777374412,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e1dc3cee07d6_97118998 (\Smarty\Template $_smarty_tpl) {
+function content_69f09dd785a050_33694478 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -50,6 +50,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 </div><?php }?>
       <?php if ($_smarty_tpl->getValue('flashError')) {?><div class="alert alert-danger"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashError'), ENT_QUOTES, 'UTF-8', true);?>
 </div><?php }?>
+      <?php $_smarty_tpl->assign('canWriteCsvTemplates', $_smarty_tpl->getValue('currentUser')['role'] == 'admin' || (($tmp = $_smarty_tpl->getValue('currentUser')['module_permissions']['csvtemplates'] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) == 'edit', false, NULL);?>
 
       <div class="card mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -58,16 +59,23 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
             <div class="text-secondary small">Tworzenie i zarzadzanie konfiguracjami CSV do eksportu produktów.</div>
           </div>
           <div class="d-flex gap-2">
-            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+            <?php if ($_smarty_tpl->getValue('canWriteCsvTemplates')) {?>
+              <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=importproducts" class="btn btn-outline-primary">Import produktow</a>
+            <?php }?>
             <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=titlegenerator" class="btn btn-outline-secondary">Generator tytulow</a>
-            <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+            <?php if ($_smarty_tpl->getValue('canWriteCsvTemplates')) {?>
+              <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=create" class="btn btn-primary">Dodaj szablon</a>
+            <?php } else { ?>
+              <span class="badge text-bg-warning align-self-center">Tryb odczytu</span>
+            <?php }?>
           </div>
         </div>
       </div>
 
+      <?php if ($_smarty_tpl->getValue('canWriteCsvTemplates')) {?>
       <div class="card mb-4">
         <div class="card-header"><h3 class="card-title mb-0">Presety</h3></div>
         <div class="card-body d-flex flex-wrap gap-2">
@@ -86,6 +94,7 @@ $foreach0DoElse = false;
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
         </div>
       </div>
+      <?php }?>
 
       <div class="card">
         <div class="card-body p-0">
@@ -128,24 +137,28 @@ if ((($tmp = $_smarty_tpl->getValue('template')['add_bom'] ?? null)===null||$tmp
                       <td><?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('template')['updated_at'] ?? null)===null||$tmp==='' ? '-' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
 </td>
                       <td class="text-end">
-                        <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+                        <?php if ($_smarty_tpl->getValue('canWriteCsvTemplates')) {?>
+                          <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=edit&id=<?php echo $_smarty_tpl->getValue('template')['id'];?>
 " class="btn btn-sm btn-outline-primary">Edytuj</a>
-                        <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+                          <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=duplicate" class="d-inline">
-                          <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('template')['id'];?>
+                            <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('template')['id'];?>
 ">
-                          <button type="submit" class="btn btn-sm btn-outline-secondary">Duplikuj</button>
-                        </form>
-                        <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">Duplikuj</button>
+                          </form>
+                          <form method="post" action="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=delete" class="d-inline" onsubmit="return confirm('Usunac szablon <?php echo strtr((string)$_smarty_tpl->getValue('template')['name'], array("\\" => "\\\\", "'" => "\\'", "\"" => "\\\"", "\r" => "\\r", 
 						"\n" => "\\n", "</" => "<\/", "<!--" => "<\!--", "<s" => "<\s", "<S" => "<\S",
 						"`" => "\\`", "\${" => "\\\$\{"));?>
 ?');">
-                          <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('template')['id'];?>
+                            <input type="hidden" name="id" value="<?php echo $_smarty_tpl->getValue('template')['id'];?>
 ">
-                          <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
-                        </form>
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+                          </form>
+                        <?php } else { ?>
+                          <span class="badge text-bg-light border">Odczyt</span>
+                        <?php }?>
                       </td>
                     </tr>
                   <?php

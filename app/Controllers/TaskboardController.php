@@ -83,6 +83,7 @@ class TaskboardController extends Controller
             'notesByTaskId' => $notes,
             'attachmentsByTaskId' => $attachments,
             'activeUsers' => $activeUsers,
+            'assignedFilterUsers' => $this->assignedFilterUsers($partitionedTasks['active']),
             'boardProgress' => $boardProgress,
             'boardTaskCount' => $boardTaskCount,
             'statusDefinitions' => $statusDefinitions,
@@ -90,6 +91,8 @@ class TaskboardController extends Controller
             'allStatusDefinitions' => $statusDefinitions,
             'priorityDefinitions' => $this->priorityDefinitions(),
             'canWriteTaskboard' => $this->moduleAccessLevel($currentUser, 'taskboard') === 'edit',
+            'openCreateBoardModal' => $this->input('create_board', '0') === '1',
+            'openArchive' => $this->input('archive', '0') === '1',
         ));
     }
 
@@ -287,8 +290,23 @@ class TaskboardController extends Controller
             $payload = array_merge($payload, $this->taskStatusTransitionPayload($task, $status, $statusDefinitions));
             $this->taskboard->updateTask($taskId, $payload);
 
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'board_id' => $boardId,
+                    'task_id' => $taskId,
+                    'title' => $title,
+                ));
+                return;
+            }
+
             $this->setFlash('success', 'Zadanie zostalo zapisane.');
         } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -358,9 +376,11 @@ class TaskboardController extends Controller
             $payload = array(
                 'status' => $doneStatus,
                 'position' => $this->taskboard->nextTaskPosition($boardId, $doneStatus),
+                'completed_at' => date('Y-m-d H:i:s'),
+                'archived_from_status' => (string) ($task['status'] ?? '') !== '' ? (string) ($task['status'] ?? '') : null,
+                'archived_from_position' => isset($task['position']) ? (int) $task['position'] : null,
                 'updated_by' => (int) ($currentUser['id'] ?? 0),
             );
-            $payload = array_merge($payload, $this->taskStatusTransitionPayload($task, $doneStatus, $statusDefinitions));
             $this->taskboard->updateTask($taskId, $payload);
 
             $payload = array(
@@ -376,7 +396,7 @@ class TaskboardController extends Controller
             }
 
             $this->setFlash('success', 'Zadanie przeniesione do archiwum.');
-            $this->redirect($this->boardUrl($boardId));
+            $this->redirect($this->boardUrl($boardId) . '&archive=1');
         } catch (Throwable $exception) {
             if ($this->isAjaxRequest()) {
                 $this->jsonResponse(array('error' => $exception->getMessage()), 422);
@@ -491,8 +511,19 @@ class TaskboardController extends Controller
                 'label' => $label,
                 'position' => $this->taskboard->nextSubtaskPosition($taskId),
             ));
+
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true));
+                return;
+            }
+
             $this->setFlash('success', 'Podzadanie zostalo dodane.');
         } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -525,6 +556,47 @@ class TaskboardController extends Controller
         }
     }
 
+    public function deletesubtask(): void
+    {
+        $this->requireModuleWrite('taskboard');
+        $this->assertPost();
+
+        $boardId = (int) $this->input('board_id', 0);
+        $taskId = (int) $this->input('task_id', 0);
+        try {
+            $subtaskId = (int) $this->input('subtask_id', 0);
+            $subtask = $this->taskboard->subtaskById($subtaskId);
+            if (!$subtask) {
+                throw new RuntimeException('Nie znaleziono podzadania.');
+            }
+
+            $taskId = (int) ($subtask['task_id'] ?? $taskId);
+            $task = $this->taskboard->taskById($taskId);
+            if (!$task) {
+                throw new RuntimeException('Nie znaleziono zadania.');
+            }
+
+            $boardId = (int) ($task['board_id'] ?? $boardId);
+            $this->taskboard->deleteSubtask($subtaskId);
+
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true, 'board_id' => $boardId, 'task_id' => $taskId));
+                return;
+            }
+
+            $this->setFlash('success', 'Podzadanie zostalo usuniete.');
+        } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect($this->boardUrl($boardId, $taskId));
+    }
+
     public function addnote(): void
     {
         $currentUser = $this->requireModuleWrite('taskboard');
@@ -547,12 +619,63 @@ class TaskboardController extends Controller
                 'note' => $note,
                 'created_by' => (int) ($currentUser['id'] ?? 0),
             ));
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true, 'board_id' => (int) ($task['board_id'] ?? 0), 'task_id' => $taskId));
+                return;
+            }
+
             $this->setFlash('success', 'Notatka zostala dodana.');
         } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
             $this->setFlash('error', $exception->getMessage());
         }
 
         $this->redirect($this->boardUrl((int) $this->input('board_id', 0), $taskId));
+    }
+
+    public function deletenote(): void
+    {
+        $this->requireModuleWrite('taskboard');
+        $this->assertPost();
+
+        $boardId = (int) $this->input('board_id', 0);
+        $taskId = (int) $this->input('task_id', 0);
+        try {
+            $noteId = (int) $this->input('note_id', 0);
+            $note = $this->taskboard->noteById($noteId);
+            if (!$note) {
+                throw new RuntimeException('Nie znaleziono notatki.');
+            }
+
+            $taskId = (int) ($note['task_id'] ?? $taskId);
+            $task = $this->taskboard->taskById($taskId);
+            if (!$task) {
+                throw new RuntimeException('Nie znaleziono zadania.');
+            }
+
+            $boardId = (int) ($task['board_id'] ?? $boardId);
+            $this->taskboard->deleteNote($noteId);
+
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true, 'board_id' => $boardId, 'task_id' => $taskId));
+                return;
+            }
+
+            $this->setFlash('success', 'Notatka zostala usunieta.');
+        } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect($this->boardUrl($boardId, $taskId));
     }
 
     public function uploadattachment(): void
@@ -581,7 +704,11 @@ class TaskboardController extends Controller
                 'uploaded_by' => (int) ($currentUser['id'] ?? 0),
             ));
             if ($this->isAjaxRequest()) {
-                $this->jsonResponse(array('ok' => true));
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'board_id' => (int) ($task['board_id'] ?? (int) $this->input('board_id', 0)),
+                    'task_id' => $taskId,
+                ));
                 return;
             }
 
@@ -618,8 +745,18 @@ class TaskboardController extends Controller
             }
 
             $this->taskboard->deleteAttachment($attachmentId);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true, 'board_id' => $boardId, 'task_id' => $taskId));
+                return;
+            }
+
             $this->setFlash('success', 'Zalacznik zostal usuniety.');
         } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
+
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -638,6 +775,32 @@ class TaskboardController extends Controller
         }
 
         return $active;
+    }
+
+    private function assignedFilterUsers(array $tasks): array
+    {
+        $users = array();
+        foreach ($tasks as $task) {
+            $userId = (int) ($task['assigned_user_id'] ?? 0);
+            if ($userId <= 0 || isset($users[$userId])) {
+                continue;
+            }
+
+            $firstName = trim((string) ($task['assigned_user_first_name'] ?? ''));
+            $lastName = trim((string) ($task['assigned_user_last_name'] ?? ''));
+            $email = trim((string) ($task['assigned_user_email'] ?? ''));
+            $label = trim($firstName . ' ' . $lastName);
+            $users[$userId] = array(
+                'id' => $userId,
+                'label' => $label !== '' ? $label : ($email !== '' ? $email : ('Uzytkownik #' . $userId)),
+            );
+        }
+
+        uasort($users, static function (array $left, array $right): int {
+            return strcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+        });
+
+        return array_values($users);
     }
 
     private function resolveBoardId(array $boards, int $requestedBoardId): int
@@ -677,7 +840,7 @@ class TaskboardController extends Controller
 
         foreach ($tasks as $task) {
             $status = (string) ($task['status'] ?? '');
-            if ($this->isDoneStatus($status, $statusDefinitions)) {
+            if ((string) ($task['completed_at'] ?? '') !== '' || $this->isDoneStatus($status, $statusDefinitions)) {
                 $archived[] = $task;
                 continue;
             }

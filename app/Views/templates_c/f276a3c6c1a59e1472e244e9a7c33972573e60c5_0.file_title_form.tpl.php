@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 12:55:10
+/* Smarty version 5.8.0, created on 2026-04-28 10:31:25
   from 'file:csv_templates/title_form.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e9fa8eeb3d92_24212391',
+  'unifunc' => 'content_69f0705d140e28_79834501',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'f276a3c6c1a59e1472e244e9a7c33972573e60c5' => 
     array (
       0 => 'csv_templates/title_form.tpl',
-      1 => 1776941678,
+      1 => 1777365083,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e9fa8eeb3d92_24212391 (\Smarty\Template $_smarty_tpl) {
+function content_69f0705d140e28_79834501 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -90,6 +90,41 @@ field:product.allegro_parameter.249512+Czarny-Czarna}</code> zamieni <code>Czarn
               <div class="form-text">Wiele zamian naraz: <code><?php ob_start();?>{<?php $_prefixVariable5 = ob_get_clean();
 echo $_prefixVariable5;?>
 field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska}</code>.</div>
+              <div class="form-text">Makra: <code><?php ob_start();?>{<?php $_prefixVariable6 = ob_get_clean();
+echo $_prefixVariable6;?>
+field:product.allegro_parameter.249512=upper}</code>.aaaa</div>
+
+              <div class="form-text mt-2"><strong>Jak tego uzywac:</strong></div>
+              <div class="form-text">1. Zwykla wartosc pola: <code><?php ob_start();?>{<?php $_prefixVariable7 = ob_get_clean();
+echo $_prefixVariable7;?>
+field:product.sku}</code> albo <code><?php ob_start();?>{<?php $_prefixVariable8 = ob_get_clean();
+echo $_prefixVariable8;?>
+field:product.allegro_parameter.11484}</code>.</div>
+              <div class="form-text">2. Opcja z eksportu: <code><?php ob_start();?>{<?php $_prefixVariable9 = ob_get_clean();
+echo $_prefixVariable9;?>
+option:collection_name}</code> albo <code><?php ob_start();?>{<?php $_prefixVariable10 = ob_get_clean();
+echo $_prefixVariable10;?>
+option:price_to_csv}</code>.</div>
+              <div class="form-text">3. Zamiana tekstu w wartosci: po nazwie pola dodaj <code>+stare-nowe</code>, np. <code><?php ob_start();?>{<?php $_prefixVariable11 = ob_get_clean();
+echo $_prefixVariable11;?>
+field:product.allegro_parameter.249512+Czarny-Czarna}</code>.</div>
+              <div class="form-text">4. Formatowanie: na koncu dodaj <code>=format</code>, np. <code><?php ob_start();?>{<?php $_prefixVariable12 = ob_get_clean();
+echo $_prefixVariable12;?>
+field:product.allegro_parameter.11484=upper}</code>.</div>
+              <div class="form-text">5. Kolejnosc jest taka: najpierw pole, potem opcjonalne zamiany <code>+...</code>, a na koncu opcjonalny format <code>=...</code>.</div>
+              <div class="form-text mt-2">Formatowanie w tokenie po znaku <code>=</code>:
+                <code>upper</code> - wielkie litery,
+                <code>lower</code> - male litery,
+                <code>trim</code> - usuniecie spacji z poczatku i konca,
+                <code>date:Y-m-d</code> - format daty,
+                <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi.
+              </div>
+              <div class="form-text">Przyklad formatu: <code><?php ob_start();?>{<?php $_prefixVariable13 = ob_get_clean();
+echo $_prefixVariable13;?>
+field:product.allegro_parameter.11484=upper}</code></div>
+              <div class="form-text">Mozesz tez laczyc zamiany z formatem: <code><?php ob_start();?>{<?php $_prefixVariable14 = ob_get_clean();
+echo $_prefixVariable14;?>
+field:product.allegro_parameter.249512+Czarny-Czarna=upper}</code></div>
             </div>
           </div>
         </div>
@@ -126,11 +161,11 @@ $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
             <div class="mt-3">
               <div class="small fw-semibold mb-2">Szybkie tokeny eksportowe</div>
               <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable6 = ob_get_clean();
-echo $_prefixVariable6;?>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable15 = ob_get_clean();
+echo $_prefixVariable15;?>
 option:collection_name}">Kolekcja</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable7 = ob_get_clean();
-echo $_prefixVariable7;?>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="<?php ob_start();?>{<?php $_prefixVariable16 = ob_get_clean();
+echo $_prefixVariable16;?>
 option:price_to_csv}">Cena z eksportu</button>
               </div>
             </div>

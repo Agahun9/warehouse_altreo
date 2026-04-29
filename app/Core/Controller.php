@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use App\Models\TaskboardRepository;
 use App\Models\UserRepository;
 use App\Services\JwtService;
 
@@ -215,6 +216,7 @@ abstract class Controller
         $flashError = array_key_exists('flashError', $data)
             ? $data['flashError']
             : $this->getFlash('error');
+        $taskboardMenu = $this->taskboardMenuData(is_array($currentUser) ? $currentUser : null, $data);
 
         // Flash messages are already loaded, so we can release the session lock
         // before template rendering to avoid blocking parallel browser requests.
@@ -230,6 +232,9 @@ abstract class Controller
             'flashSuccess' => $flashSuccess,
             'flashError' => $flashError,
             'currentUser' => $currentUser,
+            'taskboardMenuBoards' => $taskboardMenu['boards'],
+            'taskboardMenuCanWrite' => $taskboardMenu['can_write'],
+            'taskboardMenuSelectedBoardId' => $taskboardMenu['selected_board_id'],
         );
 
         foreach (array_merge($defaultData, $data) as $key => $value) {
@@ -239,5 +244,61 @@ abstract class Controller
         $smarty->display('layout/header.tpl');
         $smarty->display($template . '.tpl');
         $smarty->display('layout/footer.tpl');
+    }
+
+    private function taskboardMenuData(?array $currentUser, array $data): array
+    {
+        $result = array(
+            'boards' => array(),
+            'can_write' => false,
+            'selected_board_id' => isset($data['selectedBoardId']) ? (int) $data['selectedBoardId'] : (int) ($_GET['board_id'] ?? 0),
+        );
+
+        if ($currentUser === null) {
+            return $result;
+        }
+
+        $accessLevel = $this->moduleAccessLevel($currentUser, 'taskboard');
+        if ((string) ($currentUser['role'] ?? '') !== 'admin' && $accessLevel === 'none') {
+            return $result;
+        }
+
+        $result['can_write'] = $accessLevel === 'edit';
+
+        if (isset($data['boards']) && is_array($data['boards'])) {
+            $result['boards'] = $this->sortTaskboardMenuBoards($data['boards']);
+            return $result;
+        }
+
+        try {
+            $taskboard = new TaskboardRepository($this->db());
+            $taskboard->ensureSchema();
+            $result['boards'] = $this->sortTaskboardMenuBoards($taskboard->boards(true));
+        } catch (\Throwable $exception) {
+            $result['boards'] = array();
+        }
+
+        return $result;
+    }
+
+    private function sortTaskboardMenuBoards(array $boards): array
+    {
+        usort($boards, static function (array $left, array $right): int {
+            $leftArchived = (int) ($left['is_archived'] ?? 0);
+            $rightArchived = (int) ($right['is_archived'] ?? 0);
+            if ($leftArchived !== $rightArchived) {
+                return $leftArchived <=> $rightArchived;
+            }
+
+            $leftCreated = (string) ($left['created_at'] ?? '');
+            $rightCreated = (string) ($right['created_at'] ?? '');
+            if ($leftCreated !== $rightCreated) {
+                return strcmp($leftCreated, $rightCreated);
+            }
+
+            return (int) ($left['id'] ?? 0) <=> (int) ($right['id'] ?? 0);
+        });
+
+        return $boards;
     }
 }

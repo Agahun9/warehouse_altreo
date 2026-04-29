@@ -318,9 +318,27 @@ class TaskboardRepository
         return $this->database->update(self::SUBTASK_TABLE, $data, 'id = :id', array('id' => $subtaskId));
     }
 
+    public function deleteSubtask(int $subtaskId): int
+    {
+        return $this->database->delete(self::SUBTASK_TABLE, 'id = :id', array('id' => $subtaskId));
+    }
+
     public function addNote(array $data): int
     {
         return (int) $this->database->insert(self::NOTE_TABLE, $data);
+    }
+
+    public function noteById(int $noteId)
+    {
+        return $this->database->fetch(
+            'SELECT * FROM ' . self::NOTE_TABLE . ' WHERE id = :id LIMIT 1',
+            array('id' => $noteId)
+        );
+    }
+
+    public function deleteNote(int $noteId): int
+    {
+        return $this->database->delete(self::NOTE_TABLE, 'id = :id', array('id' => $noteId));
     }
 
     public function addAttachment(array $data): int

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 22:18:33
+/* Smarty version 5.8.0, created on 2026-04-28 21:16:56
   from 'file:layout/header.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69ea7e992f2bd7_51931907',
+  'unifunc' => 'content_69f107a82d4eb0_59274137',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '023d65e3c2920fd6ca8aef1a9138b5ddc84cceaf' => 
     array (
       0 => 'layout/header.tpl',
-      1 => 1776975199,
+      1 => 1777403800,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69ea7e992f2bd7_51931907 (\Smarty\Template $_smarty_tpl) {
+function content_69f107a82d4eb0_59274137 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/layout';
 ?><!DOCTYPE html>
 <html lang="pl">
@@ -114,6 +114,23 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
       .topbar-user-link {
         max-width: 110px;
       }
+    }
+
+    .sidebar-menu .taskboard-submenu .nav-link {
+      margin-left: 1rem;
+      padding-left: 1.15rem;
+      font-size: 0.88rem;
+      border-left: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .sidebar-menu .taskboard-submenu .nav-link p {
+      font-size: 0.88rem;
+    }
+
+    .sidebar-menu .taskboard-submenu .nav-icon {
+      width: 1rem;
+      font-size: 0.72rem;
+      opacity: 0.78;
     }
   </style>
 </head>
@@ -268,6 +285,59 @@ echo $_smarty_tpl->getValue('baseUrl');?>
                     <i class="nav-icon bi bi-bag-check"></i>
                     <p>Sellasist</p>
                   </a>
+                </li>
+              <?php }?>
+              <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin' || $_smarty_tpl->getSmarty()->getModifierCallback('in_array')('taskboard',$_smarty_tpl->getValue('currentUser')['modules'])) {?>
+                <li class="nav-item<?php if ($_smarty_tpl->getValue('currentController') == 'taskboard') {?> menu-open<?php }?>">
+                  <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=taskboard&action=index" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'taskboard') {?> active<?php }?>">
+                    <i class="nav-icon bi bi-kanban"></i>
+                    <p>
+                      Taskboard
+                      <i class="nav-arrow bi bi-chevron-right"></i>
+                    </p>
+                  </a>
+                  <ul class="nav nav-treeview taskboard-submenu">
+                    <?php
+$_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('taskboardMenuBoards'), 'menuBoard');
+$foreach0DoElse = true;
+foreach ($_from ?? [] as $_smarty_tpl->getVariable('menuBoard')->value) {
+$foreach0DoElse = false;
+?>
+                      <li class="nav-item">
+                        <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=taskboard&action=index&board_id=<?php echo $_smarty_tpl->getValue('menuBoard')['id'];?>
+" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'taskboard' && $_smarty_tpl->getValue('taskboardMenuSelectedBoardId') == $_smarty_tpl->getValue('menuBoard')['id']) {?> active<?php }?>">
+                          <i class="nav-icon bi bi-circle" style="color: <?php echo htmlspecialchars((string)(($tmp = $_smarty_tpl->getValue('menuBoard')['accent_color'] ?? null)===null||$tmp==='' ? '#0d6efd' ?? null : $tmp), ENT_QUOTES, 'UTF-8', true);?>
+;"></i>
+                          <p><?php echo htmlspecialchars((string)$_smarty_tpl->getSmarty()->getModifierCallback('truncate')($_smarty_tpl->getValue('menuBoard')['name'],24), ENT_QUOTES, 'UTF-8', true);?>
+</p>
+                        </a>
+                      </li>
+                    <?php
+}
+if ($foreach0DoElse) {
+?>
+                      <li class="nav-item">
+                        <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=taskboard&action=index" class="nav-link<?php if ($_smarty_tpl->getValue('currentController') == 'taskboard') {?> active<?php }?>">
+                          <i class="nav-icon bi bi-circle"></i>
+                          <p>Brak tablic</p>
+                        </a>
+                      </li>
+                    <?php
+}
+$_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>
+                    <?php if ($_smarty_tpl->getValue('taskboardMenuCanWrite')) {?>
+                      <li class="nav-item">
+                        <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
+?controller=taskboard&action=index&create_board=1" class="nav-link">
+                          <i class="nav-icon bi bi-plus-circle"></i>
+                          <p>Dodaj nowa tablice</p>
+                        </a>
+                      </li>
+                    <?php }?>
+                  </ul>
                 </li>
               <?php }?>
               <?php if ($_smarty_tpl->getValue('currentUser')['role'] == 'admin') {?>

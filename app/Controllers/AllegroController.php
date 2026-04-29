@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Core\PerformanceLogger;
 use App\Models\ProductRepository;
 use App\Services\AllegroService;
 use App\Services\MailService;
@@ -27,17 +26,9 @@ class AllegroController extends Controller
 
     public function index(): void
     {
-        $requestStartedAt = PerformanceLogger::start();
-        $currentUser = $this->requireModule('allegro');
-        $flashSuccess = $this->getFlash('success');
-        $flashError = $this->getFlash('error');
-        $this->releaseSessionLock();
+        $this->requireModule('allegro');
 
-        $accountsStartedAt = PerformanceLogger::start();
         $accounts = $this->allegro->listAccounts();
-        PerformanceLogger::logIfSlow('allegro.controller.index.listAccounts', $accountsStartedAt, array(
-            'accounts_count' => count($accounts),
-        ), 500.0);
         $filters = $this->offerFilters();
         $page = max(1, (int) $this->input('page', 1));
         $allowedPerPage = array(50, 100, 200, 5000, 10000);
@@ -48,35 +39,12 @@ class AllegroController extends Controller
         if ($sortDir !== 'asc' && $sortDir !== 'desc') {
             $sortDir = 'desc';
         }
-        $countStartedAt = PerformanceLogger::start();
         $total = $this->allegro->countOffers($filters);
-        PerformanceLogger::logIfSlow('allegro.controller.index.countOffers', $countStartedAt, array(
-            'total' => $total,
-            'filters' => $filters,
-        ));
-        $offersStartedAt = PerformanceLogger::start();
         $offers = $this->allegro->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
-        PerformanceLogger::logIfSlow('allegro.controller.index.offersPage', $offersStartedAt, array(
-            'page' => $page,
-            'per_page' => $perPage,
-            'sort_by' => $sortBy,
-            'sort_dir' => $sortDir,
-            'offers_count' => count($offers),
-            'filters' => $filters,
-        ));
         $totalPages = max(1, (int) ceil($total / max(1, $perPage)));
         if ($page > $totalPages) {
             $page = $totalPages;
-            $offersStartedAt = PerformanceLogger::start();
             $offers = $this->allegro->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
-            PerformanceLogger::logIfSlow('allegro.controller.index.offersPage.adjusted', $offersStartedAt, array(
-                'page' => $page,
-                'per_page' => $perPage,
-                'sort_by' => $sortBy,
-                'sort_dir' => $sortDir,
-                'offers_count' => count($offers),
-                'filters' => $filters,
-            ));
         }
         $pageWindow = $this->buildPageWindow($page, $totalPages);
         $sortableColumns = array(
@@ -107,15 +75,8 @@ class AllegroController extends Controller
 
         $triggerBaseUrl = $this->absoluteBaseUrl();
         $currentListUrl = $this->buildOfferIndexUrl($filters, $sortBy, $sortDir, $page, $perPage);
-        $autoEndOffersUrl = $triggerBaseUrl . '?controller=allegro&action=autoendoffers&format=json';
-        $selectedAccountId = isset($filters['account_id']) && ctype_digit((string) $filters['account_id'])
-            ? (int) $filters['account_id']
-            : 0;
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $triggerBaseUrl);
-            if ($selectedAccountId > 0 && (int) ($account['id'] ?? 0) === $selectedAccountId) {
-                $autoEndOffersUrl .= '&account=' . rawurlencode((string) ($account['slug'] ?? ''));
-            }
         }
         unset($account);
 
@@ -124,9 +85,6 @@ class AllegroController extends Controller
             'contentTitle' => 'Integracja Allegro',
             'pageDescription' => 'Wielokontowa autoryzacja, szybki import ofert i listing pod cron.',
             'breadcrumbCurrent' => 'Allegro',
-            'currentUser' => $currentUser,
-            'flashSuccess' => $flashSuccess,
-            'flashError' => $flashError,
             'accounts' => $accounts,
             'offers' => $offers,
             'filters' => $filters,
@@ -144,16 +102,7 @@ class AllegroController extends Controller
             'currentListUrl' => $currentListUrl,
             'duplicatesOnly' => (($filters['duplicates'] ?? '') === '1'),
             'defaultRedirectUri' => $triggerBaseUrl . '?controller=allegro&action=callback',
-            'autoEndOffersUrl' => $autoEndOffersUrl,
         ));
-
-        PerformanceLogger::logIfSlow('allegro.controller.index.total', $requestStartedAt, array(
-            'page' => $page,
-            'per_page' => $perPage,
-            'total' => $total,
-            'offers_count' => count($offers),
-            'filters' => $filters,
-        ), 1500.0);
     }
 
     public function saveaccount(): void
@@ -262,16 +211,25 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
+        $detached = $this->wantsJson() ? $this->beginAsyncCronResponse('refreshtoken') : false;
 
         try {
             $account = trim((string) $this->input('account', ''));
             if ($account !== '') {
                 $result = $this->allegro->refreshAccountToken($account);
-                $this->setFlash('success', 'Token konta Allegro zostal odswiezony.');
+                if (!$detached) {
+                    $this->setFlash('success', 'Token konta Allegro zostal odswiezony.');
+                }
             } else {
                 $result = $this->allegro->refreshAllTokens(true);
                 $this->notifyRefreshTokenFailuresFromBatch($result);
-                $this->setFlash('success', 'Odswiezono tokeny aktywnych kont Allegro.');
+                if (!$detached) {
+                    $this->setFlash('success', 'Odswiezono tokeny aktywnych kont Allegro.');
+                }
+            }
+
+            if ($detached) {
+                return;
             }
 
             if ($this->wantsJson()) {
@@ -280,6 +238,11 @@ class AllegroController extends Controller
             }
         } catch (Throwable $exception) {
             $this->notifyRefreshTokenFailure($this->input('account', ''), $exception->getMessage());
+            if ($detached) {
+                $this->logDetachedCronError('refreshtoken', $exception);
+                return;
+            }
+
             if ($this->wantsJson()) {
                 $this->jsonResponse(array('error' => $exception->getMessage()), 500);
                 return;
@@ -298,7 +261,7 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
-        $requestStartedAt = PerformanceLogger::start();
+        $detached = $this->beginAsyncCronResponse('maintenance');
 
         try {
             $result = $this->allegro->maintenance(array(
@@ -313,19 +276,14 @@ class AllegroController extends Controller
                 'force_details' => $this->input('force_details', '0') === '1',
             ));
 
-            PerformanceLogger::logIfSlow('allegro.controller.maintenance', $requestStartedAt, array(
-                'account' => (string) $this->input('account', ''),
-                'queue_limit' => (int) $this->input('queue_limit', 100),
-                'sync' => $this->input('sync', '0') === '1' ? 1 : 0,
-                'queue_done' => (int) ($result['queue']['done'] ?? 0),
-                'queue_retry' => (int) ($result['queue']['retry'] ?? 0),
-                'queue_error' => (int) ($result['queue']['error'] ?? 0),
-            ), 1000.0);
-
             $mailRecipients = $this->maintenanceMailRecipients();
             if ($mailRecipients !== array() && $this->maintenanceMailOnSuccess()) {
                 $mailStatus = $this->sendMaintenanceReport($mailRecipients, $result);
                 $result['mail'] = $mailStatus;
+            }
+
+            if ($detached) {
+                return;
             }
 
             $this->jsonResponse($result);
@@ -335,40 +293,11 @@ class AllegroController extends Controller
                 $this->sendMaintenanceErrorReport($mailRecipients, $exception->getMessage());
             }
 
-            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
-        }
-    }
-
-    public function previewautoendoffers(): void
-    {
-        if (!$this->authorizeSyncRequest()) {
-            $this->jsonResponse(array('error' => 'Brak autoryzacji do podgladu konczenia ofert Allegro.'), 403);
-            return;
-        }
-
-        $this->releaseSessionLock();
-        $requestStartedAt = PerformanceLogger::start();
-
-        try {
-            $mailRecipients = $this->previewAutoEndMailRecipients();
-            $result = $this->allegro->previewAutoEndOffers(array(
-                'account' => $this->input('account', ''),
-                'offer_id' => $this->input('offer_id', ''),
-                'limit' => (int) $this->input('limit', 2000),
-                'scan_limit' => (int) $this->input('scan_limit', 10000),
-            ));
-            if ($mailRecipients !== array() && (string) ($result['mode'] ?? '') === 'preview_only') {
-                $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
+            if ($detached) {
+                $this->logDetachedCronError('maintenance', $exception);
+                return;
             }
-            PerformanceLogger::logIfSlow('allegro.controller.previewAutoEndOffers', $requestStartedAt, array(
-                'account' => (string) $this->input('account', ''),
-                'limit' => (int) $this->input('limit', 2000),
-                'scan_limit' => (int) $this->input('scan_limit', 10000),
-                'matched_offer_count' => (int) ($result['matched_offer_count'] ?? 0),
-                'end_offer_count' => (int) ($result['end_offer_count'] ?? 0),
-            ), 1000.0);
-            $this->jsonResponse($result);
-        } catch (Throwable $exception) {
+
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
     }
@@ -381,28 +310,26 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
-        $requestStartedAt = PerformanceLogger::start();
+        $detached = $this->wantsJson() ? $this->beginAsyncCronResponse('autoendoffers') : false;
 
         try {
-            $mailRecipients = $this->previewAutoEndMailRecipients();
-            $result = $this->allegro->autoEndOffers(array(
-                'account' => $this->input('account', ''),
-                'limit' => (int) $this->input('limit', 2000),
-                'scan_limit' => (int) $this->input('scan_limit', 10000),
-            ));
-            if ($mailRecipients !== array() && $this->shouldSendAutoEndReport($result)) {
-                $result['mail'] = $this->sendPreviewAutoEndReport($mailRecipients, $result);
+            $result = $this->allegro->autoEndDuplicateOffers((int) $this->input('limit', 5000));
+            $mailRecipients = $this->maintenanceMailRecipients();
+            if ($mailRecipients !== array()) {
+                $result['mail'] = $this->sendAutoEndOffersReport($mailRecipients, $result);
             }
-            PerformanceLogger::logIfSlow('allegro.controller.autoEndOffers', $requestStartedAt, array(
-                'account' => (string) $this->input('account', ''),
-                'limit' => (int) $this->input('limit', 2000),
-                'scan_limit' => (int) $this->input('scan_limit', 10000),
-                'matched_offer_count' => (int) ($result['matched_offer_count'] ?? 0),
-                'end_offer_count' => (int) ($result['end_offer_count'] ?? 0),
-                'queued_now_count' => (int) ($result['queued_now_count'] ?? 0),
-            ), 1000.0);
+
+            if ($detached) {
+                return;
+            }
+
             $this->jsonResponse($result);
         } catch (Throwable $exception) {
+            if ($detached) {
+                $this->logDetachedCronError('autoendoffers', $exception);
+                return;
+            }
+
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
     }
@@ -494,22 +421,12 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
-        $requestStartedAt = PerformanceLogger::start();
 
         try {
             $result = $this->allegro->processQueue(array(
                 'account' => $this->input('account', ''),
                 'limit' => (int) $this->input('limit', 100),
             ));
-
-            PerformanceLogger::logIfSlow('allegro.controller.processQueue', $requestStartedAt, array(
-                'account' => (string) $this->input('account', ''),
-                'limit' => (int) $this->input('limit', 100),
-                'processed' => (int) ($result['processed'] ?? 0),
-                'done' => (int) ($result['done'] ?? 0),
-                'retry' => (int) ($result['retry'] ?? 0),
-                'error' => (int) ($result['error'] ?? 0),
-            ), 1000.0);
 
             if ($this->wantsJson()) {
                 $this->jsonResponse($result);
@@ -676,25 +593,6 @@ class AllegroController extends Controller
 
     private function offerFilters(): array
     {
-        $warehouseQuantity = trim((string) $this->input('warehouse_quantity', ''));
-        $warehouseQuantityFrom = trim((string) $this->input('warehouse_quantity_from', ''));
-        $warehouseQuantityTo = trim((string) $this->input('warehouse_quantity_to', ''));
-
-        if ($warehouseQuantityFrom === '' && $warehouseQuantityTo === '' && preg_match('/^\s*(\d+)\s*\-\s*(\d+)\s*$/', $warehouseQuantity, $matches) === 1) {
-            $warehouseQuantityFrom = (string) $matches[1];
-            $warehouseQuantityTo = (string) $matches[2];
-        }
-
-        if ($warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '') {
-            if ($warehouseQuantityFrom !== '' && $warehouseQuantityTo !== '') {
-                $warehouseQuantity = $warehouseQuantityFrom . '-' . $warehouseQuantityTo;
-            } elseif ($warehouseQuantityFrom !== '') {
-                $warehouseQuantity = $warehouseQuantityFrom;
-            } else {
-                $warehouseQuantity = $warehouseQuantityTo;
-            }
-        }
-
         return array(
             'account_id' => trim((string) $this->input('account_id', '')),
             'q' => trim((string) $this->input('q', '')),
@@ -705,9 +603,8 @@ class AllegroController extends Controller
             'linked' => trim((string) $this->input('linked', '')),
             'market' => trim((string) $this->input('market', '')),
             'invoice' => trim((string) $this->input('invoice', '')),
-            'warehouse_quantity' => $warehouseQuantity,
-            'warehouse_quantity_from' => $warehouseQuantityFrom,
-            'warehouse_quantity_to' => $warehouseQuantityTo,
+            'warehouse_quantity' => trim((string) $this->input('warehouse_quantity', '')),
+            'allegro_quantity' => trim((string) $this->input('allegro_quantity', '')),
         );
     }
 
@@ -725,6 +622,44 @@ class AllegroController extends Controller
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($payload);
+    }
+
+    private function beginAsyncCronResponse(string $operation): bool
+    {
+        if ($this->input('wait', '0') === '1' || $this->input('async', '1') === '0') {
+            return false;
+        }
+
+        if (!function_exists('fastcgi_finish_request')) {
+            return false;
+        }
+
+        ignore_user_abort(true);
+
+        if (!headers_sent()) {
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Connection: close');
+        }
+
+        echo json_encode(array(
+            'ok' => true,
+            'accepted' => true,
+            'async' => true,
+            'operation' => $operation,
+            'message' => 'Zadanie przyjete. CRM wykonuje je w tle.',
+        ));
+
+        fastcgi_finish_request();
+        return true;
+    }
+
+    private function logDetachedCronError(string $operation, Throwable $exception): void
+    {
+        if (function_exists('app_log')) {
+            app_log('Allegro async cron "' . $operation . '" zakonczyl sie bledem: ' . $exception->getMessage(), 'ERROR');
+        }
     }
 
     private function wantsJson(): bool
@@ -758,28 +693,6 @@ class AllegroController extends Controller
         return array_values(array_unique($recipients));
     }
 
-    private function previewAutoEndMailRecipients(): array
-    {
-        $raw = trim((string) $this->input('mail_to', ''));
-        if ($raw === '') {
-            return array();
-        }
-
-        $items = preg_split('/[\s,;]+/', $raw) ?: array();
-        $recipients = array();
-
-        foreach ($items as $item) {
-            $email = trim((string) $item);
-            if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-                continue;
-            }
-
-            $recipients[] = $email;
-        }
-
-        return array_values(array_unique($recipients));
-    }
-
     private function maintenanceMailOnSuccess(): bool
     {
         $mailErrorOnly = trim((string) $this->input('mail_error_only', ''));
@@ -788,6 +701,41 @@ class AllegroController extends Controller
         }
 
         return trim((string) $this->input('mail_error_to', '')) === '';
+    }
+
+    private function sendAutoEndOffersReport(array $recipients, array $result): array
+    {
+        $offers = isset($result['offers']) && is_array($result['offers']) ? $result['offers'] : array();
+        $rows = '';
+        foreach ($offers as $offer) {
+            $rows .= '<tr>'
+                . '<td>' . htmlspecialchars((string) ($offer['account'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td>' . htmlspecialchars((string) ($offer['offer_id'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td>' . htmlspecialchars((string) ($offer['name'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td>' . htmlspecialchars((string) ($offer['sku'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '</tr>';
+        }
+
+        if ($rows === '') {
+            $rows = '<tr><td colspan="4">Brak ofert zakwalifikowanych do zakonczenia.</td></tr>';
+        }
+
+        $html = '<p>Automatyczne konczenie ofert Allegro.</p>'
+            . '<p><strong>Dodano do kolejki:</strong> ' . (int) ($result['queued'] ?? 0) . '</p>'
+            . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">'
+            . '<thead><tr><th>Konto</th><th>Offer ID</th><th>Nazwa</th><th>SKU</th></tr></thead>'
+            . '<tbody>' . $rows . '</tbody></table>';
+
+        $text = 'Automatyczne konczenie ofert Allegro. Dodano do kolejki: ' . (int) ($result['queued'] ?? 0);
+        $sent = array();
+        foreach ($recipients as $recipient) {
+            $sent[$recipient] = $this->mail->send($recipient, 'Allegro oferty do zakonczenia', $html, $text);
+        }
+
+        return array(
+            'requested' => $recipients,
+            'sent' => $sent,
+        );
     }
 
     private function sendMaintenanceReport(array $recipients, array $result): array
@@ -823,84 +771,6 @@ class AllegroController extends Controller
         foreach ($recipients as $recipient) {
             $this->mail->send($recipient, $subject, $html, $message);
         }
-    }
-
-    private function sendPreviewAutoEndReport(array $recipients, array $result): array
-    {
-        $account = isset($result['account']) && is_array($result['account']) ? $result['account'] : null;
-        $accountLabel = $account !== null && trim((string) ($account['name'] ?? '')) !== ''
-            ? (string) ($account['name'] ?? '')
-            : 'wszystkie konta';
-        $items = isset($result['items']) && is_array($result['items']) ? $result['items'] : array();
-        $eligibleItems = array_values(array_filter($items, static function (array $item): bool {
-            return !empty($item['can_end_offer']);
-        }));
-        $count = isset($result['end_offer_count']) ? (int) $result['end_offer_count'] : count($eligibleItems);
-        $subject = 'Allegro oferty do zakonczenia: ' . $count
-            . ($account !== null && trim((string) ($account['slug'] ?? '')) !== '' ? ' [' . (string) $account['slug'] . ']' : '');
-
-        $html = '<p>Znaleziono <strong>' . htmlspecialchars((string) $count, ENT_QUOTES, 'UTF-8') . '</strong> ofert do zakonczenia.</p>'
-            . '<p><strong>Konto:</strong> ' . htmlspecialchars($accountLabel, ENT_QUOTES, 'UTF-8') . '<br>'
-            . '<strong>Data:</strong> ' . htmlspecialchars((string) ($result['generated_at'] ?? date('Y-m-d H:i:s')), ENT_QUOTES, 'UTF-8') . '</p>'
-            . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;">'
-            . '<thead><tr style="background:#f3f4f6;">'
-            . '<th align="left">Konto</th>'
-            . '<th align="left">Offer ID</th>'
-            . '<th align="left">Nazwa</th>'
-            . '<th align="left">SKU</th>'
-            . '</tr></thead><tbody>';
-        $text = "Znaleziono ofert do zakonczenia: " . $count . "\n"
-            . 'Konto: ' . $accountLabel . "\n"
-            . 'Data: ' . (string) ($result['generated_at'] ?? date('Y-m-d H:i:s')) . "\n\n";
-
-        if ($eligibleItems === array()) {
-            $html .= '<tr><td colspan="4">Brak ofert do zakonczenia.</td></tr>';
-            $text .= "Brak ofert do zakonczenia.\n";
-        } else {
-            foreach ($eligibleItems as $item) {
-                $accountName = (string) ($item['account_name'] ?? '');
-                $offerId = (string) ($item['offer_id'] ?? '');
-                $offerName = (string) ($item['offer_name'] ?? '');
-                $offerSku = (string) ($item['offer_sku'] ?? '');
-
-                $html .= '<tr>'
-                    . '<td>' . htmlspecialchars($accountName, ENT_QUOTES, 'UTF-8') . '</td>'
-                    . '<td>' . htmlspecialchars($offerId, ENT_QUOTES, 'UTF-8') . '</td>'
-                    . '<td>' . htmlspecialchars($offerName, ENT_QUOTES, 'UTF-8') . '</td>'
-                    . '<td>' . htmlspecialchars($offerSku, ENT_QUOTES, 'UTF-8') . '</td>'
-                    . '</tr>';
-                $text .= '- ' . $accountName . ' | ' . $offerId . ' | ' . $offerSku . ' | ' . $offerName . "\n";
-            }
-        }
-
-        $html .= '</tbody></table>';
-
-        $sent = array();
-        foreach ($recipients as $recipient) {
-            $sent[$recipient] = $this->mail->send($recipient, $subject, $html, $text);
-        }
-
-        return array(
-            'requested' => $recipients,
-            'sent' => $sent,
-            'eligible_count' => $count,
-        );
-    }
-
-    private function shouldSendAutoEndReport(array $result): bool
-    {
-        if (isset($result['end_offer_count']) && (int) $result['end_offer_count'] > 0) {
-            return true;
-        }
-
-        $items = isset($result['items']) && is_array($result['items']) ? $result['items'] : array();
-        foreach ($items as $item) {
-            if (is_array($item) && !empty($item['can_end_offer'])) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function notifyRefreshTokenFailuresFromBatch(array $results): void

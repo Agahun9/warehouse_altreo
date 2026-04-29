@@ -40,44 +40,26 @@
             <div class="col-12">
               <label class="form-label">Wzor tytulu</label>
               <textarea name="template_body" id="templateBody" class="form-control" rows="5" required>{$titleTemplate.template_body|default:''|escape}</textarea>
-              <div class="border rounded bg-light-subtle p-3 mt-3">
-                <div class="small fw-semibold mb-2">Jak tego uzywac</div>
-                <div class="small text-secondary mb-2">Przyklad calego wzoru:</div>
-                <div class="small mb-3">
-                  <code>Etui na Telefon {{ldelim}}field:product.allegro_parameter.123{rdelim} {{ldelim}}field:product.allegro_parameter.456{rdelim} wzory {{ldelim}}option:collection_name{rdelim}</code>
-                </div>
+              <div class="form-text">Przyklad: <code>Etui na Telefon {{ldelim}}field:product.allegro_parameter.123{rdelim} {{ldelim}}field:product.allegro_parameter.456{rdelim} wzory {{ldelim}}option:collection_name{rdelim}</code></div>
+              <div class="form-text">Znajdz i zamien w tokenie: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}</code> zamieni <code>Czarny</code> na <code>Czarna</code> w wartosci tego pola.</div>
+              <div class="form-text">Wiele zamian naraz: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska{rdelim}</code>.</div>
+              <div class="form-text">Makra: <code>{{ldelim}}field:product.allegro_parameter.249512=upper{rdelim}</code>.aaaa</div>
 
-                <div class="small fw-semibold mb-2">Podstawowa skladnia tokenow</div>
-                <ul class="small text-secondary ps-3 mb-3">
-                  <li>Pole produktu: <code>{{ldelim}}field:product.sku{rdelim}</code> albo <code>{{ldelim}}field:product.allegro_parameter.11484{rdelim}</code></li>
-                  <li>Opcja z eksportu: <code>{{ldelim}}option:collection_name{rdelim}</code> albo <code>{{ldelim}}option:price_to_csv{rdelim}</code></li>
-                  <li>Zamiana tekstu: po nazwie pola dodaj <code>+stare-nowe</code></li>
-                  <li>Formatowanie: na koncu dodaj <code>=format</code></li>
-                </ul>
-
-                <div class="small fw-semibold mb-2">Kolejnosc</div>
-                <div class="small text-secondary mb-3">
-                  Najpierw wpisz pole, potem opcjonalne zamiany <code>+...</code>, a na koncu opcjonalny format <code>=...</code>.
-                </div>
-
-                <div class="small fw-semibold mb-2">Przyklady</div>
-                <ul class="small text-secondary ps-3 mb-3">
-                  <li>Zwykla wartosc: <code>{{ldelim}}field:product.allegro_parameter.249512{rdelim}</code></li>
-                  <li>Jedna zamiana: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}</code></li>
-                  <li>Wiele zamian: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska{rdelim}</code></li>
-                  <li>Samo formatowanie: <code>{{ldelim}}field:product.allegro_parameter.11484=upper{rdelim}</code></li>
-                  <li>Zamiany i format razem: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna=upper{rdelim}</code></li>
-                </ul>
-
-                <div class="small fw-semibold mb-2">Dostepne formaty</div>
-                <ul class="small text-secondary ps-3 mb-0">
-                  <li><code>upper</code> - zamienia tekst na wielkie litery</li>
-                  <li><code>lower</code> - zamienia tekst na male litery</li>
-                  <li><code>trim</code> - usuwa spacje z poczatku i konca</li>
-                  <li><code>date:Y-m-d</code> - formatuje date</li>
-                  <li><code>number:2:,: </code> - formatuje liczbe: 2 miejsca po przecinku, przecinek dziesietny, spacja tysieczna</li>
-                </ul>
+              <div class="form-text mt-2"><strong>Jak tego uzywac:</strong></div>
+              <div class="form-text">1. Zwykla wartosc pola: <code>{{ldelim}}field:product.sku{rdelim}</code> albo <code>{{ldelim}}field:product.allegro_parameter.11484{rdelim}</code>.</div>
+              <div class="form-text">2. Opcja z eksportu: <code>{{ldelim}}option:collection_name{rdelim}</code> albo <code>{{ldelim}}option:price_to_csv{rdelim}</code>.</div>
+              <div class="form-text">3. Zamiana tekstu w wartosci: po nazwie pola dodaj <code>+stare-nowe</code>, np. <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}</code>.</div>
+              <div class="form-text">4. Formatowanie: na koncu dodaj <code>=format</code>, np. <code>{{ldelim}}field:product.allegro_parameter.11484=upper{rdelim}</code>.</div>
+              <div class="form-text">5. Kolejnosc jest taka: najpierw pole, potem opcjonalne zamiany <code>+...</code>, a na koncu opcjonalny format <code>=...</code>.</div>
+              <div class="form-text mt-2">Formatowanie w tokenie po znaku <code>=</code>:
+                <code>upper</code> - wielkie litery,
+                <code>lower</code> - male litery,
+                <code>trim</code> - usuniecie spacji z poczatku i konca,
+                <code>date:Y-m-d</code> - format daty,
+                <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi.
               </div>
+              <div class="form-text">Przyklad formatu: <code>{{ldelim}}field:product.allegro_parameter.11484=upper{rdelim}</code></div>
+              <div class="form-text">Mozesz tez laczyc zamiany z formatem: <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna=upper{rdelim}</code></div>
             </div>
           </div>
         </div>

@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-22 15:29:56
+/* Smarty version 5.8.0, created on 2026-04-28 13:05:57
   from 'file:admin/users.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e8cd54e0f4b1_25896096',
+  'unifunc' => 'content_69f0949509af16_61990312',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     '807196f3270880e814131e8bcbee4600214e99c5' => 
     array (
       0 => 'admin/users.tpl',
-      1 => 1776864591,
+      1 => 1777374342,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e8cd54e0f4b1_25896096 (\Smarty\Template $_smarty_tpl) {
+function content_69f0949509af16_61990312 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/admin';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -117,30 +117,29 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
         .users-admin-modules {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 0.75rem;
         }
 
         .users-admin-module {
           display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          min-height: 4rem;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0.7rem;
+          min-height: 5.5rem;
           padding: 0.95rem 1rem;
           border: 1px solid rgba(15, 23, 42, 0.08);
           border-radius: 1rem;
           background: linear-gradient(180deg, #fff, #f8fafc);
         }
 
-        .users-admin-module input {
-          width: 1.1rem;
-          height: 1.1rem;
-          flex: 0 0 auto;
-        }
-
         .users-admin-module span {
           font-weight: 600;
           line-height: 1.2;
+        }
+
+        .users-admin-module select {
+          min-height: 2.5rem;
         }
 
         .users-admin-meta {
@@ -197,7 +196,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
         <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
           <div>
             <h3 class="users-admin-summary-title">Lista kont</h3>
-            <p class="users-admin-summary-text">Edytujesz dane osobowe, role, status konta, dostep do modulow oraz tryb odczyt lub edycja.</p>
+            <p class="users-admin-summary-text">Dla kazdego modulu ustawiasz osobno brak dostepu, sam odczyt albo pelna edycje. To pozwala np. dac edycje Szablonow CSV bez prawa ruszania listy produktow.</p>
           </div>
           <div class="users-admin-summary-actions">
             <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -293,13 +292,27 @@ echo htmlspecialchars((string)$_smarty_tpl->getValue('user')['email'], ENT_QUOTE
                     </div>
 
                     <div class="col-md-6">
+                      <label class="form-label">Loader aplikacji</label>
+                      <select name="loader_enabled" class="form-select">
+                        <option value="1"<?php if ((($tmp = $_smarty_tpl->getValue('user')['loader_enabled'] ?? null)===null||$tmp==='' ? 1 ?? null : $tmp) != 0) {?> selected<?php }?>>wlaczony</option>
+                        <option value="0"<?php if ((($tmp = $_smarty_tpl->getValue('user')['loader_enabled'] ?? null)===null||$tmp==='' ? 1 ?? null : $tmp) == 0) {?> selected<?php }?>>wylaczony</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="row g-3 mb-4">
+                    <div class="col-md-12">
+                      <div class="small text-secondary">Loader pojawia sie tylko wtedy, gdy ladowanie trwa dluzej niz 0.7 sekundy.</div>
+                    </div>
+
+                    <div class="col-md-6">
                       <label class="form-label">Nowe haslo</label>
                       <input type="password" class="form-control" name="new_password" placeholder="pozostaw puste, aby nie zmieniac">
                     </div>
                   </div>
 
                   <div class="mb-3">
-                    <label class="form-label fs-5 fw-semibold mb-3">Dostep do modulow</label>
+                    <label class="form-label fs-5 fw-semibold mb-3">Uprawnienia modulow</label>
                     <div class="users-admin-modules">
                       <?php
 $_from = $_smarty_tpl->getSmarty()->getRuntime('Foreach')->init($_smarty_tpl, $_smarty_tpl->getValue('modules'), 'module');
@@ -307,16 +320,16 @@ $foreach1DoElse = true;
 foreach ($_from ?? [] as $_smarty_tpl->getVariable('module')->value) {
 $foreach1DoElse = false;
 ?>
-                        <label class="users-admin-module" for="mod_<?php echo $_smarty_tpl->getValue('user')['id'];?>
-_<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('module')['code'], ENT_QUOTES, 'UTF-8', true);?>
-">
-                          <input class="form-check-input mt-0" type="checkbox" name="modules[]" value="<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('module')['code'], ENT_QUOTES, 'UTF-8', true);?>
-" id="mod_<?php echo $_smarty_tpl->getValue('user')['id'];?>
-_<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('module')['code'], ENT_QUOTES, 'UTF-8', true);?>
-"<?php if ($_smarty_tpl->getSmarty()->getModifierCallback('in_array')($_smarty_tpl->getValue('module')['code'],$_smarty_tpl->getValue('user')['modules'])) {?> checked<?php }?>>
+                        <div class="users-admin-module">
                           <span><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('module')['name'], ENT_QUOTES, 'UTF-8', true);?>
 </span>
-                        </label>
+                          <select class="form-select" name="module_permissions[<?php echo htmlspecialchars((string)$_smarty_tpl->getValue('module')['code'], ENT_QUOTES, 'UTF-8', true);?>
+]">
+                            <option value="none"<?php if ((($tmp = $_smarty_tpl->getValue('user')['module_permissions'][$_smarty_tpl->getValue('module')['code']] ?? null)===null||$tmp==='' ? 'none' ?? null : $tmp) == 'none') {?> selected<?php }?>>brak dostepu</option>
+                            <option value="read"<?php if ((($tmp = $_smarty_tpl->getValue('user')['module_permissions'][$_smarty_tpl->getValue('module')['code']] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) == 'read') {?> selected<?php }?>>tylko odczyt</option>
+                            <option value="edit"<?php if ((($tmp = $_smarty_tpl->getValue('user')['module_permissions'][$_smarty_tpl->getValue('module')['code']] ?? null)===null||$tmp==='' ? '' ?? null : $tmp) == 'edit') {?> selected<?php }?>>odczyt i edycja</option>
+                          </select>
+                        </div>
                       <?php
 }
 $_smarty_tpl->getSmarty()->getRuntime('Foreach')->restore($_smarty_tpl, 1);?>

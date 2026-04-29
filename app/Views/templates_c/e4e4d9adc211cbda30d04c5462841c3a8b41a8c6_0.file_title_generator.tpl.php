@@ -1,18 +1,18 @@
 <?php
-/* Smarty version 5.8.0, created on 2026-04-23 12:56:56
+/* Smarty version 5.8.0, created on 2026-04-28 10:19:14
   from 'file:csv_templates/title_generator.tpl' */
 
 /* @var \Smarty\Template $_smarty_tpl */
 if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   'version' => '5.8.0',
-  'unifunc' => 'content_69e9faf8120ca2_15682008',
+  'unifunc' => 'content_69f06d8266be43_54200901',
   'has_nocache_code' => false,
   'file_dependency' => 
   array (
     'e4e4d9adc211cbda30d04c5462841c3a8b41a8c6' => 
     array (
       0 => 'csv_templates/title_generator.tpl',
-      1 => 1776941810,
+      1 => 1777355171,
       2 => 'file',
     ),
   ),
@@ -20,7 +20,7 @@ if ($_smarty_tpl->getCompiled()->isFresh($_smarty_tpl, array (
   array (
   ),
 ))) {
-function content_69e9faf8120ca2_15682008 (\Smarty\Template $_smarty_tpl) {
+function content_69f06d8266be43_54200901 (\Smarty\Template $_smarty_tpl) {
 $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/crm/new_version/app/Views/templates/csv_templates';
 ?><main class="app-main">
   <div class="app-content-header">
@@ -48,18 +48,74 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
 
   <div class="app-content">
     <div class="container-fluid">
+      <style>
+        .csv-title-generator-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 1rem 1.25rem;
+          align-items: start;
+        }
+
+        .csv-title-generator-hero-copy {
+          min-width: 0;
+        }
+
+        .csv-title-generator-hero-copy .card-title,
+        .csv-title-generator-help .card-title {
+          line-height: 1.2;
+        }
+
+        .csv-title-generator-hero-copy .text-secondary,
+        .csv-title-generator-help ol {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .csv-title-generator-actions {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          min-width: min(100%, 22rem);
+        }
+
+        .csv-title-generator-actions .btn {
+          white-space: nowrap;
+        }
+
+        .csv-title-generator-help ol li + li {
+          margin-top: 0.35rem;
+        }
+
+        @media (max-width: 767.98px) {
+          .csv-title-generator-hero {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .csv-title-generator-actions {
+            min-width: 0;
+            justify-content: stretch;
+          }
+
+          .csv-title-generator-actions .btn {
+            flex: 1 1 100%;
+            white-space: normal;
+          }
+        }
+      </style>
+
       <?php if ($_smarty_tpl->getValue('flashSuccess')) {?><div class="alert alert-success"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashSuccess'), ENT_QUOTES, 'UTF-8', true);?>
 </div><?php }?>
       <?php if ($_smarty_tpl->getValue('flashError')) {?><div class="alert alert-danger"><?php echo htmlspecialchars((string)$_smarty_tpl->getValue('flashError'), ENT_QUOTES, 'UTF-8', true);?>
 </div><?php }?>
 
       <div class="card mb-4">
-        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div>
+        <div class="card-body csv-title-generator-hero">
+          <div class="csv-title-generator-hero-copy">
             <h3 class="card-title mb-1">Szablony tytulow</h3>
-            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> używanego podczas eksportu CSV.</div>
+            <div class="text-secondary small">Szablony do pola <code>product.generated_title</code> uzywanego podczas eksportu CSV.</div>
           </div>
-          <div class="d-flex gap-2">
+          <div class="csv-title-generator-actions">
             <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
 ?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Szablony CSV</a>
             <a href="<?php echo $_smarty_tpl->getValue('baseUrl');?>
@@ -69,7 +125,7 @@ $_smarty_current_dir = '/home/pfuuseajvz/domains/magazyn.altreo.pl/public_html/c
       </div>
 
       <div class="card mb-4">
-        <div class="card-body">
+        <div class="card-body csv-title-generator-help">
           <h3 class="card-title mb-2">Jak tego uzyc</h3>
           <ol class="small mb-0 ps-3">
             <li>W szablonie CSV dodaj kolumne typu <code>field</code>.</li>

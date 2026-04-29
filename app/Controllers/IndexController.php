@@ -9,6 +9,7 @@ use App\Models\CategoryRepository;
 use App\Models\ProductChangeLogRepository;
 use App\Models\ProductRepository;
 use App\Models\SellasistOrderSyncRepository;
+use App\Models\SellasistStockCallFailureRepository;
 use App\Models\UserRepository;
 use App\Services\AllegroService;
 use Throwable;
@@ -18,9 +19,6 @@ class IndexController extends Controller
     public function index(): void
     {
         $currentUser = $this->requireAuth();
-        $flashSuccess = $this->getFlash('success');
-        $flashError = $this->getFlash('error');
-        $this->releaseSessionLock();
 
         $productCount = null;
         $lowStockCount = null;
@@ -50,10 +48,11 @@ class IndexController extends Controller
             'y_axis_orders' => array(0, 1),
             'y_axis_value' => array(0.0, 1.0),
         );
-        $sellasistFailedRequests = array();
-        $sellasistFailedRequestsSummary = array(
-            'total' => 0,
-            'latest_at' => '',
+        $sellasistFailureStats = array(
+            'total_count' => 0,
+            'last_24h_count' => 0,
+            'latest_at' => null,
+            'latest' => array(),
         );
 
         try {
@@ -119,8 +118,6 @@ class IndexController extends Controller
             $sellasistTodayStats = $sellasistSync->todaySummary('subtract_stock');
             $sellasistDailySeries = $sellasistSync->dailySeries('subtract_stock', 7);
             $sellasistChart = $this->buildSellasistChart($sellasistDailySeries);
-            $sellasistFailedRequests = $sellasistSync->latestFailedRequests(15);
-            $sellasistFailedRequestsSummary = $sellasistSync->failedRequestsSummary(24);
         } catch (Throwable $exception) {
             $sellasistTodayStats = array(
                 'orders_count' => 0,
@@ -128,10 +125,18 @@ class IndexController extends Controller
                 'currency' => 'PLN',
             );
             $sellasistDailySeries = array();
-            $sellasistFailedRequests = array();
-            $sellasistFailedRequestsSummary = array(
-                'total' => 0,
-                'latest_at' => '',
+        }
+
+        try {
+            $sellasistFailures = new SellasistStockCallFailureRepository($this->db());
+            $sellasistFailures->ensureSchema();
+            $sellasistFailureStats = $sellasistFailures->summary(5);
+        } catch (Throwable $exception) {
+            $sellasistFailureStats = array(
+                'total_count' => 0,
+                'last_24h_count' => 0,
+                'latest_at' => null,
+                'latest' => array(),
             );
         }
 
@@ -153,9 +158,6 @@ class IndexController extends Controller
             'contentTitle' => 'Panel glowny',
             'pageDescription' => 'Szybki podglad najwazniejszych danych magazynu i kont uzytkownikow.',
             'breadcrumbCurrent' => 'Dashboard',
-            'currentUser' => $currentUser,
-            'flashSuccess' => $flashSuccess,
-            'flashError' => $flashError,
             'stats' => $stats,
             'recentProductChanges' => $recentProductChanges,
             'recentUsers' => $recentUsers,
@@ -163,14 +165,33 @@ class IndexController extends Controller
             'sellasistTodayStats' => $sellasistTodayStats,
             'sellasistDailySeries' => $sellasistDailySeries,
             'sellasistChart' => $sellasistChart,
-            'sellasistFailedRequests' => $sellasistFailedRequests,
-            'sellasistFailedRequestsSummary' => $sellasistFailedRequestsSummary,
+            'sellasistFailureStats' => $sellasistFailureStats,
             'activities' => array(
                 'Sprawdz stany niskie i brakujace, aby unikac opoznien wysylek.',
                 'Monitoruj dzisiejsze odjecia Sellasist i kolejke Allegro.',
                 'Admin moze zarzadzac kontami, dostepami i modulami systemu.',
             ),
         ));
+    }
+
+    public function clearsellasistfailures(): void
+    {
+        $this->requireModuleWrite('sellasist');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=index');
+        }
+
+        try {
+            $sellasistFailures = new SellasistStockCallFailureRepository($this->db());
+            $sellasistFailures->ensureSchema();
+            $deleted = $sellasistFailures->deleteAll();
+            $this->setFlash('success', 'Usunieto bledne wywolania Sellasist: ' . $deleted . '.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', 'Nie udalo sie usunac blednych wywolan Sellasist: ' . $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=index');
     }
 
     private function buildSellasistChart(array $series): array

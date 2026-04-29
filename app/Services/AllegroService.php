@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Core\Config;
 use App\Core\Database;
-use App\Core\PerformanceLogger;
 use App\Models\AllegroStorageRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductRepository;
@@ -16,9 +15,6 @@ use RuntimeException;
 
 class AllegroService
 {
-    private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
-    private const TOKEN_REFRESH_LOG_MARGIN_SECONDS = 60;
-
     /** @var array<string, string> */
     private $imageHashCache = array();
 
@@ -30,16 +26,14 @@ class AllegroService
 
     public function __construct()
     {
-        $startedAt = PerformanceLogger::start();
         $app = Config::get('app');
         $this->config = isset($app['allegro']) && is_array($app['allegro']) ? $app['allegro'] : array();
         $this->storage = new AllegroStorageRepository(Database::instance());
         $this->storage->ensureSchema();
         $customFields = new ProductCustomFieldRepository(Database::instance());
         $customFields->ensureSchema();
-        $this->maybeCleanupExpiredCache();
+        $this->storage->cleanupExpiredCache();
         $this->disableStoredWarehouseLinks();
-        PerformanceLogger::logIfSlow('allegro.service.construct', $startedAt, array(), 500.0);
     }
 
     public function listAccounts(): array
@@ -172,15 +166,12 @@ class AllegroService
 
     public function automationLinks(string $baseUrl): array
     {
-        $previewBase = rtrim($baseUrl, '?&') . '?controller=allegro&action=previewautoendoffers&format=json';
-        $autoEndBase = rtrim($baseUrl, '?&') . '?controller=allegro&action=autoendoffers&format=json';
         $accounts = $this->listAccounts();
         $links = array(
             'queue_worker' => rtrim($baseUrl, '?&') . '?controller=allegro&action=maintenance&queue_limit=200',
             'full_maintenance' => rtrim($baseUrl, '?&') . '?controller=allegro&action=maintenance&sync=1&queue_limit=200&max_batches=3&offer_limit=100&max_runtime=30',
+            'auto_end_offers' => rtrim($baseUrl, '?&') . '?controller=allegro&action=autoendoffers&format=json',
             'refresh_tokens' => rtrim($baseUrl, '?&') . '?controller=allegro&action=refreshtoken&format=json',
-            'auto_end_offers' => $autoEndBase,
-            'auto_end_offers_mail_example' => $autoEndBase . '&mail_to=twoj%40adres.pl',
             'accounts' => array(),
         );
 
@@ -192,8 +183,6 @@ class AllegroService
             $queueOnly = rtrim($baseUrl, '?&')
                 . '?controller=allegro&action=maintenance&account=' . rawurlencode((string) $account['slug'])
                 . '&queue_limit=100';
-            $previewAutoEndOffers = $previewBase . '&account=' . rawurlencode((string) $account['slug']);
-            $autoEndOffers = $autoEndBase . '&account=' . rawurlencode((string) $account['slug']);
 
             $links['accounts'][] = array(
                 'id' => (int) $account['id'],
@@ -203,9 +192,6 @@ class AllegroService
                 'sync' => $trigger,
                 'maintenance' => $maintenance,
                 'queue_only' => $queueOnly,
-                'preview_auto_end_offers' => $previewAutoEndOffers,
-                'auto_end_offers' => $autoEndOffers,
-                'auto_end_offers_mail_example' => $autoEndOffers . '&mail_to=twoj%40adres.pl',
             );
         }
 
@@ -230,227 +216,6 @@ class AllegroService
     public function offerDetails(int $id)
     {
         return $this->storage->findOfferById($id);
-    }
-
-    public function previewAutoEndOffers(array $options = array()): array
-    {
-        $startedAt = PerformanceLogger::start();
-        $accountSelector = trim((string) ($options['account'] ?? ''));
-        $offerIdentifier = trim((string) ($options['offer_id'] ?? ''));
-        $accountId = null;
-        $accountMeta = null;
-
-        if ($offerIdentifier !== '') {
-            $diagnostic = $this->storage->diagnoseAutoEndOffer($offerIdentifier);
-            if ($diagnostic === null) {
-                throw new RuntimeException('Nie znaleziono oferty Allegro do diagnozy.');
-            }
-
-            return array(
-                'mode' => 'preview_single_offer',
-                'generated_at' => date('Y-m-d H:i:s'),
-                'item' => $diagnostic,
-            );
-        }
-
-        if ($accountSelector !== '') {
-            $account = $this->resolveAccount($accountSelector);
-            if (!$account) {
-                throw new RuntimeException('Nie znaleziono konta Allegro do podgladu konczenia ofert.');
-            }
-
-            $accountId = (int) ($account['id'] ?? 0);
-            $accountMeta = array(
-                'id' => $accountId,
-                'name' => (string) ($account['name'] ?? ''),
-                'slug' => (string) ($account['slug'] ?? ''),
-            );
-        }
-
-        $limit = max(1, min(10000, (int) ($options['limit'] ?? 2000)));
-        $scanLimit = max($limit, min(30000, (int) ($options['scan_limit'] ?? 10000)));
-        $storageStartedAt = PerformanceLogger::start();
-        $preview = $this->storage->previewAutoEndOfferCandidates($accountId, $limit, $scanLimit);
-        PerformanceLogger::logIfSlow('allegro.service.previewAutoEndOffers.storage', $storageStartedAt, array(
-            'account_id' => $accountId,
-            'limit' => $limit,
-            'scan_limit' => $scanLimit,
-            'scanned_rows' => (int) ($preview['scanned_rows'] ?? 0),
-        ));
-        $rows = isset($preview['items']) && is_array($preview['items']) ? $preview['items'] : array();
-        $scannedRows = isset($preview['scanned_rows']) ? (int) $preview['scanned_rows'] : count($rows);
-        $hasMoreCandidates = !empty($preview['has_more_candidates']);
-        $scanLimitReached = !empty($preview['scan_limit_reached']);
-        $eligible = array_values(array_filter($rows, static function (array $row): bool {
-            return !empty($row['can_end_offer']);
-        }));
-        $blocked = array_values(array_filter($rows, static function (array $row): bool {
-            return empty($row['can_end_offer']);
-        }));
-
-        $result = array(
-            'mode' => 'preview_only',
-            'account' => $accountMeta,
-            'limit' => $limit,
-            'scan_limit' => $scanLimit,
-            'generated_at' => date('Y-m-d H:i:s'),
-            'returned_items_count' => count($rows),
-            'matched_offer_count' => count($rows),
-            'end_offer_count' => count($eligible),
-            'summary' => array(
-                'matched_below_threshold' => count($rows),
-                'eligible_to_end' => count($eligible),
-                'blocked_by_duplicates' => count($blocked),
-                'scanned_rows' => $scannedRows,
-                'has_more_candidates' => $hasMoreCandidates,
-                'scan_limit_reached' => $scanLimitReached,
-                'returned_items_count' => count($rows),
-            ),
-            'items' => array_values(array_map(static function (array $row): array {
-                return array(
-                    'id' => (int) ($row['id'] ?? 0),
-                    'account_id' => (int) ($row['account_id'] ?? 0),
-                    'account_name' => (string) ($row['account_name'] ?? ''),
-                    'account_slug' => (string) ($row['account_slug'] ?? ''),
-                    'offer_id' => (string) ($row['offer_id'] ?? ''),
-                    'offer_name' => (string) ($row['name'] ?? ''),
-                    'offer_sku' => (string) ($row['sku'] ?? ''),
-                    'warehouse_product_id' => isset($row['warehouse_product_id']) ? (int) $row['warehouse_product_id'] : null,
-                    'warehouse_sku' => (string) ($row['warehouse_sku'] ?? ''),
-                    'warehouse_product_name' => (string) ($row['warehouse_product_name'] ?? ''),
-                    'warehouse_category_id' => isset($row['warehouse_category_id']) ? (int) $row['warehouse_category_id'] : null,
-                    'warehouse_category_name' => (string) ($row['warehouse_category_name'] ?? ''),
-                    'warehouse_quantity' => isset($row['warehouse_quantity']) ? (int) $row['warehouse_quantity'] : 0,
-                    'warehouse_localization' => (string) ($row['warehouse_localization'] ?? ''),
-                    'end_offers_below_quantity' => isset($row['category_end_offers_below_quantity']) ? (int) $row['category_end_offers_below_quantity'] : null,
-                    'difference_to_threshold' => isset($row['difference_to_threshold']) ? (int) $row['difference_to_threshold'] : 0,
-                    'can_end_offer' => !empty($row['can_end_offer']),
-                    'duplicate_block' => isset($row['duplicate_block']) && is_array($row['duplicate_block']) ? $row['duplicate_block'] : null,
-                );
-            }, $rows)),
-        );
-
-        PerformanceLogger::logIfSlow('allegro.service.previewAutoEndOffers.total', $startedAt, array(
-            'account' => $accountSelector,
-            'limit' => $limit,
-            'scan_limit' => $scanLimit,
-            'matched_offer_count' => count($rows),
-            'end_offer_count' => count($eligible),
-            'blocked_count' => count($blocked),
-        ));
-
-        return $result;
-    }
-
-    public function autoEndOffers(array $options = array()): array
-    {
-        $startedAt = PerformanceLogger::start();
-        $preview = $this->previewAutoEndOffers($options);
-        if ((string) ($preview['mode'] ?? '') !== 'preview_only') {
-            throw new RuntimeException('Tryb automatycznego konczenia obsluguje tylko liste ofert.');
-        }
-
-        $items = isset($preview['items']) && is_array($preview['items']) ? $preview['items'] : array();
-        $eligibleItems = array_values(array_filter($items, static function (array $item): bool {
-            return !empty($item['can_end_offer']);
-        }));
-        $targets = array_map(static function (array $item): array {
-            return array(
-                'id' => (int) ($item['id'] ?? 0),
-                'account_id' => (int) ($item['account_id'] ?? 0),
-                'offer_id' => (string) ($item['offer_id'] ?? ''),
-            );
-        }, $eligibleItems);
-
-        $existingMap = $this->storage->existingQueuedOfferOperationMap($targets, 'end_offer', array('pending', 'retry', 'processing'));
-        $newTargets = array();
-        $alreadyQueued = array();
-
-        foreach ($eligibleItems as $item) {
-            $offerRowId = isset($item['id']) ? (int) $item['id'] : 0;
-            if ($offerRowId <= 0) {
-                continue;
-            }
-
-            if (isset($existingMap[$offerRowId])) {
-                $item['queue_status'] = (string) ($existingMap[$offerRowId]['status'] ?? '');
-                $item['queue_id'] = (int) ($existingMap[$offerRowId]['queue_id'] ?? 0);
-                $alreadyQueued[] = $item;
-                continue;
-            }
-
-            $newTargets[] = array(
-                'id' => $offerRowId,
-                'account_id' => (int) ($item['account_id'] ?? 0),
-                'offer_id' => (string) ($item['offer_id'] ?? ''),
-            );
-        }
-
-        $queued = 0;
-        if ($newTargets !== array()) {
-            $queued = $this->storage->enqueueOfferChanges($newTargets, 'end_offer', array(), null, true);
-        }
-
-        $queuedIds = array();
-        foreach ($newTargets as $target) {
-            $queuedIds[(int) ($target['id'] ?? 0)] = true;
-        }
-
-        $resultItems = array();
-        foreach ($eligibleItems as $item) {
-            $offerRowId = isset($item['id']) ? (int) $item['id'] : 0;
-            if ($offerRowId <= 0) {
-                continue;
-            }
-
-            if (isset($existingMap[$offerRowId])) {
-                $item['queue_action'] = 'already_queued';
-                $item['queue_status'] = (string) ($existingMap[$offerRowId]['status'] ?? '');
-                $item['queue_id'] = (int) ($existingMap[$offerRowId]['queue_id'] ?? 0);
-            } elseif (isset($queuedIds[$offerRowId])) {
-                $item['queue_action'] = 'queued_now';
-                $item['queue_status'] = 'pending';
-                $item['queue_id'] = null;
-            } else {
-                $item['queue_action'] = 'skipped';
-                $item['queue_status'] = null;
-                $item['queue_id'] = null;
-            }
-
-            $resultItems[] = $item;
-        }
-
-        $result = array(
-            'mode' => 'auto_end_offers',
-            'account' => $preview['account'] ?? null,
-            'limit' => $preview['limit'] ?? null,
-            'scan_limit' => $preview['scan_limit'] ?? null,
-            'generated_at' => date('Y-m-d H:i:s'),
-            'matched_offer_count' => isset($preview['matched_offer_count']) ? (int) $preview['matched_offer_count'] : count($items),
-            'end_offer_count' => count($eligibleItems),
-            'queued_now_count' => $queued,
-            'already_queued_count' => count($alreadyQueued),
-            'summary' => array(
-                'matched_below_threshold' => isset($preview['summary']['matched_below_threshold']) ? (int) $preview['summary']['matched_below_threshold'] : count($items),
-                'eligible_to_end' => count($eligibleItems),
-                'queued_now' => $queued,
-                'already_queued' => count($alreadyQueued),
-                'blocked_by_duplicates' => isset($preview['summary']['blocked_by_duplicates']) ? (int) $preview['summary']['blocked_by_duplicates'] : 0,
-                'scanned_rows' => isset($preview['summary']['scanned_rows']) ? (int) $preview['summary']['scanned_rows'] : count($items),
-                'has_more_candidates' => !empty($preview['summary']['has_more_candidates']),
-                'scan_limit_reached' => !empty($preview['summary']['scan_limit_reached']),
-            ),
-            'items' => $resultItems,
-        );
-
-        PerformanceLogger::logIfSlow('allegro.service.autoEndOffers.total', $startedAt, array(
-            'account' => (string) ($options['account'] ?? ''),
-            'eligible_to_end' => count($eligibleItems),
-            'queued_now' => $queued,
-            'already_queued' => count($alreadyQueued),
-        ));
-
-        return $result;
     }
 
     public function triggerUrl(array $account, string $baseUrl): string
@@ -479,16 +244,6 @@ class AllegroService
             'token_updated_at' => (string) ($tokenRow['updated_at'] ?? ''),
             'refreshed' => $token !== '',
         );
-    }
-
-    public function ensureAccountTokenFresh(string $accountSelector): array
-    {
-        $account = $this->resolveAccount($accountSelector);
-        if (!$account) {
-            throw new RuntimeException('Nie znaleziono konta Allegro do sprawdzenia tokena.');
-        }
-
-        return $this->ensureTokenFreshForAccount($account);
     }
 
     public function refreshAllTokens(bool $activeOnly = true): array
@@ -521,66 +276,19 @@ class AllegroService
         return $results;
     }
 
-    public function ensureAllTokensFresh(bool $activeOnly = true): array
-    {
-        $results = array();
-
-        foreach ($this->listAccounts() as $account) {
-            if ($activeOnly && (int) ($account['is_active'] ?? 0) !== 1) {
-                continue;
-            }
-
-            try {
-                $results[] = $this->ensureTokenFreshForAccount($account);
-            } catch (RuntimeException $exception) {
-                $results[] = array(
-                    'account' => (string) $account['name'],
-                    'status' => 'error',
-                    'message' => $exception->getMessage(),
-                    'refreshed' => false,
-                );
-            }
-        }
-
-        return $results;
-    }
-
     public function maintenance(array $options = array()): array
     {
-        $startedAt = PerformanceLogger::start();
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $queueLimit = max(1, min(1000, (int) ($options['queue_limit'] ?? 100)));
 
-        $refreshStartedAt = PerformanceLogger::start();
-        $refreshedTokens = $accountSelector !== ''
-            ? array($this->ensureAccountTokenFresh($accountSelector))
-            : $this->ensureAllTokensFresh(true);
-        $refreshedNow = count(array_filter($refreshedTokens, static function (array $result): bool {
-            return !empty($result['refreshed']);
-        }));
-        PerformanceLogger::logIfSlow('allegro.service.maintenance.refreshTokens', $refreshStartedAt, array(
-            'account' => $accountSelector,
-            'refreshed_count' => count($refreshedTokens),
-            'refreshed_now_count' => $refreshedNow,
-        ), 500.0);
-
-        $queueStartedAt = PerformanceLogger::start();
-        $queueResult = $this->processQueue(array(
-            'limit' => $queueLimit,
-            'account' => $accountSelector !== '' ? $accountSelector : null,
-        ));
-        PerformanceLogger::logIfSlow('allegro.service.maintenance.processQueue', $queueStartedAt, array(
-            'account' => $accountSelector,
-            'queue_limit' => $queueLimit,
-            'processed' => (int) ($queueResult['processed'] ?? 0),
-            'done' => (int) ($queueResult['done'] ?? 0),
-            'retry' => (int) ($queueResult['retry'] ?? 0),
-            'error' => (int) ($queueResult['error'] ?? 0),
-        ), 500.0);
-
         $result = array(
-            'refreshed_tokens' => $refreshedTokens,
-            'queue' => $queueResult,
+            'refreshed_tokens' => $accountSelector !== ''
+                ? array($this->refreshAccountToken($accountSelector))
+                : $this->refreshAllTokens(true),
+            'queue' => $this->processQueue(array(
+                'limit' => $queueLimit,
+                'account' => $accountSelector !== '' ? $accountSelector : null,
+            )),
         );
 
         if (!empty($options['sync'])) {
@@ -592,14 +300,7 @@ class AllegroService
             );
 
             if ($accountSelector !== '') {
-                $syncStartedAt = PerformanceLogger::start();
                 $result['sync'] = $this->syncAccount($accountSelector, $syncOptions);
-                PerformanceLogger::logIfSlow('allegro.service.maintenance.syncSingle', $syncStartedAt, array(
-                    'account' => $accountSelector,
-                    'offers_processed' => (int) ($result['sync']['offers_processed'] ?? 0),
-                    'details_refreshed' => (int) ($result['sync']['details_refreshed'] ?? 0),
-                    'events_processed' => (int) ($result['sync']['events_processed'] ?? 0),
-                ));
             } else {
                 $result['sync'] = array();
                 foreach ($this->listAccounts() as $account) {
@@ -608,14 +309,10 @@ class AllegroService
                     }
 
                     try {
-                        $syncStartedAt = PerformanceLogger::start();
                         $result['sync'][] = array(
                             'account' => (string) $account['name'],
                             'result' => $this->syncAccount((string) $account['slug'], $syncOptions),
                         );
-                        PerformanceLogger::logIfSlow('allegro.service.maintenance.syncBatchItem', $syncStartedAt, array(
-                            'account' => (string) $account['slug'],
-                        ));
                     } catch (RuntimeException $exception) {
                         $result['sync'][] = array(
                             'account' => (string) $account['name'],
@@ -627,24 +324,12 @@ class AllegroService
         }
 
         if (!empty($options['compact_offers'])) {
-            $compactStartedAt = PerformanceLogger::start();
             $result['offer_compaction'] = $this->compactStoredOffers(array(
                 'account' => $accountSelector !== '' ? $accountSelector : null,
                 'limit' => (int) ($options['compact_limit'] ?? 500),
             ));
-            PerformanceLogger::logIfSlow('allegro.service.maintenance.compactOffers', $compactStartedAt, array(
-                'account' => $accountSelector,
-                'processed' => (int) ($result['offer_compaction']['processed'] ?? 0),
-                'updated' => (int) ($result['offer_compaction']['updated'] ?? 0),
-            ), 500.0);
         }
 
-        PerformanceLogger::logIfSlow('allegro.service.maintenance.total', $startedAt, array(
-            'account' => $accountSelector,
-            'queue_limit' => $queueLimit,
-            'sync_enabled' => !empty($options['sync']) ? 1 : 0,
-            'compact_offers' => !empty($options['compact_offers']) ? 1 : 0,
-        ));
         return $result;
     }
 
@@ -784,6 +469,66 @@ class AllegroService
         );
     }
 
+    public function autoEndDuplicateOffers(int $limit = 5000): array
+    {
+        $limit = max(1, min(50000, $limit));
+        $rows = $this->offersPage(
+            array(
+                'duplicates' => '1',
+                'status' => 'ACTIVE',
+            ),
+            1,
+            $limit,
+            'id',
+            'asc'
+        );
+
+        $targets = array();
+        $offers = array();
+        $skippedQueued = 0;
+
+        foreach ($rows as $row) {
+            $duplicateMeta = isset($row['duplicate_meta']) && is_array($row['duplicate_meta']) ? $row['duplicate_meta'] : array();
+            if (empty($duplicateMeta['is_duplicate']) || empty($duplicateMeta['can_end_offer'])) {
+                continue;
+            }
+
+            $queueMeta = isset($row['queue_meta']) && is_array($row['queue_meta']) ? $row['queue_meta'] : array();
+            $queueOperation = (string) ($queueMeta['operation'] ?? '');
+            $queueStatus = (string) ($queueMeta['status'] ?? '');
+            if ($queueOperation === 'end_offer' && in_array($queueStatus, array('pending', 'retry', 'processing'), true)) {
+                $skippedQueued++;
+                continue;
+            }
+
+            $targets[] = array(
+                'id' => (int) ($row['id'] ?? 0),
+                'account_id' => (int) ($row['account_id'] ?? 0),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+            );
+            $offers[] = array(
+                'account' => (string) ($row['account_name'] ?? ''),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'sku' => (string) ($row['sku'] ?? ''),
+            );
+        }
+
+        $queued = $targets !== array()
+            ? $this->storage->enqueueOfferChanges($targets, 'end_offer', array(), null, true)
+            : 0;
+
+        return array(
+            'operation' => 'auto_end_offers',
+            'scanned' => count($rows),
+            'candidates' => count($targets),
+            'queued' => $queued,
+            'skipped_already_queued' => $skippedQueued,
+            'offers' => $offers,
+            'counts' => $this->storage->queueCounts(),
+        );
+    }
+
     public function queueWarehouseProductSync(array $productIds, int $delaySeconds = 180): array
     {
         $expandedProductIds = $this->expandWarehouseSyncProductIds($productIds);
@@ -821,7 +566,6 @@ class AllegroService
 
     public function processQueue(array $options = array()): array
     {
-        $startedAt = PerformanceLogger::start();
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $accountId = null;
         if ($accountSelector !== '') {
@@ -856,15 +600,8 @@ class AllegroService
                 $summary['done']++;
             } catch (RuntimeException $exception) {
                 $attempts = (int) ($item['attempts'] ?? 0) + 1;
-                $retryPolicy = $this->queueRetryPolicy($item, $exception, $attempts);
-                $this->storage->markQueueRetry(
-                    $queueId,
-                    $exception->getMessage(),
-                    $attempts,
-                    (int) $retryPolicy['delay_seconds'],
-                    isset($retryPolicy['status']) ? (string) $retryPolicy['status'] : null
-                );
-                if (($retryPolicy['status'] ?? '') === 'error') {
+                $this->storage->markQueueRetry($queueId, $exception->getMessage(), $attempts, $attempts * 60);
+                if ($attempts >= 5) {
                     $summary['error']++;
                 } else {
                     $summary['retry']++;
@@ -873,36 +610,7 @@ class AllegroService
         }
 
         $summary['counts'] = $this->storage->queueCounts();
-        PerformanceLogger::logIfSlow('allegro.service.processQueue.total', $startedAt, array(
-            'account' => $accountSelector,
-            'limit' => $limit,
-            'processed' => $summary['processed'],
-            'done' => $summary['done'],
-            'retry' => $summary['retry'],
-            'error' => $summary['error'],
-        ), 500.0);
         return $summary;
-    }
-
-    private function queueRetryPolicy(array $item, RuntimeException $exception, int $attempts): array
-    {
-        $operation = trim((string) ($item['operation'] ?? ''));
-        $message = trim($exception->getMessage());
-
-        if (
-            $operation === 'remove_from_system_forever'
-            && stripos($message, 'Oferta nie jest jeszcze zakonczona') !== false
-        ) {
-            return array(
-                'status' => 'retry',
-                'delay_seconds' => max(900, min(7200, $attempts * 900)),
-            );
-        }
-
-        return array(
-            'status' => $attempts >= 5 ? 'error' : 'retry',
-            'delay_seconds' => $attempts * 60,
-        );
     }
 
     public function syncAccount(string $accountSelector, array $options = array()): array
@@ -947,7 +655,6 @@ class AllegroService
         try {
             $state = $this->storage->syncState($accountId);
             $cycle = !empty($state['current_cycle']) ? (string) $state['current_cycle'] : $this->uuidV4();
-            $runtimeLimitReached = false;
 
             $this->storage->updateSyncState($accountId, array(
                 'mode' => 'full',
@@ -985,12 +692,6 @@ class AllegroService
                 $excludedOfferIds = array_fill_keys($this->storage->excludedOfferIds($accountId, array_column($offers, 'id')), true);
 
                 foreach ($offers as $offer) {
-                    if ((time() - $startTime) >= $maxRuntime) {
-                        $summary['status'] = 'partial';
-                        $runtimeLimitReached = true;
-                        break;
-                    }
-
                     $normalized = $this->normalizeOfferSummary($offer);
                     if ($normalized['offer_id'] === '') {
                         continue;
@@ -1020,12 +721,6 @@ class AllegroService
                     }
 
                     $summary['offers_processed']++;
-
-                    if (($summary['offers_processed'] % 10) === 0) {
-                        $this->storage->updateSyncState($accountId, array(
-                            'heartbeat_at' => date('Y-m-d H:i:s'),
-                        ));
-                    }
                 }
 
                 $offset += $offerLimit;
@@ -1036,10 +731,6 @@ class AllegroService
                     'heartbeat_at' => date('Y-m-d H:i:s'),
                     'last_incremental_sync_at' => date('Y-m-d H:i:s'),
                 ));
-
-                if ($runtimeLimitReached) {
-                    break;
-                }
 
                 if (count($offers) < $offerLimit) {
                     $this->finalizeFullCycle($accountId, $cycle);
@@ -1438,7 +1129,7 @@ class AllegroService
             $summary = $this->normalizeOfferSummary($details);
             $status = strtoupper((string) ($summary['publication_status'] ?? ''));
 
-            if (!in_array($status, array('ENDED', 'INACTIVE'), true)) {
+            if ($status !== 'ENDED') {
                 $this->changePublicationAction($account, $offerId, 'END');
                 $this->refreshOfferSnapshotFromApi($account, (int) $offer['id'], $offerId);
                 throw new RuntimeException('Oferta nie jest jeszcze zakończona. Wysłano zakończenie i ponowimy sprawdzenie.');
@@ -2194,67 +1885,6 @@ class AllegroService
         return (string) ($response['access_token'] ?? '');
     }
 
-    private function ensureTokenFreshForAccount(array $account): array
-    {
-        $accountId = (int) ($account['id'] ?? 0);
-        $tokenRowBefore = $accountId > 0 ? $this->storage->tokenRowForAccount($accountId) : null;
-        $expiresAtBefore = $tokenRowBefore['expires_at'] ?? null;
-        $needsRefresh = $this->tokenNeedsRefresh($tokenRowBefore);
-
-        if ($needsRefresh) {
-            $this->forceRefreshAccessToken($account);
-        }
-
-        $tokenRowAfter = $accountId > 0 ? $this->storage->tokenRowForAccount($accountId) : null;
-
-        return array(
-            'account' => (string) ($account['name'] ?? ''),
-            'status' => 'ok',
-            'token_expires_at' => (string) ($tokenRowAfter['expires_at'] ?? ''),
-            'token_updated_at' => (string) ($tokenRowAfter['updated_at'] ?? ''),
-            'refreshed' => $needsRefresh,
-            'refresh_reason' => $needsRefresh ? $this->tokenRefreshReason($tokenRowBefore) : 'not_needed',
-            'expires_at_before' => $expiresAtBefore !== null ? (string) $expiresAtBefore : '',
-        );
-    }
-
-    private function tokenNeedsRefresh($tokenRow): bool
-    {
-        if (!is_array($tokenRow) || empty($tokenRow['access_token']) || empty($tokenRow['expires_at'])) {
-            return true;
-        }
-
-        $expiresAt = strtotime((string) $tokenRow['expires_at']);
-        if ($expiresAt === false) {
-            return true;
-        }
-
-        $refreshMargin = (int) $this->configValue('token_refresh_margin', 60);
-        return ($expiresAt - $refreshMargin) <= time();
-    }
-
-    private function tokenRefreshReason($tokenRow): string
-    {
-        if (!is_array($tokenRow) || empty($tokenRow['access_token'])) {
-            return 'missing_access_token';
-        }
-
-        if (empty($tokenRow['expires_at'])) {
-            return 'missing_expiry';
-        }
-
-        $expiresAt = strtotime((string) $tokenRow['expires_at']);
-        if ($expiresAt === false) {
-            return 'invalid_expiry';
-        }
-
-        if (($expiresAt - self::TOKEN_REFRESH_LOG_MARGIN_SECONDS) <= time()) {
-            return 'expiring';
-        }
-
-        return 'stale';
-    }
-
     private function oauthTokenForAccount(array $account, array $params): array
     {
         return $this->request(
@@ -2759,32 +2389,14 @@ class AllegroService
 
     private function disableStoredWarehouseLinks(): void
     {
-        $startedAt = PerformanceLogger::start();
         $cacheKey = 'allegro:warehouse-links-disabled:v1';
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached) && !empty($cached['done'])) {
             return;
         }
 
-        $cleared = $this->storage->clearStoredOfferLinks();
+        $this->storage->clearStoredOfferLinks();
         $this->storage->putCache($cacheKey, array('done' => 1), 31536000);
-        PerformanceLogger::log('allegro.service.disableStoredWarehouseLinks', (microtime(true) - $startedAt) * 1000, array(
-            'cleared_rows' => $cleared,
-        ), 'WARNING');
-    }
-
-    private function maybeCleanupExpiredCache(): void
-    {
-        $startedAt = PerformanceLogger::start();
-        $cacheKey = 'allegro:cache-cleanup-throttle:v1';
-        $cached = $this->storage->getCache($cacheKey);
-        if (is_array($cached) && !empty($cached['done'])) {
-            return;
-        }
-
-        $this->storage->cleanupExpiredCache();
-        $this->storage->putCache($cacheKey, array('done' => 1), self::CACHE_CLEANUP_THROTTLE_SECONDS);
-        PerformanceLogger::logIfSlow('allegro.service.cleanupExpiredCache', $startedAt, array(), 250.0);
     }
 
     private function patchImagesFromOffer(array $offer): array
