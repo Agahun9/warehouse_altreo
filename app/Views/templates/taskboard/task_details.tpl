@@ -55,9 +55,9 @@
             <span class="taskboard-section-icon -green"><i class="bi bi-check2-square"></i></span>
             <h5 class="h6 mb-0">Podzadania</h5>
           </div>
-          <span class="badge text-bg-light">{$subtasksByTaskId[$selectedTask.id]|@count}</span>
+          <span class="badge text-bg-light" data-taskboard-subtask-count>{$subtasksByTaskId[$selectedTask.id]|@count}</span>
         </div>
-        <div class="taskboard-checklist" id="taskboardChecklist">
+        <div class="taskboard-checklist" id="taskboardChecklist" data-taskboard-checklist>
           {if $subtasksByTaskId[$selectedTask.id]|default:false}
             {foreach $subtasksByTaskId[$selectedTask.id] as $subtask}
               <div class="taskboard-subtask-row{if $subtask.is_done|default:0} is-done{/if}" data-subtask-row="{$subtask.id}">
@@ -69,7 +69,7 @@
               </div>
             {/foreach}
           {else}
-            <div class="small text-secondary">Brak checklisty dla tego zadania.</div>
+            <div class="small text-secondary" data-taskboard-empty-subtasks>Brak checklisty dla tego zadania.</div>
           {/if}
         </div>
         <div class="input-group mt-3">
@@ -94,11 +94,11 @@
             <span class="taskboard-section-icon -amber"><i class="bi bi-chat-left-text"></i></span>
             <h5 class="h6 mb-0">Notatki</h5>
           </div>
-          <span class="badge text-bg-light">{$notesByTaskId[$selectedTask.id]|@count}</span>
+          <span class="badge text-bg-light" data-taskboard-note-count>{$notesByTaskId[$selectedTask.id]|@count}</span>
         </div>
         <textarea id="taskboardDetailNoteNew" name="note" class="form-control mb-2" rows="3" form="taskboard-note-create-{$selectedTask.id}" placeholder="Dodaj komentarz lub ustalenie..." required></textarea>
         <button type="submit" class="btn btn-outline-dark btn-sm w-100" form="taskboard-note-create-{$selectedTask.id}">Dodaj notatke</button>
-        <div class="taskboard-note-list mt-3">
+        <div class="taskboard-note-list mt-3" data-taskboard-note-list>
           {if $notesByTaskId[$selectedTask.id]|default:false}
             {foreach $notesByTaskId[$selectedTask.id] as $note}
               <div class="taskboard-note-item">
@@ -115,7 +115,7 @@
               </div>
             {/foreach}
           {else}
-            <div class="small text-secondary">Brak notatek do tego zadania.</div>
+            <div class="small text-secondary" data-taskboard-empty-notes>Brak notatek do tego zadania.</div>
           {/if}
         </div>
       </div>
@@ -190,6 +190,10 @@
             </button>
           {/if}
         </div>
+      </div>
+
+      <div class="taskboard-subcopy small pt-2 border-top">
+        Zadanie #{$selectedTask.id}
       </div>
     </form>
 
@@ -300,6 +304,10 @@
         </div>
       </div>
       <div class="small">{$selectedTask.description|default:'Brak opisu.'|escape|nl2br}</div>
+    </div>
+
+    <div class="taskboard-subcopy small pt-2 border-top">
+      Zadanie #{$selectedTask.id}
     </div>
   {/if}
 </div>

@@ -506,14 +506,20 @@ class TaskboardController extends Controller
                 throw new RuntimeException('Tresc podzadania jest wymagana.');
             }
 
-            $this->taskboard->createSubtask(array(
+            $subtaskId = $this->taskboard->createSubtask(array(
                 'task_id' => $taskId,
                 'label' => $label,
                 'position' => $this->taskboard->nextSubtaskPosition($taskId),
             ));
 
             if ($this->isAjaxRequest()) {
-                $this->jsonResponse(array('ok' => true));
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'board_id' => (int) ($task['board_id'] ?? 0),
+                    'task_id' => $taskId,
+                    'subtask_id' => $subtaskId,
+                    'label' => $label,
+                ));
                 return;
             }
 
@@ -614,13 +620,26 @@ class TaskboardController extends Controller
                 throw new RuntimeException('Notatka nie moze byc pusta.');
             }
 
-            $this->taskboard->addNote(array(
+            $noteId = $this->taskboard->addNote(array(
                 'task_id' => $taskId,
                 'note' => $note,
                 'created_by' => (int) ($currentUser['id'] ?? 0),
             ));
             if ($this->isAjaxRequest()) {
-                $this->jsonResponse(array('ok' => true, 'board_id' => (int) ($task['board_id'] ?? 0), 'task_id' => $taskId));
+                $author = trim((string) (($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? '')));
+                if ($author === '') {
+                    $author = (string) ($currentUser['email'] ?? 'System');
+                }
+
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'board_id' => (int) ($task['board_id'] ?? 0),
+                    'task_id' => $taskId,
+                    'note_id' => $noteId,
+                    'note' => $note,
+                    'author' => $author,
+                    'created_at' => date('Y-m-d H:i:s'),
+                ));
                 return;
             }
 

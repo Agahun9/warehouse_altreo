@@ -1166,7 +1166,7 @@
     <div class="offcanvas-header">
       <div>
         <h5 class="offcanvas-title mb-1" id="taskboardTaskDetailsLabel">{if $selectedTask}{$selectedTask.title|escape}{else}Szczegoly zadania{/if}</h5>
-        <div class="small text-secondary" id="taskboardTaskDetailsMeta">{if $selectedTask}Zadanie #{$selectedTask.id}{else}Kliknij karte zadania{/if}</div>
+        <div class="small text-secondary" id="taskboardTaskDetailsMeta">{if $selectedTask}{$selectedBoard.name|escape}{else}Kliknij karte zadania{/if}</div>
       </div>
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
@@ -1799,13 +1799,10 @@
         if (taskPanelTitle) {
           taskPanelTitle.textContent = payload.title || 'Szczegoly zadania';
         }
-        if (taskPanelMeta) {
-          taskPanelMeta.textContent = 'Zadanie #' + String(payload.task_id || taskId || '');
-        }
-
         bindSubtaskCheckboxes(taskPanelBody);
         bindTaskDetailAutosave(taskPanelBody);
         bindSubtaskCreateForms(taskPanelBody);
+        bindNoteCreateForms(taskPanelBody);
         bindRefreshPanelForms(taskPanelBody);
         animateTaskDetails(taskPanelBody);
         if (silent) {
@@ -1978,6 +1975,129 @@
       status.classList.toggle('text-secondary', !state);
     }
 
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatMultilineText(value) {
+      return escapeHtml(value).replace(/\r\n|\r|\n/g, '<br>');
+    }
+
+    function updateDetailCount(root, selector, nextValue) {
+      var badge = root ? root.querySelector(selector) : null;
+      if (!badge) {
+        return;
+      }
+
+      badge.textContent = String(Math.max(0, Number(nextValue) || 0));
+    }
+
+    function appendSubtaskToPanel(form, payload, label) {
+      var root = form.closest('[data-task-detail-root]');
+      var checklist = root ? root.querySelector('[data-taskboard-checklist]') : null;
+      if (!root || !checklist) {
+        refreshTaskPanel(payload.board_id, payload.task_id);
+        return;
+      }
+
+      var subtaskId = String(payload.subtask_id || '');
+      if (subtaskId === '') {
+        refreshTaskPanel(payload.board_id, payload.task_id);
+        return;
+      }
+
+      var emptyState = checklist.querySelector('[data-taskboard-empty-subtasks]');
+      if (emptyState) {
+        emptyState.remove();
+      }
+
+      var row = document.createElement('div');
+      row.className = 'taskboard-subtask-row';
+      row.setAttribute('data-subtask-row', subtaskId);
+      row.innerHTML = ''
+        + '<input type="checkbox" id="taskboardSubtask' + escapeHtml(subtaskId) + '" class="taskboard-subtask-checkbox" data-subtask-id="' + escapeHtml(subtaskId) + '">'
+        + '<label for="taskboardSubtask' + escapeHtml(subtaskId) + '" class="taskboard-subtask-label flex-grow-1 mb-0">' + escapeHtml(label) + '</label>'
+        + '<button type="submit" class="btn btn-sm btn-outline-danger taskboard-item-delete" form="taskboard-subtask-delete-' + escapeHtml(subtaskId) + '" title="Usun podzadanie">'
+        + '<i class="bi bi-trash"></i>'
+        + '</button>';
+      checklist.appendChild(row);
+
+      var deleteForm = document.createElement('form');
+      deleteForm.method = 'post';
+      deleteForm.action = '{$baseUrl|escape:'javascript'}?controller=taskboard&action=deletesubtask';
+      deleteForm.id = 'taskboard-subtask-delete-' + subtaskId;
+      deleteForm.setAttribute('data-taskboard-refresh-panel-form', '');
+      deleteForm.setAttribute('data-confirm-message', 'Usunac to podzadanie?');
+      deleteForm.innerHTML = ''
+        + '<input type="hidden" name="board_id" value="' + escapeHtml(payload.board_id || '') + '">'
+        + '<input type="hidden" name="task_id" value="' + escapeHtml(payload.task_id || '') + '">'
+        + '<input type="hidden" name="subtask_id" value="' + escapeHtml(subtaskId) + '">'
+        + '<input type="hidden" name="ajax" value="1">';
+      root.appendChild(deleteForm);
+
+      updateDetailCount(root, '[data-taskboard-subtask-count]', checklist.querySelectorAll('[data-subtask-row]').length);
+      bindSubtaskCheckboxes(row);
+      bindRefreshPanelForms(root);
+      markPanelUpdated();
+    }
+
+    function appendNoteToPanel(form, payload, noteText) {
+      var root = form.closest('[data-task-detail-root]');
+      var noteList = root ? root.querySelector('[data-taskboard-note-list]') : null;
+      if (!root || !noteList) {
+        refreshTaskPanel(payload.board_id, payload.task_id);
+        return;
+      }
+
+      var noteId = String(payload.note_id || '');
+      if (noteId === '') {
+        refreshTaskPanel(payload.board_id, payload.task_id);
+        return;
+      }
+
+      var emptyState = noteList.querySelector('[data-taskboard-empty-notes]');
+      if (emptyState) {
+        emptyState.remove();
+      }
+
+      var noteItem = document.createElement('div');
+      noteItem.className = 'taskboard-note-item';
+      noteItem.innerHTML = ''
+        + '<div class="taskboard-note-meta small mb-1 d-flex justify-content-between gap-2">'
+        + '<span>' + escapeHtml(payload.author || 'System') + '</span>'
+        + '<span class="d-inline-flex align-items-center gap-2">'
+        + escapeHtml(payload.created_at || '')
+        + '<button type="submit" class="btn btn-sm btn-outline-danger taskboard-item-delete" form="taskboard-note-delete-' + escapeHtml(noteId) + '" title="Usun notatke">'
+        + '<i class="bi bi-trash"></i>'
+        + '</button>'
+        + '</span>'
+        + '</div>'
+        + '<div class="small">' + formatMultilineText(noteText) + '</div>';
+      noteList.insertBefore(noteItem, noteList.firstChild);
+
+      var deleteForm = document.createElement('form');
+      deleteForm.method = 'post';
+      deleteForm.action = '{$baseUrl|escape:'javascript'}?controller=taskboard&action=deletenote';
+      deleteForm.id = 'taskboard-note-delete-' + noteId;
+      deleteForm.setAttribute('data-taskboard-refresh-panel-form', '');
+      deleteForm.setAttribute('data-confirm-message', 'Usunac te notatke?');
+      deleteForm.innerHTML = ''
+        + '<input type="hidden" name="board_id" value="' + escapeHtml(payload.board_id || '') + '">'
+        + '<input type="hidden" name="task_id" value="' + escapeHtml(payload.task_id || '') + '">'
+        + '<input type="hidden" name="note_id" value="' + escapeHtml(noteId) + '">'
+        + '<input type="hidden" name="ajax" value="1">';
+      root.appendChild(deleteForm);
+
+      updateDetailCount(root, '[data-taskboard-note-count]', noteList.querySelectorAll('.taskboard-note-item').length);
+      bindRefreshPanelForms(root);
+      markPanelUpdated();
+    }
+
     function saveTaskDetails(form) {
       if (!form) {
         return;
@@ -2041,11 +2161,21 @@
           event.preventDefault();
           saveTaskDetails(this);
         });
-        forms[i].addEventListener('change', function () {
+        forms[i].addEventListener('change', function (event) {
+          var targetFormId = event.target ? event.target.getAttribute('form') : '';
+          if (targetFormId && targetFormId !== this.id) {
+            return;
+          }
+
           saveTaskDetails(this);
         });
         forms[i].addEventListener('input', function (event) {
           if (!event.target || (event.target.tagName !== 'TEXTAREA' && !event.target.hasAttribute('data-task-title-input'))) {
+            return;
+          }
+
+          var targetFormId = event.target.getAttribute('form');
+          if (targetFormId && targetFormId !== this.id) {
             return;
           }
 
@@ -2070,7 +2200,7 @@
 
     function bindRefreshPanelForms(root) {
       var scope = root || document;
-      var forms = scope.querySelectorAll('[data-taskboard-refresh-panel-form]');
+      var forms = scope.querySelectorAll('[data-taskboard-refresh-panel-form]:not(form[action*="action=addnote"])');
       for (var i = 0; i < forms.length; i++) {
         if (forms[i].getAttribute('data-taskboard-bound') === '1') {
           continue;
@@ -2133,15 +2263,9 @@
           event.preventDefault();
 
           var form = this;
-          var detailRoot = form.closest('[data-task-detail-root]');
-          var boardId = detailRoot ? detailRoot.getAttribute('data-board-id') : '';
-          var taskId = detailRoot ? detailRoot.getAttribute('data-task-id') : '';
-          var boardInput = form.querySelector('[name="board_id"]');
-          var taskInput = form.querySelector('[name="task_id"]');
           var labelInput = document.querySelector('[form="' + form.id + '"][name="label"]');
           var formData = new FormData(form);
-          boardId = boardId || (boardInput ? boardInput.value : '');
-          taskId = taskId || (taskInput ? taskInput.value : '');
+          var labelValue = labelInput ? String(labelInput.value || '').trim() : '';
           if (labelInput) {
             formData.append('label', labelInput.value || '');
           }
@@ -2163,9 +2287,54 @@
             if (labelInput) {
               labelInput.value = '';
             }
-            refreshTaskPanel(boardId, taskId);
+            appendSubtaskToPanel(form, payload, labelValue);
           }).catch(function (error) {
             window.alert(error && error.message ? error.message : 'Nie udalo sie dodac podzadania.');
+          });
+        });
+      }
+    }
+
+    function bindNoteCreateForms(root) {
+      var scope = root || document;
+      var forms = scope.querySelectorAll('form[action*="action=addnote"][data-taskboard-refresh-panel-form]');
+      for (var i = 0; i < forms.length; i++) {
+        if (forms[i].getAttribute('data-taskboard-note-create-bound') === '1') {
+          continue;
+        }
+
+        forms[i].setAttribute('data-taskboard-note-create-bound', '1');
+        forms[i].addEventListener('submit', function (event) {
+          event.preventDefault();
+
+          var form = this;
+          var noteInput = document.querySelector('[form="' + form.id + '"][name="note"]');
+          var noteValue = noteInput ? String(noteInput.value || '').trim() : '';
+          var formData = new FormData(form);
+          if (noteInput) {
+            formData.append('note', noteInput.value || '');
+          }
+          formData.append('ajax', '1');
+
+          fetch(form.getAttribute('action'), {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Accept': 'application/json'
+            }
+          }).then(function (response) {
+            return response.ok ? response.json() : Promise.reject(new Error('Nie udalo sie dodac notatki.'));
+          }).then(function (payload) {
+            if (!payload || payload.ok !== true) {
+              throw new Error(payload && payload.error ? payload.error : 'Nie udalo sie dodac notatki.');
+            }
+
+            if (noteInput) {
+              noteInput.value = '';
+            }
+            appendNoteToPanel(form, payload, noteValue);
+          }).catch(function (error) {
+            window.alert(error && error.message ? error.message : 'Nie udalo sie dodac notatki.');
           });
         });
       }
@@ -2394,6 +2563,7 @@
     bindSubtaskCheckboxes(document);
     bindTaskDetailAutosave(document);
     bindSubtaskCreateForms(document);
+    bindNoteCreateForms(document);
     bindRefreshPanelForms(document);
     bindStatusBuilder();
     bindPasteUpload();
