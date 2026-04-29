@@ -315,7 +315,7 @@ class AllegroController extends Controller
         try {
             $result = $this->allegro->autoEndDuplicateOffers((int) $this->input('limit', 5000));
             $mailRecipients = $this->maintenanceMailRecipients();
-            if ($mailRecipients !== array()) {
+            if ($mailRecipients !== array() && (int) ($result['queued'] ?? 0) > 0) {
                 $result['mail'] = $this->sendAutoEndOffersReport($mailRecipients, $result);
             }
 
