@@ -12,6 +12,7 @@ use App\Controllers\CsvTemplateController;
 use App\Controllers\EmpikController;
 use App\Controllers\IndexController;
 use App\Controllers\ProductController;
+use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
 use App\Controllers\TaskboardController;
 
@@ -55,6 +56,9 @@ class Application
             case 'sellasist':
                 $controller = new SellasistController();
                 break;
+            case 'printtemplates':
+                $controller = new PrintTemplateController();
+                break;
             case 'taskboard':
                 $controller = new TaskboardController();
                 break;
@@ -83,6 +87,28 @@ class Application
         }
 
         if (preg_match('#^api/export/csv/(\d+)$#', $path, $matches) !== 1) {
+            if ($path === 'api/products/search') {
+                $controller = new ProductController();
+                $controller->apisearch();
+                return true;
+            }
+
+            if (preg_match('#^api/products/sku/(.+)$#', $path, $matches) === 1) {
+                $_GET['sku'] = urldecode((string) $matches[1]);
+
+                $controller = new ProductController();
+                $controller->apibysku();
+                return true;
+            }
+
+            if (preg_match('#^api/products/(\d+)$#', $path, $matches) === 1) {
+                $_GET['id'] = (int) $matches[1];
+
+                $controller = new ProductController();
+                $controller->apishow();
+                return true;
+            }
+
             return false;
         }
 

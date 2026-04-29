@@ -1531,8 +1531,17 @@
       }
 
       selectedCard.classList.add('is-newly-created', 'is-panel-target');
-      if (typeof selectedCard.scrollIntoView === 'function') {
-        selectedCard.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      var columnsScroller = document.getElementById('taskboardColumns');
+      if (columnsScroller && typeof columnsScroller.scrollTo === 'function') {
+        var cardRect = selectedCard.getBoundingClientRect();
+        var scrollerRect = columnsScroller.getBoundingClientRect();
+        var cardCenter = cardRect.left - scrollerRect.left + columnsScroller.scrollLeft + (cardRect.width / 2);
+        var targetScrollLeft = Math.max(0, cardCenter - (scrollerRect.width / 2));
+
+        columnsScroller.scrollTo({
+          left: targetScrollLeft,
+          behavior: 'smooth'
+        });
       }
 
       window.setTimeout(function () {

@@ -129,6 +129,9 @@
             {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
             {/if}
+            {if $currentUser.role eq 'admin' or in_array('printtemplates', $currentUser.modules)}
+              <li class="nav-item d-none d-md-block"><a href="http://192.168.1.149/tinyfilemanager.php?p=" class="nav-link" target="_blank" rel="noreferrer">Szablon druku</a></li>
+            {/if}
             {if $currentUser.role eq 'admin'}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=categories&action=index" class="nav-link">Kategorie</a></li>
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link">Szablony CSV</a></li>
@@ -230,6 +233,31 @@
                     <i class="nav-icon bi bi-bag-check"></i>
                     <p>Sellasist</p>
                   </a>
+                </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('printtemplates', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="#" class="nav-link">
+                    <i class="nav-icon bi bi-printer"></i>
+                    <p>
+                      Szablon druku
+                      <i class="nav-arrow bi bi-chevron-right"></i>
+                    </p>
+                  </a>
+                  <ul class="nav nav-treeview taskboard-submenu">
+                    <li class="nav-item">
+                      <a href="http://192.168.1.149/UV_template.php?template=clear18_" class="nav-link" target="_blank" rel="noreferrer">
+                        <i class="nav-icon bi bi-box-arrow-up-right"></i>
+                        <p>UV Template</p>
+                      </a>
+                    </li>
+                    <li class="nav-item">
+                      <a href="http://192.168.1.149/tinyfilemanager.php?p=" class="nav-link" target="_blank" rel="noreferrer">
+                        <i class="nav-icon bi bi-folder2-open"></i>
+                        <p>Tiny File Manager</p>
+                      </a>
+                    </li>
+                  </ul>
                 </li>
               {/if}
               {if $currentUser.role eq 'admin' or in_array('taskboard', $currentUser.modules)}

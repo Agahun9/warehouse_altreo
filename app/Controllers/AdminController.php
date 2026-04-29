@@ -156,6 +156,8 @@ class AdminController extends Controller
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
+            'apiBearerToken' => $this->settings->get('api_bearer_token', ''),
+            'apiBaseUrl' => $this->apiBaseUrl(),
         ));
     }
 
@@ -255,6 +257,36 @@ class AdminController extends Controller
         $this->redirect('./index.php?controller=admin&action=automation');
     }
 
+    public function saveapi(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=admin&action=automation');
+        }
+
+        try {
+            $token = trim((string) $this->input('api_bearer_token', ''));
+
+            if ($token !== '' && strlen($token) < 16) {
+                throw new RuntimeException('Token API powinien miec co najmniej 16 znakow.');
+            }
+
+            $this->settings->set('api_bearer_token', $token);
+
+            if ($token === '') {
+                $this->setFlash('success', 'Token API zostal wyczyszczony.');
+            } else {
+                $this->setFlash('success', 'Token API zostal zapisany.');
+            }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=admin&action=automation');
+    }
+
     public function deleteUser(): void
     {
         $admin = $this->requireRole('admin');
@@ -303,5 +335,17 @@ class AdminController extends Controller
         $script = (string) ($_SERVER['SCRIPT_NAME'] ?? '/index.php');
 
         return $scheme . '://' . $host . $script;
+    }
+
+    private function apiBaseUrl(): string
+    {
+        $appConfig = \App\Core\Config::get('app');
+        $publicBaseUrl = trim((string) ($appConfig['public_base_url'] ?? ''));
+
+        if ($publicBaseUrl !== '') {
+            return rtrim(str_replace('\\', '/', dirname($publicBaseUrl)), '/');
+        }
+
+        return rtrim(str_replace('\\', '/', dirname($this->absoluteBaseUrl())), '/');
     }
 }

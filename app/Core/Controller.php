@@ -6,6 +6,7 @@ namespace App\Core;
 
 use App\Models\TaskboardRepository;
 use App\Models\UserRepository;
+use App\Models\SettingRepository;
 use App\Services\JwtService;
 
 abstract class Controller
@@ -40,6 +41,11 @@ abstract class Controller
         return strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET') === 'POST';
     }
 
+    protected function requestMethod(): string
+    {
+        return strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
+    }
+
     protected function input(string $key, $default = null)
     {
         if (isset($_POST[$key])) {
@@ -51,6 +57,37 @@ abstract class Controller
         }
 
         return $default;
+    }
+
+    protected function authorizationHeader(): string
+    {
+        $candidates = array(
+            isset($_SERVER['HTTP_AUTHORIZATION']) ? (string) $_SERVER['HTTP_AUTHORIZATION'] : '',
+            isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ? (string) $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] : '',
+        );
+
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    protected function bearerToken(): string
+    {
+        $header = $this->authorizationHeader();
+        if ($header === '') {
+            return '';
+        }
+
+        if (preg_match('/^Bearer\s+(.+)$/i', $header, $matches) !== 1) {
+            return '';
+        }
+
+        return trim((string) $matches[1]);
     }
 
     protected function redirect(string $url): void
@@ -203,6 +240,51 @@ abstract class Controller
         return 'none';
     }
 
+    protected function requireApiModuleAccess(string $module): void
+    {
+        $config = Config::get('app');
+        $configuredToken = trim((string) ($config['api_bearer_token'] ?? ''));
+        $storedToken = '';
+
+        try {
+            $settings = new SettingRepository($this->db());
+            $settings->ensureSchema();
+            $storedToken = trim($settings->get('api_bearer_token', ''));
+        } catch (\Throwable $exception) {
+            $storedToken = '';
+        }
+
+        if ($storedToken !== '') {
+            $configuredToken = $storedToken;
+        }
+
+        $providedToken = $this->bearerToken();
+
+        if ($configuredToken !== '' && $providedToken !== '') {
+            if (hash_equals($configuredToken, $providedToken)) {
+                return;
+            }
+
+            $this->apiErrorResponse('Nieprawidlowy token API.', 403);
+        }
+
+        $user = $this->currentUser();
+        if ($user !== null) {
+            $accessLevel = $this->moduleAccessLevel($user, $module);
+            if ((string) ($user['role'] ?? '') === 'admin' || $accessLevel !== 'none') {
+                return;
+            }
+
+            $this->apiErrorResponse('Brak dostepu do modulu.', 403);
+        }
+
+        if ($configuredToken === '') {
+            $this->apiErrorResponse('API token nie jest skonfigurowany. Ustaw app.api_bearer_token.', 503);
+        }
+
+        $this->apiErrorResponse('Brak autoryzacji API.', 401);
+    }
+
     protected function render(string $template, array $data = array()): void
     {
         $smarty = SmartyFactory::create();
@@ -244,6 +326,14 @@ abstract class Controller
         $smarty->display('layout/header.tpl');
         $smarty->display($template . '.tpl');
         $smarty->display('layout/footer.tpl');
+    }
+
+    private function apiErrorResponse(string $message, int $status): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array('error' => $message));
+        exit;
     }
 
     private function taskboardMenuData(?array $currentUser, array $data): array

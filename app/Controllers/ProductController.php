@@ -333,6 +333,83 @@ class ProductController extends Controller
         }
     }
 
+    public function apisearch(): void
+    {
+        $this->requireApiModuleAccess('products');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        $query = trim((string) $this->input('q', ''));
+        $limit = max(1, min(100, (int) $this->input('limit', 20)));
+
+        try {
+            $items = $this->products->apiSearch($query, $limit);
+            $normalized = array_map(function (array $product): array {
+                return $this->normalizeApiProductSummary($product);
+            }, $items);
+
+            $this->jsonResponse(array(
+                'items' => array_values($normalized),
+                'query' => $query,
+                'limit' => $limit,
+                'count' => count($normalized),
+            ));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('items' => array(), 'error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function apishow(): void
+    {
+        $this->requireApiModuleAccess('products');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        $productId = (int) $this->input('id', 0);
+        if ($productId <= 0) {
+            $this->jsonResponse(array('error' => 'Brak poprawnego ID produktu.'), 400);
+            return;
+        }
+
+        $product = $this->products->find($productId);
+        if (!$product) {
+            $this->jsonResponse(array('error' => 'Nie znaleziono produktu.'), 404);
+            return;
+        }
+
+        $this->jsonResponse(array('item' => $this->normalizeApiProductDetails($product)));
+    }
+
+    public function apibysku(): void
+    {
+        $this->requireApiModuleAccess('products');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        $sku = trim((string) $this->input('sku', ''));
+        if ($sku === '') {
+            $this->jsonResponse(array('error' => 'Brak SKU produktu.'), 400);
+            return;
+        }
+
+        $product = $this->products->findBySku($sku);
+        if (!$product) {
+            $this->jsonResponse(array('error' => 'Nie znaleziono produktu.'), 404);
+            return;
+        }
+
+        $this->jsonResponse(array('item' => $this->normalizeApiProductDetails($product)));
+    }
+
     public function previewgeneratedtitle(): void
     {
         $this->requireModule('products');
@@ -2170,6 +2247,41 @@ class ProductController extends Controller
         }
         return $this->resolveProductsReturnUrl();
     }
+
+    private function normalizeApiProductSummary(array $product): array
+    {
+        return array(
+            'id' => (int) ($product['id'] ?? 0),
+            'sku' => (string) ($product['sku'] ?? ''),
+            'ean' => (string) ($product['ean'] ?? ''),
+            'product_name' => (string) ($product['product_name'] ?? ''),
+            'category_id' => isset($product['category_id']) ? (int) $product['category_id'] : 0,
+            'category_name' => (string) ($product['category_name'] ?? ''),
+            'quantity' => isset($product['quantity']) ? (int) $product['quantity'] : 0,
+            'localization' => (string) ($product['localization'] ?? ''),
+            'dimensions' => (string) ($product['dimensions'] ?? ''),
+            'price_net' => isset($product['price_net']) ? (float) $product['price_net'] : 0.0,
+            'price_gross' => isset($product['price_gross']) ? (float) $product['price_gross'] : 0.0,
+            'vat_rate' => isset($product['vat_rate']) ? (float) $product['vat_rate'] : 0.0,
+            'updated_at' => (string) ($product['updated_at'] ?? ''),
+        );
+    }
+
+    private function normalizeApiProductDetails(array $product): array
+    {
+        $summary = $this->normalizeApiProductSummary($product);
+        $summary['description'] = (string) ($product['description'] ?? '');
+        $summary['dimensions'] = (string) ($product['dimensions'] ?? '');
+        $summary['contours'] = (string) ($product['contours'] ?? '');
+        $summary['img'] = (string) ($product['img'] ?? '');
+        $summary['created_at'] = (string) ($product['created_at'] ?? '');
+        $summary['custom_fields'] = isset($product['custom_fields']) && is_array($product['custom_fields'])
+            ? $product['custom_fields']
+            : array();
+
+        return $summary;
+    }
+
     private function shouldStayOnProductForm(): bool
     {
         return trim((string) $this->input('save_action', 'return')) === 'stay';

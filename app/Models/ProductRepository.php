@@ -499,6 +499,60 @@ class ProductRepository
         ));
     }
 
+    public function apiSearch(string $query = '', int $limit = 20): array
+    {
+        $query = trim($query);
+        $limit = max(1, min(100, $limit));
+
+        $sql = 'SELECT products.id, products.sku, products.ean, products.product_name, products.category_id,'
+            . ' products.dimensions,'
+            . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
+            . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
+            . ' products.price_net, products.price_gross, products.vat_rate, products.updated_at,'
+            . ' categories.name AS category_name'
+            . ' FROM ' . self::TABLE
+            . ' LEFT JOIN categories ON categories.id = products.category_id'
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
+            . ' WHERE products.deleted_at IS NULL';
+        $params = array();
+
+        if ($query !== '') {
+            $sql .= ' AND ('
+                . ' products.sku LIKE :query_sku'
+                . ' OR products.product_name LIKE :query_name'
+                . ' OR products.ean LIKE :query_ean'
+                . ' OR categories.name LIKE :query_category'
+                . ' )';
+            $like = '%' . $query . '%';
+            $params['query_sku'] = $like;
+            $params['query_name'] = $like;
+            $params['query_ean'] = $like;
+            $params['query_category'] = $like;
+
+            $sql .= ' ORDER BY'
+                . ' CASE'
+                . '   WHEN products.sku = :query_exact_sku THEN 0'
+                . '   WHEN products.ean = :query_exact_ean THEN 1'
+                . '   WHEN products.product_name = :query_exact_name THEN 2'
+                . '   WHEN products.sku LIKE :query_prefix_sku THEN 3'
+                . '   WHEN products.product_name LIKE :query_prefix_name THEN 4'
+                . '   ELSE 5'
+                . ' END,'
+                . ' products.updated_at DESC, products.id DESC';
+            $params['query_exact_sku'] = $query;
+            $params['query_exact_ean'] = $query;
+            $params['query_exact_name'] = $query;
+            $params['query_prefix_sku'] = $query . '%';
+            $params['query_prefix_name'] = $query . '%';
+        } else {
+            $sql .= ' ORDER BY products.updated_at DESC, products.id DESC';
+        }
+
+        $sql .= ' LIMIT ' . $limit;
+
+        return $this->database->fetchAll($sql, $params);
+    }
+
     public function effectiveStockByProductIds(array $productIds): array
     {
         $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds), static function (int $id): bool {

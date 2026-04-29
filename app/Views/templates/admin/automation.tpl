@@ -280,6 +280,121 @@
         </div>
       </div>
 
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h3 class="card-title mb-0">API produktow dla aplikacji</h3>
+          <span class="badge text-bg-primary">Nowe</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-4">
+            <div class="col-lg-5">
+              <form method="post" action="{$baseUrl}?controller=admin&action=saveapi" class="row g-3">
+                <div class="col-12">
+                  <label class="form-label" for="api-bearer-token">Token API</label>
+                  <input type="text" class="form-control" id="api-bearer-token" name="api_bearer_token" value="{$apiBearerToken|escape}" placeholder="Wpisz wlasny token lub kliknij Generuj">
+                  <div class="form-text">To jest osobny token do polaczenia aplikacji z lista produktow. Nie bierze sie go z Allegro, Empik ani z logowania uzytkownika.</div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                  <button type="submit" class="btn btn-primary">Zapisz token API</button>
+                  <button type="button" class="btn btn-outline-secondary" id="generateApiToken">Generuj token</button>
+                  <button type="button" class="btn btn-outline-secondary" id="copyApiToken">Kopiuj token</button>
+                </div>
+                <div class="col-12">
+                  <div class="small text-secondary">
+                    Skad wziac token: tutaj go tworzysz sam w panelu administracyjnym. Kliknij <strong>Generuj token</strong>, zapisz i potem wklej ten sam token w swojej aplikacji.
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div class="col-lg-7">
+              <div class="alert alert-light border small text-secondary mb-3">
+                Aplikacja zewnetrzna powinna wysylac naglowek <code>Authorization: Bearer TWOJ_TOKEN</code>. Jesli token nie jest ustawiony, API produktow zwroci blad autoryzacji.
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Bazowy adres API</label>
+                <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}">
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Wyszukiwanie produktow</label>
+                <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/search?q=szyba&amp;limit=20">
+                <div class="form-text">Szuka po SKU, nazwie, EAN i kategorii.</div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Produkt po ID</label>
+                <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/123">
+              </div>
+
+              <div class="mb-0">
+                <label class="form-label">Produkt po SKU</label>
+                <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/sku/ABC-001">
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-4">
+
+          <div class="row g-4">
+            <div class="col-lg-6">
+              <h4 class="h6 fw-semibold">Jak podlaczyc aplikacje</h4>
+              <div class="small text-secondary">1. Wygeneruj lub wpisz token API i kliknij Zapisz token API.</div>
+              <div class="small text-secondary">2. W swojej aplikacji ustaw naglowek <code>Authorization</code> z wartoscia <code>Bearer TWOJ_TOKEN</code>.</div>
+              <div class="small text-secondary">3. Do listy produktow uzyj endpointu <code>/api/products/search</code>.</div>
+              <div class="small text-secondary">4. Po kliknieciu produktu dociagnij szczegoly z <code>/api/products/{ldelim}id{rdelim}</code> albo <code>/api/products/sku/{ldelim}sku{rdelim}</code>.</div>
+            </div>
+            <div class="col-lg-6">
+              <h4 class="h6 fw-semibold">Przyklad requestu</h4>
+              <pre class="bg-dark text-light rounded p-3 small mb-0"><code>GET {$apiBaseUrl|escape}/api/products/search?q=szyba
+Authorization: Bearer TWOJ_TOKEN</code></pre>
+            </div>
+          </div>
+
+          <div class="row g-4 mt-1">
+            <div class="col-lg-6">
+              <h4 class="h6 fw-semibold">Przyklad odpowiedzi listy</h4>
+              <pre class="bg-light border rounded p-3 small mb-0"><code>{literal}{
+  "items": [
+    {
+      "id": 123,
+      "sku": "ABC-001",
+      "ean": "5900000000000",
+      "product_name": "Przykladowy produkt",
+      "category_id": 5,
+      "category_name": "Szyby",
+      "quantity": 12,
+      "localization": "A-01-02",
+      "price_net": 10.5,
+      "price_gross": 12.92,
+      "vat_rate": 23,
+      "updated_at": "2026-04-29 09:00:00"
+    }
+  ],
+  "query": "szyba",
+  "limit": 20,
+  "count": 1
+}{/literal}</code></pre>
+            </div>
+            <div class="col-lg-6">
+              <h4 class="h6 fw-semibold">Przyklad odpowiedzi szczegolow</h4>
+              <pre class="bg-light border rounded p-3 small mb-0"><code>{literal}{
+  "item": {
+    "id": 123,
+    "sku": "ABC-001",
+    "product_name": "Przykladowy produkt",
+    "description": "",
+    "dimensions": "",
+    "contours": "",
+    "img": "",
+    "custom_fields": []
+  }
+}{/literal}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card mb-4 border-warning-subtle">
         <div class="card-header">
           <h3 class="card-title mb-0">Sprzatanie bazy</h3>
@@ -509,6 +624,47 @@
     }
     if (stopBtn) {
       stopBtn.addEventListener('click', stopWorker);
+    }
+
+    var apiTokenInput = document.getElementById('api-bearer-token');
+    var generateApiTokenBtn = document.getElementById('generateApiToken');
+    var copyApiTokenBtn = document.getElementById('copyApiToken');
+
+    function randomToken(length) {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+      var result = '';
+      var cryptoObj = window.crypto || window.msCrypto;
+
+      if (cryptoObj && cryptoObj.getRandomValues) {
+        var values = new Uint32Array(length);
+        cryptoObj.getRandomValues(values);
+        for (var i = 0; i < length; i++) {
+          result += chars.charAt(values[i] % chars.length);
+        }
+        return result;
+      }
+
+      for (var j = 0; j < length; j++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    if (generateApiTokenBtn && apiTokenInput) {
+      generateApiTokenBtn.addEventListener('click', function () {
+        apiTokenInput.value = 'mag_' + randomToken(40);
+      });
+    }
+
+    if (copyApiTokenBtn && apiTokenInput) {
+      copyApiTokenBtn.addEventListener('click', function () {
+        apiTokenInput.select();
+        apiTokenInput.setSelectionRange(0, apiTokenInput.value.length);
+        try {
+          document.execCommand('copy');
+        } catch (error) {
+        }
+      });
     }
   })();
 </script>
