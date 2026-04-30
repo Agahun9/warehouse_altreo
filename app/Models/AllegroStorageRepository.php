@@ -1626,7 +1626,18 @@ class AllegroStorageRepository
         }
 
         $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
-        if ($warehouseQuantity !== '') {
+        $warehouseQuantityFrom = isset($filters['warehouse_quantity_from']) ? trim((string) $filters['warehouse_quantity_from']) : '';
+        $warehouseQuantityTo = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
+        if ($warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '') {
+            $this->appendQuantityRangeBounds(
+                $whereParts,
+                $params,
+                $warehouseQuantityFrom,
+                $warehouseQuantityTo,
+                'COALESCE(shared_stock_groups.quantity, warehouse.quantity)',
+                'warehouse_quantity'
+            );
+        } elseif ($warehouseQuantity !== '') {
             $this->appendQuantityFilter($whereParts, $params, $warehouseQuantity, 'COALESCE(shared_stock_groups.quantity, warehouse.quantity)', 'warehouse_quantity');
         }
 
@@ -1726,11 +1737,13 @@ class AllegroStorageRepository
     {
         $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
         $warehouseQuantity = isset($filters['warehouse_quantity']) ? trim((string) $filters['warehouse_quantity']) : '';
+        $warehouseQuantityFrom = isset($filters['warehouse_quantity_from']) ? trim((string) $filters['warehouse_quantity_from']) : '';
+        $warehouseQuantityTo = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
         $duplicates = isset($filters['duplicates']) ? trim((string) $filters['duplicates']) : '';
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
 
         $needsWarehouse = $query !== '';
-        $needsSharedStock = $warehouseQuantity !== '';
+        $needsSharedStock = $warehouseQuantity !== '' || $warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '';
 
         if (in_array($sortBy, array('warehouse_quantity', 'warehouse_sku', 'linked'), true)) {
             $needsWarehouse = true;
@@ -2418,6 +2431,47 @@ class AllegroStorageRepository
 
         $whereParts[] = 'CAST(' . $columnSql . ' AS CHAR) ' . ($negated ? 'NOT LIKE' : 'LIKE') . ' :' . $prefix;
         $params[$prefix] = '%' . $value . '%';
+    }
+
+    private function appendQuantityRangeBounds(
+        array &$whereParts,
+        array &$params,
+        string $rawFrom,
+        string $rawTo,
+        string $columnSql,
+        string $prefix
+    ): void {
+        $hasFrom = preg_match('/^\d+$/', $rawFrom) === 1;
+        $hasTo = preg_match('/^\d+$/', $rawTo) === 1;
+
+        if (!$hasFrom && !$hasTo) {
+            return;
+        }
+
+        if ($hasFrom && $hasTo) {
+            $from = (int) $rawFrom;
+            $to = (int) $rawTo;
+            if ($from > $to) {
+                $tmp = $from;
+                $from = $to;
+                $to = $tmp;
+            }
+
+            $whereParts[] = $columnSql . ' BETWEEN :' . $prefix . '_from AND :' . $prefix . '_to';
+            $params[$prefix . '_from'] = $from;
+            $params[$prefix . '_to'] = $to;
+            return;
+        }
+
+        if ($hasFrom) {
+            $whereParts[] = $columnSql . ' >= :' . $prefix . '_from';
+            $params[$prefix . '_from'] = (int) $rawFrom;
+        }
+
+        if ($hasTo) {
+            $whereParts[] = $columnSql . ' <= :' . $prefix . '_to';
+            $params[$prefix . '_to'] = (int) $rawTo;
+        }
     }
 
     private function buildIntegerPlaceholders(string $prefix, array $values, array &$params): array

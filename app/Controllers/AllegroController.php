@@ -593,6 +593,10 @@ class AllegroController extends Controller
 
     private function offerFilters(): array
     {
+        $warehouseQuantityFrom = trim((string) $this->input('warehouse_quantity_from', ''));
+        $warehouseQuantityTo = trim((string) $this->input('warehouse_quantity_to', ''));
+        $warehouseQuantity = trim((string) $this->input('warehouse_quantity', ''));
+
         return array(
             'account_id' => trim((string) $this->input('account_id', '')),
             'q' => trim((string) $this->input('q', '')),
@@ -603,7 +607,9 @@ class AllegroController extends Controller
             'linked' => trim((string) $this->input('linked', '')),
             'market' => trim((string) $this->input('market', '')),
             'invoice' => trim((string) $this->input('invoice', '')),
-            'warehouse_quantity' => trim((string) $this->input('warehouse_quantity', '')),
+            'warehouse_quantity' => $warehouseQuantity,
+            'warehouse_quantity_from' => $warehouseQuantityFrom,
+            'warehouse_quantity_to' => $warehouseQuantityTo,
             'allegro_quantity' => trim((string) $this->input('allegro_quantity', '')),
         );
     }

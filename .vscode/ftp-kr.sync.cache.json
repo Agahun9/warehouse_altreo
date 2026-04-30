@@ -228,8 +228,8 @@
                 "Config": {
                   "app.php": {
                     "type": "-",
-                    "size": 1364,
-                    "lmtime": 1777379934933.4917,
+                    "size": 1461,
+                    "lmtime": 1777449962587.6216,
                     "modified": false
                   },
                   "database.php": {
@@ -242,14 +242,14 @@
                 "Controllers": {
                   "AdminController.php": {
                     "type": "-",
-                    "size": 11972,
-                    "lmtime": 1777374315257.405,
+                    "size": 13447,
+                    "lmtime": 1777447535288.938,
                     "modified": false
                   },
                   "AllegroController.php": {
                     "type": "-",
-                    "size": 33522,
-                    "lmtime": 1777440279413.7886,
+                    "size": 33880,
+                    "lmtime": 1777460948475.5613,
                     "modified": false
                   },
                   "AuthController.php": {
@@ -282,10 +282,16 @@
                     "lmtime": 1777440106854.6694,
                     "modified": false
                   },
+                  "PrintTemplateController.php": {
+                    "type": "-",
+                    "size": 312,
+                    "lmtime": 1777460050711.5007,
+                    "modified": false
+                  },
                   "ProductController.php": {
                     "type": "-",
-                    "size": 603839,
-                    "lmtime": 1777440107085.873,
+                    "size": 608156,
+                    "lmtime": 1777448347673.8862,
                     "modified": false
                   },
                   "SellasistController.php": {
@@ -304,8 +310,8 @@
                 "Core": {
                   "Application.php": {
                     "type": "-",
-                    "size": 2729,
-                    "lmtime": 1777440107458.7422,
+                    "size": 3640,
+                    "lmtime": 1777449966563.2852,
                     "modified": false
                   },
                   "Config.php": {
@@ -316,8 +322,8 @@
                   },
                   "Controller.php": {
                     "type": "-",
-                    "size": 9337,
-                    "lmtime": 1777440107694.0208,
+                    "size": 12081,
+                    "lmtime": 1777447518966.0515,
                     "modified": false
                   },
                   "Database.php": {
@@ -356,8 +362,8 @@
                 "Models": {
                   "AllegroStorageRepository.php": {
                     "type": "-",
-                    "size": 98819,
-                    "lmtime": 1777440108107.3406,
+                    "size": 100972,
+                    "lmtime": 1777460968064.3965,
                     "modified": false
                   },
                   "CategoryRepository.php": {
@@ -428,8 +434,8 @@
                   },
                   "ProductRepository.php": {
                     "type": "-",
-                    "size": 181271,
-                    "lmtime": 1777276749832.6946,
+                    "size": 183744,
+                    "lmtime": 1777448347672.8843,
                     "modified": false
                   },
                   "SellasistOrderSyncRepository.php": {
@@ -823,8 +829,8 @@
                       },
                       "automation.tpl": {
                         "type": "-",
-                        "size": 26847,
-                        "lmtime": 1777440111425.8792,
+                        "size": 33603,
+                        "lmtime": 1777447593270.6226,
                         "modified": false
                       },
                       "users.tpl": {
@@ -949,8 +955,8 @@
                       },
                       "header.tpl": {
                         "type": "-",
-                        "size": 14045,
-                        "lmtime": 1777440112417.4417,
+                        "size": 15583,
+                        "lmtime": 1777460061444.3943,
                         "modified": false
                       }
                     },
@@ -997,14 +1003,22 @@
                     "taskboard": {
                       "index.tpl": {
                         "type": "-",
-                        "size": 104810,
-                        "lmtime": 1777440681180.0068,
+                        "size": 105224,
+                        "lmtime": 1777453584330.3186,
                         "modified": false
                       },
                       "task_details.tpl": {
                         "type": "-",
                         "size": 18779,
                         "lmtime": 1777440503157.5388,
+                        "modified": false
+                      }
+                    },
+                    "printtemplates": {
+                      "filemanager.tpl": {
+                        "type": "-",
+                        "size": 1412,
+                        "lmtime": 1777449984280.0923,
                         "modified": false
                       }
                     }
