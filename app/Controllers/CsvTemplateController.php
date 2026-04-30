@@ -2082,7 +2082,7 @@ class CsvTemplateController extends Controller
         );
 
         foreach ($this->availableFieldOptions() as $fieldKey => $fieldLabel) {
-            if ($fieldKey === 'product.generated_title') {
+            if (in_array($fieldKey, array('product.generated_title', 'product.collection_name'), true)) {
                 continue;
             }
             $tokens['{{field:' . $fieldKey . '}}'] = $fieldLabel;

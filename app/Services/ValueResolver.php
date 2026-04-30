@@ -616,9 +616,6 @@ class ValueResolver
         }
 
         $resolved = $this->resolveField($product, $fieldPath, '|', $exportOptions);
-        if ($replacements === array()) {
-            return $resolved;
-        }
 
         foreach ($replacements as $replacement) {
             $resolved = str_replace($replacement['find'], $replacement['replace'], $resolved);
