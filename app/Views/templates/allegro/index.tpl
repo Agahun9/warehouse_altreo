@@ -1400,6 +1400,36 @@
       }
     };
 
+    operationMeta.remove_from_system = {
+      title: 'Usun lokalnie',
+      description: 'Usunie oferte tylko z lokalnej bazy. Jesli Allegro zwroci ja przy kolejnym syncu, oferta pojawi sie znowu.',
+      hint: 'Lokalne usuniecie bez blokady importu',
+      valueLabel: 'Wartosc',
+      valuePlaceholder: '',
+      valueHelp: ''
+    };
+
+    operationMeta.remove_from_system_forever = {
+      title: 'Usun lokalnie i zablokuj import',
+      description: 'Jesli oferta nadal istnieje na Allegro i nie jest zakonczona, system najpierw wysle jej zakonczenie. Gdy oferta jest zakonczona albo Allegro zwraca 404, usunie ja lokalnie i zablokuje jej ponowny import.',
+      hint: 'Trwale ukrycie oferty z blokada powrotu po syncu',
+      valueLabel: 'Wartosc',
+      valuePlaceholder: '',
+      valueHelp: ''
+    };
+
+    if (operationSelect) {
+      var removeLocalOption = operationSelect.querySelector('option[value="remove_from_system"]');
+      if (removeLocalOption) {
+        removeLocalOption.textContent = 'Usun lokalnie';
+      }
+
+      var removeForeverOption = operationSelect.querySelector('option[value="remove_from_system_forever"]');
+      if (removeForeverOption) {
+        removeForeverOption.textContent = 'Usun lokalnie i zablokuj import';
+      }
+    }
+
     function updateCounter() {
       var selectable = checkboxes.filter(function (item) { return !item.disabled; });
       var checked = selectable.filter(function (item) { return item.checked; }).length;

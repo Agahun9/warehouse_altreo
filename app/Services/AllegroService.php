@@ -1120,6 +1120,37 @@ class AllegroService
             return;
         }
 
+        // 404 from Allegro means the offer is already gone there, so we can still
+        // remove it locally and block future imports.
+        if ($operation === 'remove_from_system_forever') {
+            $status = '';
+
+            try {
+                $details = $this->requestApiWithAccount(
+                    $account,
+                    'GET',
+                    '/sale/product-offers/' . rawurlencode($offerId)
+                );
+                $summary = $this->normalizeOfferSummary($details);
+                $status = strtoupper((string) ($summary['publication_status'] ?? ''));
+            } catch (RuntimeException $exception) {
+                if (!$this->isAllegroApiNotFound($exception)) {
+                    throw $exception;
+                }
+            }
+
+            if ($status !== '' && $status !== 'ENDED') {
+                $this->changePublicationAction($account, $offerId, 'END');
+                $this->refreshOfferSnapshotFromApi($account, (int) $offer['id'], $offerId);
+                throw new RuntimeException('Oferta nie jest jeszcze zakonczona. Wyslano zakonczenie i ponowimy sprawdzenie.');
+            }
+
+            $note = $status === '' ? 'removed_from_system_forever_not_found' : 'removed_from_system_forever';
+            $this->storage->addOfferExclusion((int) $account['id'], $offerId, 'permanent', $note);
+            $this->storage->deleteOffersByTargets(array(array('id' => (int) ($offer['id'] ?? 0))));
+            return;
+        }
+
         if ($operation === 'remove_from_system_forever') {
             $details = $this->requestApiWithAccount(
                 $account,
@@ -1955,6 +1986,11 @@ class AllegroService
         }
 
         return $decoded;
+    }
+
+    private function isAllegroApiNotFound(RuntimeException $exception): bool
+    {
+        return strpos($exception->getMessage(), 'Allegro API error [404]') !== false;
     }
 
     private function resolveAccount(string $accountSelector)
