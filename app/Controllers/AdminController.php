@@ -156,6 +156,8 @@ class AdminController extends Controller
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
+            'sellasistPickingStatusId' => (int) $this->settings->get('sellasist_picking_status_id', '23'),
+            'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
             'apiBearerToken' => $this->settings->get('api_bearer_token', ''),
             'apiBaseUrl' => $this->apiBaseUrl(),
         ));
@@ -211,6 +213,8 @@ class AdminController extends Controller
         try {
             $baseUrl = rtrim(trim((string) $this->input('sellasist_base_url', 'https://altreo.sellasist.pl')), '/');
             $apiKey = trim((string) $this->input('sellasist_api_key', ''));
+            $pickingStatusId = max(1, (int) $this->input('sellasist_picking_status_id', 23));
+            $printedStatusId = max(0, (int) $this->input('sellasist_printed_status_id', 3));
 
             if ($baseUrl === '') {
                 $baseUrl = 'https://altreo.sellasist.pl';
@@ -220,6 +224,8 @@ class AdminController extends Controller
 
             $this->settings->set('sellasist_base_url', $baseUrl);
             $this->settings->set('sellasist_api_key', $apiKey);
+            $this->settings->set('sellasist_picking_status_id', (string) $pickingStatusId);
+            $this->settings->set('sellasist_printed_status_id', (string) $printedStatusId);
 
             $this->setFlash('success', 'Ustawienia Sellasist zostaly zapisane.');
         } catch (Throwable $exception) {

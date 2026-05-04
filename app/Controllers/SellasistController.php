@@ -51,6 +51,8 @@ class SellasistController extends Controller
             'sellasistTab' => 'zbieranie',
             'orders' => $orders,
             'sellasistConfigured' => $config['api_key'] !== '',
+            'sellasistPickingStatusId' => (int) ($config['picking_status_id'] ?? SellasistService::PICKING_STATUS_ID),
+            'sellasistPrintedStatusId' => (int) ($config['printed_status_id'] ?? SellasistService::PRINTED_STATUS_ID),
         ));
     }
 

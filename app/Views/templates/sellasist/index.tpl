@@ -40,7 +40,14 @@
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h3 class="card-title mb-0">Lista zamowien do zbierania</h3>
-          <span class="small text-secondary">status Sellasist: 23, po wydruku zmiana na 3</span>
+          <span class="small text-secondary">
+            status pobierania: {$sellasistPickingStatusId|escape}, po wydruku:
+            {if $sellasistPrintedStatusId > 0}
+              zmiana na {$sellasistPrintedStatusId|escape}
+            {else}
+              bez zmiany statusu
+            {/if}
+          </span>
         </div>
         <div class="card-body">
           <form method="post" action="{$baseUrl}?controller=sellasist&action=stickers" target="_blank" id="sellasistPickingForm">

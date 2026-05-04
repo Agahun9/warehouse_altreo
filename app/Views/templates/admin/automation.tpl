@@ -447,9 +447,17 @@ Authorization: Bearer TWOJ_TOKEN</code></pre>
               <label class="form-label" for="sellasist-api-key">API Key</label>
               <input type="text" class="form-control" id="sellasist-api-key" name="sellasist_api_key" value="{$sellasistApiKey|escape}" placeholder="Wklej klucz API Sellasist">
             </div>
+            <div class="col-lg-6">
+              <label class="form-label" for="sellasist-picking-status-id">Status do pobierania na Zbieranie</label>
+              <input type="number" min="1" step="1" class="form-control" id="sellasist-picking-status-id" name="sellasist_picking_status_id" value="{$sellasistPickingStatusId|escape}" placeholder="23">
+            </div>
+            <div class="col-lg-6">
+              <label class="form-label" for="sellasist-printed-status-id">Status po wydruku stickersow</label>
+              <input type="number" min="0" step="1" class="form-control" id="sellasist-printed-status-id" name="sellasist_printed_status_id" value="{$sellasistPrintedStatusId|escape}" placeholder="3">
+            </div>
             <div class="col-12">
               <div class="small text-secondary">
-                Dane sa uzywane przez modul Sellasist, zakladke Zbieranie oraz generowanie naklejek. Domyslnie pobierane sa zamowienia ze statusu <code>23</code>, a po wygenerowaniu naklejek system zmienia status na <code>3</code>.
+                Dane sa uzywane przez modul Sellasist, zakladke Zbieranie oraz generowanie naklejek. Domyslnie pobierane sa zamowienia ze statusu <code>23</code>, a po wygenerowaniu naklejek system zmienia status na <code>3</code>. Wpisz <code>0</code> w polu statusu po wydruku, aby zostawic zamowienie na obecnym statusie.
               </div>
             </div>
             <div class="col-12">

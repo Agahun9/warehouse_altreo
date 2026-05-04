@@ -78,11 +78,14 @@ class SellasistService
         return array(
             'base_url' => $this->baseUrl(),
             'api_key' => $this->settings->get('sellasist_api_key', ''),
+            'picking_status_id' => $this->pickingStatusId(),
+            'printed_status_id' => $this->printedStatusId(),
         );
     }
 
-    public function listOrdersForPicking(int $statusId = self::PICKING_STATUS_ID): array
+    public function listOrdersForPicking(?int $statusId = null): array
     {
+        $statusId = $statusId === null ? $this->pickingStatusId() : $this->normalizeStatusId($statusId, self::PICKING_STATUS_ID);
         $orders = $this->getOrdersByStatus($statusId);
         $prepared = array();
 
@@ -119,8 +122,13 @@ class SellasistService
             $glassStickers = array_merge($glassStickers, $entries['glass']);
 
             if ($markPrinted) {
+                $printedStatusId = $this->printedStatusId();
+                if ($printedStatusId === 0) {
+                    continue;
+                }
+
                 try {
-                    $this->changeOrderStatus((int) $order['id'], self::PRINTED_STATUS_ID);
+                    $this->changeOrderStatus((int) $order['id'], $printedStatusId);
                 } catch (\Throwable $exception) {
                     $warnings[] = 'Nie udalo sie zmienic statusu zamowienia #' . (int) $order['id'] . '.';
                 }
@@ -352,6 +360,29 @@ class SellasistService
         $this->request('PUT', '/api/v1/orders/' . $orderId, array(
             'status' => $statusId,
         ));
+    }
+
+    public function pickingStatusId(): int
+    {
+        return $this->normalizeStatusId(
+            (int) $this->settings->get('sellasist_picking_status_id', (string) self::PICKING_STATUS_ID),
+            self::PICKING_STATUS_ID
+        );
+    }
+
+    public function printedStatusId(): int
+    {
+        $value = (int) $this->settings->get('sellasist_printed_status_id', (string) self::PRINTED_STATUS_ID);
+        if ($value === 0) {
+            return 0;
+        }
+
+        return $this->normalizeStatusId($value, self::PRINTED_STATUS_ID);
+    }
+
+    private function normalizeStatusId(int $value, int $default): int
+    {
+        return $value > 0 ? $value : $default;
     }
 
     private function buildOrderStickers(array $order): array
