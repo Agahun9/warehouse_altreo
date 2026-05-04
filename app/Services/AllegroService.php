@@ -1109,14 +1109,12 @@ class AllegroService
         $payload = isset($item['payload']) && is_array($item['payload']) ? $item['payload'] : array();
 
         if ($operation === 'end_offer') {
-            $this->changePublicationAction($account, $offerId, 'END');
-            $this->refreshOfferSnapshotFromApi($account, (int) $offer['id'], $offerId);
+            $this->executePublicationOperation($account, $offer, $offerId, 'END', 'ENDED');
             return;
         }
 
         if ($operation === 'resume_offer') {
-            $this->changePublicationAction($account, $offerId, 'ACTIVATE');
-            $this->refreshOfferSnapshotFromApi($account, (int) $offer['id'], $offerId);
+            $this->executePublicationOperation($account, $offer, $offerId, 'ACTIVATE', 'ACTIVE');
             return;
         }
 
@@ -2020,7 +2018,46 @@ class AllegroService
         );
     }
 
-    private function changePublicationAction(array $account, string $offerId, string $action): void
+    private function executePublicationOperation(
+        array $account,
+        array $offer,
+        string $offerId,
+        string $action,
+        string $expectedStatus
+    ): void {
+        $commandId = $this->changePublicationAction($account, $offerId, $action);
+        $taskResult = $this->waitForPublicationCommandTasks($account, $commandId);
+        $summary = $this->refreshOfferSnapshotFromApi($account, (int) ($offer['id'] ?? 0), $offerId);
+        $currentStatus = strtoupper(trim((string) ($summary['publication_status'] ?? '')));
+
+        if ($taskResult['error_message'] !== '') {
+            throw new RuntimeException($taskResult['error_message']);
+        }
+
+        if ($currentStatus === $expectedStatus) {
+            return;
+        }
+
+        if ($currentStatus === 'ACTIVATING' && $expectedStatus === 'ACTIVE') {
+            throw new RuntimeException('Allegro przyjelo wznowienie, ale oferta nadal sie aktywuje. Sprawdzimy ponownie za chwile.');
+        }
+
+        if ($currentStatus === 'ENDED' && $expectedStatus === 'ACTIVE') {
+            throw new RuntimeException('Allegro nie wznowilo oferty. Po odswiezeniu nadal ma status ENDED.');
+        }
+
+        if ($currentStatus === 'ACTIVE' && $expectedStatus === 'ENDED') {
+            throw new RuntimeException('Allegro nie zakonczylo jeszcze oferty. Po odswiezeniu nadal ma status ACTIVE.');
+        }
+
+        throw new RuntimeException(
+            'Po wykonaniu operacji ' . $action . ' oferta ma status '
+            . ($currentStatus !== '' ? $currentStatus : 'UNKNOWN')
+            . ' zamiast oczekiwanego ' . $expectedStatus . '.'
+        );
+    }
+
+    private function changePublicationAction(array $account, string $offerId, string $action): string
     {
         $commandId = $this->uuidV4();
         $payload = array(
@@ -2045,9 +2082,87 @@ class AllegroService
             json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             array('Content-Type: application/vnd.allegro.public.v1+json')
         );
+
+        return $commandId;
     }
 
-    private function refreshOfferSnapshotFromApi(array $account, int $offerRowId, string $offerId): void
+    private function waitForPublicationCommandTasks(array $account, string $commandId): array
+    {
+        $lastTasks = array();
+
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            $response = $this->requestApiWithAccount(
+                $account,
+                'GET',
+                '/sale/offer-publication-commands/' . rawurlencode($commandId) . '/tasks'
+            );
+            $tasks = isset($response['tasks']) && is_array($response['tasks']) ? $response['tasks'] : array();
+            $lastTasks = $tasks;
+            $hasPendingTask = false;
+
+            foreach ($tasks as $task) {
+                $status = strtoupper(trim((string) ($task['status'] ?? '')));
+                $errors = isset($task['errors']) && is_array($task['errors']) ? $task['errors'] : array();
+                if ($errors !== array()) {
+                    return array(
+                        'error_message' => $this->publicationTaskErrorMessage($errors),
+                    );
+                }
+
+                if ($status === '' || in_array($status, array('NEW', 'PROCESSING', 'IN_PROGRESS'), true)) {
+                    $hasPendingTask = true;
+                }
+            }
+
+            if ($tasks !== array() && !$hasPendingTask) {
+                return array('error_message' => '');
+            }
+
+            if ($attempt < 3) {
+                usleep(750000);
+            }
+        }
+
+        if ($lastTasks === array()) {
+            return array(
+                'error_message' => 'Allegro nie zwrocilo jeszcze wyniku komendy publikacji. Sprobujemy ponownie automatycznie.',
+            );
+        }
+
+        return array(
+            'error_message' => 'Allegro nadal przetwarza komende publikacji. Sprobujemy ponownie automatycznie.',
+        );
+    }
+
+    private function publicationTaskErrorMessage(array $errors): string
+    {
+        $messages = array();
+
+        foreach ($errors as $error) {
+            if (!is_array($error)) {
+                continue;
+            }
+
+            $code = trim((string) ($error['code'] ?? ''));
+            $message = trim((string) ($error['message'] ?? ''));
+            $path = trim((string) ($error['path'] ?? ''));
+            $parts = array_values(array_filter(array($code, $message, $path), static function (string $value): bool {
+                return $value !== '';
+            }));
+
+            if ($parts !== array()) {
+                $messages[] = implode(' | ', $parts);
+            }
+        }
+
+        if ($messages === array()) {
+            return 'Allegro odrzucilo komende publikacji tej oferty.';
+        }
+
+        return 'Allegro odrzucilo komende publikacji: ' . implode('; ', array_unique($messages));
+    }
+
+    private function refreshOfferSnapshotFromApi(array $account, int $offerRowId, string $offerId): array
     {
         $details = $this->requestApiWithAccount(
             $account,
@@ -2058,6 +2173,7 @@ class AllegroService
         $payload = $this->buildOfferPayload((int) $account['id'], $this->uuidV4(), $summary, $details, null, null);
 
         $this->storage->upsertOffer($payload);
+        return $summary;
     }
 
     private function autoLinkOffersToWarehouse(?int $accountId = null, int $limit = 500): int
