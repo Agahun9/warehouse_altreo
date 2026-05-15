@@ -454,6 +454,10 @@ class AllegroStorageRepository
             $idSql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
         }
 
+        if ($analysis['needs_warehouse_category']) {
+            $idSql .= ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id';
+        }
+
         $idSql .= $whereSql
             . ' ORDER BY ' . $sortSql
             . ' LIMIT ' . (int) $perPage . ' OFFSET ' . (int) $offset;
@@ -544,6 +548,10 @@ class AllegroStorageRepository
 
         if ($analysis['needs_shared_stock']) {
             $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+        }
+
+        if ($analysis['needs_warehouse_category']) {
+            $sql .= ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id';
         }
 
         $total = (int) $this->database->fetchColumn($sql . $whereSql, $params);
@@ -1117,13 +1125,25 @@ class AllegroStorageRepository
     public function offerTargetsForFilters(array $filters, ?int $limit = null): array
     {
         $params = array();
+        $analysis = $this->analyzeOfferFilters($filters);
         $whereSql = $this->buildOfferWhere($filters, $params);
         $sql = 'SELECT offers.id, offers.account_id, offers.offer_id'
             . ' FROM allegro_offers offers'
-            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
-            . $this->liveWarehouseJoinSql()
-            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
-            . $whereSql
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id';
+
+        if ($analysis['needs_warehouse']) {
+            $sql .= $this->liveWarehouseJoinSql();
+        }
+
+        if ($analysis['needs_shared_stock']) {
+            $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+        }
+
+        if ($analysis['needs_warehouse_category']) {
+            $sql .= ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id';
+        }
+
+        $sql .= $whereSql
             . ' ORDER BY offers.id ASC';
 
         if ($limit !== null && $limit > 0) {
@@ -1436,7 +1456,12 @@ class AllegroStorageRepository
     public function queueCounts(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT status, COUNT(*) AS total FROM allegro_offer_change_queue GROUP BY status'
+            'SELECT queue.status, COUNT(*) AS total'
+            . ' FROM allegro_offer_change_queue queue'
+            . ' INNER JOIN allegro_offers offers ON offers.id = queue.offer_row_id'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . ' WHERE accounts.is_active = 1'
+            . ' GROUP BY queue.status'
         );
 
         $result = array(
@@ -1782,6 +1807,15 @@ class AllegroStorageRepository
             $params['status'] = $status;
         }
 
+        $resumeReady = isset($filters['resume_ready']) ? trim((string) $filters['resume_ready']) : '';
+        if ($resumeReady === '1') {
+            $whereParts[] = 'offers.publication_status = :resume_ready_status';
+            $whereParts[] = 'warehouse.id IS NOT NULL';
+            $whereParts[] = 'warehouse_categories.end_offers_below_quantity IS NOT NULL';
+            $whereParts[] = 'COALESCE(shared_stock_groups.quantity, warehouse.quantity) > warehouse_categories.end_offers_below_quantity';
+            $params['resume_ready_status'] = 'ENDED';
+        }
+
         $queueStatus = strtolower(trim((string) ($filters['queue_status'] ?? '')));
         if (in_array($queueStatus, array('pending', 'retry', 'error', 'done', 'processing'), true)) {
             $whereParts[] = 'EXISTS ('
@@ -1959,9 +1993,11 @@ class AllegroStorageRepository
         $warehouseQuantityTo = isset($filters['warehouse_quantity_to']) ? trim((string) $filters['warehouse_quantity_to']) : '';
         $duplicates = isset($filters['duplicates']) ? trim((string) $filters['duplicates']) : '';
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
+        $resumeReady = isset($filters['resume_ready']) ? trim((string) $filters['resume_ready']) : '';
 
         $needsWarehouse = $query !== '';
         $needsSharedStock = $warehouseQuantity !== '' || $warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '';
+        $needsWarehouseCategory = false;
 
         if (in_array($sortBy, array('warehouse_quantity', 'warehouse_sku', 'linked'), true)) {
             $needsWarehouse = true;
@@ -1978,9 +2014,16 @@ class AllegroStorageRepository
             $needsWarehouse = true;
         }
 
+        if ($resumeReady === '1') {
+            $needsWarehouse = true;
+            $needsSharedStock = true;
+            $needsWarehouseCategory = true;
+        }
+
         return array(
             'needs_warehouse' => $needsWarehouse,
             'needs_shared_stock' => $needsSharedStock,
+            'needs_warehouse_category' => $needsWarehouseCategory,
         );
     }
 

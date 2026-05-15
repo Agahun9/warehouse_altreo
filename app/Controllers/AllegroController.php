@@ -566,7 +566,12 @@ class AllegroController extends Controller
         }));
 
         try {
-            $this->jsonResponse(array('groups' => $this->allegro->responsibleProducersForAccounts($accounts)));
+            $producerGroups = $this->allegro->responsibleProducersForAccounts($accounts);
+            $this->jsonResponse(array(
+                'groups' => $producerGroups,
+                'producer_groups' => $producerGroups,
+                'person_groups' => $this->allegro->responsiblePersonsForAccounts($accounts),
+            ));
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
@@ -664,6 +669,7 @@ class AllegroController extends Controller
             'q' => trim((string) $this->input('q', '')),
             'sku' => trim((string) $this->input('sku', '')),
             'error_query' => trim((string) $this->input('error_query', '')),
+            'resume_ready' => trim((string) $this->input('resume_ready', '')),
             'status' => trim((string) $this->input('status', '')),
             'queue_status' => trim((string) $this->input('queue_status', '')),
             'duplicates' => trim((string) $this->input('duplicates', '')),

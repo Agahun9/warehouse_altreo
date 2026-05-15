@@ -244,7 +244,7 @@
               </div>
               <div class="small text-secondary mb-2">
                 Zostalo {$queueRemaining},
-                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=done&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-success">gotowe {$queueStats.done}</a>
+                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=done&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-success">gotowe {$queueStats.done}</a>
               </div>
               <div class="allegro-queue-progress" aria-label="Stan kolejki Allegro">
                 {if $queuePendingPercent > 0}<div class="allegro-queue-progress-part is-pending" style="width: {$queuePendingPercent|string_format:'%.2f'}%;"></div>{/if}
@@ -254,9 +254,9 @@
                 {if $queueErrorPercent > 0}<div class="allegro-queue-progress-part is-error" style="width: {$queueErrorPercent|string_format:'%.2f'}%;"></div>{/if}
               </div>
               <div class="allegro-queue-mini-meta">
-                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=pending&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-warning">Oczekuje: {$queueStats.pending}</a>
-                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=retry&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-warning">Ponów: {$queueStats.retry}</a>
-                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=error&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-danger">Błąd: {$queueStats.error}</a>
+                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=pending&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-warning">Oczekuje: {$queueStats.pending}</a>
+                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=retry&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-warning">Ponów: {$queueStats.retry}</a>
+                <a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=error&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="allegro-queue-mini-link text-danger">Błąd: {$queueStats.error}</a>
               </div>
               <div class="d-flex flex-wrap gap-2 mt-3">
                 <form method="post" action="{$baseUrl}?controller=allegro&action=clearqueue" onsubmit="return confirm('Wyczyścić statusy gotowe, błędy i ponów? Oczekujące zostaną.');">
@@ -295,25 +295,25 @@
             <div class="col-xl col-md-4 col-6">
               <div class="allegro-queue-stat">
                 <div class="small text-secondary">Oczekuje</div>
-                <div class="fs-4 fw-semibold text-warning"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=pending&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-warning text-decoration-none">{$queueStats.pending}</a></div>
+                <div class="fs-4 fw-semibold text-warning"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=pending&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-warning text-decoration-none">{$queueStats.pending}</a></div>
               </div>
             </div>
             <div class="col-xl col-md-4 col-6">
               <div class="allegro-queue-stat">
                 <div class="small text-secondary">Ponów</div>
-                <div class="fs-4 fw-semibold text-warning"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=retry&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-warning text-decoration-none">{$queueStats.retry}</a></div>
+                <div class="fs-4 fw-semibold text-warning"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=retry&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-warning text-decoration-none">{$queueStats.retry}</a></div>
               </div>
             </div>
             <div class="col-xl col-md-4 col-6">
               <div class="allegro-queue-stat">
                 <div class="small text-secondary">Gotowe</div>
-                <div class="fs-4 fw-semibold text-success"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=done&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-success text-decoration-none">{$queueStats.done}</a></div>
+                <div class="fs-4 fw-semibold text-success"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=done&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-success text-decoration-none">{$queueStats.done}</a></div>
               </div>
             </div>
             <div class="col-xl col-md-4 col-12">
               <div class="allegro-queue-stat">
                 <div class="small text-secondary">Błąd</div>
-                <div class="fs-4 fw-semibold text-danger"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=error&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-danger text-decoration-none">{$queueStats.error}</a></div>
+                <div class="fs-4 fw-semibold text-danger"><a href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&queue_status=error&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}" class="text-danger text-decoration-none">{$queueStats.error}</a></div>
               </div>
             </div>
           </div>
@@ -330,10 +330,6 @@
                 <span>strona {$page} z {$totalPages}</span>
                 {if $duplicatesOnly}<span class="allegro-topbar-chip">widok: tylko duble</span>{/if}
               </div>
-            </div>
-            <div class="allegro-topbar-actions">
-              <a href="{$autoEndOffersUrl|escape}" target="_blank" rel="noopener" class="btn btn-outline-warning">Cron konczenia</a>
-              <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#allegroBulkModal">Akcje masowe</button>
             </div>
           </div>
         </div>
@@ -367,6 +363,14 @@
               <label class="form-label">Blad kolejki</label>
               <input type="text" name="error_query" value="{$filters.error_query|escape}" class="form-control" placeholder="fragment bledu">
               <div class="form-text">Szukamy po tresci ostatniego bledu kolejki dla oferty.</div>
+            </div>
+            <div class="col-xl-2 col-md-4">
+              <label class="form-label">Do wznowienia</label>
+              <select name="resume_ready" class="form-select">
+                <option value="">Wszystkie</option>
+                <option value="1"{if $filters.resume_ready eq '1'} selected{/if}>Tylko do wznowienia</option>
+              </select>
+              <div class="form-text">Pokazuje zakonczone oferty z magazynem, gdy stan jest wyzszy niz prog "koncz ponizej" z kategorii.</div>
             </div>
             <div class="col-xl-2 col-md-4">
               <label class="form-label">Status</label>
@@ -451,17 +455,17 @@
               <div class="allegro-pagination-buttons">
                 {assign var=prevPage value=$page-1}
                 {assign var=nextPage value=$page+1}
-                <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Pierwsza</a>
-                <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$prevPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Poprzednia</a>
+                <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page=1&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Pierwsza</a>
+                <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$prevPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Poprzednia</a>
                 {foreach $pageWindow as $pageItem}
                   {if $pageItem.type eq 'page'}
-                    <a class="btn btn-sm {if $pageItem.is_current}btn-primary{else}btn-outline-secondary{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$pageItem.value}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">{$pageItem.value}</a>
+                    <a class="btn btn-sm {if $pageItem.is_current}btn-primary{else}btn-outline-secondary{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$pageItem.value}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">{$pageItem.value}</a>
                   {else}
                     <span class="btn btn-sm btn-outline-secondary disabled">...</span>
                   {/if}
                 {/foreach}
-                <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$nextPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Nastepna</a>
-                <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$totalPages}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Ostatnia</a>
+                <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$nextPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Nastepna</a>
+                <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$totalPages}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Ostatnia</a>
               </div>
 
               <form method="get" action="{$baseUrl}" class="d-flex gap-2 align-items-center">
@@ -474,6 +478,7 @@
                 <input type="hidden" name="q" value="{$filters.q|escape}">
                 <input type="hidden" name="sku" value="{$filters.sku|escape}">
                 <input type="hidden" name="error_query" value="{$filters.error_query|escape}">
+                <input type="hidden" name="resume_ready" value="{$filters.resume_ready|escape}">
                 <input type="hidden" name="status" value="{$filters.status|escape}">
                 <input type="hidden" name="duplicates" value="{$filters.duplicates|escape}">
                 <input type="hidden" name="linked" value="{$filters.linked|escape}">
@@ -558,6 +563,7 @@
             <input type="hidden" name="q" value="{$filters.q|escape}">
             <input type="hidden" name="sku" value="{$filters.sku|escape}">
             <input type="hidden" name="error_query" value="{$filters.error_query|escape}">
+            <input type="hidden" name="resume_ready" value="{$filters.resume_ready|escape}">
             <input type="hidden" name="status" value="{$filters.status|escape}">
             <input type="hidden" name="duplicates" value="{$filters.duplicates|escape}">
             <input type="hidden" name="linked" value="{$filters.linked|escape}">
@@ -605,6 +611,7 @@
                         <option value="set_price">Cena: ustaw recznie</option>
                         <option value="set_price_from_product">Cena: z magazynu</option>
                         <option value="set_category_parameters">Kategoria i parametry</option>
+                        <option value="set_gpsr">GPSR: producent + bezpieczenstwo</option>
                         <option value="set_responsible_producer">GPSR: ustaw producenta</option>
                         <option value="set_safety_information">GPSR: opis bezpieczenstwa</option>
                         <option value="set_delivery">Dostawa: ustaw czas wysylki</option>
@@ -736,21 +743,21 @@
                         </div>
                       </div>
 
-                      <div class="mb-3 js-bulk-field" data-ops="set_responsible_producer">
+                      <div class="mb-3 js-bulk-field" data-ops="set_gpsr,set_responsible_producer">
                         <label class="form-label">Producent odpowiedzialny per konto Allegro</label>
-                        <div class="small text-secondary mb-2">Dla mieszanej listy kont pokazemy osobny wybor producenta dla kazdego konta z zaznaczenia lub z aktywnego filtra konta.</div>
+                        <div class="small text-secondary mb-2">Dla mieszanej listy kont pokazemy osobny wybor producenta i osoby odpowiedzialnej dla kazdego konta z zaznaczenia lub z aktywnego filtra konta.</div>
                         <div class="border rounded p-3 bg-body-tertiary" id="bulk-producer-account-box">
                           <div class="text-secondary">Zaznacz oferty albo ustaw filtr konta, aby pobrac producentow z odpowiedniego konta Allegro.</div>
                         </div>
                       </div>
 
-                      <div class="mb-3 js-bulk-field" data-ops="set_safety_information">
+                      <div class="mb-3 js-bulk-field" data-ops="set_gpsr,set_safety_information">
                         <label class="form-label" for="bulk-safety-description">Opis bezpieczenstwa produktu</label>
                         <textarea name="safety_description" class="form-control" id="bulk-safety-description" rows="6" maxlength="5000" placeholder="Wpisz opis bezpieczenstwa zgodny z wymaganiami Allegro."></textarea>
                         <div class="form-text">Zapiszemy go jako <code>productSet[].safetyInformation</code> typu <code>TEXT</code> dla kazdego produktu w zestawie.</div>
                       </div>
 
-                      <div class="mb-0 js-bulk-field" data-ops="replace_name,set_name,set_sku,set_price,set_price_from_product,set_category_parameters,set_responsible_producer,set_safety_information,set_delivery,set_invoice,link_product_auto,link_product_id,end_offer,resume_offer">
+                      <div class="mb-0 js-bulk-field" data-ops="replace_name,set_name,set_sku,set_price,set_price_from_product,set_category_parameters,set_gpsr,set_responsible_producer,set_safety_information,set_delivery,set_invoice,link_product_auto,link_product_id,end_offer,resume_offer">
                         <div class="form-text pt-2">Paczka bierze teraz caly wynik filtrowania bez sztucznego limitu.</div>
                       </div>
                     </div>
@@ -955,8 +962,8 @@
           <div class="allegro-pagination-panel">
             <div class="small text-secondary">Paginacja jest po stronie bazy, a akcje masowe ida do worker-a w tle.</div>
             <div class="allegro-pagination-buttons">
-              <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$prevPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Poprzednia</a>
-              <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$nextPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Nastepna</a>
+              <a class="btn btn-sm btn-outline-secondary{if $page <= 1} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$prevPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Poprzednia</a>
+              <a class="btn btn-sm btn-outline-secondary{if $page >= $totalPages} disabled{/if}" href="{$baseUrl}?controller=allegro&action=index&page={$nextPage}&per_page={$perPage}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}&account_id={$filters.account_id|escape:'url'}&q={$filters.q|escape:'url'}&sku={$filters.sku|escape:'url'}&error_query={$filters.error_query|escape:'url'}&resume_ready={$filters.resume_ready|escape:'url'}&status={$filters.status|escape:'url'}&duplicates={$filters.duplicates|escape:'url'}&linked={$filters.linked|escape:'url'}&market={$filters.market|escape:'url'}&invoice={$filters.invoice|escape:'url'}&warehouse_quantity_from={$filters.warehouse_quantity_from|escape:'url'}&warehouse_quantity_to={$filters.warehouse_quantity_to|escape:'url'}&queue_status={$filters.queue_status|escape:'url'}">Nastepna</a>
             </div>
           </div>
         </div>
@@ -1429,6 +1436,14 @@
         valuePlaceholder: '',
         valueHelp: ''
       },
+      set_gpsr: {
+        title: 'GPSR: producent + bezpieczenstwo',
+        description: 'W jednym kroku ustawimy producenta odpowiedzialnego per konto i tekstowy opis bezpieczenstwa produktu.',
+        hint: 'Kompletna aktualizacja GPSR',
+        valueLabel: 'Wartosc',
+        valuePlaceholder: '',
+        valueHelp: ''
+      },
       set_safety_information: {
         title: 'GPSR: opis bezpieczenstwa',
         description: 'Doda tekstowy opis bezpieczenstwa jako productSet[].safetyInformation typu TEXT.',
@@ -1562,7 +1577,7 @@
         item.checked = state;
       });
       updateCounter();
-      if (operationSelect && operationSelect.value === 'set_responsible_producer') {
+      if (operationSelect && (operationSelect.value === 'set_responsible_producer' || operationSelect.value === 'set_gpsr')) {
         refreshProducerChoices();
       }
     }
@@ -1575,7 +1590,7 @@
         item.checked = !item.checked;
       });
       updateCounter();
-      if (operationSelect && operationSelect.value === 'set_responsible_producer') {
+      if (operationSelect && (operationSelect.value === 'set_responsible_producer' || operationSelect.value === 'set_gpsr')) {
         refreshProducerChoices();
       }
     }
@@ -1628,7 +1643,7 @@
         warehouseSelected.classList.add('bulk-ops-hidden');
       }
 
-      if (operation === 'set_responsible_producer') {
+      if (operation === 'set_responsible_producer' || operation === 'set_gpsr') {
         refreshProducerChoices();
       }
     }
@@ -1805,35 +1820,63 @@
       return selected;
     }
 
-    function renderProducerChoices(groups, accounts, previousSelections) {
+    function currentResponsiblePersonSelections() {
+      var selected = {};
+      if (!producerAccountBox) {
+        return selected;
+      }
+
+      Array.prototype.slice.call(producerAccountBox.querySelectorAll('select[data-responsible-person-account-id]')).forEach(function (select) {
+        var accountId = String(select.getAttribute('data-responsible-person-account-id') || '').trim();
+        if (accountId !== '' && String(select.value || '').trim() !== '') {
+          selected[accountId] = String(select.value || '').trim();
+        }
+      });
+
+      return selected;
+    }
+
+    function renderProducerChoices(producerGroups, personGroups, accounts, previousSelections, previousPersonSelections) {
       if (!producerAccountBox) {
         return;
       }
 
-      var groupsById = {};
-      (groups || []).forEach(function (group) {
+      var producerGroupsById = {};
+      (producerGroups || []).forEach(function (group) {
         var accountId = String(group.account_id || '').trim();
         if (accountId !== '') {
-          groupsById[accountId] = group;
+          producerGroupsById[accountId] = group;
+        }
+      });
+
+      var personGroupsById = {};
+      (personGroups || []).forEach(function (group) {
+        var accountId = String(group.account_id || '').trim();
+        if (accountId !== '') {
+          personGroupsById[accountId] = group;
         }
       });
 
       var selections = previousSelections || currentProducerSelections();
+      var personSelections = previousPersonSelections || currentResponsiblePersonSelections();
       var html = '';
 
       accounts.forEach(function (account) {
-        var group = groupsById[String(account.id)] || null;
-        var items = group && Array.isArray(group.items) ? group.items : [];
-        var groupError = group && group.error ? String(group.error) : '';
+        var producerGroup = producerGroupsById[String(account.id)] || null;
+        var producerItems = producerGroup && Array.isArray(producerGroup.items) ? producerGroup.items : [];
+        var producerGroupError = producerGroup && producerGroup.error ? String(producerGroup.error) : '';
+        var personGroup = personGroupsById[String(account.id)] || null;
+        var personItems = personGroup && Array.isArray(personGroup.items) ? personGroup.items : [];
+        var personGroupError = personGroup && personGroup.error ? String(personGroup.error) : '';
         html += '<div class="mb-3">';
         html += '<label class="form-label fw-semibold">Konto: ' + escapeHtml(account.name || ('#' + account.id)) + '</label>';
-        if (groupError) {
-          html += '<div class="text-danger small">' + escapeHtml(groupError) + '</div>';
+        if (producerGroupError) {
+          html += '<div class="text-danger small">' + escapeHtml(producerGroupError) + '</div>';
           html += '<label class="form-label small mt-2">Producent recznie po NAME</label>';
           html += '<input type="text" class="form-control" name="producer_name_by_account[' + escapeHtml(String(account.id)) + ']"'
             + ' placeholder="np. Producent ABC">';
           html += '<div class="form-text">Fallback zgodny z API Allegro: wysle <code>responsibleProducer.type=NAME</code>.</div>';
-        } else if (!items.length) {
+        } else if (!producerItems.length) {
           html += '<div class="text-danger small">Na tym koncie nie ma zapisanych producentow w Allegro.</div>';
           html += '<label class="form-label small mt-2">Producent recznie po NAME</label>';
           html += '<input type="text" class="form-control" name="producer_name_by_account[' + escapeHtml(String(account.id)) + ']"'
@@ -1842,11 +1885,30 @@
         } else {
           html += '<select class="form-select" name="producer_by_account[' + escapeHtml(String(account.id)) + ']" data-producer-account-id="' + escapeHtml(String(account.id)) + '">';
           html += '<option value="">Wybierz producenta</option>';
-          items.forEach(function (item) {
+          producerItems.forEach(function (item) {
             var selected = selections[String(account.id)] === String(item.id || '') ? ' selected' : '';
             var label = String(item.name || '');
             if (item.trade_name) {
               label += ' [' + String(item.trade_name) + ']';
+            }
+            html += '<option value="' + escapeHtml(String(item.id || '')) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+          });
+          html += '</select>';
+        }
+
+        if (personGroupError) {
+          html += '<div class="text-danger small mt-2">' + escapeHtml(personGroupError) + '</div>';
+        } else if (!personItems.length) {
+          html += '<div class="text-danger small mt-2">Na tym koncie nie ma zapisanych osob odpowiedzialnych w Allegro.</div>';
+        } else {
+          html += '<label class="form-label small mt-2">Osoba odpowiedzialna</label>';
+          html += '<select class="form-select" name="responsible_person_by_account[' + escapeHtml(String(account.id)) + ']" data-responsible-person-account-id="' + escapeHtml(String(account.id)) + '">';
+          html += '<option value="">Wybierz osobe odpowiedzialna</option>';
+          personItems.forEach(function (item) {
+            var selected = personSelections[String(account.id)] === String(item.id || '') ? ' selected' : '';
+            var label = String(item.name || '');
+            if (item.display_name) {
+              label += ' [' + String(item.display_name) + ']';
             }
             html += '<option value="' + escapeHtml(String(item.id || '')) + '"' + selected + '>' + escapeHtml(label) + '</option>';
           });
@@ -1859,7 +1921,7 @@
     }
 
     function refreshProducerChoices() {
-      if (!producerAccountBox || !operationSelect || operationSelect.value !== 'set_responsible_producer') {
+      if (!producerAccountBox || !operationSelect || (operationSelect.value !== 'set_responsible_producer' && operationSelect.value !== 'set_gpsr')) {
         return;
       }
 
@@ -1870,7 +1932,8 @@
       }
 
       var previousSelections = currentProducerSelections();
-      producerAccountBox.innerHTML = '<div class="text-secondary">Pobieram producentow z wybranych kont Allegro...</div>';
+      var previousPersonSelections = currentResponsiblePersonSelections();
+      producerAccountBox.innerHTML = '<div class="text-secondary">Pobieram dane GPSR z wybranych kont Allegro...</div>';
       var requestId = ++producerFetchToken;
       var url = '{$baseUrl|escape:"javascript"}?controller=allegro&action=producers&accounts='
         + encodeURIComponent(accounts.map(function (item) { return item.id; }).join(','))
@@ -1891,7 +1954,7 @@
         try {
           data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
         } catch (error) {
-          producerAccountBox.innerHTML = '<div class="text-danger">Nie udalo sie odczytac odpowiedzi producentow z Allegro.</div>';
+          producerAccountBox.innerHTML = '<div class="text-danger">Nie udalo sie odczytac odpowiedzi GPSR z Allegro.</div>';
           return;
         }
 
@@ -1900,7 +1963,13 @@
           return;
         }
 
-        renderProducerChoices(data && data.groups ? data.groups : [], accounts, previousSelections);
+        renderProducerChoices(
+          data && data.producer_groups ? data.producer_groups : (data && data.groups ? data.groups : []),
+          data && data.person_groups ? data.person_groups : [],
+          accounts,
+          previousSelections,
+          previousPersonSelections
+        );
       };
 
       xhr.onerror = function () {
@@ -1944,7 +2013,7 @@
         if (operationSelect && operationSelect.value === 'set_sku') {
           searchWarehouseProducts();
         }
-        if (operationSelect && operationSelect.value === 'set_responsible_producer') {
+        if (operationSelect && (operationSelect.value === 'set_responsible_producer' || operationSelect.value === 'set_gpsr')) {
           refreshProducerChoices();
         }
       });
@@ -1969,7 +2038,7 @@
 
     if (filterAccountSelect) {
       filterAccountSelect.addEventListener('change', function () {
-        if (operationSelect && operationSelect.value === 'set_responsible_producer') {
+        if (operationSelect && (operationSelect.value === 'set_responsible_producer' || operationSelect.value === 'set_gpsr')) {
           refreshProducerChoices();
         }
       });
@@ -2069,7 +2138,7 @@
         return;
       }
 
-      if (operation === 'set_responsible_producer') {
+      if (operation === 'set_responsible_producer' || operation === 'set_gpsr') {
         var producerAccounts = selectedAccountsForProducerOperation();
         var producerSelects = producerAccountBox
           ? Array.prototype.slice.call(producerAccountBox.querySelectorAll('select[data-producer-account-id]'))
@@ -2097,9 +2166,23 @@
           window.alert('Wybierz producenta dla kazdego konta Allegro w tej paczce.');
           return;
         }
+
+        if (operation === 'set_gpsr') {
+          var missingResponsiblePerson = producerAccounts.find(function (account) {
+            var accountId = String(account.id || '');
+            var select = producerAccountBox ? producerAccountBox.querySelector('select[data-responsible-person-account-id="' + accountId + '"]') : null;
+            var selectValue = select ? String(select.value || '').trim() : '';
+            return selectValue === '';
+          });
+          if (missingResponsiblePerson) {
+            event.preventDefault();
+            window.alert('Wybierz osobe odpowiedzialna dla kazdego konta Allegro w tej paczce.');
+            return;
+          }
+        }
       }
 
-      if (operation === 'set_safety_information') {
+      if (operation === 'set_safety_information' || operation === 'set_gpsr') {
         if (!safetyDescriptionInput || !safetyDescriptionInput.value.trim()) {
           event.preventDefault();
           window.alert('Uzupelnij opis bezpieczenstwa produktu.');

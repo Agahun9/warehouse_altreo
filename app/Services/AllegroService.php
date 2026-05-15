@@ -884,6 +884,45 @@ class AllegroService
         return array_values($groups);
     }
 
+    public function responsiblePersonsForAccounts(array $accountSelectors): array
+    {
+        $groups = array();
+
+        foreach ($accountSelectors as $selector) {
+            $account = $this->resolveAccount((string) $selector);
+            if (!$account) {
+                continue;
+            }
+
+            $accountId = (int) ($account['id'] ?? 0);
+            if ($accountId <= 0 || isset($groups[$accountId])) {
+                continue;
+            }
+
+            try {
+                $groups[$accountId] = array(
+                    'account_id' => $accountId,
+                    'account_name' => (string) ($account['name'] ?? ''),
+                    'items' => $this->responsiblePersonsForAccount($account),
+                    'error' => '',
+                );
+            } catch (RuntimeException $exception) {
+                $groups[$accountId] = array(
+                    'account_id' => $accountId,
+                    'account_name' => (string) ($account['name'] ?? ''),
+                    'items' => array(),
+                    'error' => $exception->getMessage(),
+                );
+            }
+        }
+
+        usort($groups, static function (array $left, array $right): int {
+            return strcmp((string) ($left['account_name'] ?? ''), (string) ($right['account_name'] ?? ''));
+        });
+
+        return array_values($groups);
+    }
+
     public function debugResponsibleProducerAccess(string $accountSelector): array
     {
         $account = $this->resolveAccount($accountSelector);
@@ -1143,6 +1182,73 @@ class AllegroService
         return $result;
     }
 
+    private function responsiblePersonsForAccount(array $account): array
+    {
+        $accountId = (int) ($account['id'] ?? 0);
+        $cacheKey = 'allegro_responsible_persons_v1_' . $accountId;
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $offset = 0;
+        $limit = 1000;
+        $items = array();
+
+        do {
+            $payload = $this->requestApiWithAccountAndTimeout(
+                $account,
+                'GET',
+                '/sale/responsible-persons',
+                array(
+                    'offset' => $offset,
+                    'limit' => $limit,
+                ),
+                null,
+                array(),
+                12,
+                5
+            );
+
+            $rows = isset($payload['responsiblePersons']) && is_array($payload['responsiblePersons'])
+                ? $payload['responsiblePersons']
+                : array();
+
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $id = trim((string) ($row['id'] ?? ''));
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($id === '' || $name === '') {
+                    continue;
+                }
+
+                $displayName = trim((string) ($row['personalData']['name'] ?? ''));
+                $items[$id] = array(
+                    'id' => $id,
+                    'name' => $name,
+                    'display_name' => $displayName,
+                );
+            }
+
+            $offset += count($rows);
+            $totalCount = isset($payload['totalCount']) ? max(0, (int) $payload['totalCount']) : null;
+            $hasMore = $totalCount !== null
+                ? $offset < $totalCount
+                : count($rows) === $limit;
+        } while ($rows !== array() && $hasMore);
+
+        $result = array_values($items);
+        usort($result, static function (array $left, array $right): int {
+            return strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        $this->storage->putCache($cacheKey, $result, min(900, $this->cacheTtl()));
+        return $result;
+    }
+
     public function validateParameterValues(array $definitions, array $inputValues): array
     {
         $validated = array();
@@ -1312,6 +1418,34 @@ class AllegroService
                 }
 
                 return array('description' => $description);
+
+            case 'set_gpsr':
+                $producerPayload = $this->normalizeQueuePayload('set_responsible_producer', $payload);
+                $safetyPayload = $this->normalizeQueuePayload('set_safety_information', $payload);
+                $personByAccount = array();
+                $inputPersonMap = isset($payload['responsible_person_by_account']) && is_array($payload['responsible_person_by_account'])
+                    ? $payload['responsible_person_by_account']
+                    : array();
+
+                foreach ($inputPersonMap as $accountId => $personId) {
+                    $accountKey = trim((string) $accountId);
+                    $personKey = trim((string) $personId);
+                    if ($accountKey === '' || !ctype_digit($accountKey) || $personKey === '') {
+                        continue;
+                    }
+
+                    $personByAccount[(string) ((int) $accountKey)] = $personKey;
+                }
+
+                if ($personByAccount === array()) {
+                    throw new RuntimeException('Wybierz osobe odpowiedzialna przynajmniej dla jednego konta Allegro.');
+                }
+
+                return array(
+                    'producer_by_account' => $producerPayload['producer_by_account'] ?? array(),
+                    'responsible_person_by_account' => $personByAccount,
+                    'description' => (string) ($safetyPayload['description'] ?? ''),
+                );
 
             case 'set_delivery':
                 $value = trim((string) ($payload['delivery_value'] ?? ''));
@@ -1604,9 +1738,7 @@ class AllegroService
                 $patch['category'] = array('id' => $categoryId);
                 $patch['parameters'] = $parameterPayload;
 
-                $existingProductSet = isset($currentDetails['productSet']) && is_array($currentDetails['productSet'])
-                    ? $currentDetails['productSet']
-                    : array();
+                $existingProductSet = $this->categoryParameterProductSetPatchBase($currentDetails);
                 if ($existingProductSet !== array()) {
                     $firstItem = isset($existingProductSet[0]) && is_array($existingProductSet[0]) ? $existingProductSet[0] : array();
                     if (isset($firstItem['product']) && is_array($firstItem['product'])) {
@@ -1637,6 +1769,23 @@ class AllegroService
                 );
                 $patch['productSet'] = $this->applySafetyInformationToProductSet(
                     $currentDetails,
+                    array(
+                        'type' => 'TEXT',
+                        'description' => (string) ($payload['description'] ?? ''),
+                    )
+                );
+                break;
+
+            case 'set_gpsr':
+                $currentDetails = $this->requestApiWithAccount(
+                    $account,
+                    'GET',
+                    '/sale/product-offers/' . rawurlencode($offerId)
+                );
+                $patch['productSet'] = $this->applyGpsrToProductSet(
+                    $currentDetails,
+                    $this->resolveResponsibleProducerForAccount($payload, $account),
+                    $this->resolveResponsiblePersonForAccount($payload, $account),
                     array(
                         'type' => 'TEXT',
                         'description' => (string) ($payload['description'] ?? ''),
@@ -2399,7 +2548,7 @@ class AllegroService
 
     private function applyResponsibleProducerToProductSet(array $currentDetails, array $responsibleProducer): array
     {
-        $productSet = $this->productSetPatchBase($currentDetails);
+        $productSet = $this->gpsrProductSetPatchBase($currentDetails);
 
         foreach ($productSet as $index => $item) {
             if (!is_array($item)) {
@@ -2414,7 +2563,7 @@ class AllegroService
 
     private function applySafetyInformationToProductSet(array $currentDetails, array $safetyInformation): array
     {
-        $productSet = $this->productSetPatchBase($currentDetails);
+        $productSet = $this->gpsrProductSetPatchBase($currentDetails);
 
         foreach ($productSet as $index => $item) {
             if (!is_array($item)) {
@@ -2425,6 +2574,208 @@ class AllegroService
         }
 
         return $productSet;
+    }
+
+    private function applyGpsrToProductSet(array $currentDetails, array $responsibleProducer, array $responsiblePerson, array $safetyInformation): array
+    {
+        $productSet = $this->gpsrProductSetPatchBase($currentDetails);
+
+        foreach ($productSet as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productSet[$index]['responsibleProducer'] = $responsibleProducer;
+            $productSet[$index]['responsiblePerson'] = $responsiblePerson;
+            $productSet[$index]['safetyInformation'] = $safetyInformation;
+        }
+
+        return $productSet;
+    }
+
+    private function gpsrProductSetPatchBase(array $currentDetails): array
+    {
+        $productSet = $this->productSetPatchBase($currentDetails);
+        $result = array();
+
+        foreach ($productSet as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productId = trim((string) ($item['product']['id'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+
+            $patchItem = array(
+                'product' => array(
+                    'id' => $productId,
+                ),
+            );
+
+            $existingResponsibleProducer = $this->normalizeResponsibleProducerPatchValue($item['responsibleProducer'] ?? null);
+            if ($existingResponsibleProducer !== null) {
+                $patchItem['responsibleProducer'] = $existingResponsibleProducer;
+            }
+
+            $existingResponsiblePerson = $this->normalizeResponsiblePersonPatchValue($item['responsiblePerson'] ?? null);
+            if ($existingResponsiblePerson !== null) {
+                $patchItem['responsiblePerson'] = $existingResponsiblePerson;
+            }
+
+            $existingSafetyInformation = $this->normalizeSafetyInformationPatchValue($item['safetyInformation'] ?? null);
+            if ($existingSafetyInformation !== null) {
+                $patchItem['safetyInformation'] = $existingSafetyInformation;
+            }
+
+            $result[] = $patchItem;
+        }
+
+        if ($result === array()) {
+            throw new RuntimeException('Oferta nie ma poprawnego productSet do aktualizacji GPSR.');
+        }
+
+        return $result;
+    }
+
+    private function categoryParameterProductSetPatchBase(array $currentDetails): array
+    {
+        $productSet = $this->productSetPatchBase($currentDetails);
+        $result = array();
+
+        foreach ($productSet as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productId = trim((string) ($item['product']['id'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+
+            $patchItem = array(
+                'product' => array(
+                    'id' => $productId,
+                ),
+            );
+
+            $existingResponsibleProducer = $this->normalizeResponsibleProducerPatchValue($item['responsibleProducer'] ?? null);
+            if ($existingResponsibleProducer !== null) {
+                $patchItem['responsibleProducer'] = $existingResponsibleProducer;
+            }
+
+            $existingResponsiblePerson = $this->normalizeResponsiblePersonPatchValue($item['responsiblePerson'] ?? null);
+            if ($existingResponsiblePerson !== null) {
+                $patchItem['responsiblePerson'] = $existingResponsiblePerson;
+            }
+
+            $existingSafetyInformation = $this->normalizeSafetyInformationPatchValue($item['safetyInformation'] ?? null);
+            if ($existingSafetyInformation !== null) {
+                $patchItem['safetyInformation'] = $existingSafetyInformation;
+            }
+
+            if (array_key_exists('marketedBeforeGPSRObligation', $item)) {
+                $patchItem['marketedBeforeGPSRObligation'] = (bool) $item['marketedBeforeGPSRObligation'];
+            }
+
+            $result[] = $patchItem;
+        }
+
+        return $result;
+    }
+
+    private function normalizeResponsibleProducerPatchValue($value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $type = strtoupper(trim((string) ($value['type'] ?? '')));
+        if ($type === 'ID') {
+            $id = trim((string) ($value['id'] ?? ''));
+            if ($id === '') {
+                return null;
+            }
+
+            return array(
+                'type' => 'ID',
+                'id' => $id,
+            );
+        }
+
+        if ($type === 'NAME') {
+            $name = trim((string) ($value['name'] ?? ''));
+            if ($name === '') {
+                return null;
+            }
+
+            return array(
+                'type' => 'NAME',
+                'name' => $name,
+            );
+        }
+
+        return null;
+    }
+
+    private function normalizeResponsiblePersonPatchValue($value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $id = trim((string) ($value['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+
+        return array(
+            'id' => $id,
+        );
+    }
+
+    private function resolveResponsiblePersonForAccount(array $payload, array $account): array
+    {
+        $personByAccount = isset($payload['responsible_person_by_account']) && is_array($payload['responsible_person_by_account'])
+            ? $payload['responsible_person_by_account']
+            : array();
+        $accountId = (string) ((int) ($account['id'] ?? 0));
+        $personId = trim((string) ($personByAccount[$accountId] ?? ''));
+
+        if ($personId === '') {
+            throw new RuntimeException(
+                'Brak wybranej osoby odpowiedzialnej dla konta "'
+                . (string) ($account['name'] ?? ('#' . $accountId))
+                . '".'
+            );
+        }
+
+        return array(
+            'id' => $personId,
+        );
+    }
+
+    private function normalizeSafetyInformationPatchValue($value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $type = strtoupper(trim((string) ($value['type'] ?? '')));
+        if ($type === 'TEXT') {
+            $description = trim((string) ($value['description'] ?? ''));
+            if ($description === '') {
+                return null;
+            }
+
+            return array(
+                'type' => 'TEXT',
+                'description' => $description,
+            );
+        }
+
+        return null;
     }
 
     private function productSetPatchBase(array $currentDetails): array
