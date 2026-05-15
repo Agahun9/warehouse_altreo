@@ -363,6 +363,9 @@ class AllegroController extends Controller
                     'search' => $this->input('search', ''),
                     'replace' => $this->input('replace', ''),
                     'product_id' => $this->input('product_id', ''),
+                    'producer_by_account' => $this->input('producer_by_account', array()),
+                    'producer_name_by_account' => $this->input('producer_name_by_account', array()),
+                    'safety_description' => $this->input('safety_description', ''),
                     'category_id' => $this->input('category_id', ''),
                     'category_parameters' => $this->input('category_parameters', array()),
                     'delivery_value' => $this->input('delivery_value', ''),
@@ -547,6 +550,46 @@ class AllegroController extends Controller
         }
     }
 
+    public function producers(): void
+    {
+        $this->requireModule('allegro');
+        $this->releaseSessionLock();
+
+        $accountsRaw = trim((string) $this->input('accounts', ''));
+        if ($accountsRaw === '') {
+            $this->jsonResponse(array('groups' => array()));
+            return;
+        }
+
+        $accounts = array_values(array_filter(array_unique(array_map('trim', preg_split('/[\s,;]+/', $accountsRaw) ?: array())), static function (string $value): bool {
+            return $value !== '';
+        }));
+
+        try {
+            $this->jsonResponse(array('groups' => $this->allegro->responsibleProducersForAccounts($accounts)));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function producerdebug(): void
+    {
+        $this->requireModule('allegro');
+        $this->releaseSessionLock();
+
+        $account = trim((string) $this->input('account', ''));
+        if ($account === '') {
+            $this->jsonResponse(array('error' => 'Brak parametru account.'), 400);
+            return;
+        }
+
+        try {
+            $this->jsonResponse($this->allegro->debugResponsibleProducerAccess($account));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
     public function warehouseproducts(): void
     {
         $this->requireModule('allegro');
@@ -564,6 +607,25 @@ class AllegroController extends Controller
             $products->ensureSchema();
             $items = $products->searchForAllegroSku($query, $offerName, 12);
             $this->jsonResponse(array('items' => $items));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function translateerror(): void
+    {
+        $this->requireModule('allegro');
+
+        $text = trim((string) $this->input('text', ''));
+        if ($text === '') {
+            $this->jsonResponse(array('error' => 'Brak tekstu do przetlumaczenia.'), 400);
+            return;
+        }
+
+        try {
+            $this->jsonResponse(array(
+                'translation' => $this->translateTextToPolish($text),
+            ));
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
@@ -601,6 +663,7 @@ class AllegroController extends Controller
             'account_id' => trim((string) $this->input('account_id', '')),
             'q' => trim((string) $this->input('q', '')),
             'sku' => trim((string) $this->input('sku', '')),
+            'error_query' => trim((string) $this->input('error_query', '')),
             'status' => trim((string) $this->input('status', '')),
             'queue_status' => trim((string) $this->input('queue_status', '')),
             'duplicates' => trim((string) $this->input('duplicates', '')),
@@ -671,6 +734,62 @@ class AllegroController extends Controller
     private function wantsJson(): bool
     {
         return strtolower(trim((string) $this->input('format', ''))) === 'json';
+    }
+
+    private function translateTextToPolish(string $text): string
+    {
+        if (!function_exists('curl_init')) {
+            throw new \RuntimeException('Brak obslugi cURL na serwerze, wiec nie moge przetlumaczyc tekstu.');
+        }
+
+        $url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=pl&dt=t&q=' . rawurlencode($text);
+        $ch = curl_init($url);
+        if ($ch === false) {
+            throw new \RuntimeException('Nie udalo sie zainicjalizowac tlumaczenia.');
+        }
+
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Altreo-ErrorTranslator/1.0');
+
+        $raw = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if (!is_string($raw) || $raw === '') {
+            throw new \RuntimeException('Serwis tlumaczen nie zwrocil odpowiedzi.' . ($error !== '' ? ' ' . $error : ''));
+        }
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            throw new \RuntimeException('Serwis tlumaczen zwrocil HTTP ' . $httpCode . '.');
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded) || !isset($decoded[0]) || !is_array($decoded[0])) {
+            throw new \RuntimeException('Nie udalo sie odczytac odpowiedzi tlumaczenia.');
+        }
+
+        $parts = array();
+        foreach ($decoded[0] as $chunk) {
+            if (!is_array($chunk)) {
+                continue;
+            }
+
+            $value = isset($chunk[0]) ? trim((string) $chunk[0]) : '';
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        $translation = trim(implode('', $parts));
+        if ($translation === '') {
+            throw new \RuntimeException('Tlumaczenie jest puste.');
+        }
+
+        return $translation;
     }
 
     private function maintenanceMailRecipients(): array

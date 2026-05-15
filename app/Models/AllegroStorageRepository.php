@@ -552,6 +552,98 @@ class AllegroStorageRepository
         return $total;
     }
 
+    public function offerCountsForProducts(array $products): array
+    {
+        $normalizedProducts = array();
+
+        foreach ($products as $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            $productId = isset($product['id']) ? (int) $product['id'] : 0;
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $normalizedProducts[$productId] = array(
+                'id' => $productId,
+                'sku' => trim((string) ($product['sku'] ?? '')),
+                'old_sku' => trim((string) ($product['custom_fields']['old_sku'] ?? '')),
+            );
+        }
+
+        if ($normalizedProducts === array()) {
+            return array();
+        }
+
+        $cacheKey = 'allegro:product-offer-counts:' . sha1(json_encode(array_values($normalizedProducts)));
+        $cached = $this->getCache($cacheKey);
+        if (is_array($cached) && isset($cached['counts']) && is_array($cached['counts'])) {
+            return $cached['counts'];
+        }
+
+        $productIds = array_keys($normalizedProducts);
+        $params = array();
+        $directProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_count_direct_id', $productIds, $params);
+        $skuProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_count_sku_id', $productIds, $params);
+        $oldSkuProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_count_old_sku_id', $productIds, $params);
+        $skuMapSql = 'SELECT products.id AS product_id, products.sku AS match_sku'
+            . ' FROM products'
+            . ' WHERE products.deleted_at IS NULL'
+            . '   AND products.id IN (' . implode(', ', $skuProductIdPlaceholders) . ')'
+            . '   AND products.sku IS NOT NULL'
+            . '   AND products.sku <> ""'
+            . ' UNION ALL'
+            . ' SELECT old_sku_values.product_id AS product_id, old_sku_values.value AS match_sku'
+            . ' FROM product_custom_field_values old_sku_values'
+            . ' INNER JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.id = old_sku_values.definition_id'
+            . ' INNER JOIN products old_sku_products ON old_sku_products.id = old_sku_values.product_id'
+            . ' WHERE old_sku_products.deleted_at IS NULL'
+            . '   AND old_sku_definition.slug = "old_sku"'
+            . '   AND old_sku_values.product_id IN (' . implode(', ', $oldSkuProductIdPlaceholders) . ')'
+            . '   AND old_sku_values.value IS NOT NULL'
+            . '   AND old_sku_values.value <> ""';
+
+        $sql = 'SELECT matched.product_id, COUNT(*) AS total'
+            . ' FROM ('
+            . '   SELECT offers.warehouse_product_id AS product_id, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . '     AND offers.warehouse_product_id IN (' . implode(', ', $directProductIdPlaceholders) . ')'
+            . '   UNION'
+            . '   SELECT sku_map.product_id AS product_id, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   INNER JOIN (' . $skuMapSql . ') sku_map ON sku_map.match_sku = offers.sku'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . ' ) matched'
+            . ' GROUP BY matched.product_id';
+
+        $rows = $this->database->fetchAll($sql, $params);
+        $counts = array();
+
+        foreach ($normalizedProducts as $productId => $product) {
+            $counts[$productId] = 0;
+        }
+
+        foreach ($rows as $row) {
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $counts[$productId] = (int) ($row['total'] ?? 0);
+        }
+
+        $this->putCache($cacheKey, array('counts' => $counts), self::OFFER_COUNT_CACHE_TTL);
+
+        return $counts;
+    }
+
     public function offerStats(?int $accountId = null): array
     {
         $cacheKey = 'allegro:offer-stats:' . ($accountId !== null ? (string) $accountId : 'all');
@@ -1595,6 +1687,23 @@ class AllegroStorageRepository
                 . '   AND queue_latest.status = :queue_status'
                 . ' )';
             $params['queue_status'] = $queueStatus;
+        }
+
+        $errorQuery = trim((string) ($filters['error_query'] ?? ''));
+        if ($errorQuery !== '') {
+            $whereParts[] = 'EXISTS ('
+                . ' SELECT 1'
+                . ' FROM allegro_offer_change_queue queue_latest_error'
+                . ' WHERE queue_latest_error.offer_row_id = offers.id'
+                . '   AND queue_latest_error.id = ('
+                . '     SELECT MAX(queue_max_error.id)'
+                . '     FROM allegro_offer_change_queue queue_max_error'
+                . '     WHERE queue_max_error.offer_row_id = offers.id'
+                . '   )'
+                . '   AND queue_latest_error.error_message IS NOT NULL'
+                . '   AND queue_latest_error.error_message LIKE :error_query'
+                . ' )';
+            $params['error_query'] = '%' . $errorQuery . '%';
         }
 
         $duplicates = trim((string) ($filters['duplicates'] ?? ''));

@@ -116,6 +116,14 @@ class ProductController extends Controller
         }
 
         $products = $this->products->paginate($filters, $sortBy, $sortDir, $page, $perPage);
+        $allegroOfferCounts = $this->allegro->offerCountsForProducts($products);
+        foreach ($products as $index => $product) {
+            $productId = isset($product['id']) ? (int) $product['id'] : 0;
+            $sku = trim((string) ($product['sku'] ?? ''));
+            $oldSku = trim((string) ($product['custom_fields']['old_sku'] ?? ''));
+            $products[$index]['allegro_offer_count'] = $allegroOfferCounts[$productId] ?? 0;
+            $products[$index]['allegro_offers_url'] = $this->buildProductAllegroOffersUrl($sku, $oldSku);
+        }
         $pageWindow = $this->buildPageWindow($page, $totalPages);
 
         $sortableColumns = array('id', 'sku', 'product_name', 'category', 'quantity', 'localization');
@@ -1557,6 +1565,26 @@ class ProductController extends Controller
         }
 
         return $value;
+    }
+
+    private function buildProductAllegroOffersUrl(string $sku, string $oldSku = ''): string
+    {
+        $values = array_values(array_unique(array_filter(array($sku, $oldSku), static function (string $value): bool {
+            return trim($value) !== '';
+        })));
+
+        $params = array(
+            'controller' => 'allegro',
+            'action' => 'index',
+            'linked' => '1',
+            'status' => 'ACTIVE',
+        );
+
+        if ($values !== array()) {
+            $params['q'] = implode(', ', $values);
+        }
+
+        return './index.php?' . http_build_query($params);
     }
 
     private function normalizeEan($value): string

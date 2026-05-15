@@ -182,6 +182,12 @@
       min-width: 118px;
     }
 
+    .product-allegro-cell {
+      width: 130px;
+      min-width: 130px;
+      white-space: nowrap;
+    }
+
     .product-timestamps-cell {
       width: 170px;
       min-width: 170px;
@@ -511,6 +517,7 @@
                     <th class="product-compact-cell">Zdjecie</th>
                     <th class="product-price-cell">Cena</th>
                     <th class="product-timestamps-cell">Utworzono / zmieniono</th>
+                    <th class="product-allegro-cell">Allegro</th>
                     <th class="text-end product-actions-cell">Akcje</th>
                   </tr>
                   <tr>
@@ -543,7 +550,7 @@
                         <option value="0"{if $withGlassFilter eq '0'} selected{/if}>produkty bez szkła</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="5">
+                    <th class="text-end" colspan="6">
                     <a href="{$clearFiltersUrl|escape}" class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
                 </thead>
@@ -636,6 +643,12 @@
                             </div>
                           </div>
                         </td>
+                        <td class="product-allegro-cell">
+                          <div><span class="badge text-bg-dark">{$product.allegro_offer_count|default:0}</span></div>
+                          <div class="small mt-1">
+                            <a href="{$product.allegro_offers_url|escape}">Oferty Allegro</a>
+                          </div>
+                        </td>
                         <td class="text-end product-actions-cell">
                           <div class="quick-edit-actions">
                             <button type="button" class="btn btn-sm btn-primary quick-edit-save js-quick-edit-save">Zapisz</button>
@@ -644,10 +657,10 @@
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteProduct({$product.id})">Usun</button>
                           </div>
                         </td>
-                      </tr>
+                  </tr>
                     {/foreach}
                   {else}
-                    <tr><td colspan="13" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="14" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   {/if}
                 </tbody>
               </table>

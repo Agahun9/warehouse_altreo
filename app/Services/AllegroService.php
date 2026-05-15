@@ -133,6 +133,11 @@ class AllegroService
         return $this->storage->countOffers($filters);
     }
 
+    public function offerCountsForProducts(array $products): array
+    {
+        return $this->storage->offerCountsForProducts($products);
+    }
+
     public function offerStats(?int $accountId = null): array
     {
         return $this->storage->offerStats($accountId);
@@ -835,6 +840,152 @@ class AllegroService
         return $items;
     }
 
+    public function responsibleProducersForAccounts(array $accountSelectors): array
+    {
+        $groups = array();
+
+        foreach ($accountSelectors as $selector) {
+            $account = $this->resolveAccount((string) $selector);
+            if (!$account) {
+                continue;
+            }
+
+            $accountId = (int) ($account['id'] ?? 0);
+            if ($accountId <= 0 || isset($groups[$accountId])) {
+                continue;
+            }
+
+            try {
+                $groups[$accountId] = array(
+                    'account_id' => $accountId,
+                    'account_name' => (string) ($account['name'] ?? ''),
+                    'items' => $this->responsibleProducersForAccount($account),
+                    'error' => '',
+                );
+            } catch (RuntimeException $exception) {
+                $groups[$accountId] = array(
+                    'account_id' => $accountId,
+                    'account_name' => (string) ($account['name'] ?? ''),
+                    'items' => array(),
+                    'error' => $exception->getMessage(),
+                );
+            }
+        }
+
+        usort($groups, static function (array $left, array $right): int {
+            return strcmp((string) ($left['account_name'] ?? ''), (string) ($right['account_name'] ?? ''));
+        });
+
+        return array_values($groups);
+    }
+
+    public function debugResponsibleProducerAccess(string $accountSelector): array
+    {
+        $account = $this->resolveAccount($accountSelector);
+        if (!$account) {
+            throw new RuntimeException('Nie znaleziono konta Allegro do diagnostyki producentow.');
+        }
+
+        $accountId = (int) ($account['id'] ?? 0);
+        $tokenRow = $this->storage->tokenRowForAccount($accountId);
+        $result = array(
+            'account' => array(
+                'id' => $accountId,
+                'name' => (string) ($account['name'] ?? ''),
+                'slug' => (string) ($account['slug'] ?? ''),
+                'is_active' => (int) ($account['is_active'] ?? 0),
+            ),
+            'token_row' => array(
+                'has_access_token' => !empty($tokenRow['access_token']),
+                'has_refresh_token' => !empty($tokenRow['refresh_token']),
+                'expires_at' => (string) ($tokenRow['expires_at'] ?? ''),
+                'updated_at' => (string) ($tokenRow['updated_at'] ?? ''),
+            ),
+            'steps' => array(),
+        );
+
+        try {
+            $accessToken = $this->accessTokenForAccount($account);
+            $result['steps'][] = array(
+                'step' => 'access_token_for_account',
+                'status' => 'ok',
+                'token_prefix' => substr($accessToken, 0, 12),
+            );
+        } catch (RuntimeException $exception) {
+            $result['steps'][] = array(
+                'step' => 'access_token_for_account',
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            );
+            return $result;
+        }
+
+        try {
+            $me = $this->requestApiWithAccountAndTimeout(
+                $account,
+                'GET',
+                '/me',
+                array(),
+                null,
+                array(),
+                12,
+                5
+            );
+            $result['steps'][] = array(
+                'step' => 'get_me',
+                'status' => 'ok',
+                'login' => (string) ($me['login'] ?? ''),
+                'id' => (string) ($me['id'] ?? ''),
+                'company_name' => (string) ($me['company']['name'] ?? ''),
+            );
+        } catch (RuntimeException $exception) {
+            $result['steps'][] = array(
+                'step' => 'get_me',
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            );
+        }
+
+        try {
+            $producers = $this->requestApiWithAccountAndTimeout(
+                $account,
+                'GET',
+                '/sale/responsible-producers',
+                array(
+                    'offset' => 0,
+                    'limit' => 5,
+                ),
+                null,
+                array(),
+                12,
+                5
+            );
+            $items = isset($producers['responsibleProducers']) && is_array($producers['responsibleProducers'])
+                ? $producers['responsibleProducers']
+                : array();
+
+            $result['steps'][] = array(
+                'step' => 'get_responsible_producers',
+                'status' => 'ok',
+                'count' => count($items),
+                'sample' => array_slice(array_map(static function (array $item): array {
+                    return array(
+                        'id' => (string) ($item['id'] ?? ''),
+                        'name' => (string) ($item['name'] ?? ''),
+                    );
+                }, $items), 0, 3),
+            );
+        } catch (RuntimeException $exception) {
+            $result['steps'][] = array(
+                'step' => 'get_responsible_producers',
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            );
+        }
+
+        return $result;
+    }
+
     private function shouldUseTreeSearchFallback(string $search, bool $forceRefresh): bool
     {
         if ($forceRefresh) {
@@ -917,6 +1068,73 @@ class AllegroService
         }
 
         $this->storage->putCache($cacheKey, $result, $this->cacheTtl());
+        return $result;
+    }
+
+    private function responsibleProducersForAccount(array $account): array
+    {
+        $accountId = (int) ($account['id'] ?? 0);
+        $cacheKey = 'allegro_responsible_producers_v1_' . $accountId;
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $offset = 0;
+        $limit = 1000;
+        $items = array();
+
+        do {
+            $payload = $this->requestApiWithAccountAndTimeout(
+                $account,
+                'GET',
+                '/sale/responsible-producers',
+                array(
+                    'offset' => $offset,
+                    'limit' => $limit,
+                ),
+                null,
+                array(),
+                12,
+                5
+            );
+
+            $rows = isset($payload['responsibleProducers']) && is_array($payload['responsibleProducers'])
+                ? $payload['responsibleProducers']
+                : array();
+
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $id = trim((string) ($row['id'] ?? ''));
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($id === '' || $name === '') {
+                    continue;
+                }
+
+                $tradeName = trim((string) ($row['producerData']['tradeName'] ?? ''));
+                $items[$id] = array(
+                    'id' => $id,
+                    'name' => $name,
+                    'trade_name' => $tradeName,
+                );
+            }
+
+            $offset += count($rows);
+            $totalCount = isset($payload['totalCount']) ? max(0, (int) $payload['totalCount']) : null;
+            $hasMore = $totalCount !== null
+                ? $offset < $totalCount
+                : count($rows) === $limit;
+        } while ($rows !== array() && $hasMore);
+
+        $result = array_values($items);
+        usort($result, static function (array $left, array $right): int {
+            return strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        $this->storage->putCache($cacheKey, $result, min(900, $this->cacheTtl()));
         return $result;
     }
 
@@ -1028,6 +1246,67 @@ class AllegroService
             case 'clear_queue':
             case 'remove_from_system_forever':
                 return array();
+
+            case 'set_responsible_producer':
+                $inputMap = isset($payload['producer_by_account']) && is_array($payload['producer_by_account'])
+                    ? $payload['producer_by_account']
+                    : array();
+                $inputNameMap = isset($payload['producer_name_by_account']) && is_array($payload['producer_name_by_account'])
+                    ? $payload['producer_name_by_account']
+                    : array();
+                $producerByAccount = array();
+
+                foreach ($inputMap as $accountId => $producerId) {
+                    $accountKey = trim((string) $accountId);
+                    $producerKey = trim((string) $producerId);
+                    if ($accountKey === '' || !ctype_digit($accountKey) || $producerKey === '') {
+                        continue;
+                    }
+
+                    $producerByAccount[(string) ((int) $accountKey)] = $producerKey;
+                }
+
+                foreach ($inputNameMap as $accountId => $producerName) {
+                    $accountKey = trim((string) $accountId);
+                    $producerName = trim((string) $producerName);
+                    if ($accountKey === '' || !ctype_digit($accountKey) || $producerName === '') {
+                        continue;
+                    }
+
+                    if (!isset($producerByAccount[(string) ((int) $accountKey)])) {
+                        $producerByAccount[(string) ((int) $accountKey)] = array(
+                            'type' => 'NAME',
+                            'value' => $producerName,
+                        );
+                    }
+                }
+
+                foreach ($producerByAccount as $accountKey => $producerValue) {
+                    if (is_string($producerValue)) {
+                        $producerByAccount[$accountKey] = array(
+                            'type' => 'ID',
+                            'value' => $producerValue,
+                        );
+                    }
+                }
+
+                if ($producerByAccount === array()) {
+                    throw new RuntimeException('Wybierz producenta przynajmniej dla jednego konta Allegro.');
+                }
+
+                return array('producer_by_account' => $producerByAccount);
+
+            case 'set_safety_information':
+                $description = trim((string) ($payload['safety_description'] ?? ''));
+                if ($description === '') {
+                    throw new RuntimeException('Opis bezpieczenstwa nie moze byc pusty.');
+                }
+
+                if (mb_strlen($description, 'UTF-8') > 5000) {
+                    throw new RuntimeException('Opis bezpieczenstwa moze miec maksymalnie 5000 znakow.');
+                }
+
+                return array('description' => $description);
 
             case 'set_delivery':
                 $value = trim((string) ($payload['delivery_value'] ?? ''));
@@ -1331,6 +1610,33 @@ class AllegroService
                         $patch['productSet'] = $existingProductSet;
                     }
                 }
+                break;
+
+            case 'set_responsible_producer':
+                $currentDetails = $this->requestApiWithAccount(
+                    $account,
+                    'GET',
+                    '/sale/product-offers/' . rawurlencode($offerId)
+                );
+                $patch['productSet'] = $this->applyResponsibleProducerToProductSet(
+                    $currentDetails,
+                    $this->resolveResponsibleProducerForAccount($payload, $account)
+                );
+                break;
+
+            case 'set_safety_information':
+                $currentDetails = $this->requestApiWithAccount(
+                    $account,
+                    'GET',
+                    '/sale/product-offers/' . rawurlencode($offerId)
+                );
+                $patch['productSet'] = $this->applySafetyInformationToProductSet(
+                    $currentDetails,
+                    array(
+                        'type' => 'TEXT',
+                        'description' => (string) ($payload['description'] ?? ''),
+                    )
+                );
                 break;
 
             default:
@@ -1833,8 +2139,45 @@ class AllegroService
         return $this->requestApiWithTokenRetry($account, $method, $path, $query, $body, $headers, false);
     }
 
+    private function requestApiWithAccountAndTimeout(
+        array $account,
+        string $method,
+        string $path,
+        array $query = array(),
+        $body = null,
+        array $headers = array(),
+        int $timeoutSeconds = 30,
+        int $connectTimeoutSeconds = 10
+    ): array {
+        return $this->requestApiWithTokenRetryAndTimeout(
+            $account,
+            $method,
+            $path,
+            $query,
+            $body,
+            $headers,
+            false,
+            $timeoutSeconds,
+            $connectTimeoutSeconds
+        );
+    }
+
     private function requestApiWithTokenRetry(array $account, string $method, string $path, array $query = array(), $body = null, array $headers = array(), bool $forceRefresh = false): array
     {
+        return $this->requestApiWithTokenRetryAndTimeout($account, $method, $path, $query, $body, $headers, $forceRefresh, 30, 10);
+    }
+
+    private function requestApiWithTokenRetryAndTimeout(
+        array $account,
+        string $method,
+        string $path,
+        array $query = array(),
+        $body = null,
+        array $headers = array(),
+        bool $forceRefresh = false,
+        int $timeoutSeconds = 30,
+        int $connectTimeoutSeconds = 10
+    ): array {
         $accessToken = $forceRefresh ? $this->forceRefreshAccessToken($account) : $this->accessTokenForAccount($account);
         $url = rtrim((string) $this->configValue('api_base', 'https://api.allegro.pl'), '/') . $path;
 
@@ -1851,13 +2194,23 @@ class AllegroService
         );
 
         try {
-            return $this->request($method, $url, $requestHeaders, $body);
+            return $this->request($method, $url, $requestHeaders, $body, $timeoutSeconds, $connectTimeoutSeconds);
         } catch (RuntimeException $exception) {
             if ($forceRefresh || strpos($exception->getMessage(), '[401]') === false) {
                 throw $exception;
             }
 
-            return $this->requestApiWithTokenRetry($account, $method, $path, $query, $body, $headers, true);
+            return $this->requestApiWithTokenRetryAndTimeout(
+                $account,
+                $method,
+                $path,
+                $query,
+                $body,
+                $headers,
+                true,
+                $timeoutSeconds,
+                $connectTimeoutSeconds
+            );
         }
     }
 
@@ -1944,7 +2297,14 @@ class AllegroService
         ));
     }
 
-    private function request(string $method, string $url, array $headers = array(), $body = null): array
+    private function request(
+        string $method,
+        string $url,
+        array $headers = array(),
+        $body = null,
+        int $timeoutSeconds = 30,
+        int $connectTimeoutSeconds = 10
+    ): array
     {
         if (!function_exists('curl_init')) {
             throw new RuntimeException('Brak rozszerzenia cURL - nie mozna polaczyc z Allegro API.');
@@ -1958,7 +2318,8 @@ class AllegroService
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(1, $timeoutSeconds));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(1, $connectTimeoutSeconds));
 
         if ($body !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
@@ -1989,6 +2350,89 @@ class AllegroService
     private function isAllegroApiNotFound(RuntimeException $exception): bool
     {
         return strpos($exception->getMessage(), 'Allegro API error [404]') !== false;
+    }
+
+    private function resolveResponsibleProducerForAccount(array $payload, array $account): array
+    {
+        $producerByAccount = isset($payload['producer_by_account']) && is_array($payload['producer_by_account'])
+            ? $payload['producer_by_account']
+            : array();
+        $accountId = (string) ((int) ($account['id'] ?? 0));
+        $producerData = isset($producerByAccount[$accountId]) ? $producerByAccount[$accountId] : null;
+
+        if (!is_array($producerData)) {
+            throw new RuntimeException(
+                'Brak wybranego producenta dla konta "'
+                . (string) ($account['name'] ?? ('#' . $accountId))
+                . '".'
+            );
+        }
+
+        $type = strtoupper(trim((string) ($producerData['type'] ?? 'ID')));
+        $value = trim((string) ($producerData['value'] ?? ''));
+
+        if ($value === '') {
+            throw new RuntimeException(
+                'Brak wybranego producenta dla konta "'
+                . (string) ($account['name'] ?? ('#' . $accountId))
+                . '".'
+            );
+        }
+
+        if ($type === 'NAME') {
+            return array(
+                'type' => 'NAME',
+                'name' => $value,
+            );
+        }
+
+        return array(
+            'type' => 'ID',
+            'id' => $value,
+        );
+    }
+
+    private function applyResponsibleProducerToProductSet(array $currentDetails, array $responsibleProducer): array
+    {
+        $productSet = $this->productSetPatchBase($currentDetails);
+
+        foreach ($productSet as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productSet[$index]['responsibleProducer'] = $responsibleProducer;
+        }
+
+        return $productSet;
+    }
+
+    private function applySafetyInformationToProductSet(array $currentDetails, array $safetyInformation): array
+    {
+        $productSet = $this->productSetPatchBase($currentDetails);
+
+        foreach ($productSet as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $productSet[$index]['safetyInformation'] = $safetyInformation;
+        }
+
+        return $productSet;
+    }
+
+    private function productSetPatchBase(array $currentDetails): array
+    {
+        $productSet = isset($currentDetails['productSet']) && is_array($currentDetails['productSet'])
+            ? $currentDetails['productSet']
+            : array();
+
+        if ($productSet === array()) {
+            throw new RuntimeException('Oferta nie ma productSet, wiec nie mozna ustawic danych GPSR.');
+        }
+
+        return $productSet;
     }
 
     private function resolveAccount(string $accountSelector)
@@ -2025,12 +2469,48 @@ class AllegroService
         string $action,
         string $expectedStatus
     ): void {
-        $commandId = $this->changePublicationAction($account, $offerId, $action);
+        $offerRowId = (int) ($offer['id'] ?? 0);
+        $summary = $this->refreshOfferSnapshotFromApi($account, $offerRowId, $offerId);
+        $currentStatus = strtoupper(trim((string) ($summary['publication_status'] ?? '')));
+
+        if ($currentStatus === $expectedStatus) {
+            return;
+        }
+
+        if ($this->isPublicationTransitionInProgress($currentStatus, $expectedStatus)) {
+            throw new RuntimeException($this->publicationTransitionRetryMessage($currentStatus, $expectedStatus));
+        }
+
+        try {
+            $commandId = $this->changePublicationAction($account, $offerId, $action);
+        } catch (RuntimeException $exception) {
+            if (!$this->isPublicationCommandStillInProgressError($exception)) {
+                throw $exception;
+            }
+
+            $summary = $this->refreshOfferSnapshotFromApi($account, $offerRowId, $offerId);
+            $currentStatus = strtoupper(trim((string) ($summary['publication_status'] ?? '')));
+
+            if ($currentStatus === $expectedStatus) {
+                return;
+            }
+
+            throw new RuntimeException($this->publicationTransitionRetryMessage($currentStatus, $expectedStatus));
+        }
+
         $taskResult = $this->waitForPublicationCommandTasks($account, $commandId);
-        $summary = $this->refreshOfferSnapshotFromApi($account, (int) ($offer['id'] ?? 0), $offerId);
+        $summary = $this->refreshOfferSnapshotFromApi($account, $offerRowId, $offerId);
         $currentStatus = strtoupper(trim((string) ($summary['publication_status'] ?? '')));
 
         if ($taskResult['error_message'] !== '') {
+            if ($currentStatus === $expectedStatus) {
+                return;
+            }
+
+            if ($this->isPublicationCommandStillInProgressMessage($taskResult['error_message'])) {
+                throw new RuntimeException($this->publicationTransitionRetryMessage($currentStatus, $expectedStatus));
+            }
+
             throw new RuntimeException($taskResult['error_message']);
         }
 
@@ -2160,6 +2640,55 @@ class AllegroService
         }
 
         return 'Allegro odrzucilo komende publikacji: ' . implode('; ', array_unique($messages));
+    }
+
+    private function isPublicationCommandStillInProgressError(RuntimeException $exception): bool
+    {
+        return $this->isPublicationCommandStillInProgressMessage($exception->getMessage());
+    }
+
+    private function isPublicationCommandStillInProgressMessage(string $message): bool
+    {
+        $normalized = strtoupper($message);
+
+        return strpos($normalized, 'INPROGRESSTASKLIMITREACHEDEXCEPTION') !== false
+            || strpos($normalized, 'PREVIOUS STATUS CHANGES HAVE NOT BEEN FINISHED YET') !== false
+            || strpos($normalized, 'NADAL PRZETWARZA KOMENDE PUBLIKACJI') !== false
+            || strpos($normalized, 'NIE ZWROCILO JESZCZE WYNIKU KOMENDY PUBLIKACJI') !== false;
+    }
+
+    private function isPublicationTransitionInProgress(string $currentStatus, string $expectedStatus): bool
+    {
+        if ($expectedStatus === 'ACTIVE') {
+            return in_array($currentStatus, array('ACTIVATING'), true);
+        }
+
+        if ($expectedStatus === 'ENDED') {
+            return in_array($currentStatus, array('ENDING'), true);
+        }
+
+        return false;
+    }
+
+    private function publicationTransitionRetryMessage(string $currentStatus, string $expectedStatus): string
+    {
+        if ($expectedStatus === 'ACTIVE') {
+            if ($currentStatus === 'ACTIVATING') {
+                return 'Allegro przyjelo wznowienie, ale oferta nadal sie aktywuje. Sprawdzimy ponownie za chwile.';
+            }
+
+            return 'Allegro nadal przetwarza poprzednia zmiane statusu wznowienia. Sprobujemy ponownie automatycznie.';
+        }
+
+        if ($expectedStatus === 'ENDED') {
+            if ($currentStatus === 'ENDING') {
+                return 'Allegro przyjelo zakonczenie, ale oferta nadal sie konczy. Sprawdzimy ponownie za chwile.';
+            }
+
+            return 'Allegro nadal przetwarza poprzednia zmiane statusu zakonczenia. Sprobujemy ponownie automatycznie.';
+        }
+
+        return 'Allegro nadal przetwarza poprzednia zmiane statusu oferty. Sprobujemy ponownie automatycznie.';
     }
 
     private function refreshOfferSnapshotFromApi(array $account, int $offerRowId, string $offerId): array
