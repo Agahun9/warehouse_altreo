@@ -644,6 +644,104 @@ class AllegroStorageRepository
         return $counts;
     }
 
+    public function offerBreakdownForProducts(array $products): array
+    {
+        $normalizedProducts = array();
+
+        foreach ($products as $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            $productId = isset($product['id']) ? (int) $product['id'] : 0;
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $normalizedProducts[$productId] = array(
+                'id' => $productId,
+                'sku' => trim((string) ($product['sku'] ?? '')),
+                'old_sku' => trim((string) ($product['custom_fields']['old_sku'] ?? '')),
+            );
+        }
+
+        if ($normalizedProducts === array()) {
+            return array();
+        }
+
+        $cacheKey = 'allegro:product-offer-breakdown:' . sha1(json_encode(array_values($normalizedProducts)));
+        $cached = $this->getCache($cacheKey);
+        if (is_array($cached) && isset($cached['items']) && is_array($cached['items'])) {
+            return $cached['items'];
+        }
+
+        $productIds = array_keys($normalizedProducts);
+        $params = array();
+        $directProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_breakdown_direct_id', $productIds, $params);
+        $skuProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_breakdown_sku_id', $productIds, $params);
+        $oldSkuProductIdPlaceholders = $this->buildIntegerPlaceholders('product_offer_breakdown_old_sku_id', $productIds, $params);
+        $skuMapSql = 'SELECT products.id AS product_id, products.sku AS match_sku'
+            . ' FROM products'
+            . ' WHERE products.deleted_at IS NULL'
+            . '   AND products.id IN (' . implode(', ', $skuProductIdPlaceholders) . ')'
+            . '   AND products.sku IS NOT NULL'
+            . '   AND products.sku <> ""'
+            . ' UNION ALL'
+            . ' SELECT old_sku_values.product_id AS product_id, old_sku_values.value AS match_sku'
+            . ' FROM product_custom_field_values old_sku_values'
+            . ' INNER JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.id = old_sku_values.definition_id'
+            . ' INNER JOIN products old_sku_products ON old_sku_products.id = old_sku_values.product_id'
+            . ' WHERE old_sku_products.deleted_at IS NULL'
+            . '   AND old_sku_definition.slug = "old_sku"'
+            . '   AND old_sku_values.product_id IN (' . implode(', ', $oldSkuProductIdPlaceholders) . ')'
+            . '   AND old_sku_values.value IS NOT NULL'
+            . '   AND old_sku_values.value <> ""';
+
+        $sql = 'SELECT matched.product_id, matched.account_id, matched.account_name, COUNT(*) AS total'
+            . ' FROM ('
+            . '   SELECT offers.warehouse_product_id AS product_id, offers.account_id AS account_id, accounts.name AS account_name, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . '     AND offers.warehouse_product_id IN (' . implode(', ', $directProductIdPlaceholders) . ')'
+            . '   UNION'
+            . '   SELECT sku_map.product_id AS product_id, offers.account_id AS account_id, accounts.name AS account_name, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   INNER JOIN (' . $skuMapSql . ') sku_map ON sku_map.match_sku = offers.sku'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . ' ) matched'
+            . ' GROUP BY matched.product_id, matched.account_id, matched.account_name'
+            . ' ORDER BY matched.account_name ASC, matched.account_id ASC';
+
+        $rows = $this->database->fetchAll($sql, $params);
+        $result = array();
+
+        foreach ($normalizedProducts as $productId => $product) {
+            $result[$productId] = array();
+        }
+
+        foreach ($rows as $row) {
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+            $accountId = isset($row['account_id']) ? (int) $row['account_id'] : 0;
+            if ($productId <= 0 || $accountId <= 0) {
+                continue;
+            }
+
+            $result[$productId][] = array(
+                'account_id' => $accountId,
+                'account_name' => (string) ($row['account_name'] ?? ''),
+                'count' => (int) ($row['total'] ?? 0),
+            );
+        }
+
+        $this->putCache($cacheKey, array('items' => $result), self::OFFER_COUNT_CACHE_TTL);
+
+        return $result;
+    }
+
     public function offerStats(?int $accountId = null): array
     {
         $cacheKey = 'allegro:offer-stats:' . ($accountId !== null ? (string) $accountId : 'all');
@@ -1627,9 +1725,20 @@ class AllegroStorageRepository
             $includeClauses = array();
             foreach ($searchTokens['include'] as $index => $token) {
                 $tokenKey = 'q_in_' . $index;
-                if (!empty($searchTokens['list_mode']) && ctype_digit($token)) {
-                    $includeClauses[] = 'offers.offer_id = :' . $tokenKey . '_offer_id_exact';
-                    $params[$tokenKey . '_offer_id_exact'] = $token;
+                if (!empty($searchTokens['list_mode'])) {
+                    $exactClauses = array(
+                        'offers.sku = :' . $tokenKey . '_offer_sku_exact',
+                        'warehouse.sku = :' . $tokenKey . '_warehouse_sku_exact',
+                    );
+                    $params[$tokenKey . '_offer_sku_exact'] = $token;
+                    $params[$tokenKey . '_warehouse_sku_exact'] = $token;
+
+                    if (ctype_digit($token)) {
+                        $exactClauses[] = 'offers.offer_id = :' . $tokenKey . '_offer_id_exact';
+                        $params[$tokenKey . '_offer_id_exact'] = $token;
+                    }
+
+                    $includeClauses[] = '(' . implode(' OR ', $exactClauses) . ')';
                     continue;
                 }
 

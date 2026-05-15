@@ -138,6 +138,11 @@ class AllegroService
         return $this->storage->offerCountsForProducts($products);
     }
 
+    public function offerBreakdownForProducts(array $products): array
+    {
+        return $this->storage->offerBreakdownForProducts($products);
+    }
+
     public function offerStats(?int $accountId = null): array
     {
         return $this->storage->offerStats($accountId);

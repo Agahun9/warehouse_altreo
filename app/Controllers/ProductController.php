@@ -116,13 +116,18 @@ class ProductController extends Controller
         }
 
         $products = $this->products->paginate($filters, $sortBy, $sortDir, $page, $perPage);
-        $allegroOfferCounts = $this->allegro->offerCountsForProducts($products);
+        $allegroOfferBreakdown = $this->allegro->offerBreakdownForProducts($products);
         foreach ($products as $index => $product) {
             $productId = isset($product['id']) ? (int) $product['id'] : 0;
             $sku = trim((string) ($product['sku'] ?? ''));
             $oldSku = trim((string) ($product['custom_fields']['old_sku'] ?? ''));
-            $products[$index]['allegro_offer_count'] = $allegroOfferCounts[$productId] ?? 0;
-            $products[$index]['allegro_offers_url'] = $this->buildProductAllegroOffersUrl($sku, $oldSku);
+            $products[$index]['allegro_offers_by_account'] = array_map(function (array $item) use ($sku, $oldSku): array {
+                $item['url'] = $this->buildProductAllegroOffersUrl($sku, $oldSku, (int) ($item['account_id'] ?? 0));
+                return $item;
+            }, $allegroOfferBreakdown[$productId] ?? array());
+            $products[$index]['allegro_offer_total'] = array_sum(array_map(static function (array $item): int {
+                return (int) ($item['count'] ?? 0);
+            }, $products[$index]['allegro_offers_by_account']));
         }
         $pageWindow = $this->buildPageWindow($page, $totalPages);
 
@@ -1567,7 +1572,7 @@ class ProductController extends Controller
         return $value;
     }
 
-    private function buildProductAllegroOffersUrl(string $sku, string $oldSku = ''): string
+    private function buildProductAllegroOffersUrl(string $sku, string $oldSku = '', int $accountId = 0): string
     {
         $values = array_values(array_unique(array_filter(array($sku, $oldSku), static function (string $value): bool {
             return trim($value) !== '';
@@ -1579,6 +1584,10 @@ class ProductController extends Controller
             'linked' => '1',
             'status' => 'ACTIVE',
         );
+
+        if ($accountId > 0) {
+            $params['account_id'] = $accountId;
+        }
 
         if ($values !== array()) {
             $params['q'] = implode(', ', $values);

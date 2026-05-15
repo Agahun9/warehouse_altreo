@@ -139,8 +139,8 @@
     }
 
     .product-sku-cell {
-      width: 130px;
-      min-width: 130px;
+      width: 180px;
+      min-width: 180px;
     }
 
     .product-name-cell {
@@ -158,23 +158,11 @@
       white-space: nowrap;
     }
 
-    .product-contours-cell {
-      width: 100px;
-      min-width: 100px;
-      max-width: 100px;
-      padding-left: .2rem !important;
-      padding-right: .2rem !important;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
     .product-price-cell {
-      width: 100px;
-      min-width: 100px;
-      max-width: 100px;
-      white-space: nowrap;
-      line-height: 1.2;
+      width: 220px;
+      min-width: 220px;
+      white-space: normal;
+      line-height: 1.3;
     }
 
     .product-quantity-cell {
@@ -182,17 +170,11 @@
       min-width: 118px;
     }
 
-    .product-allegro-cell {
-      width: 130px;
-      min-width: 130px;
-      white-space: nowrap;
-    }
-
     .product-timestamps-cell {
       width: 170px;
       min-width: 170px;
       white-space: normal;
-      line-height: 1.35;
+      line-height: 1.22;
     }
 
     .product-timestamp-stack {
@@ -204,11 +186,11 @@
     .product-timestamp-item {
       display: flex;
       flex-direction: column;
-      gap: .1rem;
+      gap: .04rem;
     }
 
     .product-timestamp-label {
-      font-size: .68rem;
+      font-size: .62rem;
       font-weight: 700;
       letter-spacing: .04em;
       text-transform: uppercase;
@@ -218,6 +200,7 @@
     .product-timestamp-value {
       color: #1f2937;
       word-break: break-word;
+      font-size: .72rem;
     }
 
     .product-sku-secondary {
@@ -352,6 +335,299 @@
     .product-relation-value {
       font-size: .82rem;
       color: #4b5563;
+    }
+
+    .product-dimensions-stack {
+      display: flex;
+      flex-direction: column;
+      gap: .24rem;
+    }
+
+    .product-contours-inline {
+      display: block;
+      font-size: .71rem;
+      color: #64748b;
+      word-break: break-word;
+      line-height: 1.25;
+    }
+
+    .product-sku-meta {
+      display: flex;
+      align-items: flex-start;
+      gap: .55rem;
+      padding: .2rem;
+      border-radius: .7rem;
+      cursor: pointer;
+      transition: background-color .18s ease, box-shadow .18s ease;
+    }
+
+    .product-sku-meta:hover {
+      background: rgba(15, 23, 42, .04);
+    }
+
+    .product-sku-main {
+      min-width: 0;
+    }
+
+    .product-checkbox {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 1.02rem;
+      height: 1.02rem;
+      margin: 0;
+      border-radius: .32rem;
+      border: 1px solid rgba(15, 23, 42, .22);
+      background: #fff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .92);
+      cursor: pointer;
+      position: relative;
+      transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, transform .16s ease;
+      flex: 0 0 auto;
+    }
+
+    .product-checkbox:hover {
+      border-color: rgba(37, 99, 235, .5);
+      box-shadow: 0 0 0 .16rem rgba(37, 99, 235, .10);
+    }
+
+    .product-checkbox:checked {
+      background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+      border-color: #1d4ed8;
+      box-shadow: 0 0 0 .16rem rgba(37, 99, 235, .12);
+    }
+
+    .product-checkbox:checked::after {
+      content: "";
+      position: absolute;
+      left: .31rem;
+      top: .12rem;
+      width: .22rem;
+      height: .46rem;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .product-checkbox:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 .2rem rgba(37, 99, 235, .18);
+    }
+
+    .product-select-all {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      min-width: 0;
+    }
+
+    .product-select-all-label {
+      font-size: .74rem;
+      font-weight: 600;
+      color: #64748b;
+      user-select: none;
+    }
+
+    .product-id-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 2rem;
+      padding: .14rem .38rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, .08);
+      color: #334155;
+      font-size: .72rem;
+      font-weight: 700;
+    }
+
+    .product-price-stack {
+      display: flex;
+      flex-direction: column;
+      gap: .38rem;
+    }
+
+    .product-price-main {
+      display: flex;
+      flex-direction: column;
+      gap: .12rem;
+    }
+
+    .product-price-widget {
+      display: block;
+    }
+
+    .product-price-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .16rem .38rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, .06);
+      border: 1px solid rgba(15, 23, 42, .08);
+      color: #0f172a;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+      font-size: .72rem;
+      font-weight: 700;
+    }
+
+    .product-price-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .product-price-toggle:hover {
+      background: rgba(15, 23, 42, .09);
+      border-color: rgba(15, 23, 42, .14);
+    }
+
+    .product-price-summary-main {
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    .product-price-summary-net {
+      color: #64748b;
+      font-size: .67rem;
+      font-weight: 600;
+    }
+
+    .product-price-toggle-caret {
+      color: #64748b;
+      font-size: .6rem;
+      transition: transform .18s ease;
+    }
+
+    .product-price-widget[open] .product-price-toggle-caret {
+      transform: rotate(180deg);
+    }
+
+    .product-price-details {
+      margin-top: .32rem;
+      padding-left: .15rem;
+    }
+
+    .product-allegro-widget {
+      margin-top: .45rem;
+    }
+
+    .product-allegro-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .16rem .4rem;
+      border-radius: 999px;
+      background: rgba(255, 90, 0, .10);
+      border: 1px solid rgba(255, 90, 0, .18);
+      color: #9a3412;
+      font-size: .7rem;
+      font-weight: 700;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    .product-allegro-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .product-allegro-toggle:hover {
+      background: rgba(255, 90, 0, .14);
+      border-color: rgba(255, 90, 0, .28);
+    }
+
+    .product-allegro-toggle-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.15rem;
+      height: 1.15rem;
+      border-radius: 999px;
+      background: #ff5a00;
+      color: #fff;
+      font-size: .68rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .product-allegro-toggle-count {
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    .product-allegro-toggle-caret {
+      color: #64748b;
+      font-size: .62rem;
+      transition: transform .18s ease;
+    }
+
+    .product-allegro-widget[open] .product-allegro-toggle-caret {
+      transform: rotate(180deg);
+    }
+
+    .product-allegro-links {
+      margin-top: .45rem;
+      display: flex;
+      flex-direction: column;
+      gap: .24rem;
+    }
+
+    .product-allegro-links a {
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .45rem;
+      padding: .24rem .38rem;
+      border-radius: .55rem;
+      background: linear-gradient(180deg, rgba(248, 250, 252, .98) 0%, rgba(241, 245, 249, .96) 100%);
+      border: 1px solid rgba(15, 23, 42, .08);
+      color: #1f2937;
+      transition: background-color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+    }
+
+    .product-allegro-links a:hover {
+      background: linear-gradient(180deg, rgba(239, 246, 255, .98) 0%, rgba(219, 234, 254, .96) 100%);
+      border-color: rgba(59, 130, 246, .24);
+      box-shadow: 0 8px 18px rgba(37, 99, 235, .12);
+      transform: translateY(-1px);
+    }
+
+    .product-allegro-links-empty {
+      display: inline-flex;
+      align-items: center;
+      padding: .18rem .38rem;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, .12);
+      color: #64748b;
+      font-size: .68rem;
+      line-height: 1.2;
+    }
+
+    .product-allegro-account {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .product-allegro-account-name {
+      font-size: .71rem;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .product-allegro-count {
+      flex: 0 0 auto;
+      min-width: 2rem;
+      padding: .12rem .38rem;
+      border-radius: 999px;
+      background: #0f172a;
+      color: #fff;
+      font-size: .68rem;
+      font-weight: 700;
+      text-align: center;
     }
 
     @media (max-width: 1400px) {
@@ -497,12 +773,11 @@
               <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0 products-table">
                 <thead class="table-light">
                   <tr>
-                    <th class="product-compact-cell" style="width:36px;"><input type="checkbox" id="selectAllProducts"></th>
-                    <th class="product-compact-cell" style="width: 4%; min-width: 52px;">
-                      <a href="{$sortUrls.id|escape}" class="link-dark text-decoration-none">ID {if $sortIndicators.id eq 'asc'}&uarr;{elseif $sortIndicators.id eq 'desc'}&darr;{else}&harr;{/if}</a>
-                    </th>
                     <th class="product-sku-cell">
-                      <a href="{$sortUrls.sku|escape}" class="link-dark text-decoration-none">SKU {if $sortIndicators.sku eq 'asc'}&uarr;{elseif $sortIndicators.sku eq 'desc'}&darr;{else}&harr;{/if}</a>
+                      <div class="d-flex flex-column gap-1">
+                        <a href="{$sortUrls.id|escape}" class="link-dark text-decoration-none">ID {if $sortIndicators.id eq 'asc'}&uarr;{elseif $sortIndicators.id eq 'desc'}&darr;{else}&harr;{/if}</a>
+                        <a href="{$sortUrls.sku|escape}" class="link-dark text-decoration-none">SKU {if $sortIndicators.sku eq 'asc'}&uarr;{elseif $sortIndicators.sku eq 'desc'}&darr;{else}&harr;{/if}</a>
+                      </div>
                     </th>
                     <th class="product-name-cell">
                       <a href="{$sortUrls.product_name|escape}" class="link-dark text-decoration-none">Nazwa {if $sortIndicators.product_name eq 'asc'}&uarr;{elseif $sortIndicators.product_name eq 'desc'}&darr;{else}&harr;{/if}</a>
@@ -512,18 +787,24 @@
                     </th>
                     <th class="product-quantity-cell"><a href="{$sortUrls.quantity|escape}" class="link-dark text-decoration-none">Ilosc {if $sortIndicators.quantity eq 'asc'}&uarr;{elseif $sortIndicators.quantity eq 'desc'}&darr;{else}&harr;{/if}</a></th>
                     <th style="width: 100px; min-width: 100px;"><a href="{$sortUrls.localization|escape}" class="link-dark text-decoration-none">Lokalizacja {if $sortIndicators.localization eq 'asc'}&uarr;{elseif $sortIndicators.localization eq 'desc'}&darr;{else}&harr;{/if}</a></th>
-                    <th style="width: 100px; min-width: 100px;">Wymiary</th>
-                    <th class="product-contours-cell">Obrys</th>
+                    <th style="width: 140px; min-width: 140px;">Wymiary / obrys</th>
                     <th class="product-compact-cell">Zdjecie</th>
-                    <th class="product-price-cell">Cena</th>
-                    <th class="product-timestamps-cell">Utworzono / zmieniono</th>
-                    <th class="product-allegro-cell">Allegro</th>
+                    <th class="product-price-cell">Cena / daty</th>
                     <th class="text-end product-actions-cell">Akcje</th>
                   </tr>
                   <tr>
-                    <th></th>
-                    <th><input type="text" name="filter_id" value="{$filters.id|default:''|escape}" class="form-control form-control-sm" placeholder="np. 15"></th>
-                    <th><input type="text" name="filter_sku" value="{$filters.sku|default:''|escape}" class="form-control form-control-sm" placeholder="fragment SKU"></th>
+                    <th>
+                      <div class="d-flex flex-column gap-2">
+                        <div class="form-check mb-0">
+                          <label class="product-select-all" for="selectAllProducts">
+                            <input type="checkbox" id="selectAllProducts" class="product-checkbox">
+                            <span class="product-select-all-label">zaznacz</span>
+                          </label>
+                        </div>
+                        <input type="text" name="filter_id" value="{$filters.id|default:''|escape}" class="form-control form-control-sm" placeholder="ID, np. 15">
+                        <input type="text" name="filter_sku" value="{$filters.sku|default:''|escape}" class="form-control form-control-sm" placeholder="fragment SKU">
+                      </div>
+                    </th>
                     <th>
                       <input type="text" name="filter_product_name" value="{$filters.product_name|default:''|escape}" class="form-control form-control-sm" placeholder='np. damska meska | "szklo hartowane" !czarna'>
                       <span class="products-filter-hint">Spacja = AND, `|` = OR, `!` = bez frazy.</span>
@@ -550,7 +831,7 @@
                         <option value="0"{if $withGlassFilter eq '0'} selected{/if}>produkty bez szkła</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="6">
+                    <th class="text-end" colspan="4">
                     <a href="{$clearFiltersUrl|escape}" class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
                 </thead>
@@ -558,13 +839,17 @@
                   {if $products}
                     {foreach $products as $product}
                       <tr class="js-quick-edit-row" data-product-id="{$product.id}">
-                        <td><input type="checkbox" class="js-export-checkbox" value="{$product.id}"></td>
-                        <td class="product-compact-cell">{$product.id}</td>
                         <td class="product-sku-cell">
-                          <span class="badge text-bg-secondary">{$product.sku|escape}</span>
-                          {if $product.custom_fields.old_sku|default:'' !== ''}
-                            <span class="product-sku-secondary">OLD_SKU: {$product.custom_fields.old_sku|escape}</span>
-                          {/if}
+                          <div class="product-sku-meta js-product-select-toggle" role="button" tabindex="0" aria-label="Zaznacz produkt {$product.sku|escape}">
+                            <input type="checkbox" class="js-export-checkbox product-checkbox mt-1" value="{$product.id}">
+                            <div class="product-sku-main">
+                              <span class="product-id-badge">#{$product.id}</span>
+                              <div class="mt-1"><span class="badge text-bg-secondary">{$product.sku|escape}</span></div>
+                              {if $product.custom_fields.old_sku|default:'' !== ''}
+                                <span class="product-sku-secondary">OLD_SKU: {$product.custom_fields.old_sku|escape}</span>
+                              {/if}
+                            </div>
+                          </div>
                         </td>
                         <td class="product-name-cell" style="white-space: normal;">
                           <input type="text" class="quick-edit-input js-quick-edit-field" data-field="product_name" value="{$product.product_name|escape}" aria-label="Nazwa produktu">
@@ -621,32 +906,63 @@
                         </td>
                         <td>
                           <input type="text" class="quick-edit-input js-quick-edit-field" data-field="localization" value="{$product.localization|default:''|escape}" aria-label="Lokalizacja">
+                          <details class="product-allegro-widget">
+                            <summary class="product-allegro-toggle">
+                              <span class="product-allegro-toggle-icon">A</span>
+                              <span>Allegro</span>
+                              <span class="product-allegro-toggle-count">{$product.allegro_offer_total|default:0}</span>
+                              <span class="product-allegro-toggle-caret">▼</span>
+                            </summary>
+                            {if $product.allegro_offers_by_account|default:[]}
+                              <div class="product-allegro-links">
+                                {foreach $product.allegro_offers_by_account as $accountOffer}
+                                  <a href="{$accountOffer.url|escape}">
+                                    <span class="product-allegro-account">
+                                      <span class="product-allegro-account-name">{$accountOffer.account_name|default:'Konto Allegro'|escape}</span>
+                                    </span>
+                                    <span class="product-allegro-count">{$accountOffer.count|default:0}</span>
+                                  </a>
+                                {/foreach}
+                              </div>
+                            {else}
+                              <div class="product-allegro-links">
+                                <span class="product-allegro-links-empty">Brak aktywnych ofert Allegro</span>
+                              </div>
+                            {/if}
+                          </details>
                         </td>
                         <td>
-                          <input type="text" class="quick-edit-input js-quick-edit-field" data-field="dimensions" value="{$product.dimensions|default:''|escape}" aria-label="Wymiary">
-                        </td>
-                        <td class="product-contours-cell" title="{$product.contours|default:'-'|escape}">{$product.contours|default:'-'|escape}</td>
-                        <td class="product-compact-cell">{if $product.img}<a href="{$product.img|regex_replace:'/\\s*\\|\\s*.*/':''|escape}" target="_blank" rel="noreferrer">Podglad</a>{else}-{/if}</td>
-                        <td class="product-price-cell">
-                          <div><strong>B:</strong> {$product.price_gross}</div>
-                          <div class="small text-secondary"><strong>N:</strong> {$product.price_net}</div>
-                        </td>
-                        <td class="product-timestamps-cell">
-                          <div class="product-timestamp-stack">
-                            <div class="product-timestamp-item">
-                              <span class="product-timestamp-label">Utworzono</span>
-                              <span class="product-timestamp-value">{$product.created_at|default:'-'}</span>
-                            </div>
-                            <div class="product-timestamp-item">
-                              <span class="product-timestamp-label">Zmieniono</span>
-                              <span class="js-updated-at-cell product-timestamp-value">{$product.updated_at|default:'-'}</span>
-                            </div>
+                          <div class="product-dimensions-stack">
+                            <input type="text" class="quick-edit-input js-quick-edit-field" data-field="dimensions" value="{$product.dimensions|default:''|escape}" aria-label="Wymiary">
+                            <span class="product-contours-inline">Obrys: {$product.contours|default:'-'|escape}</span>
                           </div>
                         </td>
-                        <td class="product-allegro-cell">
-                          <div><span class="badge text-bg-dark">{$product.allegro_offer_count|default:0}</span></div>
-                          <div class="small mt-1">
-                            <a href="{$product.allegro_offers_url|escape}">Oferty Allegro</a>
+                        <td class="product-compact-cell">{if $product.img}<a href="{$product.img|regex_replace:'/\\s*\\|\\s*.*/':''|escape}" target="_blank" rel="noreferrer">Podglad</a>{else}-{/if}</td>
+                        <td class="product-price-cell">
+                          <div class="product-price-stack">
+                            <details class="product-price-widget">
+                              <summary class="product-price-toggle">
+                                <span class="product-price-summary-main">B: {$product.price_gross}</span>
+                                <span class="product-price-summary-net">N: {$product.price_net}</span>
+                                <span class="product-price-toggle-caret">▼</span>
+                              </summary>
+                              <div class="product-price-details">
+                                <div class="product-price-main">
+                                  <div><strong>Brutto:</strong> {$product.price_gross}</div>
+                                  <div class="small text-secondary"><strong>Netto:</strong> {$product.price_net}</div>
+                                </div>
+                              </div>
+                            </details>
+                            <div class="product-timestamp-stack">
+                              <div class="product-timestamp-item">
+                                <span class="product-timestamp-label">Utworzono</span>
+                                <span class="product-timestamp-value">{$product.created_at|default:'-'}</span>
+                              </div>
+                              <div class="product-timestamp-item">
+                                <span class="product-timestamp-label">Zmieniono</span>
+                                <span class="js-updated-at-cell product-timestamp-value">{$product.updated_at|default:'-'}</span>
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td class="text-end product-actions-cell">
@@ -660,7 +976,7 @@
                   </tr>
                     {/foreach}
                   {else}
-                    <tr><td colspan="14" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="9" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   {/if}
                 </tbody>
               </table>
@@ -1541,6 +1857,40 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       updateCount();
     });
+  }
+
+  var productSelectToggles = document.querySelectorAll('.js-product-select-toggle');
+  for (var toggleIndex = 0; toggleIndex < productSelectToggles.length; toggleIndex++) {
+    (function (toggle) {
+      var checkbox = toggle.querySelector('.js-export-checkbox');
+      if (!checkbox) {
+        return;
+      }
+
+      function triggerCheckboxToggle() {
+        checkbox.checked = !checkbox.checked;
+        lastCheckedCheckbox = checkbox;
+        updateCount();
+      }
+
+      toggle.addEventListener('click', function (event) {
+        var target = event.target;
+        if (target && target.closest('input, a, button, label')) {
+          return;
+        }
+
+        triggerCheckboxToggle();
+      });
+
+      toggle.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+
+        event.preventDefault();
+        triggerCheckboxToggle();
+      });
+    })(productSelectToggles[toggleIndex]);
   }
 
   for (var i = 0; i < checkboxes.length; i++) {

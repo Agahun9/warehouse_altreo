@@ -329,11 +329,22 @@ class ProductRepository
 
                 $operator = $isNegated ? 'NOT LIKE' : 'LIKE';
                 $columnParts = array();
+                $normalizedNeedle = $this->normalizePolishSearchTerm($needle);
 
                 foreach ($columns as $columnIndex => $column) {
                     $paramName = $paramPrefix . '_' . $groupIndex . '_' . $termIndex . '_' . $columnIndex;
-                    $columnParts[] = $column . ' ' . $operator . ' :' . $paramName;
+                    $columnSqlParts = array(
+                        $column . ' ' . $operator . ' :' . $paramName,
+                    );
                     $params[$paramName] = '%' . $needle . '%';
+
+                    if ($normalizedNeedle !== '' && $normalizedNeedle !== mb_strtolower($needle, 'UTF-8')) {
+                        $normalizedParamName = $paramName . '_normalized';
+                        $columnSqlParts[] = $this->normalizedSearchColumnSql($column) . ' ' . $operator . ' :' . $normalizedParamName;
+                        $params[$normalizedParamName] = '%' . $normalizedNeedle . '%';
+                    }
+
+                    $columnParts[] = '(' . implode($isNegated ? ' AND ' : ' OR ', $columnSqlParts) . ')';
                 }
 
                 if ($columnParts !== array()) {
@@ -373,12 +384,42 @@ class ProductRepository
             }
 
             $token = trim((string) $token);
+            $token = trim($token, " \t\n\r\0\x0B,;.");
             if ($token !== '') {
                 $tokens[] = $token;
             }
         }
 
         return $tokens;
+    }
+
+    private function normalizePolishSearchTerm(string $value): string
+    {
+        $value = mb_strtolower(trim($value), 'UTF-8');
+        if ($value === '') {
+            return '';
+        }
+
+        return strtr($value, array(
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' => 'z',
+            'ż' => 'z',
+        ));
+    }
+
+    private function normalizedSearchColumnSql(string $column): string
+    {
+        return 'LOWER('
+            . 'REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE('
+            . $column
+            . ', "ą", "a"), "ć", "c"), "ę", "e"), "ł", "l"), "ń", "n"), "ó", "o"), "ś", "s"), "ź", "z"), "ż", "z")'
+            . ')';
     }
 
     private function appendCategoryFilterCondition(array &$whereParts, array &$params, $rawValue, string $paramPrefix): void
