@@ -1456,12 +1456,17 @@ class AllegroStorageRepository
     public function queueCounts(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT queue.status, COUNT(*) AS total'
-            . ' FROM allegro_offer_change_queue queue'
-            . ' INNER JOIN allegro_offers offers ON offers.id = queue.offer_row_id'
+            'SELECT queue_latest.status, COUNT(*) AS total'
+            . ' FROM allegro_offer_change_queue queue_latest'
+            . ' INNER JOIN ('
+            . '   SELECT offer_row_id, MAX(id) AS latest_id'
+            . '   FROM allegro_offer_change_queue'
+            . '   GROUP BY offer_row_id'
+            . ' ) queue_max ON queue_max.latest_id = queue_latest.id'
+            . ' INNER JOIN allegro_offers offers ON offers.id = queue_latest.offer_row_id'
             . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
             . ' WHERE accounts.is_active = 1'
-            . ' GROUP BY queue.status'
+            . ' GROUP BY queue_latest.status'
         );
 
         $result = array(
