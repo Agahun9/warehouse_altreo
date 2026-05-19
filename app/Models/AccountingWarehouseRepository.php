@@ -838,6 +838,38 @@ class AccountingWarehouseRepository
         return $row;
     }
 
+    public function searchDocumentsByNumber(string $query, int $limit = 5, int $excludeDocumentId = 0): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return array();
+        }
+
+        $limit = max(1, min(20, $limit));
+        $params = array(
+            'query_exact' => $query,
+            'query_exact_order' => $query,
+            'query_like' => '%' . $query . '%',
+        );
+        $where = array(
+            '(document_number = :query_exact OR document_number LIKE :query_like)',
+        );
+
+        if ($excludeDocumentId > 0) {
+            $where[] = 'id <> :exclude_id';
+            $params['exclude_id'] = $excludeDocumentId;
+        }
+
+        return $this->database->fetchAll(
+            'SELECT id, document_number, supplier_name, supplier_tax_id, issue_date, sale_date, currency, source_type, document_kind'
+            . ' FROM ' . self::DOCUMENTS_TABLE
+            . ' WHERE ' . implode(' AND ', $where)
+            . ' ORDER BY CASE WHEN document_number = :query_exact_order THEN 0 ELSE 1 END, id DESC'
+            . ' LIMIT ' . (int) $limit,
+            $params
+        );
+    }
+
     public function saveDocument(array $header, array $lines, int $userId): int
     {
         if ($lines === array()) {
@@ -994,6 +1026,10 @@ class AccountingWarehouseRepository
             $quantity = $this->toDecimal($line['quantity'] ?? 0);
             if ($quantity == 0.0) {
                 continue;
+            }
+
+            if (abs($quantity - round($quantity)) > 0.0001) {
+                throw new RuntimeException('Ilosc moze byc tylko liczba calkowita dla pozycji: ' . $canonicalName);
             }
 
             $unit = trim((string) ($line['unit'] ?? 'szt.'));

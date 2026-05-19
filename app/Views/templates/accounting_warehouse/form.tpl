@@ -73,7 +73,7 @@
                           <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                         </div>
                       </div>
-                      <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="0.001" class="form-control" name="edit_quantity[]" value="{$line.quantity|string_format:'%.3f'}"></div>
+                      <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="edit_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
                       <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control" name="edit_unit[]" value="{$line.unit|escape}"></div>
                       <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="edit_unit_net[]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                       <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="edit_unit_gross[]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
@@ -219,7 +219,7 @@
                                   <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                                 </div>
                               </div>
-                              <div class="col-md-2"><label class="form-label">Ilosc</label><input type="number" step="0.001" class="form-control" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][quantity]" value="{$line.quantity|string_format:'%.3f'}"></div>
+                              <div class="col-md-2"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][quantity]" value="{$line.quantity|string_format:'%.0f'}"></div>
                               <div class="col-md-2"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][unit_net]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                               <div class="col-md-2"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][unit_gross]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
                               <div class="col-md-2"><label class="form-label">VAT %</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="vat" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][vat_rate]" value="{$line.vat_rate|string_format:'%.2f'}"></div>
@@ -255,7 +255,11 @@
                 <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=storemanual" id="manualInvoiceForm" class="supplier-lookup-block">
                   <div class="duplicate-alert mb-3 d-none"><div class="alert alert-danger mb-0"></div></div>
                   <div class="row g-3 mb-3">
-                    <div class="col-md-4"><label class="form-label">Numer faktury</label><input type="text" class="form-control document-number-input" name="manual_document_number" value="{$formData.manual_header.document_number|escape}"></div>
+                    <div class="col-md-4">
+                      <label class="form-label">Numer faktury</label>
+                      <input type="text" class="form-control document-number-input" name="manual_document_number" value="{$formData.manual_header.document_number|escape}" autocomplete="off">
+                      <div class="document-number-hints small mt-2 d-none"></div>
+                    </div>
                     <div class="col-md-4 position-relative">
                       <label class="form-label">Dostawca</label>
                       <input type="text" class="form-control supplier-name-input" name="manual_supplier_name" id="manualSupplierName" value="{$formData.manual_header.supplier_name|escape}" autocomplete="off">
@@ -298,7 +302,7 @@
                               <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                             </div>
                           </div>
-                          <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="0.001" class="form-control" name="manual_quantity[]" value="{$line.quantity|string_format:'%.3f'}"></div>
+                          <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="manual_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
                           <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control" name="manual_unit[]" value="{$line.unit|escape}"></div>
                           <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="manual_unit_net[]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                           <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="manual_unit_gross[]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
@@ -325,38 +329,6 @@
             </div>
           </div>
 
-          <div class="col-12">
-            <div class="card mb-4">
-              <div class="card-header"><h3 class="card-title mb-0">Korekta stanu</h3></div>
-              <div class="card-body">
-                <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=storeadjustment">
-                  <div class="row g-3">
-                    <div class="col-md-6"><label class="form-label">Numer korekty</label><input type="text" class="form-control" name="adjustment_document_number" value="{$defaultAdjustmentNumber|escape}"></div>
-                    <div class="col-md-6"><label class="form-label">Data</label><input type="date" class="form-control" name="adjustment_date" value="{$todayDate|escape}"></div>
-                    <div class="col-md-6"><label class="form-label">Opis zrodla</label><input type="text" class="form-control" name="adjustment_original_name"></div>
-                    <div class="col-md-6">
-                      <label class="form-label">Pozycja ksiegowa</label>
-                      <div class="input-group">
-                        <select class="form-select item-name-select" name="adjustment_canonical_name">
-                          <option value="">Wybierz pozycje ksiegowa</option>
-                          {$itemOptions nofilter}
-                        </select>
-                        <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
-                      </div>
-                    </div>
-                    <div class="col-md-3"><label class="form-label">Zmiana ilosci</label><input type="number" step="0.001" class="form-control" name="adjustment_quantity"></div>
-                    <div class="col-md-2"><label class="form-label">Jedn.</label><input type="text" class="form-control" name="adjustment_unit" value="szt."></div>
-                    <div class="col-md-2"><label class="form-label">VAT %</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="vat" name="adjustment_vat_rate" value="23.00"></div>
-                    <div class="col-md-2"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="adjustment_unit_net" value="0.00"></div>
-                    <div class="col-md-3"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="adjustment_unit_gross" value="0.00"></div>
-                    <div class="col-12"><label class="form-label">Uwagi</label><input type="text" class="form-control" name="adjustment_notes"></div>
-                  </div>
-                  <button type="submit" class="btn btn-warning mt-3">Zapisz korekte</button>
-                </form>
-              </div>
-            </div>
-          </div>
-
         </div>
       {/if}
     </div>
@@ -373,7 +345,7 @@
             <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
           </div>
         </div>
-        <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="0.001" class="form-control js-quantity" value="1.000"></div>
+        <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control js-quantity" value="1"></div>
         <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control js-unit" value="szt."></div>
         <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input js-unit-net" data-field="net" value="0.00"></div>
         <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input js-unit-gross" data-field="gross" value="0.00"></div>
@@ -421,15 +393,9 @@
 
         if (changedField === 'net') {
           grossInput.value = formatDecimal(net * multiplier, 2);
-          return;
-        }
-
-        if (changedField === 'gross') {
+        } else if (changedField === 'gross') {
           netInput.value = multiplier !== 0 ? formatDecimal(gross / multiplier, 2) : formatDecimal(gross, 2);
-          return;
-        }
-
-        if (changedField === 'vat') {
+        } else if (changedField === 'vat') {
           if (net !== 0) {
             grossInput.value = formatDecimal(net * multiplier, 2);
           } else if (gross !== 0) {
@@ -559,6 +525,28 @@
       duplicateRow('manualRows', 'addManualRow', 'manual_');
       duplicateRow('editRows', 'addEditRow', 'edit_');
 
+      function bindIssueToSaleDateSync(scope) {
+        if (!scope) {
+          return;
+        }
+
+        var issueDateInput = scope.querySelector('input[name*="issue_date"]');
+        var saleDateInput = scope.querySelector('input[name*="sale_date"]');
+        if (!issueDateInput || !saleDateInput) {
+          return;
+        }
+
+        issueDateInput.addEventListener('input', function () {
+          saleDateInput.value = issueDateInput.value;
+        });
+
+        issueDateInput.addEventListener('change', function () {
+          saleDateInput.value = issueDateInput.value;
+        });
+      }
+
+      bindIssueToSaleDateSync(document.getElementById('manualInvoiceForm'));
+
 
       function normalized(value) {
         return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -576,12 +564,15 @@
         var validation = root.querySelector('.supplier-validation');
         var duplicateAlert = root.querySelector('.duplicate-alert');
         var documentNumberInput = root.querySelector('.document-number-input');
+        var documentNumberHints = root.querySelector('.document-number-hints');
         var xmlHash = root.getAttribute('data-xml-hash') || '';
         var lookupEndpoint = baseUrl + '?controller=accountingwarehouse&action=supplierlookup';
         var resolveEndpoint = baseUrl + '?controller=accountingwarehouse&action=supplierresolve';
         var duplicateEndpoint = baseUrl + '?controller=accountingwarehouse&action=documentduplicatecheck';
+        var documentNumberLookupEndpoint = baseUrl + '?controller=accountingwarehouse&action=documentnumberlookup';
         var timer = null;
         var duplicateTimer = null;
+        var documentNumberLookupTimer = null;
 
         if (!nameInput || !taxIdInput) {
           return;
@@ -604,6 +595,23 @@
 
           results.style.display = 'none';
           results.innerHTML = '';
+        }
+
+        function hideDocumentNumberHints() {
+          if (!documentNumberHints) {
+            return;
+          }
+
+          documentNumberHints.className = 'document-number-hints small mt-2 d-none';
+          documentNumberHints.innerHTML = '';
+        }
+
+        function escapeHtml(value) {
+          return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
         }
 
         function choose(item) {
@@ -776,6 +784,54 @@
           }, 220);
         }
 
+        function lookupDocumentNumber() {
+          if (!documentNumberInput || !documentNumberHints) {
+            return;
+          }
+
+          var query = documentNumberInput.value.trim();
+          if (query.length < 3) {
+            hideDocumentNumberHints();
+            return;
+          }
+
+          if (documentNumberLookupTimer) {
+            clearTimeout(documentNumberLookupTimer);
+          }
+
+          documentNumberLookupTimer = setTimeout(function () {
+            fetch(
+              documentNumberLookupEndpoint + '&q=' + encodeURIComponent(query),
+              { headers: { 'Accept': 'application/json' } }
+            )
+              .then(function (response) { return response.ok ? response.json() : { items: [] }; })
+              .then(function (payload) {
+                var items = payload.items || [];
+                if (!items.length) {
+                  hideDocumentNumberHints();
+                  return;
+                }
+
+                var html = '';
+                for (var index = 0; index < items.length; index++) {
+                  var item = items[index] || {};
+                  html += '<div>'
+                    + '<span class="fw-semibold">#' + escapeHtml(item.id) + '</span> '
+                    + escapeHtml(item.document_number || 'bez numeru')
+                    + ' | ' + escapeHtml(item.supplier_name || '-')
+                    + ' | data: ' + escapeHtml(item.issue_date || item.sale_date || '-')
+                    + '</div>';
+                }
+
+                documentNumberHints.className = 'document-number-hints small mt-2 text-warning';
+                documentNumberHints.innerHTML = 'Podobne lub identyczne faktury juz sa w bazie:' + html;
+              })
+              .catch(function () {
+                hideDocumentNumberHints();
+              });
+          }, 180);
+        }
+
         nameInput.addEventListener('input', function () {
           var query = nameInput.value.trim();
           if (timer) {
@@ -790,6 +846,7 @@
             }
             validateSupplierState();
             checkDuplicate();
+            lookupDocumentNumber();
           }, 180);
         });
 
@@ -845,11 +902,15 @@
         });
 
         if (documentNumberInput) {
-          documentNumberInput.addEventListener('input', checkDuplicate);
+          documentNumberInput.addEventListener('input', function () {
+            checkDuplicate();
+            lookupDocumentNumber();
+          });
         }
 
         validateSupplierState();
         checkDuplicate();
+        lookupDocumentNumber();
       }
 
       var supplierBlocks = document.querySelectorAll('.supplier-lookup-block');

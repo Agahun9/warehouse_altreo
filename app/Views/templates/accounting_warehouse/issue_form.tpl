@@ -22,7 +22,7 @@
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
 
-      {capture assign=itemOptions}<option value="">Wybierz pozycje ksiegowa</option>{foreach $stockItems as $stockItem}<option value="{$stockItem.name|escape}">{$stockItem.name|escape} ({$stockItem.quantity|string_format:'%.0f'} {$stockItem.unit|escape})</option>{/foreach}{/capture}
+      {capture assign=itemOptions}<option value="">Wybierz pozycje ksiegowa</option>{foreach $stockItems as $stockItem}{if $stockItem.item_kind|default:''|lower eq 'towar'}<option value="{$stockItem.name|escape}">{$stockItem.name|escape} ({$stockItem.quantity|string_format:'%.0f'} {$stockItem.unit|escape})</option>{/if}{/foreach}{/capture}
 
       <div class="card mb-4 border-primary">
         <div class="card-header d-flex justify-content-between align-items-center">
