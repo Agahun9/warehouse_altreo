@@ -9,10 +9,11 @@ use App\Models\SettingRepository;
 use App\Models\UserRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
+use App\Services\ErliService;
 use RuntimeException;
 use Throwable;
 
-class AdminController extends Controller
+class AdministrationController extends Controller
 {
     /** @var UserRepository */
     private $users;
@@ -26,12 +27,16 @@ class AdminController extends Controller
     /** @var EmpikService */
     private $empik;
 
+    /** @var ErliService */
+    private $erli;
+
     public function __construct()
     {
         $this->users = new UserRepository($this->db());
         $this->users->ensureSchema();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
+        $this->erli = new ErliService();
         $this->settings = new SettingRepository($this->db());
         $this->settings->ensureSchema();
     }
@@ -50,11 +55,11 @@ class AdminController extends Controller
             $users[$index]['module_permissions'] = $this->users->modulePermissionsForUser((int) $user['id']);
         }
 
-        $this->render('admin/users', array(
-            'pageTitle' => 'Panel admina',
+        $this->render('administration/users', array(
+            'pageTitle' => 'Administracja',
             'contentTitle' => 'Uzytkownicy',
             'pageDescription' => 'Zarzadzaj kontami, rolami i modulami.',
-            'breadcrumbCurrent' => 'Admin',
+            'breadcrumbCurrent' => 'Uzytkownicy',
             'currentUser' => $currentUser,
             'flashSuccess' => $flashSuccess,
             'flashError' => $flashError,
@@ -70,7 +75,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=users');
+            $this->redirect('./index.php?controller=administration&action=users');
         }
 
         try {
@@ -118,7 +123,7 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=users');
+        $this->redirect('./index.php?controller=administration&action=users');
     }
 
     public function automation(): void
@@ -131,6 +136,7 @@ class AdminController extends Controller
         $baseUrl = $this->absoluteBaseUrl();
         $accounts = $this->allegro->listAccounts();
         $empikAccounts = $this->empik->listAccounts();
+        $erliAccounts = $this->erli->listAccounts();
 
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $baseUrl);
@@ -141,10 +147,10 @@ class AdminController extends Controller
         }
         unset($account);
 
-        $this->render('admin/automation', array(
+        $this->render('administration/automation', array(
             'pageTitle' => 'Administracja',
             'contentTitle' => 'Administracja',
-            'pageDescription' => 'Gotowe linki do cronow Allegro oraz opcjonalny auto-worker uruchamiany z panelu.',
+            'pageDescription' => 'Konta marketplace, integracje, crony i maintenance w jednym uporzadkowanym miejscu.',
             'breadcrumbCurrent' => 'Administracja',
             'currentUser' => $currentUser,
             'flashSuccess' => $flashSuccess,
@@ -153,6 +159,7 @@ class AdminController extends Controller
             'queueStats' => $this->allegro->queueCounts(),
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
+            'erliAccounts' => $erliAccounts,
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
@@ -166,7 +173,7 @@ class AdminController extends Controller
     public function allegroaccounts(): void
     {
         $this->requireRole('admin');
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function cleanup(): void
@@ -175,7 +182,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
 
         try {
@@ -198,7 +205,7 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function savesellasist(): void
@@ -207,7 +214,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
 
         try {
@@ -232,7 +239,7 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function saveempik(): void
@@ -241,7 +248,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
 
         try {
@@ -260,7 +267,36 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function saveerli(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        try {
+            $accountId = (int) $this->input('account_id', 0);
+            $this->erli->saveAccount(array(
+                'name' => $this->input('name', ''),
+                'api_url' => $this->input('api_url', ''),
+                'api_key' => $this->input('api_key', ''),
+                'default_price_list_tag' => $this->input('default_price_list_tag', ''),
+                'default_dispatch_days' => $this->input('default_dispatch_days', '1'),
+                'default_weight_g' => $this->input('default_weight_g', ''),
+                'is_active' => $this->input('is_active', '0') === '1' ? 1 : 0,
+            ), $accountId > 0 ? $accountId : null);
+
+            $this->setFlash('success', 'Ustawienia Erli API zostaly zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function saveapi(): void
@@ -269,7 +305,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
 
         try {
@@ -290,7 +326,7 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function deleteUser(): void
@@ -299,7 +335,7 @@ class AdminController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=users');
+            $this->redirect('./index.php?controller=administration&action=users');
         }
 
         try {
@@ -331,7 +367,7 @@ class AdminController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=users');
+        $this->redirect('./index.php?controller=administration&action=users');
     }
 
     private function absoluteBaseUrl(): string

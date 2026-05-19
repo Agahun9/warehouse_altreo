@@ -111,7 +111,7 @@ class AllegroController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
 
         try {
@@ -129,7 +129,7 @@ class AllegroController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function connect(): void
@@ -142,7 +142,7 @@ class AllegroController extends Controller
             $this->redirect($this->allegro->authorizationUrl($accountId));
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
-            $this->redirect('./index.php?controller=admin&action=automation');
+            $this->redirect('./index.php?controller=administration&action=automation');
         }
     }
 
@@ -162,7 +162,7 @@ class AllegroController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function sync(): void
@@ -250,7 +250,7 @@ class AllegroController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=admin&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function maintenance(): void

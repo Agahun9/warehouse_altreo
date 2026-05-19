@@ -169,7 +169,7 @@
             <p class="users-admin-summary-text">Dla kazdego modulu ustawiasz osobno brak dostepu, sam odczyt albo pelna edycje. To pozwala np. dac edycje Szablonow CSV bez prawa ruszania listy produktow.</p>
           </div>
           <div class="users-admin-summary-actions">
-            <a href="{$baseUrl}?controller=admin&action=automation" class="btn btn-light btn-sm">Administracja</a>
+            <a href="{$baseUrl}?controller=administration&action=automation" class="btn btn-light btn-sm">Administracja</a>
             <span class="badge">{$users|@count} kont</span>
           </div>
         </div>
@@ -193,7 +193,7 @@
                 </div>
               </div>
 
-              <form method="post" action="{$baseUrl}?controller=admin&action=updateUser">
+              <form method="post" action="{$baseUrl}?controller=administration&action=updateUser">
                 <input type="hidden" name="id" value="{$user.id}">
 
                 <div class="card-body px-4 pt-2">
@@ -285,7 +285,7 @@
                       <button
                         type="submit"
                         class="btn btn-outline-danger"
-                        formaction="{$baseUrl}?controller=admin&action=deleteUser"
+                        formaction="{$baseUrl}?controller=administration&action=deleteUser"
                         formmethod="post"
                         onclick="return confirm('Usunac uzytkownika {$user.email|escape:'javascript'}?');"
                       >

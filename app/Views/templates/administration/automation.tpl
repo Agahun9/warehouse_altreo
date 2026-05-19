@@ -1,0 +1,1051 @@
+<main class="app-main">
+  <div class="app-content-header">
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-6">
+          <h3 class="mb-0">{$contentTitle|escape}</h3>
+          <p class="text-secondary mb-0">{$pageDescription|escape}</p>
+        </div>
+        <div class="col-sm-6">
+          <ol class="breadcrumb float-sm-end">
+            <li class="breadcrumb-item"><a href="{$baseUrl}?controller=index">Start</a></li>
+            <li class="breadcrumb-item"><a href="{$baseUrl}?controller=administration&action=users">Administracja</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{$breadcrumbCurrent|escape}</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-content">
+    <div class="container-fluid">
+      {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
+      {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+
+      <style>
+        .administration-hero {
+          overflow: hidden;
+          border: 0;
+          border-radius: 1.25rem;
+          background:
+            radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 28%),
+            linear-gradient(135deg, #0f172a 0%, #1d4ed8 50%, #60a5fa 100%);
+          color: #fff;
+          box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16);
+        }
+
+        .administration-hero .card-body {
+          padding: 1.6rem;
+        }
+
+        .administration-hero-title {
+          margin: 0 0 0.45rem;
+          font-size: 1.5rem;
+          font-weight: 700;
+          line-height: 1.1;
+        }
+
+        .administration-hero-copy {
+          max-width: 52rem;
+          margin: 0;
+          color: rgba(255, 255, 255, 0.84);
+          line-height: 1.55;
+        }
+
+        .administration-hero-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.65rem;
+          justify-content: flex-end;
+        }
+
+        .administration-hero .btn-light {
+          border: 0;
+          font-weight: 600;
+        }
+
+        .administration-summary-card,
+        .administration-panel,
+        .administration-form-card {
+          border-radius: 1rem;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+        }
+
+        .administration-summary-card .card-body {
+          padding: 1.15rem 1.2rem;
+        }
+
+        .administration-summary-label {
+          color: #64748b;
+          font-size: 0.86rem;
+        }
+
+        .administration-summary-value {
+          margin-top: 0.35rem;
+          font-size: 1.9rem;
+          font-weight: 700;
+          line-height: 1;
+          color: #0f172a;
+        }
+
+        .administration-summary-meta {
+          margin-top: 0.5rem;
+          color: #64748b;
+          font-size: 0.86rem;
+        }
+
+        .administration-pill-nav {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.6rem;
+        }
+
+        .administration-pill-nav .nav-link {
+          border-radius: 999px;
+          padding: 0.6rem 0.95rem;
+          font-weight: 600;
+        }
+
+        .administration-accordion .accordion-item {
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 1rem;
+          overflow: hidden;
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+        }
+
+        .administration-accordion .accordion-button {
+          font-weight: 700;
+          padding: 1rem 1.15rem;
+        }
+
+        .administration-accordion .accordion-button:not(.collapsed) {
+          color: #0f172a;
+          background: linear-gradient(180deg, #f8fbff, #eef4ff);
+          box-shadow: none;
+        }
+
+        .administration-note {
+          border-radius: 1rem;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: linear-gradient(180deg, #ffffff, #f8fafc);
+        }
+
+        .administration-market-tabs .nav-link {
+          font-weight: 600;
+        }
+
+        .administration-market-tabs .nav-link.active {
+          background: #0d6efd;
+          color: #fff;
+        }
+
+        .administration-inline-code input.form-control[readonly] {
+          background: #f8fafc;
+        }
+
+        .administration-backup-box {
+          border-radius: 1rem;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: linear-gradient(180deg, #ffffff, #f8fafc);
+          padding: 1rem;
+          height: 100%;
+        }
+
+        @media (max-width: 991.98px) {
+          .administration-hero-actions {
+            justify-content: flex-start;
+          }
+        }
+      </style>
+
+      <div class="card administration-hero mb-4">
+        <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h3 class="administration-hero-title">Centrum administracji i integracji</h3>
+            <p class="administration-hero-copy">W jednym miejscu masz konta marketplace, token API, Sellasist, crony i maintenance. Zostawilem wszystkie dotychczasowe funkcje, ale sa teraz poukladane w osobne sekcje, zeby latwiej bylo znalezc to, czego akurat potrzebujesz.</p>
+          </div>
+          <div class="administration-hero-actions">
+            <a href="{$baseUrl}?controller=administration&action=users" class="btn btn-light btn-sm">Uzytkownicy</a>
+            <a href="{$baseUrl}?controller=allegro&action=index" class="btn btn-outline-light btn-sm">Allegro</a>
+            <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-outline-light btn-sm">Empik</a>
+            <a href="{$baseUrl}?controller=erli&action=index" class="btn btn-outline-light btn-sm">Erli</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+          <div class="card administration-summary-card h-100">
+            <div class="card-body">
+              <div class="administration-summary-label">Wszystkie konta</div>
+              <div class="administration-summary-value">{$accounts|@count + $empikAccounts|@count + $erliAccounts|@count}</div>
+              <div class="administration-summary-meta">Allegro {$accounts|@count} | Empik {$empikAccounts|@count} | Erli {$erliAccounts|@count}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card administration-summary-card h-100">
+            <div class="card-body">
+              <div class="administration-summary-label">Kolejka Allegro</div>
+              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry}</div>
+              <div class="administration-summary-meta">w toku {$queueStats.processing} | bledy {$queueStats.error} | gotowe {$queueStats.done}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card administration-summary-card h-100">
+            <div class="card-body">
+              <div class="administration-summary-label">Token API produktow</div>
+              <div class="administration-summary-value {if $apiBearerToken|default:'' neq ''}text-success{else}text-danger{/if}">{if $apiBearerToken|default:'' neq ''}OK{else}Brak{/if}</div>
+              <div class="administration-summary-meta">{if $apiBearerToken|default:'' neq ''}Aplikacje zewnetrzne moga sie autoryzowac bearer tokenem.{else}Skonfiguruj token przed laczeniem aplikacji.{/if}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card administration-summary-card h-100">
+            <div class="card-body">
+              <div class="administration-summary-label">Szybki plan</div>
+              <div class="administration-summary-value text-primary">2 crony</div>
+              <div class="administration-summary-meta">worker kolejki co minute i pelne maintenance co 5-15 minut</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card administration-panel mb-4">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+              <h3 class="h5 mb-1">Szybkie przejscia</h3>
+              <div class="text-secondary small">Najczesciej uzywane akcje administracyjne i techniczne.</div>
+            </div>
+            <div class="administration-pill-nav">
+              <a class="nav-link active" href="#headingMarketplaces">Marketplace</a>
+              <a class="nav-link" href="#headingIntegrations">Integracje</a>
+              <a class="nav-link" href="#headingAutomation">Crony</a>
+              <a class="nav-link" href="#headingMaintenance">Maintenance</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion administration-accordion" id="administrationAccordion">
+        <div class="accordion-item mb-4">
+          <h2 class="accordion-header" id="headingMarketplaces">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMarketplaces" aria-expanded="true" aria-controls="collapseMarketplaces">
+              Marketplace i konta
+            </button>
+          </h2>
+          <div id="collapseMarketplaces" class="accordion-collapse collapse show" aria-labelledby="headingMarketplaces" data-bs-parent="#administrationAccordion">
+            <div class="accordion-body">
+              <div class="alert alert-light border administration-note mb-4">
+                Tutaj trzymasz wszystkie konfiguracje kont. Allegro ma autoryzacje OAuth i linki cron per konto, a Empik i Erli korzystaja z kluczy API.
+              </div>
+
+              <ul class="nav nav-pills administration-market-tabs mb-4" id="marketplaceTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link active" id="allegro-tab" data-bs-toggle="pill" data-bs-target="#allegro-pane" type="button" role="tab" aria-controls="allegro-pane" aria-selected="true">Allegro</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="empik-tab" data-bs-toggle="pill" data-bs-target="#empik-pane" type="button" role="tab" aria-controls="empik-pane" aria-selected="false">Empik</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="erli-tab" data-bs-toggle="pill" data-bs-target="#erli-pane" type="button" role="tab" aria-controls="erli-pane" aria-selected="false">Erli</button>
+                </li>
+              </ul>
+
+              <div class="tab-content" id="marketplaceTabsContent">
+                <div class="tab-pane fade show active" id="allegro-pane" role="tabpanel" aria-labelledby="allegro-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-4">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Nowe konto Allegro</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="row g-3">
+                            <input type="hidden" name="account_id" value="">
+                            <div class="col-12">
+                              <label class="form-label">Nazwa konta</label>
+                              <input type="text" name="name" class="form-control" placeholder="np. altreo-market" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Client ID</label>
+                              <input type="text" name="client_id" class="form-control" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Client Secret</label>
+                              <input type="text" name="client_secret" class="form-control" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Redirect URI</label>
+                              <input type="url" name="redirect_uri" class="form-control" value="{$defaultRedirectUri|escape}" required>
+                            </div>
+                            <div class="col-12">
+                              <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="allegro_active_default" checked>
+                                <label class="form-check-label" for="allegro_active_default">Konto aktywne</label>
+                              </div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz konto</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-8">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                          <h3 class="card-title mb-0">Konta Allegro</h3>
+                          <a href="{$baseUrl}?controller=allegro&action=index" class="btn btn-sm btn-outline-secondary">Przejdz do ofert</a>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border small text-secondary">
+                            Refresh tokena dziala poprawnie nawet wtedy, gdy nowy <code>access_token</code> ma nadal krotki termin waznosci. To normalne zachowanie po stronie Allegro.
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                              <thead class="table-light">
+                                <tr>
+                                  <th>Konto</th>
+                                  <th>Status</th>
+                                  <th>Token</th>
+                                  <th>Sync</th>
+                                  <th>Trigger cron</th>
+                                  <th>Akcje</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {foreach $accounts as $account}
+                                  <tr>
+                                    <td>
+                                      <div class="fw-semibold">{$account.name|escape}</div>
+                                      <div class="small text-secondary">slug: {$account.slug|escape}</div>
+                                    </td>
+                                    <td>
+                                      {if $account.is_active}
+                                        <span class="badge text-bg-success">Aktywne</span>
+                                      {else}
+                                        <span class="badge text-bg-secondary">Nieaktywne</span>
+                                      {/if}
+                                      {if $account.is_running}
+                                        <div class="small text-warning mt-1">Sync trwa, offset {$account.offer_offset|default:0}</div>
+                                      {/if}
+                                      {if $account.sync_last_error_message}
+                                        <div class="small text-danger mt-1">{$account.sync_last_error_message|escape}</div>
+                                      {/if}
+                                    </td>
+                                    <td>
+                                      {if $account.token_expires_at}
+                                        <div class="small">wazny do</div>
+                                        <div>{$account.token_expires_at|escape}</div>
+                                        <div class="small text-secondary mt-1">odswiezono: {$account.token_updated_at|default:'-'|escape}</div>
+                                      {else}
+                                        <span class="text-secondary">brak autoryzacji</span>
+                                      {/if}
+                                    </td>
+                                    <td>
+                                      <div class="small">pelny: {$account.last_full_sync_at|default:'-'|escape}</div>
+                                      <div class="small">ostatni OK: {$account.last_success_at|default:'-'|escape}</div>
+                                    </td>
+                                    <td class="administration-inline-code" style="min-width: 280px;">
+                                      <div class="small text-secondary mb-1">sync</div>
+                                      <input type="text" class="form-control form-control-sm mb-2" readonly value="{$account.trigger_url|escape}">
+                                      <div class="small text-secondary mb-1">maintenance + kolejka</div>
+                                      <input type="text" class="form-control form-control-sm" readonly value="{$baseUrl}?controller=allegro&action=maintenance&account={$account.slug|escape:'url'}&sync=1&queue_limit=100">
+                                    </td>
+                                    <td class="text-nowrap">
+                                      <div class="d-grid gap-2">
+                                        <a href="{$baseUrl}?controller=allegro&action=connect&id={$account.id}" class="btn btn-sm btn-primary">Autoryzuj</a>
+                                        <a href="{$account.trigger_url|escape}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noreferrer">Sync</a>
+                                        <a href="{$baseUrl}?controller=allegro&action=refreshtoken&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-info">Refresh token</a>
+                                        <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="d-grid">
+                                          <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                          <input type="hidden" name="name" value="{$account.name|escape}">
+                                          <input type="hidden" name="client_id" value="{$account.client_id|escape}">
+                                          <input type="hidden" name="client_secret" value="{$account.client_secret|escape}">
+                                          <input type="hidden" name="redirect_uri" value="{$account.redirect_uri|escape}">
+                                          <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
+                                          <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
+                                            {if $account.is_active}Wylacz konto{else}Wlacz konto{/if}
+                                          </button>
+                                        </form>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                {foreachelse}
+                                  <tr><td colspan="6" class="text-center text-secondary py-4">Brak skonfigurowanych kont Allegro.</td></tr>
+                                {/foreach}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tab-pane fade" id="empik-pane" role="tabpanel" aria-labelledby="empik-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-4">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Nowe konto Empik</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=administration&action=saveempik" class="row g-3">
+                            <input type="hidden" name="account_id" value="">
+                            <div class="col-12">
+                              <label class="form-label">Nazwa konta</label>
+                              <input type="text" name="name" class="form-control" placeholder="np. Empik PL" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Instance URL</label>
+                              <input type="url" name="api_url" class="form-control" placeholder="https://twoja-instancja.mirakl.net" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">API Key</label>
+                              <input type="text" name="api_key" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">shop_id</label>
+                              <input type="number" min="1" step="1" name="shop_id" class="form-control" placeholder="opcjonalnie">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Locale</label>
+                              <input type="text" name="locale" class="form-control" value="pl_PL">
+                            </div>
+                            <div class="col-12">
+                              <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="empik_active_default" checked>
+                                <label class="form-check-label" for="empik_active_default">Konto aktywne</label>
+                              </div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz Empik API</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-8">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                          <h3 class="card-title mb-0">Konta Empik</h3>
+                          <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-sm btn-outline-secondary">Przejdz do Empik</a>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border small text-secondary">
+                            Empik Marketplace dziala na Mirakl Seller API. Wpisz adres instancji Mirakl, API key i opcjonalny <code>shop_id</code>, jesli sprzedawca ma kilka sklepow.
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                              <thead class="table-light">
+                                <tr>
+                                  <th>Konto</th>
+                                  <th>API</th>
+                                  <th>Status</th>
+                                  <th>Sync</th>
+                                  <th>Akcje</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {foreach $empikAccounts as $account}
+                                  <tr>
+                                    <td>
+                                      <div class="fw-semibold">{$account.name|escape}</div>
+                                      <div class="small text-secondary">slug: {$account.slug|escape}</div>
+                                    </td>
+                                    <td>
+                                      <div class="small">{$account.api_url|escape}</div>
+                                      <div class="small text-secondary">shop_id: {$account.shop_id|default:'-'|escape} | locale: {$account.locale|default:'pl_PL'|escape}</div>
+                                    </td>
+                                    <td>
+                                      {if $account.is_active}
+                                        <span class="badge text-bg-success">Aktywne</span>
+                                      {else}
+                                        <span class="badge text-bg-secondary">Nieaktywne</span>
+                                      {/if}
+                                      {if $account.last_error_message}
+                                        <div class="small text-danger mt-1">{$account.last_error_message|escape}</div>
+                                      {/if}
+                                    </td>
+                                    <td>
+                                      <div class="small">ostatni sync: {$account.last_sync_at|default:'-'|escape}</div>
+                                      <div class="small text-secondary">ostatni blad: {$account.last_error_at|default:'-'|escape}</div>
+                                    </td>
+                                    <td class="text-nowrap">
+                                      <div class="d-grid gap-2">
+                                        <a href="{$baseUrl}?controller=empik&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
+                                        <a href="{$baseUrl}?controller=empik&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=saveempik" class="d-grid">
+                                          <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                          <input type="hidden" name="name" value="{$account.name|escape}">
+                                          <input type="hidden" name="api_url" value="{$account.api_url|escape}">
+                                          <input type="hidden" name="api_key" value="{$account.api_key|escape}">
+                                          <input type="hidden" name="shop_id" value="{$account.shop_id|default:''|escape}">
+                                          <input type="hidden" name="locale" value="{$account.locale|default:'pl_PL'|escape}">
+                                          <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
+                                          <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
+                                            {if $account.is_active}Wylacz konto{else}Wlacz konto{/if}
+                                          </button>
+                                        </form>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                {foreachelse}
+                                  <tr><td colspan="5" class="text-center text-secondary py-4">Brak skonfigurowanych kont Empik.</td></tr>
+                                {/foreach}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tab-pane fade" id="erli-pane" role="tabpanel" aria-labelledby="erli-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-4">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Nowe konto Erli</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=administration&action=saveerli" class="row g-3">
+                            <input type="hidden" name="account_id" value="">
+                            <div class="col-12">
+                              <label class="form-label">Nazwa konta</label>
+                              <input type="text" name="name" class="form-control" placeholder="np. Erli PL" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">API URL</label>
+                              <input type="url" name="api_url" class="form-control" value="https://erli.pl/svc/shop-api" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">API Key</label>
+                              <input type="text" name="api_key" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Cennik dostawy</label>
+                              <input type="text" name="default_price_list_tag" class="form-control" placeholder="opcjonalny tag">
+                            </div>
+                            <div class="col-md-3">
+                              <label class="form-label">Wysylka dni</label>
+                              <input type="number" min="1" step="1" name="default_dispatch_days" class="form-control" value="1">
+                            </div>
+                            <div class="col-md-3">
+                              <label class="form-label">Waga g</label>
+                              <input type="number" min="1" step="1" name="default_weight_g" class="form-control" placeholder="np. 250">
+                            </div>
+                            <div class="col-12">
+                              <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="erli_active_default" checked>
+                                <label class="form-check-label" for="erli_active_default">Konto aktywne</label>
+                              </div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz Erli API</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-8">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                          <h3 class="card-title mb-0">Konta Erli</h3>
+                          <a href="{$baseUrl}?controller=erli&action=index" class="btn btn-sm btn-outline-secondary">Przejdz do Erli</a>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border small text-secondary">
+                            Erli korzysta z API produktowego. Konfigurujesz tu adres API, klucz oraz domyslne parametry potrzebne przy pracy na produktach i ich aktualizacjach.
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                              <thead class="table-light">
+                                <tr>
+                                  <th>Konto</th>
+                                  <th>API</th>
+                                  <th>Status</th>
+                                  <th>Sync</th>
+                                  <th>Akcje</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {foreach $erliAccounts as $account}
+                                  <tr>
+                                    <td>
+                                      <div class="fw-semibold">{$account.name|escape}</div>
+                                      <div class="small text-secondary">slug: {$account.slug|escape}</div>
+                                    </td>
+                                    <td>
+                                      <div class="small">{$account.api_url|escape}</div>
+                                      <div class="small text-secondary">cennik: {$account.default_price_list_tag|default:'-'|escape} | wysylka: {$account.default_dispatch_days|default:1|escape}d</div>
+                                    </td>
+                                    <td>
+                                      {if $account.is_active}
+                                        <span class="badge text-bg-success">Aktywne</span>
+                                      {else}
+                                        <span class="badge text-bg-secondary">Nieaktywne</span>
+                                      {/if}
+                                      {if $account.last_error_message}
+                                        <div class="small text-danger mt-1">{$account.last_error_message|escape}</div>
+                                      {/if}
+                                    </td>
+                                    <td>
+                                      <div>{$account.last_sync_at|default:'-'|escape}</div>
+                                      <div class="small text-secondary">blad: {$account.last_error_at|default:'-'|escape}</div>
+                                    </td>
+                                    <td class="text-nowrap">
+                                      <div class="d-grid gap-2">
+                                        <a href="{$baseUrl}?controller=erli&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
+                                        <a href="{$baseUrl}?controller=erli&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Produkty</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=saveerli" class="d-grid">
+                                          <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                          <input type="hidden" name="name" value="{$account.name|escape}">
+                                          <input type="hidden" name="api_url" value="{$account.api_url|escape}">
+                                          <input type="hidden" name="api_key" value="{$account.api_key|escape}">
+                                          <input type="hidden" name="default_price_list_tag" value="{$account.default_price_list_tag|default:''|escape}">
+                                          <input type="hidden" name="default_dispatch_days" value="{$account.default_dispatch_days|default:1|escape}">
+                                          <input type="hidden" name="default_weight_g" value="{$account.default_weight_g|default:''|escape}">
+                                          <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
+                                          <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
+                                            {if $account.is_active}Wylacz konto{else}Wlacz konto{/if}
+                                          </button>
+                                        </form>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                {foreachelse}
+                                  <tr><td colspan="5" class="text-center text-secondary py-4">Brak skonfigurowanych kont Erli.</td></tr>
+                                {/foreach}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item mb-4">
+          <h2 class="accordion-header" id="headingIntegrations">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseIntegrations" aria-expanded="false" aria-controls="collapseIntegrations">
+              Integracje i API
+            </button>
+          </h2>
+          <div id="collapseIntegrations" class="accordion-collapse collapse" aria-labelledby="headingIntegrations" data-bs-parent="#administrationAccordion">
+            <div class="accordion-body">
+              <div class="row g-4">
+                <div class="col-xl-6">
+                  <div class="card administration-panel h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                      <h3 class="card-title mb-0">API produktow dla aplikacji</h3>
+                      <span class="badge text-bg-primary">Nowe</span>
+                    </div>
+                    <div class="card-body">
+                      <form method="post" action="{$baseUrl}?controller=administration&action=saveapi" class="row g-3">
+                        <div class="col-12">
+                          <label class="form-label" for="api-bearer-token">Token API</label>
+                          <input type="text" class="form-control" id="api-bearer-token" name="api_bearer_token" value="{$apiBearerToken|escape}" placeholder="Wpisz wlasny token lub kliknij Generuj">
+                          <div class="form-text">To jest osobny token dla aplikacji laczacych sie z magazynem. Nie ma zwiazku z Allegro, Empik, Erli ani logowaniem uzytkownika.</div>
+                        </div>
+                        <div class="col-12 d-flex flex-wrap gap-2">
+                          <button type="submit" class="btn btn-primary">Zapisz token API</button>
+                          <button type="button" class="btn btn-outline-secondary" id="generateApiToken">Generuj token</button>
+                          <button type="button" class="btn btn-outline-secondary" id="copyApiToken">Kopiuj token</button>
+                        </div>
+                      </form>
+
+                      <hr class="my-4">
+
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Bazowy adres API</label>
+                        <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Wyszukiwanie produktow</label>
+                        <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/search?q=szyba&amp;limit=20">
+                        <div class="form-text">Szuka po SKU, nazwie, EAN i kategorii.</div>
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Produkt po ID</label>
+                        <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/123">
+                      </div>
+                      <div class="administration-inline-code">
+                        <label class="form-label">Produkt po SKU</label>
+                        <input type="text" class="form-control" readonly value="{$apiBaseUrl|escape}/api/products/sku/ABC-001">
+                      </div>
+
+                      <div class="small text-secondary mt-4">
+                        Uzyj naglowka <code>Authorization: Bearer TWOJ_TOKEN</code>. Jesli token jest pusty, API zwroci blad autoryzacji.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-xl-6">
+                  <div class="card administration-panel h-100">
+                    <div class="card-header">
+                      <h3 class="card-title mb-0">Sellasist API</h3>
+                    </div>
+                    <div class="card-body">
+                      <form method="post" action="{$baseUrl}?controller=administration&action=savesellasist" class="row g-3">
+                        <div class="col-lg-5">
+                          <label class="form-label" for="sellasist-base-url">Adres Sellasist</label>
+                          <input type="url" class="form-control" id="sellasist-base-url" name="sellasist_base_url" value="{$sellasistBaseUrl|escape}" placeholder="https://altreo.sellasist.pl">
+                        </div>
+                        <div class="col-lg-7">
+                          <label class="form-label" for="sellasist-api-key">API Key</label>
+                          <input type="text" class="form-control" id="sellasist-api-key" name="sellasist_api_key" value="{$sellasistApiKey|escape}" placeholder="Wklej klucz API Sellasist">
+                        </div>
+                        <div class="col-lg-6">
+                          <label class="form-label" for="sellasist-picking-status-id">Status do pobierania na Zbieranie</label>
+                          <input type="number" min="1" step="1" class="form-control" id="sellasist-picking-status-id" name="sellasist_picking_status_id" value="{$sellasistPickingStatusId|escape}" placeholder="23">
+                        </div>
+                        <div class="col-lg-6">
+                          <label class="form-label" for="sellasist-printed-status-id">Status po wydruku stickersow</label>
+                          <input type="number" min="0" step="1" class="form-control" id="sellasist-printed-status-id" name="sellasist_printed_status_id" value="{$sellasistPrintedStatusId|escape}" placeholder="3">
+                        </div>
+                        <div class="col-12">
+                          <div class="small text-secondary">
+                            Dane sa uzywane przez modul Sellasist, zakladke Zbieranie i generowanie naklejek. Wpisz <code>0</code> w polu statusu po wydruku, aby zostawic zamowienie na obecnym statusie.
+                          </div>
+                        </div>
+                        <div class="col-12">
+                          <button type="submit" class="btn btn-primary">Zapisz ustawienia Sellasist</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item mb-4">
+          <h2 class="accordion-header" id="headingAutomation">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAutomation" aria-expanded="false" aria-controls="collapseAutomation">
+              Crony, worker i automatyzacje
+            </button>
+          </h2>
+          <div id="collapseAutomation" class="accordion-collapse collapse" aria-labelledby="headingAutomation" data-bs-parent="#administrationAccordion">
+            <div class="accordion-body">
+              <div class="row g-4 mb-4">
+                <div class="col-xl-4">
+                  <div class="card administration-panel h-100">
+                    <div class="card-body">
+                      <div class="fw-semibold mb-2">Jak to ustawic</div>
+                      <div class="small text-secondary mb-2">Najlepiej dac dwa crony:</div>
+                      <div class="small text-secondary">1. Worker kolejki co 1 minute.</div>
+                      <div class="small text-secondary">2. Pelne maintenance z syncem co 5-15 minut.</div>
+                      <div class="small text-secondary mt-2">Jesli nie chcesz crona od razu, nizej zostawilem auto-worker w przegladarce. Odpala sie cyklicznie, gdy ten ekran jest otwarty.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-xl-8">
+                  <div class="card administration-panel h-100">
+                    <div class="card-header">
+                      <h3 class="card-title mb-0">Globalne linki cron</h3>
+                    </div>
+                    <div class="card-body">
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Worker kolejki co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="{$automation.queue_worker|escape}" id="globalQueueWorkerUrl">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Pelne maintenance co 5-15 minut</label>
+                        <input type="text" class="form-control" readonly value="{$automation.full_maintenance|escape}" id="globalMaintenanceUrl">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Cron konczenia ofert Allegro</label>
+                        <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}">
+                        <div class="form-text">Dodaje do kolejki tylko oferty kwalifikujace sie do zakonczenia i nie dubluje aktywnych zadan <code>end_offer</code>.</div>
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Cron konczenia + wysylka maila</label>
+                        <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}&amp;mail_to=twoj%40adres.pl">
+                      </div>
+                      <div class="administration-inline-code">
+                        <label class="form-label">Same refresh tokenow</label>
+                        <input type="text" class="form-control" readonly value="{$automation.refresh_tokens|escape}">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-4 mb-4">
+                <div class="col-xl-4">
+                  <div class="card administration-panel h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                      <h3 class="card-title mb-0">Auto-worker w panelu</h3>
+                      <span class="badge text-bg-info">Opcjonalny</span>
+                    </div>
+                    <div class="card-body">
+                      <div class="row g-3 align-items-end">
+                        <div class="col-12">
+                          <label class="form-label">Tryb</label>
+                          <select id="browserWorkerMode" class="form-select">
+                            <option value="queue">Tylko kolejka</option>
+                            <option value="maintenance">Maintenance + sync</option>
+                          </select>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Interwal sekund</label>
+                          <input type="number" min="30" step="30" id="browserWorkerInterval" class="form-control" value="60">
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                          <button type="button" class="btn btn-primary" id="browserWorkerStart">Start</button>
+                          <button type="button" class="btn btn-outline-secondary" id="browserWorkerStop">Stop</button>
+                        </div>
+                        <div class="col-12">
+                          <div class="small text-secondary" id="browserWorkerStatus">Auto-worker zatrzymany.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-xl-8">
+                  <div class="card administration-panel h-100">
+                    <div class="card-header">
+                      <h3 class="card-title mb-0">Linki per konto Allegro</h3>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped align-middle mb-0">
+                        <thead class="table-light">
+                          <tr>
+                            <th>Konto</th>
+                            <th>Status</th>
+                            <th>Sync</th>
+                            <th>Kolejka</th>
+                            <th>Maintenance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {foreach $automation.accounts as $item}
+                            <tr>
+                              <td>
+                                <div class="fw-semibold">{$item.name|escape}</div>
+                                <div class="small text-secondary">{$item.slug|escape}</div>
+                              </td>
+                              <td>
+                                {if $item.is_active}
+                                  <span class="badge text-bg-success">Aktywne</span>
+                                {else}
+                                  <span class="badge text-bg-secondary">Nieaktywne</span>
+                                {/if}
+                              </td>
+                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.sync|escape}"></td>
+                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.queue_only|escape}"></td>
+                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.maintenance|escape}"></td>
+                            </tr>
+                          {foreachelse}
+                            <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Allegro do automatyzacji.</td></tr>
+                          {/foreach}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item mb-4">
+          <h2 class="accordion-header" id="headingMaintenance">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMaintenance" aria-expanded="false" aria-controls="collapseMaintenance">
+              Maintenance i sprzatanie
+            </button>
+          </h2>
+          <div id="collapseMaintenance" class="accordion-collapse collapse" aria-labelledby="headingMaintenance" data-bs-parent="#administrationAccordion">
+            <div class="accordion-body">
+              <div class="row g-4 mb-4">
+                <div class="col-xl-6">
+                  <div class="administration-backup-box">
+                    <h3 class="h5 mb-2">Kopia magazynu ksiegowego</h3>
+                    <p class="text-secondary small mb-3">Pobiera pelny JSON z rekordami modulu `Magazyn ksiegowy`: pozycje, aliasy, dokumenty i linie.</p>
+                    <a href="{$baseUrl}?controller=accountingwarehouse&action=exportbackup" class="btn btn-outline-success">Pobierz pelna kopie JSON</a>
+                  </div>
+                </div>
+                <div class="col-xl-6">
+                  <div class="administration-backup-box">
+                    <h3 class="h5 mb-2">Przywroc kopie magazynu ksiegowego</h3>
+                    <p class="text-secondary small mb-3">Wgranie pliku nadpisze wszystkie aktualne rekordy tego modulu, wiec to jest operacja serwisowa tylko dla administratora.</p>
+                    <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=importbackup" enctype="multipart/form-data" onsubmit="return confirm('Przywrocic pelna kopie? Operacja nadpisze wszystkie obecne rekordy magazynu ksiegowego.');">
+                      <input type="file" name="backup_file" accept=".json,application/json" class="form-control mb-2" required>
+                      <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="confirm_restore" value="1" id="confirmAccountingWarehouseRestoreAdmin" required>
+                        <label class="form-check-label small" for="confirmAccountingWarehouseRestoreAdmin">
+                          Potwierdzam nadpisanie wszystkich danych modulu magazynu ksiegowego.
+                        </label>
+                      </div>
+                      <button type="submit" class="btn btn-outline-danger">Wgraj kopie i odtworz rekordy</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card administration-panel border-warning-subtle">
+                <div class="card-header">
+                  <h3 class="card-title mb-0">Sprzatanie bazy</h3>
+                </div>
+                <div class="card-body">
+                  <form method="post" action="{$baseUrl}?controller=administration&action=cleanup" class="row g-3 align-items-end">
+                    <div class="col-lg-4">
+                      <label class="form-label" for="cleanup-queue-done-days">Usun zakonczona kolejke starsza niz dni</label>
+                      <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-done-days" name="queue_done_days" value="14">
+                    </div>
+                    <div class="col-lg-4">
+                      <label class="form-label" for="cleanup-queue-error-days">Usun bledy i retry starsze niz dni</label>
+                      <input type="number" min="0" step="1" class="form-control" id="cleanup-queue-error-days" name="queue_error_days" value="30">
+                    </div>
+                    <div class="col-lg-4">
+                      <label class="form-label" for="cleanup-deleted-products-days">Usun produkty skasowane starsze niz dni</label>
+                      <input type="number" min="0" step="1" class="form-control" id="cleanup-deleted-products-days" name="deleted_products_days" value="30">
+                    </div>
+                    <div class="col-12">
+                      <div class="small text-secondary">
+                        Ten przycisk czysci stare wpisy z <code>allegro_offer_change_queue</code>, odpina oferty Allegro od produktow po soft-delecie i usuwa stare logi zmian wraz z produktami oznaczonymi jako skasowane.
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <div class="small text-secondary">
+                        Mozesz wpisac <code>0</code>, aby sprzatac od razu, bez czekania pelnej doby.
+                      </div>
+                    </div>
+                    <div class="col-12 d-flex justify-content-between gap-2 align-items-center flex-wrap">
+                      <div class="small text-secondary">
+                        Uzywaj ostroznie: ostatni krok wykonuje trwale usuniecie produktow, ktore byly juz oznaczone jako skasowane.
+                      </div>
+                      <button type="submit" class="btn btn-outline-warning">Uruchom sprzatanie bazy</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+  (function () {
+    var queueUrlInput = document.getElementById('globalQueueWorkerUrl');
+    var maintenanceUrlInput = document.getElementById('globalMaintenanceUrl');
+    var startBtn = document.getElementById('browserWorkerStart');
+    var stopBtn = document.getElementById('browserWorkerStop');
+    var modeInput = document.getElementById('browserWorkerMode');
+    var intervalInput = document.getElementById('browserWorkerInterval');
+    var statusNode = document.getElementById('browserWorkerStatus');
+    var timer = null;
+
+    function setStatus(text) {
+      if (statusNode) {
+        statusNode.textContent = text;
+      }
+    }
+
+    function currentUrl() {
+      if (modeInput && modeInput.value === 'maintenance' && maintenanceUrlInput) {
+        return maintenanceUrlInput.value || '';
+      }
+      return queueUrlInput ? (queueUrlInput.value || '') : '';
+    }
+
+    function runOnce() {
+      var url = currentUrl();
+      if (!url) {
+        setStatus('Brak URL do uruchomienia auto-workera.');
+        return;
+      }
+
+      setStatus('Auto-worker uruchamia: ' + url);
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (response) { return response.text().then(function (body) { return { ok: response.ok, body: body }; }); })
+        .then(function (result) {
+          var stamp = new Date().toLocaleTimeString();
+          setStatus('Ostatnie odpalenie ' + stamp + ': ' + (result.ok ? 'OK' : 'blad') + ' | ' + result.body.substring(0, 220));
+        })
+        .catch(function (error) {
+          setStatus('Blad auto-workera: ' + error);
+        });
+    }
+
+    function startWorker() {
+      stopWorker();
+      var every = Math.max(30, parseInt(intervalInput && intervalInput.value ? intervalInput.value : '60', 10) || 60) * 1000;
+      runOnce();
+      timer = window.setInterval(runOnce, every);
+      setStatus('Auto-worker wlaczony. Interwal: ' + (every / 1000) + ' s.');
+    }
+
+    function stopWorker() {
+      if (timer) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+      setStatus('Auto-worker zatrzymany.');
+    }
+
+    if (startBtn) {
+      startBtn.addEventListener('click', startWorker);
+    }
+    if (stopBtn) {
+      stopBtn.addEventListener('click', stopWorker);
+    }
+
+    var apiTokenInput = document.getElementById('api-bearer-token');
+    var generateApiTokenBtn = document.getElementById('generateApiToken');
+    var copyApiTokenBtn = document.getElementById('copyApiToken');
+
+    function randomToken(length) {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+      var result = '';
+      var cryptoObj = window.crypto || window.msCrypto;
+
+      if (cryptoObj && cryptoObj.getRandomValues) {
+        var values = new Uint32Array(length);
+        cryptoObj.getRandomValues(values);
+        for (var i = 0; i < length; i++) {
+          result += chars.charAt(values[i] % chars.length);
+        }
+        return result;
+      }
+
+      for (var j = 0; j < length; j++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    if (generateApiTokenBtn && apiTokenInput) {
+      generateApiTokenBtn.addEventListener('click', function () {
+        apiTokenInput.value = 'mag_' + randomToken(40);
+      });
+    }
+
+    if (copyApiTokenBtn && apiTokenInput) {
+      copyApiTokenBtn.addEventListener('click', function () {
+        apiTokenInput.select();
+        apiTokenInput.setSelectionRange(0, apiTokenInput.value.length);
+        try {
+          document.execCommand('copy');
+        } catch (error) {
+        }
+      });
+    }
+  })();
+</script>

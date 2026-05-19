@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Core;
 
-use App\Controllers\AdminController;
+use App\Controllers\AdministrationController;
+use App\Controllers\AccountingWarehouseController;
 use App\Controllers\AllegroController;
 use App\Controllers\AuthController;
 use App\Controllers\CategoryController;
 use App\Controllers\CsvTemplateController;
 use App\Controllers\EmpikController;
+use App\Controllers\ErliController;
 use App\Controllers\IndexController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
@@ -35,6 +37,9 @@ class Application
             case 'products':
                 $controller = new ProductController();
                 break;
+            case 'accountingwarehouse':
+                $controller = new AccountingWarehouseController();
+                break;
             case 'categories':
                 $controller = new CategoryController();
                 break;
@@ -44,11 +49,15 @@ class Application
             case 'empik':
                 $controller = new EmpikController();
                 break;
+            case 'erli':
+                $controller = new ErliController();
+                break;
             case 'auth':
                 $controller = new AuthController();
                 break;
             case 'admin':
-                $controller = new AdminController();
+            case 'administration':
+                $controller = new AdministrationController();
                 break;
             case 'csvtemplates':
                 $controller = new CsvTemplateController();

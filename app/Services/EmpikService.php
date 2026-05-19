@@ -69,9 +69,9 @@ class EmpikService
         return (array) $this->storage->findAccountById($id);
     }
 
-    public function offersPage(array $filters, int $page, int $perPage): array
+    public function offersPage(array $filters, int $page, int $perPage, string $sortBy = 'synced', string $sortDir = 'desc'): array
     {
-        return $this->storage->listOffers($filters, $page, $perPage);
+        return $this->storage->listOffers($filters, $page, $perPage, $sortBy, $sortDir);
     }
 
     public function countOffers(array $filters): int
@@ -82,6 +82,133 @@ class EmpikService
     public function offerDetails(int $id)
     {
         return $this->storage->findOfferRowById($id);
+    }
+
+    public function queueCounts(): array
+    {
+        return $this->storage->queueCounts();
+    }
+
+    public function enqueueOfferChanges(array $filters, string $operation, array $payload = array(), array $selectedOfferIds = array()): array
+    {
+        $operation = $this->normalizeQueueOperation($operation);
+        if ($operation === '') {
+            throw new RuntimeException('Wybierz poprawna operacje dla Empika.');
+        }
+
+        if ($selectedOfferIds !== array()) {
+            $targets = $this->storage->listOffersByIds($selectedOfferIds);
+        } else {
+            $selectionLimit = isset($payload['selection_limit']) ? max(1, min(5000, (int) $payload['selection_limit'])) : 1000;
+            $targets = $this->storage->offerTargetsForFilters($filters, $selectionLimit);
+        }
+
+        if ($targets === array()) {
+            throw new RuntimeException('Brak ofert Empik do przetworzenia dla wybranego zakresu.');
+        }
+
+        if ($operation === 'clear_queue') {
+            $removed = $this->storage->clearQueueForOffers(array_map(static function (array $row): int {
+                return (int) ($row['id'] ?? 0);
+            }, $targets));
+
+            return array(
+                'operation' => $operation,
+                'removed' => $removed,
+                'offers' => count($targets),
+            );
+        }
+
+        if ($operation === 'remove_from_system') {
+            $removed = $this->storage->removeOffersByIds(array_map(static function (array $row): int {
+                return (int) ($row['id'] ?? 0);
+            }, $targets));
+
+            return array(
+                'operation' => $operation,
+                'removed' => $removed,
+                'offers' => count($targets),
+            );
+        }
+
+        $normalizedPayload = $this->normalizeQueuePayload($operation, $payload);
+        $queued = $this->storage->enqueueOfferChanges($targets, $operation, $normalizedPayload);
+
+        return array(
+            'operation' => $operation,
+            'queued' => $queued,
+            'offers' => count($targets),
+        );
+    }
+
+    public function processQueue(array $options = array()): array
+    {
+        $limit = max(1, min(100, (int) ($options['limit'] ?? 20)));
+        $accountSelector = trim((string) ($options['account'] ?? ''));
+        $accountId = null;
+
+        if ($accountSelector !== '') {
+            $account = $this->resolveAccount($accountSelector);
+            if ($account) {
+                $accountId = (int) $account['id'];
+            }
+        }
+
+        $rows = $this->storage->fetchQueueBatch($limit, $accountId);
+        $summary = array(
+            'processed' => 0,
+            'done' => 0,
+            'error' => 0,
+            'retry' => 0,
+            'counts' => array(),
+        );
+
+        foreach ($rows as $row) {
+            $queueId = isset($row['id']) ? (int) $row['id'] : 0;
+            if ($queueId <= 0) {
+                continue;
+            }
+
+            $summary['processed']++;
+            $this->storage->markQueueProcessing($queueId);
+
+            try {
+                $offer = $this->storage->findOfferByRowId((int) ($row['offer_row_id'] ?? 0));
+                if (!$offer) {
+                    throw new RuntimeException('Nie znaleziono oferty Empik do przetworzenia.');
+                }
+
+                $result = $this->executeQueueOperation($offer, (string) ($row['operation'] ?? ''), is_array($row['payload'] ?? null) ? $row['payload'] : array());
+                $this->storage->markQueueDone(
+                    $queueId,
+                    isset($result['import_id']) ? (string) $result['import_id'] : null,
+                    isset($result['import_type']) ? (string) $result['import_type'] : null
+                );
+                $summary['done']++;
+            } catch (RuntimeException $exception) {
+                $attempts = isset($row['attempts']) ? (int) $row['attempts'] : 0;
+                if ($attempts < 1) {
+                    $this->storage->markQueueRetry($queueId, $exception->getMessage(), 90);
+                    $summary['retry']++;
+                } else {
+                    $this->storage->markQueueError($queueId, $exception->getMessage());
+                    $summary['error']++;
+                }
+            }
+        }
+
+        $summary['counts'] = $this->storage->queueCounts();
+        return $summary;
+    }
+
+    public function clearWholeQueue(): array
+    {
+        return $this->storage->clearWholeQueue();
+    }
+
+    public function clearQueueStatuses(bool $keepPending = true): array
+    {
+        return $this->storage->clearQueueStatuses($keepPending);
     }
 
     public function syncAccount(string $accountSelector = ''): array
@@ -781,7 +908,403 @@ class EmpikService
         );
     }
 
-    private function requestApi(array $account, string $method, string $path, array $query = array()): array
+    private function normalizeQueueOperation(string $operation): string
+    {
+        $operation = trim($operation);
+        $allowed = array(
+            'set_price',
+            'set_price_from_product',
+            'set_stock_from_product',
+            'set_description',
+            'replace_description',
+            'end_offer',
+            'resume_offer',
+            'clear_queue',
+            'remove_from_system',
+        );
+
+        return in_array($operation, $allowed, true) ? $operation : '';
+    }
+
+    private function normalizeQueuePayload(string $operation, array $payload): array
+    {
+        switch ($operation) {
+            case 'set_price':
+                $value = $this->normalizeDecimal($payload['value'] ?? null);
+                if ($value === null) {
+                    throw new RuntimeException('Podaj poprawna cene dla Empika.');
+                }
+                return array('value' => $value);
+            case 'set_price_from_product':
+            case 'set_stock_from_product':
+            case 'end_offer':
+            case 'resume_offer':
+                return array();
+            case 'set_description':
+                $value = trim((string) ($payload['value'] ?? ''));
+                if ($value === '') {
+                    throw new RuntimeException('Wpisz opis dla operacji Empik.');
+                }
+                return array('value' => $value);
+            case 'replace_description':
+                $search = trim((string) ($payload['search'] ?? ''));
+                if ($search === '') {
+                    throw new RuntimeException('Wpisz fraze do znalezienia w opisie.');
+                }
+                return array(
+                    'search' => $search,
+                    'replace' => (string) ($payload['replace'] ?? ''),
+                );
+        }
+
+        return array();
+    }
+
+    private function executeQueueOperation(array $offer, string $operation, array $payload): array
+    {
+        switch ($operation) {
+            case 'set_price':
+                return $this->submitPriceImport($offer, (string) ($payload['value'] ?? ''));
+            case 'set_price_from_product':
+                if (!isset($offer['warehouse_price_gross']) || $offer['warehouse_price_gross'] === null || $offer['warehouse_price_gross'] === '') {
+                    throw new RuntimeException('Oferta Empik nie ma powiazanego produktu z cena magazynowa.');
+                }
+                return $this->submitPriceImport($offer, number_format((float) $offer['warehouse_price_gross'], 2, '.', ''));
+            case 'set_stock_from_product':
+                if (!isset($offer['warehouse_quantity']) || $offer['warehouse_quantity'] === null || $offer['warehouse_quantity'] === '') {
+                    throw new RuntimeException('Oferta Empik nie ma powiazanego produktu z iloscia magazynowa.');
+                }
+                return $this->submitStockImport($offer, (int) $offer['warehouse_quantity']);
+            case 'set_description':
+                return $this->submitOfferPatch($offer, array(
+                    'description' => (string) ($payload['value'] ?? ''),
+                ));
+            case 'replace_description':
+                $currentDescription = trim((string) ($offer['description'] ?? ''));
+                $search = (string) ($payload['search'] ?? '');
+                if ($currentDescription === '' || $search === '') {
+                    throw new RuntimeException('Brak opisu lub frazy do podmiany w ofercie Empik.');
+                }
+                return $this->submitOfferPatch($offer, array(
+                    'description' => str_replace($search, (string) ($payload['replace'] ?? ''), $currentDescription),
+                ));
+            case 'end_offer':
+                return $this->submitOfferPatch($offer, array('active' => false));
+            case 'resume_offer':
+                return $this->submitOfferPatch($offer, array('active' => true));
+        }
+
+        throw new RuntimeException('Nieobslugiwana operacja Empik: ' . $operation);
+    }
+
+    private function submitPriceImport(array $offer, string $price): array
+    {
+        $shopSku = trim((string) ($offer['shop_sku'] ?? ''));
+        if ($shopSku === '') {
+            throw new RuntimeException('Oferta Empik nie ma shop_sku, wiec nie mozna wyslac ceny.');
+        }
+
+        $csv = "\"offer-sku\";\"price\";\"discount-price\";\"discount-start-date\";\"discount-end-date\"\n"
+            . $this->csvRow(array($shopSku, $price, '', '', ''));
+
+        $response = $this->requestMultipartImport($offer, '/api/offers/pricing/imports', $csv);
+        $importId = trim((string) ($response['import_id'] ?? $response['importId'] ?? ''));
+        if ($importId === '') {
+            throw new RuntimeException('Empik nie zwrocil identyfikatora importu cen.');
+        }
+
+        $status = $this->waitForImportCompletion($offer, 'price', $importId);
+        if (!empty($status['has_error_report'])) {
+            $error = $this->fetchImportErrorReport($offer, 'price', $importId);
+            if ($error !== '') {
+                throw new RuntimeException($error);
+            }
+        }
+
+        return array('import_id' => $importId, 'import_type' => 'price');
+    }
+
+    private function submitStockImport(array $offer, int $quantity): array
+    {
+        $shopSku = trim((string) ($offer['shop_sku'] ?? ''));
+        if ($shopSku === '') {
+            throw new RuntimeException('Oferta Empik nie ma shop_sku, wiec nie mozna wyslac stanu.');
+        }
+
+        $csv = "\"offer-sku\";\"quantity\";\"warehouse-code\";\"update-delete\"\n"
+            . $this->csvRow(array($shopSku, (string) $quantity, '', ''));
+
+        $response = $this->requestMultipartImport($offer, '/api/offers/stock/imports', $csv);
+        $importId = trim((string) ($response['import_id'] ?? ''));
+        if ($importId === '') {
+            throw new RuntimeException('Empik nie zwrocil identyfikatora importu stanow.');
+        }
+
+        $status = $this->waitForImportCompletion($offer, 'stock', $importId);
+        if (!empty($status['has_error_report'])) {
+            $error = $this->fetchImportErrorReport($offer, 'stock', $importId);
+            if ($error !== '') {
+                throw new RuntimeException($error);
+            }
+        }
+
+        return array('import_id' => $importId, 'import_type' => 'stock');
+    }
+
+    private function submitOfferPatch(array $offer, array $patch): array
+    {
+        $payload = json_decode((string) ($offer['offer_json'] ?? ''), true);
+        if (!is_array($payload) || $payload === array()) {
+            throw new RuntimeException('Brak kompletnego payloadu oferty Empik do aktualizacji.');
+        }
+
+        $payload = $this->sanitizeOfferPayloadForUpdate($payload);
+
+        foreach ($patch as $key => $value) {
+            $payload[$key] = $value;
+        }
+
+        $response = $this->requestApi(
+            $offer,
+            'POST',
+            '/api/offers',
+            array(),
+            array('offers' => array($payload)),
+            array('Content-Type: application/json')
+        );
+
+        $importId = trim((string) ($response['import_id'] ?? $response['importId'] ?? ''));
+        if ($importId === '') {
+            throw new RuntimeException('Empik nie zwrocil identyfikatora importu ofert.');
+        }
+
+        $status = $this->waitForImportCompletion($offer, 'offer', $importId);
+        if (!empty($status['has_error_report'])) {
+            $error = $this->fetchImportErrorReport($offer, 'offer', $importId);
+            if ($error !== '') {
+                throw new RuntimeException($error);
+            }
+        }
+
+        return array('import_id' => $importId, 'import_type' => 'offer');
+    }
+
+    private function requestMultipartImport(array $accountOrOffer, string $path, string $csv): array
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'empik_');
+        if ($tmpFile === false) {
+            throw new RuntimeException('Nie udalo sie przygotowac pliku importu Empik.');
+        }
+
+        file_put_contents($tmpFile, $csv);
+
+        try {
+            $file = new \CURLFile($tmpFile, 'text/csv', 'empik-import.csv');
+            return $this->requestApi(
+                $accountOrOffer,
+                'POST',
+                $path,
+                array(),
+                array('file' => $file),
+                array()
+            );
+        } finally {
+            @unlink($tmpFile);
+        }
+    }
+
+    private function waitForImportCompletion(array $offer, string $type, string $importId): array
+    {
+        $attempts = 8;
+        $status = array();
+
+        for ($i = 0; $i < $attempts; $i++) {
+            if ($i > 0) {
+                sleep(1);
+            }
+
+            $status = $this->fetchImportStatus($offer, $type, $importId);
+            $state = strtoupper(trim((string) ($status['status'] ?? '')));
+
+            if ($state === 'COMPLETE') {
+                return $status;
+            }
+
+            if ($state === 'FAILED') {
+                $error = $this->fetchImportErrorReport($offer, $type, $importId);
+                throw new RuntimeException($error !== '' ? $error : ('Import Empik zakonczyl sie statusem FAILED (' . $type . ').'));
+            }
+        }
+
+        throw new RuntimeException('Import Empik nadal jest w toku (' . $type . ', import ' . $importId . '). Sprobuj ponownie za chwile.');
+    }
+
+    private function fetchImportStatus(array $offer, string $type, string $importId): array
+    {
+        switch ($type) {
+            case 'price':
+                $payload = $this->requestApi($offer, 'GET', '/api/offers/pricing/imports', array(
+                    'import_id' => $importId,
+                ));
+                $items = isset($payload['data']) && is_array($payload['data']) ? $payload['data'] : array();
+                return isset($items[0]) && is_array($items[0]) ? $items[0] : array();
+            case 'stock':
+                return $this->requestApi($offer, 'GET', '/api/offers/stock/imports/' . rawurlencode($importId) . '/status', array());
+            case 'offer':
+                return $this->requestApi($offer, 'GET', '/api/offers/imports/' . rawurlencode($importId), array());
+        }
+
+        throw new RuntimeException('Nieznany typ importu Empik: ' . $type);
+    }
+
+    private function fetchImportErrorReport(array $offer, string $type, string $importId): string
+    {
+        switch ($type) {
+            case 'price':
+                $path = '/api/offers/pricing/imports/' . rawurlencode($importId) . '/error_report';
+                break;
+            case 'stock':
+                $path = '/api/offers/stock/imports/' . rawurlencode($importId) . '/error_report';
+                break;
+            case 'offer':
+                $path = '/api/offers/imports/' . rawurlencode($importId) . '/error_report';
+                break;
+            default:
+                return '';
+        }
+
+        $raw = $this->requestRaw($offer, 'GET', $path, array());
+        return $this->parseImportErrorReport($raw);
+    }
+
+    private function parseImportErrorReport(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        $lines = preg_split('/\r\n|\n|\r/', $raw) ?: array();
+        $messages = array();
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            $line = trim($line, "\" \t");
+            if (stripos($line, 'error') !== false || preg_match('/^\d+[;,]/', $line) === 1) {
+                $messages[] = str_replace(array('";"', '";', ';"'), ' | ', $line);
+            }
+        }
+
+        if ($messages === array()) {
+            return function_exists('mb_substr') ? mb_substr($raw, 0, 500, 'UTF-8') : substr($raw, 0, 500);
+        }
+
+        return implode(' || ', array_slice($messages, 0, 3));
+    }
+
+    private function sanitizeOfferPayloadForUpdate(array $payload): array
+    {
+        foreach (array(
+            'offer_id',
+            'total_price',
+            'currency_iso_code',
+            'favorite_rank',
+            'deleted',
+            'date_created',
+            'last_updated',
+            'shop_name',
+            'shop_id',
+        ) as $key) {
+            unset($payload[$key]);
+        }
+
+        if (isset($payload['shop_sku']) && !isset($payload['sku'])) {
+            $payload['sku'] = $payload['shop_sku'];
+        }
+
+        return $payload;
+    }
+
+    private function requestApi(array $account, string $method, string $path, array $query = array(), $body = null, array $extraHeaders = array()): array
+    {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji Empik.');
+        }
+
+        $baseUrl = rtrim((string) ($account['api_url'] ?? ''), '/');
+        if ($baseUrl === '') {
+            throw new RuntimeException('Brak adresu API Empik.');
+        }
+
+        if (isset($account['shop_id']) && $account['shop_id'] !== null && $account['shop_id'] !== '') {
+            $query['shop_id'] = (int) $account['shop_id'];
+        }
+
+        $url = $baseUrl . $path;
+        if ($query !== array()) {
+            $url .= '?' . http_build_query($query);
+        }
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            throw new RuntimeException('Nie udalo sie zainicjalizowac polaczenia z Empik API.');
+        }
+
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+        $headers = array(
+            'Accept: ' . (string) $this->configValue('accept', 'application/json'),
+            'Authorization: ' . (string) ($account['api_key'] ?? ''),
+            'User-Agent: ALTREO-Empik-Mirakl/1.0',
+        );
+
+        foreach ($extraHeaders as $header) {
+            $headers[] = $header;
+        }
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+        if ($body !== null) {
+            if (is_array($body) && !$this->bodyContainsCurlFile($body) && $this->hasJsonContentType($extraHeaders)) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            } else {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+            }
+        }
+
+        $raw = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if (!is_string($raw)) {
+            throw new RuntimeException('Empik API nie zwrocilo odpowiedzi.');
+        }
+
+        $decoded = json_decode($raw, true);
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $message = $this->extractApiError($decoded);
+            if ($message === '' && $curlError !== '') {
+                $message = $curlError;
+            }
+
+            throw new RuntimeException('Empik API zwrocilo blad HTTP ' . $httpCode . ($message !== '' ? ': ' . $message : '.'));
+        }
+
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Empik API zwrocilo niepoprawny JSON.');
+        }
+
+        return $decoded;
+    }
+
+    private function requestRaw(array $account, string $method, string $path, array $query = array()): string
     {
         if (!function_exists('curl_init')) {
             throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji Empik.');
@@ -811,7 +1334,7 @@ class EmpikService
         curl_setopt($ch, CURLOPT_TIMEOUT, 60);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Accept: ' . (string) $this->configValue('accept', 'application/json'),
+            'Accept: text/plain, text/csv, application/octet-stream',
             'Authorization: ' . (string) ($account['api_key'] ?? ''),
             'User-Agent: ALTREO-Empik-Mirakl/1.0',
         ));
@@ -825,21 +1348,43 @@ class EmpikService
             throw new RuntimeException('Empik API nie zwrocilo odpowiedzi.');
         }
 
-        $decoded = json_decode($raw, true);
         if ($httpCode < 200 || $httpCode >= 300) {
-            $message = $this->extractApiError($decoded);
-            if ($message === '' && $curlError !== '') {
-                $message = $curlError;
+            throw new RuntimeException('Empik API zwrocilo blad HTTP ' . $httpCode . ($curlError !== '' ? ': ' . $curlError : '.'));
+        }
+
+        return $raw;
+    }
+
+    private function bodyContainsCurlFile(array $body): bool
+    {
+        foreach ($body as $value) {
+            if ($value instanceof \CURLFile) {
+                return true;
             }
-
-            throw new RuntimeException('Empik API zwrocilo blad HTTP ' . $httpCode . ($message !== '' ? ': ' . $message : '.'));
         }
 
-        if (!is_array($decoded)) {
-            throw new RuntimeException('Empik API zwrocilo niepoprawny JSON.');
+        return false;
+    }
+
+    private function hasJsonContentType(array $headers): bool
+    {
+        foreach ($headers as $header) {
+            if (stripos((string) $header, 'Content-Type: application/json') === 0) {
+                return true;
+            }
         }
 
-        return $decoded;
+        return false;
+    }
+
+    private function csvRow(array $values): string
+    {
+        $escaped = array_map(static function ($value): string {
+            $value = (string) $value;
+            return '"' . str_replace('"', '""', $value) . '"';
+        }, $values);
+
+        return implode(';', $escaped) . "\n";
     }
 
     private function extractApiError($decoded): string

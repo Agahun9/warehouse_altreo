@@ -428,6 +428,9 @@
               {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
                 <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-sm btn-outline-light">Otworz Empik</a>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
+                <a href="{$baseUrl}?controller=erli&action=index" class="btn btn-sm btn-outline-light">Otworz Erli</a>
+              {/if}
             </div>
           </div>
 
@@ -435,9 +438,12 @@
             <div class="card-header"><h3 class="card-title mb-0">Szybkie akcje</h3></div>
             <div class="card-body d-grid gap-2">
               <a href="{$baseUrl}?controller=products&action=create" class="btn btn-primary">Dodaj produkt</a>
+              {if $currentUser.role eq 'admin' or in_array('accountingwarehouse', $currentUser.modules)}
+                <a href="{$baseUrl}?controller=accountingwarehouse&action=index" class="btn btn-outline-success">Magazyn ksiegowy</a>
+              {/if}
               {if $currentUser.role eq 'admin'}
                 <a href="{$baseUrl}?controller=categories&action=create" class="btn btn-outline-dark">Dodaj kategorie</a>
-                <a href="{$baseUrl}?controller=admin&action=users" class="btn btn-outline-secondary">Zarzadzaj uzytkownikami</a>
+                <a href="{$baseUrl}?controller=administration&action=users" class="btn btn-outline-secondary">Zarzadzaj uzytkownikami</a>
               {/if}
             </div>
           </div>
@@ -508,7 +514,7 @@
             <div class="card mb-4">
               <div class="card-header d-flex justify-content-between align-items-center">
                 <h3 class="card-title mb-0">Ostatnio dodani uzytkownicy</h3>
-                <a href="{$baseUrl}?controller=admin&action=users" class="btn btn-sm btn-outline-dark">Panel admina</a>
+                <a href="{$baseUrl}?controller=administration&action=users" class="btn btn-sm btn-outline-dark">Panel admina</a>
               </div>
               <div class="card-body p-0">
                 <div class="table-responsive">

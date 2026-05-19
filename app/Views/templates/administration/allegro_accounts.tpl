@@ -9,7 +9,7 @@
         <div class="col-sm-6">
           <ol class="breadcrumb float-sm-end">
             <li class="breadcrumb-item"><a href="{$baseUrl}?controller=index">Start</a></li>
-            <li class="breadcrumb-item"><a href="{$baseUrl}?controller=admin&action=users">Admin</a></li>
+            <li class="breadcrumb-item"><a href="{$baseUrl}?controller=administration&action=users">Administracja</a></li>
             <li class="breadcrumb-item active" aria-current="page">{$breadcrumbCurrent|escape}</li>
           </ol>
         </div>
@@ -26,7 +26,7 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h3 class="card-title mb-0">Konfiguracja kont</h3>
           <div class="d-flex gap-2">
-            <a href="{$baseUrl}?controller=admin&action=automation" class="btn btn-sm btn-outline-primary">Administracja</a>
+            <a href="{$baseUrl}?controller=administration&action=automation" class="btn btn-sm btn-outline-primary">Administracja</a>
             <a href="{$baseUrl}?controller=allegro&action=index" class="btn btn-sm btn-outline-secondary">Wroc do ofert</a>
           </div>
         </div>

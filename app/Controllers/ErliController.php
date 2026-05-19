@@ -5,48 +5,48 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Services\EmpikService;
+use App\Services\ErliService;
 use Throwable;
 
-class EmpikController extends Controller
+class ErliController extends Controller
 {
-    /** @var EmpikService */
-    private $empik;
+    /** @var ErliService */
+    private $erli;
 
     public function __construct()
     {
-        $this->empik = new EmpikService();
+        $this->erli = new ErliService();
     }
 
     public function index(): void
     {
-        $currentUser = $this->requireModule('empik');
+        $currentUser = $this->requireModule('erli');
         $flashSuccess = $this->getFlash('success');
         $flashError = $this->getFlash('error');
         $this->releaseSessionLock();
 
         $filters = $this->offerFilters();
         $page = max(1, (int) $this->input('page', 1));
-        $allowedPerPage = array(50, 100, 200, 5000);
+        $allowedPerPage = array(50, 100, 200, 5000, 10000);
         $perPageInput = (int) $this->input('per_page', 50);
         $perPage = in_array($perPageInput, $allowedPerPage, true) ? $perPageInput : 50;
-        $sortBy = trim((string) $this->input('sort_by', 'synced'));
+        $sortBy = trim((string) $this->input('sort_by', 'id'));
         $sortDir = strtolower(trim((string) $this->input('sort_dir', 'desc')));
         if ($sortDir !== 'asc' && $sortDir !== 'desc') {
             $sortDir = 'desc';
         }
 
-        $total = $this->empik->countOffers($filters);
-        $offers = $this->empik->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
+        $total = $this->erli->countProducts($filters);
+        $products = $this->erli->productsPage($filters, $page, $perPage, $sortBy, $sortDir);
         $totalPages = max(1, (int) ceil($total / max(1, $perPage)));
 
         if ($page > $totalPages) {
             $page = $totalPages;
-            $offers = $this->empik->offersPage($filters, $page, $perPage, $sortBy, $sortDir);
+            $products = $this->erli->productsPage($filters, $page, $perPage, $sortBy, $sortDir);
         }
 
         $pageWindow = $this->buildPageWindow($page, $totalPages);
-        $sortableColumns = array('id', 'account', 'title', 'sku', 'product_sku', 'category', 'state', 'active', 'quantity', 'warehouse_quantity', 'price', 'queue_status', 'synced', 'updated');
+        $sortableColumns = array('images', 'account', 'title', 'sku', 'category', 'status', 'quantity', 'warehouse_quantity', 'price', 'queue_status', 'synced', 'updated', 'id');
         $sortIndicators = array();
         $sortUrls = array();
 
@@ -57,25 +57,28 @@ class EmpikController extends Controller
 
         $currentListUrl = $this->buildOfferIndexUrl($filters, $sortBy, $sortDir, $page, $perPage);
 
-        $this->render('empik/index', array(
-            'pageTitle' => 'Empik',
-            'contentTitle' => 'Integracja Empik Marketplace',
-            'pageDescription' => 'Mirakl Seller API: konta, filtrowanie, worker kolejki i masowe akcje na ofertach Empik.',
-            'breadcrumbCurrent' => 'Empik',
+        $this->render('erli/index', array(
+            'pageTitle' => 'Erli',
+            'contentTitle' => 'Integracja Erli',
+            'pageDescription' => 'Erli Marketplace API: import produktow z Erli, kolejka zmian i masowe akcje jak w Allegro.',
+            'breadcrumbCurrent' => 'Erli',
             'currentUser' => $currentUser,
             'flashSuccess' => $flashSuccess,
             'flashError' => $flashError,
-            'accounts' => $this->empik->listAccounts(),
-            'offers' => $offers,
+            'accounts' => $this->erli->listAccounts(),
+            'products' => $products,
             'filters' => $filters,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'sortIndicators' => $sortIndicators,
             'sortUrls' => $sortUrls,
-            'queueStats' => $this->empik->queueCounts(),
+            'stats' => $this->erli->productStats(),
+            'queueStats' => $this->erli->queueCounts(),
             'page' => $page,
+            'prevPage' => max(1, $page - 1),
+            'nextPage' => min($totalPages, $page + 1),
             'perPage' => $perPage,
-            'totalOffers' => $total,
+            'totalProducts' => $total,
             'totalPages' => $totalPages,
             'pageWindow' => $pageWindow,
             'currentListUrl' => $currentListUrl,
@@ -88,65 +91,77 @@ class EmpikController extends Controller
         $this->requireWriteAccess();
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=empik&action=index');
+            $this->redirect('./index.php?controller=erli&action=index');
         }
 
         try {
             $accountId = (int) $this->input('account_id', 0);
-            $this->empik->saveAccount(array(
+            $this->erli->saveAccount(array(
                 'name' => $this->input('name', ''),
                 'api_url' => $this->input('api_url', ''),
                 'api_key' => $this->input('api_key', ''),
-                'shop_id' => $this->input('shop_id', ''),
-                'locale' => $this->input('locale', 'pl_PL'),
+                'default_price_list_tag' => $this->input('default_price_list_tag', ''),
+                'default_dispatch_days' => $this->input('default_dispatch_days', '1'),
+                'default_weight_g' => $this->input('default_weight_g', ''),
                 'is_active' => $this->input('is_active', '0') === '1' ? 1 : 0,
             ), $accountId > 0 ? $accountId : null);
 
-            $this->setFlash('success', 'Konto Empik zostalo zapisane.');
+            $this->setFlash('success', 'Konto Erli zostalo zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=empik&action=index');
+        $this->redirect('./index.php?controller=erli&action=index');
     }
 
     public function sync(): void
     {
-        $this->requireModuleWrite('empik');
+        $this->requireModuleWrite('erli');
+        $this->releaseSessionLock();
 
         try {
-            $result = $this->empik->syncAccount(trim((string) $this->input('account', '')));
-            $this->setFlash(
-                'success',
-                'Synchronizacja Empik zakonczona dla konta "' . (string) $result['account']['name'] . '". Pobrano ' . (int) $result['synced_offers'] . ' ofert.'
-            );
+            $result = $this->erli->syncAccount(trim((string) $this->input('account', '')));
+            if (!empty($result['finished_cycle'])) {
+                $this->setFlash(
+                    'success',
+                    'Synchronizacja Erli zakonczona dla konta "' . (string) $result['account']['name'] . '". Zaktualizowano ' . (int) $result['synced_products'] . ' produktow w ' . (int) ($result['pages_processed'] ?? 0) . ' batchach.'
+                );
+            } else {
+                $this->setFlash(
+                    'success',
+                    'Synchronizacja Erli zapisala kolejny batch dla konta "' . (string) $result['account']['name'] . '". Zaktualizowano ' . (int) $result['synced_products'] . ' produktow, batchy: ' . (int) ($result['pages_processed'] ?? 0) . '. Nastepne wywolanie ruszy od kolejnego offsetu.'
+                );
+            }
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=empik&action=index');
+        $this->redirect('./index.php?controller=erli&action=index');
     }
 
     public function queue(): void
     {
-        $this->requireModuleWrite('empik');
+        $this->requireModuleWrite('erli');
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=empik&action=index');
+            $this->redirect('./index.php?controller=erli&action=index');
         }
 
         $this->releaseSessionLock();
 
         try {
             $selectionScope = trim((string) $this->input('selection_scope', 'filtered'));
-            $selectedOfferIds = $this->input('selected_offer_ids', array());
+            $selectedProductIds = $this->input('selected_product_ids', array());
             $selectedIds = array();
 
-            if ($selectionScope === 'selected' && is_array($selectedOfferIds)) {
-                $selectedIds = array_values(array_filter(array_map('intval', $selectedOfferIds)));
+            if ($selectionScope === 'selected' && is_array($selectedProductIds)) {
+                $selectedIds = array_values(array_filter(array_map('intval', $selectedProductIds)));
+                if ($selectedIds === array()) {
+                    throw new \RuntimeException('Zaznacz przynajmniej jeden produkt Erli albo wybierz zakres "Biezacy filtr".');
+                }
             }
 
-            $result = $this->empik->enqueueOfferChanges(
+            $result = $this->erli->enqueueProductChanges(
                 $this->offerFilters(),
                 trim((string) $this->input('operation', '')),
                 array(
@@ -161,9 +176,9 @@ class EmpikController extends Controller
             if ((string) ($result['operation'] ?? '') === 'clear_queue') {
                 $this->setFlash('success', 'Usunieto z kolejki: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
             } elseif ((string) ($result['operation'] ?? '') === 'remove_from_system') {
-                $this->setFlash('success', 'Usunieto lokalnie z systemu: ' . (int) ($result['removed'] ?? 0) . ' ofert.');
+                $this->setFlash('success', 'Usunieto lokalnie z systemu: ' . (int) ($result['removed'] ?? 0) . ' produktow.');
             } else {
-                $this->setFlash('success', 'Dodano do kolejki Empik: ' . (int) ($result['queued'] ?? 0) . ' ofert.');
+                $this->setFlash('success', 'Dodano do kolejki Erli: ' . (int) ($result['queued'] ?? 0) . ' produktow.');
             }
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
@@ -175,97 +190,82 @@ class EmpikController extends Controller
         }
 
         $this->redirect('./index.php?' . http_build_query(array_merge(
-            array('controller' => 'empik', 'action' => 'index'),
+            array('controller' => 'erli', 'action' => 'index'),
             $this->offerFilters()
         )));
     }
 
     public function processqueue(): void
     {
-        $this->requireModuleWrite('empik');
+        $this->requireModuleWrite('erli');
         $this->releaseSessionLock();
 
         try {
-            $result = $this->empik->processQueue(array(
+            $result = $this->erli->processQueue(array(
                 'account' => $this->input('account', ''),
                 'limit' => (int) $this->input('limit', 20),
             ));
 
-            $this->setFlash('success', 'Kolejka Empik przetworzona. OK: ' . (int) ($result['done'] ?? 0));
+            $this->setFlash('success', 'Kolejka Erli przetworzona. OK: ' . (int) ($result['done'] ?? 0));
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=empik&action=index');
+        $this->redirect('./index.php?controller=erli&action=index');
     }
 
     public function clearqueue(): void
     {
-        $this->requireModuleWrite('empik');
+        $this->requireModuleWrite('erli');
 
         if (!$this->isPost()) {
-            $this->redirect('./index.php?controller=empik&action=index');
+            $this->redirect('./index.php?controller=erli&action=index');
         }
 
         try {
             $mode = trim((string) $this->input('mode', 'statuses'));
             if ($mode === 'all') {
-                $result = $this->empik->clearWholeQueue();
-                $this->setFlash('success', 'Usunieto cala kolejke Empik: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
+                $result = $this->erli->clearWholeQueue();
+                $this->setFlash('success', 'Usunieto cala kolejke Erli: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
             } else {
-                $result = $this->empik->clearQueueStatuses(true);
-                $this->setFlash('success', 'Wyczyszczono statusy zakonczonych pozycji kolejki Empik: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
+                $result = $this->erli->clearQueueStatuses(true);
+                $this->setFlash('success', 'Wyczyszczono statusy zakonczonych pozycji kolejki Erli: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
             }
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=empik&action=index');
+        $this->redirect('./index.php?controller=erli&action=index');
     }
 
-    public function offer(): void
+    public function product(): void
     {
-        $this->requireModule('empik');
+        $this->requireModule('erli');
 
         $id = (int) $this->input('id', 0);
-        $offer = $this->empik->offerDetails($id);
-        if (!$offer) {
-            $this->setFlash('error', 'Nie znaleziono oferty Empik.');
-            $this->redirect('./index.php?controller=empik&action=index');
+        $product = $this->erli->productDetails($id);
+        if (!$product) {
+            $this->setFlash('error', 'Nie znaleziono produktu Erli.');
+            $this->redirect('./index.php?controller=erli&action=index');
         }
 
         $decoded = array();
-        if (!empty($offer['offer_json'])) {
-            $decoded = json_decode((string) $offer['offer_json'], true);
+        if (!empty($product['payload_json'])) {
+            $decoded = json_decode((string) $product['payload_json'], true);
             if (!is_array($decoded)) {
                 $decoded = array();
             }
         }
 
-        $this->render('empik/offer', array(
-            'pageTitle' => 'Oferta Empik',
-            'contentTitle' => (string) ($offer['product_title'] ?? ('Oferta #' . $offer['offer_id'])),
-            'pageDescription' => 'Podglad zapisanej oferty z Empik Marketplace.',
-            'breadcrumbCurrent' => 'Oferta Empik',
-            'offer' => $offer,
-            'offerData' => $decoded,
-            'offerJsonPretty' => json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        $this->render('erli/product', array(
+            'pageTitle' => 'Produkt Erli',
+            'contentTitle' => (string) ($product['effective_title'] ?? ('Produkt #' . $product['id'])),
+            'pageDescription' => 'Podglad lokalnego wpisu przygotowanego do synchronizacji z Erli.',
+            'breadcrumbCurrent' => 'Produkt Erli',
+            'product' => $product,
+            'payloadData' => $decoded,
+            'payloadJsonPretty' => json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ));
-    }
-
-    public function categories(): void
-    {
-        $this->requireModule('empik');
-
-        $search = trim((string) $this->input('search', ''));
-        $force = ((string) $this->input('force', '0')) === '1';
-        $accountId = (int) $this->input('account_id', 0);
-
-        try {
-            $this->jsonResponse(array('items' => $this->empik->searchCategories($search, $force, $accountId > 0 ? $accountId : null)));
-        } catch (Throwable $exception) {
-            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
-        }
     }
 
     private function offerFilters(): array
@@ -274,8 +274,7 @@ class EmpikController extends Controller
             'account_id' => trim((string) $this->input('account_id', '')),
             'q' => trim((string) $this->input('q', '')),
             'sku' => trim((string) $this->input('sku', '')),
-            'state' => trim((string) $this->input('state', '')),
-            'active' => trim((string) $this->input('active', '')),
+            'status' => trim((string) $this->input('status', '')),
             'queue_status' => trim((string) $this->input('queue_status', '')),
             'error_query' => trim((string) $this->input('error_query', '')),
             'linked' => trim((string) $this->input('linked', '')),
@@ -287,7 +286,7 @@ class EmpikController extends Controller
     private function buildOfferIndexUrl(array $filters, string $sortBy, string $sortDir, int $page = 1, int $perPage = 50): string
     {
         $query = array(
-            'controller' => 'empik',
+            'controller' => 'erli',
             'action' => 'index',
             'page' => $page,
             'per_page' => $perPage,
@@ -304,42 +303,41 @@ class EmpikController extends Controller
 
     private function nextSortDirection(string $column, string $sortBy, string $sortDir): string
     {
-        if ($column === $sortBy) {
-            return $sortDir === 'asc' ? 'desc' : 'asc';
+        if ($column !== $sortBy) {
+            return 'desc';
         }
 
-        return 'asc';
+        return $sortDir === 'desc' ? 'asc' : 'desc';
     }
 
     private function buildPageWindow(int $page, int $totalPages): array
     {
         $items = array();
-        $pages = array_unique(array_filter(array(1, 2, $page - 1, $page, $page + 1, $totalPages - 1, $totalPages), static function (int $item) use ($totalPages): bool {
-            return $item >= 1 && $item <= $totalPages;
-        }));
-        sort($pages);
+        $lastAdded = null;
 
-        $previous = 0;
-        foreach ($pages as $pageNumber) {
-            if ($previous > 0 && $pageNumber > $previous + 1) {
-                $items[] = array('type' => 'ellipsis');
+        for ($current = 1; $current <= $totalPages; $current++) {
+            $isEdge = $current <= 3 || $current > ($totalPages - 3);
+            $isNearCurrent = $current >= ($page - 2) && $current <= ($page + 2);
+
+            if (!$isEdge && !$isNearCurrent) {
+                continue;
+            }
+
+            if ($lastAdded !== null && ($current - $lastAdded) > 1) {
+                $items[] = array(
+                    'type' => 'ellipsis',
+                    'value' => '...',
+                );
             }
 
             $items[] = array(
                 'type' => 'page',
-                'value' => $pageNumber,
-                'is_current' => $pageNumber === $page,
+                'value' => $current,
+                'is_current' => $current === $page,
             );
-            $previous = $pageNumber;
+            $lastAdded = $current;
         }
 
         return $items;
-    }
-
-    private function jsonResponse(array $payload, int $status = 200): void
-    {
-        http_response_code($status);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($payload);
     }
 }

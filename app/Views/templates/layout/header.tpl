@@ -120,11 +120,17 @@
             {if $currentUser.role eq 'admin' or in_array('products', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=products&action=index" class="nav-link">Produkty</a></li>
             {/if}
+            {if $currentUser.role eq 'admin' or in_array('accountingwarehouse', $currentUser.modules)}
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=accountingwarehouse&action=index" class="nav-link">Magazyn ksiegowy</a></li>
+            {/if}
             {if $currentUser.role eq 'admin' or in_array('allegro', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=allegro&action=index" class="nav-link">Allegro</a></li>
             {/if}
             {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=empik&action=index" class="nav-link">Empik</a></li>
+            {/if}
+            {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=erli&action=index" class="nav-link">Erli</a></li>
             {/if}
             {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
@@ -135,8 +141,8 @@
             {if $currentUser.role eq 'admin'}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=categories&action=index" class="nav-link">Kategorie</a></li>
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link">Szablony CSV</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=users" class="nav-link">Admin</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=admin&action=automation" class="nav-link">Administracja</a></li>
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=administration&action=users" class="nav-link">Uzytkownicy</a></li>
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=administration&action=automation" class="nav-link">Administracja</a></li>
             {/if}
           {/if}
         </ul>
@@ -211,6 +217,14 @@
                   </a>
                 </li>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('accountingwarehouse', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=accountingwarehouse&action=index" class="nav-link{if $currentController eq 'accountingwarehouse'} active{/if}">
+                    <i class="nav-icon bi bi-journal-text"></i>
+                    <p>Magazyn ksiegowy</p>
+                  </a>
+                </li>
+              {/if}
               {if $currentUser.role eq 'admin' or in_array('allegro', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=allegro&action=index" class="nav-link{if $currentController eq 'allegro'} active{/if}">
@@ -224,6 +238,14 @@
                   <a href="{$baseUrl}?controller=empik&action=index" class="nav-link{if $currentController eq 'empik'} active{/if}">
                     <i class="nav-icon bi bi-bag"></i>
                     <p>Empik</p>
+                  </a>
+                </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=erli&action=index" class="nav-link{if $currentController eq 'erli'} active{/if}">
+                    <i class="nav-icon bi bi-box-arrow-up-right"></i>
+                    <p>Erli</p>
                   </a>
                 </li>
               {/if}
@@ -310,13 +332,13 @@
                   </a>
                 </li>
                 <li class="nav-item">
-                  <a href="{$baseUrl}?controller=admin&action=users" class="nav-link{if $currentController eq 'admin' and $currentAction neq 'automation'} active{/if}">
+                  <a href="{$baseUrl}?controller=administration&action=users" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction neq 'automation'} active{/if}">
                     <i class="nav-icon bi bi-people"></i>
                     <p>Uzytkownicy</p>
                   </a>
                 </li>
                 <li class="nav-item">
-                  <a href="{$baseUrl}?controller=admin&action=automation" class="nav-link{if $currentController eq 'admin' and $currentAction eq 'automation'} active{/if}">
+                  <a href="{$baseUrl}?controller=administration&action=automation" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction eq 'automation'} active{/if}">
                     <i class="nav-icon bi bi-clock-history"></i>
                     <p>Administracja</p>
                   </a>

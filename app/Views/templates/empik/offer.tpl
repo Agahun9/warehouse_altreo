@@ -37,8 +37,14 @@
             <div class="col-md-4"><strong>Kategoria:</strong><br>{$offer.category_label|default:'-'|escape}<br><code>{$offer.category_code|default:'-'|escape}</code></div>
             <div class="col-md-4"><strong>Cena:</strong><br>{if isset($offer.price) and $offer.price ne ''}{$offer.price|escape} {$offer.currency_iso_code|default:''|escape}{else}-{/if}</div>
             <div class="col-md-4"><strong>Cena calkowita:</strong><br>{if isset($offer.total_price) and $offer.total_price ne ''}{$offer.total_price|escape} {$offer.currency_iso_code|default:''|escape}{else}-{/if}</div>
+            <div class="col-md-4"><strong>SKU magazyn:</strong><br><code>{$offer.warehouse_sku|default:'-'|escape}</code></div>
+            <div class="col-md-4"><strong>Stan magazyn:</strong><br>{$offer.warehouse_quantity|default:'-'|escape}</div>
+            <div class="col-md-4"><strong>Kolejka:</strong><br>{$offer.queue_meta.status|default:'-'|escape}</div>
             <div class="col-12"><strong>Tytul:</strong><br>{$offer.product_title|default:'-'|escape}</div>
             <div class="col-12"><strong>Opis:</strong><br><div class="small text-secondary">{$offer.description|default:'-'|escape}</div></div>
+            {if $offer.queue_meta.error_message|default:'' ne ''}
+              <div class="col-12"><strong>Ostatni blad kolejki:</strong><br><div class="small text-danger">{$offer.queue_meta.error_message|escape}</div></div>
+            {/if}
           </div>
         </div>
       </div>

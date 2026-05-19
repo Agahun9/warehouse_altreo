@@ -33,7 +33,7 @@
 
       {if not $sellasistConfigured}
         <div class="alert alert-warning">
-          Brak konfiguracji Sellasist API. Uzupelnij dane w <a href="{$baseUrl}?controller=admin&action=automation" class="alert-link">Administracja</a>.
+          Brak konfiguracji Sellasist API. Uzupelnij dane w <a href="{$baseUrl}?controller=administration&action=automation" class="alert-link">Administracja</a>.
         </div>
       {/if}
 

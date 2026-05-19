@@ -1,0 +1,1264 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Models\AccountingWarehouseRepository;
+use App\Services\AccountingWarehouseClassifier;
+use App\Services\AccountingWarehouseSupplierResolver;
+use App\Services\AccountingWarehouseXmlImporter;
+use RuntimeException;
+use Throwable;
+
+class AccountingWarehouseController extends Controller
+{
+    /** @var AccountingWarehouseRepository */
+    private $warehouse;
+
+    /** @var AccountingWarehouseClassifier */
+    private $classifier;
+
+    /** @var AccountingWarehouseXmlImporter */
+    private $xmlImporter;
+
+    /** @var AccountingWarehouseSupplierResolver */
+    private $supplierResolver;
+
+    public function __construct()
+    {
+        $this->classifier = new AccountingWarehouseClassifier();
+        $this->warehouse = new AccountingWarehouseRepository($this->db(), $this->classifier);
+        $this->warehouse->ensureSchema();
+        $this->xmlImporter = new AccountingWarehouseXmlImporter($this->classifier);
+        $this->supplierResolver = new AccountingWarehouseSupplierResolver();
+    }
+
+    public function index(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+
+        $this->render('accounting_warehouse/index', array(
+            'pageTitle' => 'Magazyn ksiegowy',
+            'contentTitle' => 'Magazyn ksiegowy',
+            'pageDescription' => 'Widok stanu i ostatnich ruchow magazynu ksiegowego.',
+            'breadcrumbCurrent' => 'Magazyn ksiegowy',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'overview' => $this->warehouse->overview(),
+            'stockSummary' => $this->warehouse->stockSummary(),
+            'recentMovements' => $this->warehouse->recentMovements(20),
+        ));
+    }
+
+    public function item(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        $itemId = (int) $this->input('id', 0);
+        $item = $this->warehouse->stockItemDetail($itemId);
+
+        if ($item === null) {
+            $this->setFlash('error', 'Nie znaleziono pozycji magazynowej.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+        }
+
+        $this->render('accounting_warehouse/item', array(
+            'pageTitle' => 'Pozycja ksiegowa: ' . (string) ($item['name'] ?? ''),
+            'contentTitle' => 'Pozycja ksiegowa',
+            'pageDescription' => 'Podglad zrodlowych nazw i szybkie przepinanie pozycji na bardziej pasujace.',
+            'breadcrumbCurrent' => (string) ($item['name'] ?? 'Pozycja'),
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'item' => $item,
+            'itemSuggestions' => $this->warehouse->itemNameSuggestions(),
+        ));
+    }
+
+    public function documents(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        $filters = array(
+            'supplier_name' => trim((string) $this->input('supplier_name', '')),
+            'supplier_tax_id' => trim((string) $this->input('supplier_tax_id', '')),
+        );
+
+        $this->render('accounting_warehouse/documents', array(
+            'pageTitle' => 'Dokumenty magazynu ksiegowego',
+            'contentTitle' => 'Dokumenty',
+            'pageDescription' => 'Lista wszystkich faktur, importow XML i korekt w magazynie ksiegowym.',
+            'breadcrumbCurrent' => 'Dokumenty',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'documents' => $this->warehouse->documentList($filters, 200),
+            'filters' => $filters,
+        ));
+    }
+
+    public function issues(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        $month = trim((string) $this->input('month', date('Y-m')));
+        if (preg_match('/^\d{4}\-\d{2}$/', $month) !== 1) {
+            $month = date('Y-m');
+        }
+
+        $this->render('accounting_warehouse/issues', array(
+            'pageTitle' => 'Wyjscia z magazynu',
+            'contentTitle' => 'Wyjscia z magazynu',
+            'pageDescription' => 'Miesieczny raport rozchodu magazynu ksiegowego z przypisaniem do faktur zrodlowych.',
+            'breadcrumbCurrent' => 'Wyjscia z magazynu',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'selectedMonth' => $month,
+            'issueRows' => $this->warehouse->monthlyIssueReport($month),
+        ));
+    }
+
+    public function issuecreate(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+        $stockItems = array_values(array_filter(
+            $this->warehouse->stockSummary(),
+            static function (array $item): bool {
+                return strtolower(trim((string) ($item['item_kind'] ?? ''))) === 'towar';
+            }
+        ));
+        usort($stockItems, static function (array $left, array $right): int {
+            $quantityCompare = ((float) ($right['quantity'] ?? 0)) <=> ((float) ($left['quantity'] ?? 0));
+            if ($quantityCompare !== 0) {
+                return $quantityCompare;
+            }
+
+            return strcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        $this->render('accounting_warehouse/issue_form', array(
+            'pageTitle' => 'Wyjscie z magazynu',
+            'contentTitle' => 'Wyjscie z magazynu',
+            'pageDescription' => 'Osobny formularz rozchodu magazynu ksiegowego.',
+            'breadcrumbCurrent' => 'Wyjscie z magazynu',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'stockItems' => $stockItems,
+            'currencyOptions' => $this->currencyOptions(),
+            'formData' => $this->defaultFormData(),
+        ));
+    }
+
+    public function show(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        $documentId = (int) $this->input('id', 0);
+        $document = $this->warehouse->documentWithLines($documentId);
+
+        if ($document === null) {
+            $this->setFlash('error', 'Nie znaleziono dokumentu.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        $this->render('accounting_warehouse/show', array(
+            'pageTitle' => 'Dokument #' . $documentId,
+            'contentTitle' => 'Szczegoly dokumentu',
+            'pageDescription' => 'Podglad faktury lub korekty zapisanej w magazynie ksiegowym.',
+            'breadcrumbCurrent' => 'Szczegoly dokumentu',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'document' => $document,
+        ));
+    }
+
+    public function create(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+        $showPreview = (string) $this->input('show_preview', '') === '1';
+        if (!$showPreview) {
+            $this->clearStoredXmlPreview();
+        }
+
+        $xmlPreview = $showPreview ? $this->annotatePreviewDocuments($this->loadStoredXmlPreview()) : array();
+        $formData = $this->defaultFormData();
+        if ($xmlPreview !== array()) {
+            $formData['xml_documents'] = $xmlPreview;
+        }
+
+        $this->renderFormPage($currentUser, $formData, $xmlPreview !== array() ? $xmlPreview : null, false);
+    }
+
+    public function macros(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+        $editId = (int) $this->input('id', 0);
+        $editMacro = $editId > 0 ? $this->warehouse->macroDefinition($editId) : null;
+
+        $this->render('accounting_warehouse/macros', array(
+            'pageTitle' => 'Pozycje ksiegowe i aliasy',
+            'contentTitle' => 'Pozycje ksiegowe i aliasy',
+            'pageDescription' => 'Tutaj definiujesz pozycje ksiegowe i ich aliasy jeszcze przed importem XML lub recznym dodawaniem.',
+            'breadcrumbCurrent' => 'Pozycje ksiegowe i aliasy',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'macros' => $this->warehouse->macroCatalog(),
+            'editMacro' => $editMacro,
+        ));
+    }
+
+    public function edit(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+        $documentId = (int) $this->input('id', 0);
+        $document = $this->warehouse->documentWithLines($documentId);
+
+        if ($document === null) {
+            $this->setFlash('error', 'Nie znaleziono dokumentu do edycji.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        $this->renderFormPage($currentUser, $this->mapDocumentToFormData($document), null, true);
+    }
+
+    public function previewxml(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+
+        try {
+            if (!isset($_FILES['invoice_xml']) || !is_array($_FILES['invoice_xml'])) {
+                throw new RuntimeException('Wybierz plik XML do importu.');
+            }
+
+            $isBatchMode = (string) $this->input('batch_mode', '') === '1';
+            $clearStored = (string) $this->input('clear_stored_preview', '') === '1';
+            if ($clearStored) {
+                $this->clearStoredXmlPreview();
+            }
+
+            $previews = array();
+            foreach ($this->normalizeUploadedXmlFiles($_FILES['invoice_xml']) as $file) {
+                $tmpName = (string) ($file['tmp_name'] ?? '');
+                if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                    throw new RuntimeException('Brak poprawnego pliku tymczasowego XML.');
+                }
+
+                $content = file_get_contents($tmpName);
+                if ($content === false) {
+                    throw new RuntimeException('Nie udalo sie odczytac przeslanego pliku XML.');
+                }
+
+                $preview = $this->xmlImporter->parseInvoiceXml($content, (string) ($file['name'] ?? 'faktura.xml'));
+                foreach ($preview['lines'] as $index => $line) {
+                    $rememberedName = $this->warehouse->canonicalNameForSource((string) ($line['original_name'] ?? ''));
+                    if ($rememberedName !== null) {
+                        $preview['lines'][$index]['canonical_name'] = $rememberedName;
+                        $preview['lines'][$index]['classification_confidence'] = 'high';
+                        $preview['lines'][$index]['classification_rule'] = 'alias';
+                    }
+                }
+
+                $preview['duplicate'] = $this->warehouse->findDuplicateDocument((array) ($preview['header'] ?? array()));
+
+                $previews[] = $preview;
+            }
+
+            $previews = $this->annotatePreviewDocuments($previews);
+
+            if ($isBatchMode) {
+                $stored = $this->annotatePreviewDocuments($this->loadStoredXmlPreview());
+                $merged = $this->annotatePreviewDocuments(array_merge($stored, $previews));
+                $this->storeXmlPreview($merged);
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'added' => count($previews),
+                    'total' => count($merged),
+                ));
+                return;
+            }
+
+            $this->storeXmlPreview($previews);
+            $formData = $this->defaultFormData();
+            $formData['xml_documents'] = $previews;
+
+            $this->renderFormPage($currentUser, $formData, $previews, false);
+        } catch (Throwable $exception) {
+            if ((string) $this->input('batch_mode', '') === '1') {
+                $this->jsonResponse(array('ok' => false, 'error' => $exception->getMessage()), 500);
+                return;
+            }
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function storexml(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+
+        try {
+            $documents = $this->xmlDocumentsFromInput();
+            if ($documents === array()) {
+                throw new RuntimeException('Brak dokumentow XML do zapisania.');
+            }
+
+            $savedIds = array();
+            $skippedAdjustments = 0;
+            $skippedDuplicates = 0;
+            foreach ($documents as $documentData) {
+                $documentKind = trim((string) ($documentData['document_kind'] ?? 'receipt')) ?: 'receipt';
+                if ($documentKind === 'adjustment') {
+                    $skippedAdjustments++;
+                    continue;
+                }
+
+                $xmlPayload = base64_decode((string) ($documentData['xml_payload_base64'] ?? ''), true);
+                if ($xmlPayload === false || trim($xmlPayload) === '') {
+                    throw new RuntimeException('Nie udalo sie odczytac danych XML do zapisu.');
+                }
+
+                $header = array(
+                    'document_number' => (string) ($documentData['document_number'] ?? ''),
+                    'supplier_name' => (string) ($documentData['supplier_name'] ?? ''),
+                    'supplier_tax_id' => (string) ($documentData['supplier_tax_id'] ?? ''),
+                    'issue_date' => (string) ($documentData['issue_date'] ?? ''),
+                    'sale_date' => (string) ($documentData['sale_date'] ?? ''),
+                    'currency' => (string) ($documentData['currency'] ?? 'PLN'),
+                    'notes' => (string) ($documentData['notes'] ?? ''),
+                    'source_type' => 'xml',
+                    'document_kind' => $documentKind,
+                    'xml_filename' => (string) ($documentData['xml_filename'] ?? 'faktura.xml'),
+                    'xml_hash' => (string) ($documentData['xml_hash'] ?? hash('sha256', $xmlPayload)),
+                    'xml_payload' => $xmlPayload,
+                );
+
+                $this->validateSupplierHeader($header);
+                $duplicate = $this->warehouse->findDuplicateDocument($header);
+                if ($duplicate !== null) {
+                    $skippedDuplicates++;
+                    continue;
+                }
+
+                $savedIds[] = $this->warehouse->saveDocument($header, (array) ($documentData['lines'] ?? array()), (int) ($currentUser['id'] ?? 0));
+            }
+
+            if ($savedIds === array()) {
+                $this->clearStoredXmlPreview();
+                if ($skippedAdjustments > 0 || $skippedDuplicates > 0) {
+                    $message = 'Nie zapisano zadnych dokumentow XML.';
+                    if ($skippedAdjustments > 0) {
+                        $message .= ' Pominieto korekty: ' . $skippedAdjustments . '.';
+                    }
+                    if ($skippedDuplicates > 0) {
+                        $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
+                    }
+                    $this->setFlash('success', $message);
+                    $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+                }
+
+                throw new RuntimeException('Brak dokumentow XML do zapisania.');
+            }
+
+            $firstDocumentId = (int) ($savedIds[0] ?? 0);
+            $this->clearStoredXmlPreview();
+            $message = 'Zapisano dokumenty XML: ' . count($savedIds) . '.';
+            if ($skippedAdjustments > 0) {
+                $message .= ' Pominieto korekty: ' . $skippedAdjustments . '.';
+            }
+            if ($skippedDuplicates > 0) {
+                $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
+            }
+            $this->setFlash('success', $message);
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $firstDocumentId);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function storemanual(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+
+        try {
+            $header = $this->headerFromPrefix('manual_');
+            $header['source_type'] = 'manual';
+            $header['document_kind'] = 'receipt';
+
+            $this->validateSupplierHeader($header);
+            $documentId = $this->warehouse->saveDocument($header, $this->linesFromPrefix('manual_'), (int) ($currentUser['id'] ?? 0));
+            $this->setFlash('success', 'Reczna faktura zostala zapisana.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $documentId);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function savemacro(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        }
+
+        try {
+            $name = trim((string) $this->input('macro_name', ''));
+            $unit = trim((string) $this->input('macro_unit', 'szt.'));
+            $itemKind = trim((string) $this->input('macro_item_kind', 'towar'));
+            $aliasesRaw = trim((string) $this->input('macro_aliases', ''));
+            $aliases = preg_split('/[\r\n,;]+/', $aliasesRaw) ?: array();
+
+            $this->warehouse->saveMacroDefinition($name, $unit, $aliases, $itemKind);
+            $this->setFlash('success', 'Makro zostalo zapisane. Nowe aliasy beda brane pod uwage przy kolejnych importach.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+    }
+
+    public function updatemacro(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        }
+
+        $macroId = (int) $this->input('id', 0);
+        if ($macroId <= 0) {
+            $this->setFlash('error', 'Brak pozycji ksiegowej do edycji.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        }
+
+        try {
+            $name = trim((string) $this->input('macro_name', ''));
+            $unit = trim((string) $this->input('macro_unit', 'szt.'));
+            $itemKind = trim((string) $this->input('macro_item_kind', 'towar'));
+            $aliasesRaw = trim((string) $this->input('macro_aliases', ''));
+            $aliases = preg_split('/[\r\n,;]+/', $aliasesRaw) ?: array();
+
+            $this->warehouse->updateMacroDefinition($macroId, $name, $unit, $aliases, $itemKind);
+            $this->setFlash('success', 'Makro zostalo zaktualizowane.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros&id=' . $macroId);
+        }
+    }
+
+    public function storeadjustment(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+
+        try {
+            $canonicalName = trim((string) $this->input('adjustment_canonical_name', ''));
+            if ($canonicalName === '') {
+                throw new RuntimeException('Podaj nazwe pozycji do korekty.');
+            }
+
+            $quantity = $this->toDecimal($this->input('adjustment_quantity', '0'));
+            if ($quantity == 0.0) {
+                throw new RuntimeException('Korekta stanu nie moze wynosic 0.');
+            }
+
+            $unit = trim((string) $this->input('adjustment_unit', 'szt.')) ?: 'szt.';
+            $unitNet = $this->toDecimal($this->input('adjustment_unit_net', '0'));
+            $unitGross = $this->toDecimal($this->input('adjustment_unit_gross', '0'));
+            $header = array(
+                'source_type' => 'manual',
+                'document_kind' => 'adjustment',
+                'document_number' => trim((string) $this->input('adjustment_document_number', 'KOR-' . date('Ymd-His'))),
+                'supplier_name' => 'Korekta reczna',
+                'supplier_tax_id' => '',
+                'issue_date' => trim((string) $this->input('adjustment_date', date('Y-m-d'))),
+                'sale_date' => trim((string) $this->input('adjustment_date', date('Y-m-d'))),
+                'currency' => 'PLN',
+                'notes' => trim((string) $this->input('adjustment_notes', '')),
+            );
+
+            $lines = array(
+                array(
+                    'original_name' => trim((string) $this->input('adjustment_original_name', $canonicalName)),
+                    'canonical_name' => $canonicalName,
+                    'quantity' => $quantity,
+                    'unit' => $unit,
+                    'unit_net' => $unitNet,
+                    'unit_gross' => $unitGross,
+                    'vat_rate' => $this->toDecimal($this->input('adjustment_vat_rate', '23')),
+                ),
+            );
+
+            $documentId = $this->warehouse->saveDocument($header, $lines, (int) ($currentUser['id'] ?? 0));
+            $this->setFlash('success', 'Korekta stanu zostala zapisana.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $documentId);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function storeissue(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+
+        try {
+            $header = $this->headerFromPrefix('issue_');
+            $header['source_type'] = 'manual';
+            $header['document_kind'] = 'issue';
+            if (trim((string) ($header['supplier_name'] ?? '')) === '') {
+                $header['supplier_name'] = 'Wyjscie z magazynu';
+            }
+
+            $documentId = $this->warehouse->saveDocument($header, $this->linesFromPrefix('issue_'), (int) ($currentUser['id'] ?? 0));
+            $this->setFlash('success', 'Wyjscie z magazynu zostalo zapisane.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $documentId);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function update(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        $documentId = (int) $this->input('id', 0);
+        if ($documentId <= 0) {
+            $this->setFlash('error', 'Brak dokumentu do aktualizacji.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        try {
+            $header = $this->headerFromPrefix('edit_');
+            $header['source_type'] = trim((string) $this->input('edit_source_type', 'manual')) ?: 'manual';
+            $header['document_kind'] = trim((string) $this->input('edit_document_kind', 'receipt')) ?: 'receipt';
+            $header['xml_filename'] = trim((string) $this->input('edit_xml_filename', ''));
+            $header['xml_hash'] = trim((string) $this->input('edit_xml_hash', ''));
+            $header['xml_payload'] = trim((string) $this->input('edit_xml_payload', ''));
+
+            $this->validateSupplierHeader($header);
+            $this->warehouse->updateDocument($documentId, $header, $this->linesFromPrefix('edit_'));
+            $this->setFlash('success', 'Dokument zostal zaktualizowany.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $documentId);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=edit&id=' . $documentId);
+        }
+    }
+
+    public function delete(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        $documentId = (int) $this->input('id', 0);
+        if ($documentId <= 0) {
+            $this->setFlash('error', 'Brak dokumentu do usuniecia.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        try {
+            $this->warehouse->deleteDocument($documentId);
+            $this->setFlash('success', 'Dokument zostal usuniety.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+    }
+
+    public function reassignitemsource(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+        }
+
+        $itemId = (int) $this->input('id', 0);
+        $sourceName = trim((string) $this->input('source_name', ''));
+        $targetCanonicalName = trim((string) $this->input('target_canonical_name', ''));
+
+        if ($itemId <= 0) {
+            $this->setFlash('error', 'Brak pozycji magazynowej do przepiecia.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+        }
+
+        try {
+            $affected = $this->warehouse->reassignItemSource($itemId, $sourceName, $targetCanonicalName);
+            $this->setFlash(
+                'success',
+                'Przepieto wpisy dla "' . $sourceName . '" na "' . $targetCanonicalName . '". Zmienionych wierszy: ' . $affected . '.'
+            );
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=accountingwarehouse&action=item&id=' . $itemId);
+    }
+
+    public function exportbackup(): void
+    {
+        $this->requireModule('accountingwarehouse');
+
+        try {
+            $payload = $this->warehouse->backupSnapshot();
+            $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                throw new RuntimeException('Nie udalo sie wygenerowac pliku kopii.');
+            }
+
+            $filename = 'accounting_warehouse_backup_' . date('Ymd_His') . '.json';
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($json));
+            echo $json;
+            exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+        }
+    }
+
+    public function importbackup(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+        }
+
+        try {
+            if ((string) $this->input('confirm_restore', '') !== '1') {
+                throw new RuntimeException('Potwierdz, ze chcesz nadpisac wszystkie dane magazynu ksiegowego.');
+            }
+
+            if (!isset($_FILES['backup_file']) || !is_array($_FILES['backup_file'])) {
+                throw new RuntimeException('Wybierz plik kopii JSON do przywrocenia.');
+            }
+
+            $tmpName = (string) ($_FILES['backup_file']['tmp_name'] ?? '');
+            if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                throw new RuntimeException('Brak poprawnego pliku tymczasowego kopii.');
+            }
+
+            $content = file_get_contents($tmpName);
+            if ($content === false || trim($content) === '') {
+                throw new RuntimeException('Nie udalo sie odczytac pliku kopii.');
+            }
+
+            $payload = json_decode($content, true);
+            if (!is_array($payload)) {
+                throw new RuntimeException('Plik kopii nie jest poprawnym JSON-em.');
+            }
+
+            if (($payload['module'] ?? '') !== 'accountingwarehouse') {
+                throw new RuntimeException('Ten plik nie wyglada na kopie magazynu ksiegowego.');
+            }
+
+            $result = $this->warehouse->restoreSnapshot($payload);
+            $this->setFlash(
+                'success',
+                'Przywrocono kopie magazynu ksiegowego. Pozycje: ' . (int) ($result['items'] ?? 0)
+                . ', aliasy: ' . (int) ($result['aliases'] ?? 0)
+                . ', dokumenty: ' . (int) ($result['documents'] ?? 0)
+                . ', linie: ' . (int) ($result['lines'] ?? 0) . '.'
+            );
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=accountingwarehouse&action=index');
+    }
+
+    public function supplierlookup(): void
+    {
+        $this->requireModule('accountingwarehouse');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        try {
+            $query = trim((string) $this->input('q', ''));
+            $mode = strtolower(trim((string) $this->input('mode', 'mixed')));
+            if (!in_array($mode, array('mixed', 'name', 'tax_id'), true)) {
+                $mode = 'mixed';
+            }
+
+            $items = $this->warehouse->supplierLookup($query, $mode, 10);
+            $this->jsonResponse(array('items' => $items));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('items' => array(), 'error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function supplierresolve(): void
+    {
+        $this->requireModule('accountingwarehouse');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        try {
+            $taxId = preg_replace('/\D+/', '', (string) $this->input('tax_id', ''));
+            $supplierName = trim((string) $this->input('supplier_name', ''));
+
+            if (is_string($taxId) && $taxId !== '') {
+                $local = $this->warehouse->supplierByTaxId($taxId);
+                if ($local !== null) {
+                    $this->jsonResponse(array('item' => array_merge($local, array('source' => 'local'))));
+                    return;
+                }
+
+                $official = $this->supplierResolver->resolveByTaxId($taxId, date('Y-m-d'));
+                if ($official !== null) {
+                    $this->jsonResponse(array('item' => $official));
+                    return;
+                }
+            }
+
+            if ($supplierName !== '') {
+                $local = $this->warehouse->supplierByName($supplierName);
+                if ($local !== null) {
+                    $this->jsonResponse(array('item' => array_merge($local, array('source' => 'local'))));
+                    return;
+                }
+            }
+
+            $this->jsonResponse(array('item' => null));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('item' => null, 'error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function documentduplicatecheck(): void
+    {
+        $this->requireModule('accountingwarehouse');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        try {
+            $header = array(
+                'document_number' => trim((string) $this->input('document_number', '')),
+                'supplier_name' => trim((string) $this->input('supplier_name', '')),
+                'supplier_tax_id' => trim((string) $this->input('supplier_tax_id', '')),
+                'xml_hash' => trim((string) $this->input('xml_hash', '')),
+            );
+            $excludeId = (int) $this->input('exclude_id', 0);
+            $duplicate = $this->warehouse->findDuplicateDocument($header, $excludeId);
+            $this->jsonResponse(array('duplicate' => $duplicate));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('duplicate' => null, 'error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function itemnames(): void
+    {
+        $this->requireModule('accountingwarehouse');
+
+        if ($this->requestMethod() !== 'GET') {
+            $this->jsonResponse(array('error' => 'Dozwolona jest tylko metoda GET.'), 405);
+            return;
+        }
+
+        try {
+            $items = $this->warehouse->itemNameSuggestions();
+            $sourceName = trim((string) $this->input('source_name', ''));
+            $suggestion = null;
+            $confidence = 'low';
+
+            if ($sourceName !== '') {
+                $rememberedName = $this->warehouse->canonicalNameForSource($sourceName);
+                if ($rememberedName !== null) {
+                    $suggestion = $rememberedName;
+                    $confidence = 'high';
+                } else {
+                    $classification = $this->classifier->classify($sourceName);
+                    $suggestion = (string) ($classification['canonical_name'] ?? 'pozostale');
+                    $confidence = (string) ($classification['confidence'] ?? 'low');
+                }
+            }
+
+            $this->jsonResponse(array(
+                'items' => $items,
+                'suggestion' => $suggestion,
+                'confidence' => $confidence,
+            ));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('items' => array(), 'error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function deletemacro(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        }
+
+        $macroId = (int) $this->input('id', 0);
+        if ($macroId <= 0) {
+            $this->setFlash('error', 'Brak pozycji ksiegowej do usuniecia.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+        }
+
+        try {
+            $this->warehouse->deleteMacroDefinition($macroId);
+            $this->setFlash('success', 'Makro zostalo usuniete.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=accountingwarehouse&action=macros');
+    }
+
+    private function renderFormPage(array $currentUser, array $formData, ?array $xmlPreview, bool $isEdit): void
+    {
+        $this->render('accounting_warehouse/form', array(
+            'pageTitle' => $isEdit ? 'Edycja dokumentu' : 'Dodaj dokument',
+            'contentTitle' => $isEdit ? 'Edytuj dokument' : 'Dodaj dokument',
+            'pageDescription' => $isEdit
+                ? 'Edycja zapisanej faktury lub korekty magazynu ksiegowego.'
+                : 'Dodawanie faktur recznych, importow XML i korekt stanu.',
+            'breadcrumbCurrent' => $isEdit ? 'Edytuj dokument' : 'Dodaj dokument',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'itemSuggestions' => $this->warehouse->itemNameSuggestions(),
+            'macroPresets' => $this->classifier->commonItemNames(),
+            'currencyOptions' => $this->currencyOptions(),
+            'todayDate' => date('Y-m-d'),
+            'defaultAdjustmentNumber' => 'KOR-' . date('Ymd-His'),
+            'formData' => $formData,
+            'xmlPreview' => $xmlPreview,
+            'isEdit' => $isEdit,
+        ));
+    }
+
+    private function defaultFormData(): array
+    {
+        return array(
+            'manual_header' => array(
+                'document_number' => '',
+                'supplier_name' => '',
+                'supplier_tax_id' => '',
+                'issue_date' => date('Y-m-d'),
+                'sale_date' => date('Y-m-d'),
+                'currency' => 'PLN',
+                'notes' => '',
+            ),
+            'manual_lines' => array(
+                array(
+                    'original_name' => '',
+                    'canonical_name' => 'pozostale',
+                    'quantity' => 1,
+                    'unit' => 'szt.',
+                    'unit_net' => 0,
+                    'unit_gross' => 0,
+                    'vat_rate' => 23,
+                ),
+            ),
+            'issue_header' => array(
+                'document_number' => 'WYD-' . date('Ymd-His'),
+                'supplier_name' => 'Wyjscie z magazynu',
+                'supplier_tax_id' => '',
+                'issue_date' => date('Y-m-d'),
+                'sale_date' => date('Y-m-d'),
+                'currency' => 'PLN',
+                'notes' => '',
+            ),
+            'issue_lines' => array(
+                array(
+                    'original_name' => '',
+                    'canonical_name' => 'pozostale',
+                    'quantity' => 1,
+                    'unit' => 'szt.',
+                    'unit_net' => 0,
+                    'unit_gross' => 0,
+                    'vat_rate' => 23,
+                ),
+            ),
+            'xml_header' => array(),
+            'xml_lines' => array(),
+            'xml_documents' => array(),
+            'edit_document' => null,
+        );
+    }
+
+    private function mapDocumentToFormData(array $document): array
+    {
+        $lines = array();
+        foreach ($document['lines'] as $line) {
+            $lines[] = array(
+                'original_name' => (string) ($line['original_name'] ?? ''),
+                'canonical_name' => (string) ($line['canonical_name'] ?? $line['item_name'] ?? ''),
+                'quantity' => (float) ($line['quantity'] ?? 0),
+                'unit' => (string) ($line['unit'] ?? 'szt.'),
+                'unit_net' => (float) ($line['unit_net'] ?? 0),
+                'unit_gross' => (float) ($line['unit_gross'] ?? 0),
+                'vat_rate' => (float) ($line['vat_rate'] ?? 23),
+            );
+        }
+
+        return array(
+            'manual_header' => array(),
+            'manual_lines' => array(),
+            'issue_header' => array(),
+            'issue_lines' => array(),
+            'xml_header' => array(),
+            'xml_lines' => array(),
+            'xml_documents' => array(),
+            'edit_document' => array(
+                'id' => (int) ($document['id'] ?? 0),
+                'source_type' => (string) ($document['source_type'] ?? 'manual'),
+                'document_kind' => (string) ($document['document_kind'] ?? 'receipt'),
+                'document_number' => (string) ($document['document_number'] ?? ''),
+                'supplier_name' => (string) ($document['supplier_name'] ?? ''),
+                'supplier_tax_id' => (string) ($document['supplier_tax_id'] ?? ''),
+                'issue_date' => (string) ($document['issue_date'] ?? ''),
+                'sale_date' => (string) ($document['sale_date'] ?? ''),
+                'currency' => (string) ($document['currency'] ?? 'PLN'),
+                'notes' => (string) ($document['notes'] ?? ''),
+                'xml_filename' => (string) ($document['xml_filename'] ?? ''),
+                'xml_hash' => (string) ($document['xml_hash'] ?? ''),
+                'xml_payload' => (string) ($document['xml_payload'] ?? ''),
+                'lines' => $lines !== array() ? $lines : array(
+                    array(
+                        'original_name' => '',
+                        'canonical_name' => 'pozostale',
+                        'quantity' => 1,
+                        'unit' => 'szt.',
+                        'unit_net' => 0,
+                        'unit_gross' => 0,
+                        'vat_rate' => 23,
+                    ),
+                ),
+            ),
+        );
+    }
+
+    private function headerFromPrefix(string $prefix): array
+    {
+        return array(
+            'document_number' => trim((string) $this->input($prefix . 'document_number', '')),
+            'supplier_name' => trim((string) $this->input($prefix . 'supplier_name', '')),
+            'supplier_tax_id' => trim((string) $this->input($prefix . 'supplier_tax_id', '')),
+            'issue_date' => trim((string) $this->input($prefix . 'issue_date', '')),
+            'sale_date' => trim((string) $this->input($prefix . 'sale_date', '')),
+            'currency' => trim((string) $this->input($prefix . 'currency', 'PLN')) ?: 'PLN',
+            'notes' => trim((string) $this->input($prefix . 'notes', '')),
+            'total_net' => $this->toDecimal($this->input($prefix . 'total_net', '0')),
+            'total_gross' => $this->toDecimal($this->input($prefix . 'total_gross', '0')),
+        );
+    }
+
+    private function linesFromPrefix(string $prefix): array
+    {
+        $originalNames = $this->arrayInput($prefix . 'original_name');
+        $canonicalNames = $this->arrayInput($prefix . 'canonical_name');
+        $quantities = $this->arrayInput($prefix . 'quantity');
+        $units = $this->arrayInput($prefix . 'unit');
+        $unitNets = $this->arrayInput($prefix . 'unit_net');
+        $unitGrosses = $this->arrayInput($prefix . 'unit_gross');
+        $vatRates = $this->arrayInput($prefix . 'vat_rate');
+
+        $count = max(count($originalNames), count($canonicalNames), count($quantities), count($units), count($unitNets), count($unitGrosses), count($vatRates));
+        $lines = array();
+
+        for ($index = 0; $index < $count; $index++) {
+            $canonicalName = trim((string) ($canonicalNames[$index] ?? ''));
+            $originalName = trim((string) ($originalNames[$index] ?? ''));
+            if ($canonicalName === '' && $originalName === '') {
+                continue;
+            }
+
+            $lines[] = array(
+                'original_name' => $originalName,
+                'canonical_name' => $canonicalName !== '' ? $canonicalName : 'pozostale',
+                'quantity' => $this->toDecimal($quantities[$index] ?? 0),
+                'unit' => trim((string) ($units[$index] ?? 'szt.')) ?: 'szt.',
+                'unit_net' => $this->toDecimal($unitNets[$index] ?? 0),
+                'unit_gross' => $this->toDecimal($unitGrosses[$index] ?? 0),
+                'vat_rate' => $this->toDecimal($vatRates[$index] ?? 23),
+            );
+        }
+
+        return $lines;
+    }
+
+    private function normalizeUploadedXmlFiles(array $files): array
+    {
+        if (!isset($files['name'])) {
+            throw new RuntimeException('Brak plikow XML.');
+        }
+
+        if (!is_array($files['name'])) {
+            $error = (int) ($files['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($error !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Nie udalo sie przeslac pliku XML.');
+            }
+
+            return array($files);
+        }
+
+        $normalized = array();
+        foreach ($files['name'] as $index => $name) {
+            $error = (int) ($files['error'][$index] ?? UPLOAD_ERR_NO_FILE);
+            if ($error === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+
+            if ($error !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Jeden z plikow XML nie przeslal sie poprawnie.');
+            }
+
+            $normalized[] = array(
+                'name' => $name,
+                'type' => $files['type'][$index] ?? '',
+                'tmp_name' => $files['tmp_name'][$index] ?? '',
+                'error' => $error,
+                'size' => $files['size'][$index] ?? 0,
+            );
+        }
+
+        if ($normalized === array()) {
+            throw new RuntimeException('Nie wybrano zadnego pliku XML.');
+        }
+
+        return $normalized;
+    }
+
+    private function xmlDocumentsFromInput(): array
+    {
+        $documents = $this->input('xml_documents', array());
+        if (!is_array($documents)) {
+            return array();
+        }
+
+        $normalizedDocuments = array();
+        foreach ($documents as $document) {
+            if (!is_array($document)) {
+                continue;
+            }
+
+            $documentNumber = trim((string) ($document['document_number'] ?? ''));
+            $xmlPayloadBase64 = trim((string) ($document['xml_payload_base64'] ?? ''));
+            $linesInput = isset($document['lines']) && is_array($document['lines']) ? $document['lines'] : array();
+            $lines = array();
+
+            foreach ($linesInput as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+
+                $canonicalName = trim((string) ($line['canonical_name'] ?? ''));
+                $originalName = trim((string) ($line['original_name'] ?? ''));
+                if ($canonicalName === '' && $originalName === '') {
+                    continue;
+                }
+
+                $lines[] = array(
+                    'original_name' => $originalName,
+                    'canonical_name' => $canonicalName !== '' ? $canonicalName : 'pozostale',
+                    'quantity' => $this->toDecimal($line['quantity'] ?? 0),
+                    'unit' => trim((string) ($line['unit'] ?? 'szt.')) ?: 'szt.',
+                    'unit_net' => $this->toDecimal($line['unit_net'] ?? 0),
+                    'unit_gross' => $this->toDecimal($line['unit_gross'] ?? 0),
+                    'vat_rate' => $this->toDecimal($line['vat_rate'] ?? 23),
+                );
+            }
+
+            if ($xmlPayloadBase64 === '' || $lines === array()) {
+                continue;
+            }
+
+            $normalizedDocuments[] = array(
+                'document_number' => $documentNumber,
+                'document_kind' => trim((string) ($document['document_kind'] ?? 'receipt')) ?: 'receipt',
+                'supplier_name' => trim((string) ($document['supplier_name'] ?? '')),
+                'supplier_tax_id' => trim((string) ($document['supplier_tax_id'] ?? '')),
+                'issue_date' => trim((string) ($document['issue_date'] ?? '')),
+                'sale_date' => trim((string) ($document['sale_date'] ?? '')),
+                'currency' => trim((string) ($document['currency'] ?? 'PLN')) ?: 'PLN',
+                'notes' => trim((string) ($document['notes'] ?? '')),
+                'xml_filename' => trim((string) ($document['xml_filename'] ?? 'faktura.xml')),
+                'xml_hash' => trim((string) ($document['xml_hash'] ?? '')),
+                'xml_payload_base64' => $xmlPayloadBase64,
+                'lines' => $lines,
+            );
+        }
+
+        return $normalizedDocuments;
+    }
+
+    private function arrayInput(string $key): array
+    {
+        $value = $this->input($key, array());
+        return is_array($value) ? array_values($value) : array();
+    }
+
+    private function toDecimal($value): float
+    {
+        $normalized = trim(str_replace(',', '.', (string) $value));
+        if ($normalized === '') {
+            return 0.0;
+        }
+
+        return (float) $normalized;
+    }
+
+    private function jsonResponse(array $payload, int $status = 200): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload);
+    }
+
+    private function currencyOptions(): array
+    {
+        return array('PLN', 'EUR', 'USD', 'GBP', 'CZK', 'NOK', 'SEK', 'CHF');
+    }
+
+    private function xmlPreviewStoragePath(): string
+    {
+        $this->ensureSessionStarted();
+        $sessionId = session_id();
+        if ($sessionId === '') {
+            $sessionId = 'guest';
+        }
+
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'temporary' . DIRECTORY_SEPARATOR . 'accounting_warehouse_preview_' . $sessionId . '.json';
+    }
+
+    private function loadStoredXmlPreview(): array
+    {
+        $path = $this->xmlPreviewStoragePath();
+        if (!is_file($path)) {
+            return array();
+        }
+
+        $content = file_get_contents($path);
+        if ($content === false || trim($content) === '') {
+            return array();
+        }
+
+        $decoded = json_decode($content, true);
+        return is_array($decoded) ? $decoded : array();
+    }
+
+    private function storeXmlPreview(array $preview): void
+    {
+        $path = $this->xmlPreviewStoragePath();
+        file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function clearStoredXmlPreview(): void
+    {
+        $path = $this->xmlPreviewStoragePath();
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function annotatePreviewDocuments(array $documents): array
+    {
+        $availableNames = array();
+        foreach ($this->warehouse->itemNameSuggestions() as $name) {
+            $availableNames[trim((string) $name)] = true;
+        }
+
+        foreach ($documents as $documentIndex => $document) {
+            if (!is_array($document) || !isset($document['lines']) || !is_array($document['lines'])) {
+                continue;
+            }
+
+            foreach ($document['lines'] as $lineIndex => $line) {
+                $canonicalName = trim((string) ($line['canonical_name'] ?? ''));
+                $confidence = trim((string) ($line['classification_confidence'] ?? 'low'));
+                $isAvailable = $canonicalName !== '' && isset($availableNames[$canonicalName]);
+                $documents[$documentIndex]['lines'][$lineIndex]['canonical_available'] = $isAvailable;
+                $documents[$documentIndex]['lines'][$lineIndex]['highlight_unassigned'] = ($canonicalName === '' || $canonicalName === 'pozostale' || !$isAvailable || $confidence === 'low');
+            }
+        }
+
+        return $documents;
+    }
+
+    private function validateSupplierHeader(array &$header): void
+    {
+        $supplierName = trim((string) ($header['supplier_name'] ?? ''));
+        $supplierTaxId = preg_replace('/\D+/', '', (string) ($header['supplier_tax_id'] ?? ''));
+
+        if (!is_string($supplierTaxId)) {
+            $supplierTaxId = '';
+        }
+
+        if ($supplierName === '' && $supplierTaxId === '') {
+            return;
+        }
+
+        if ($supplierTaxId === '') {
+            $existingSupplier = $this->warehouse->supplierByName($supplierName);
+            if ($existingSupplier === null || trim((string) ($existingSupplier['supplier_tax_id'] ?? '')) === '') {
+                throw new RuntimeException('Dla nowego dostawcy uzupelnij NIP. Po NIP system moze tez pobrac nazwe firmy automatycznie.');
+            }
+
+            $header['supplier_tax_id'] = trim((string) ($existingSupplier['supplier_tax_id'] ?? ''));
+            return;
+        }
+
+        if ($supplierName === '') {
+            $resolved = $this->warehouse->supplierByTaxId($supplierTaxId);
+            if ($resolved !== null) {
+                $header['supplier_name'] = trim((string) ($resolved['supplier_name'] ?? ''));
+                return;
+            }
+
+            $official = $this->supplierResolver->resolveByTaxId($supplierTaxId, date('Y-m-d'));
+            if ($official !== null) {
+                $header['supplier_name'] = trim((string) ($official['supplier_name'] ?? ''));
+            }
+        }
+    }
+}
