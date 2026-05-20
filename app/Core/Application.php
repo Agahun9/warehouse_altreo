@@ -9,6 +9,7 @@ use App\Controllers\AccountingWarehouseController;
 use App\Controllers\AllegroController;
 use App\Controllers\AuthController;
 use App\Controllers\CategoryController;
+use App\Controllers\ComputersController;
 use App\Controllers\CsvTemplateController;
 use App\Controllers\EmpikController;
 use App\Controllers\ErliController;
@@ -36,6 +37,9 @@ class Application
                 break;
             case 'products':
                 $controller = new ProductController();
+                break;
+            case 'computers':
+                $controller = new ComputersController();
                 break;
             case 'accountingwarehouse':
                 $controller = new AccountingWarehouseController();

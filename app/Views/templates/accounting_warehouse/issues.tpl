@@ -35,6 +35,7 @@
               <button type="submit" class="btn btn-primary">Pokaz raport</button>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=exportissuesxlsx&month={$selectedMonth|escape:'url'}" class="btn btn-outline-success">Eksport XLSX</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issuecreate" class="btn btn-outline-secondary">Nowe wyjscie</a>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=issuebalancecreate" class="btn btn-outline-warning">Wyrownanie stanu</a>
             </div>
           </form>
         </div>
@@ -52,7 +53,8 @@
                   <th>Pozycja ksiegowa</th>
                   <th>Z jakiej FV</th>
                   <th class="text-end">Sztuki</th>
-                  <th class="text-end">Wartosc rozchodu</th>
+                  <th class="text-end">Netto</th>
+                  <th class="text-end">Brutto</th>
                 </tr>
               </thead>
               <tbody>
@@ -66,21 +68,25 @@
                       <div class="small text-secondary">{$row.source_supplier_name|default:'-'|escape}</div>
                     </td>
                     <td class="text-end">{$row.quantity|string_format:'%.0f'}</td>
-                    <td class="text-end">{$row.issue_value|string_format:'%.2f'} PLN</td>
+                    <td class="text-end">{$row.issue_value_net|string_format:'%.2f'} PLN</td>
+                    <td class="text-end">{$row.issue_value_gross|string_format:'%.2f'} PLN</td>
                   </tr>
                 {foreachelse}
-                  <tr><td colspan="6" class="text-center py-3">Brak wyjsc z magazynu w tym miesiacu.</td></tr>
+                  <tr><td colspan="7" class="text-center py-3">Brak wyjsc z magazynu w tym miesiacu.</td></tr>
                 {/foreach}
                 {if $issueRows}
                   {assign var="issuesTotalQuantity" value=0}
+                  {assign var="issuesTotalNet" value=0}
                   {assign var="issuesTotalGross" value=0}
                   {foreach $issueRows as $row}
                     {assign var="issuesTotalQuantity" value=$issuesTotalQuantity + $row.quantity}
-                    {assign var="issuesTotalGross" value=$issuesTotalGross + $row.issue_value}
+                    {assign var="issuesTotalNet" value=$issuesTotalNet + $row.issue_value_net}
+                    {assign var="issuesTotalGross" value=$issuesTotalGross + $row.issue_value_gross}
                   {/foreach}
                   <tr class="table-light fw-semibold">
                     <td colspan="4" class="text-end">Suma</td>
                     <td class="text-end">{$issuesTotalQuantity|string_format:'%.0f'}</td>
+                    <td class="text-end">{$issuesTotalNet|string_format:'%.2f'} PLN</td>
                     <td class="text-end">{$issuesTotalGross|string_format:'%.2f'} PLN</td>
                   </tr>
                 {/if}

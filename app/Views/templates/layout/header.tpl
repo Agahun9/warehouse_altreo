@@ -119,6 +119,7 @@
             <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=index" class="nav-link">Start</a></li>
             {if $currentUser.role eq 'admin' or in_array('products', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=products&action=index" class="nav-link">Produkty</a></li>
+              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=computers&action=products" class="nav-link">Komputery</a></li>
             {/if}
             {if $currentUser.role eq 'admin' or in_array('accountingwarehouse', $currentUser.modules)}
               <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=accountingwarehouse&action=index" class="nav-link">Magazyn ksiegowy</a></li>
@@ -214,6 +215,12 @@
                   <a href="{$baseUrl}?controller=products&action=index" class="nav-link{if $currentController eq 'products'} active{/if}">
                     <i class="nav-icon bi bi-box-seam"></i>
                     <p>Lista produktow</p>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=computers&action=products" class="nav-link{if $currentController eq 'computers'} active{/if}">
+                    <i class="nav-icon bi bi-pc-display"></i>
+                    <p>Komputery</p>
                   </a>
                 </li>
               {/if}

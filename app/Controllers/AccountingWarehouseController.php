@@ -129,14 +129,16 @@ class AccountingWarehouseController extends Controller
 
         $rows = $this->warehouse->monthlyIssueReport($month);
         $totalQuantity = 0.0;
+        $totalNet = 0.0;
         $totalGross = 0.0;
         foreach ($rows as $row) {
             $totalQuantity += (float) ($row['quantity'] ?? 0);
-            $totalGross += (float) ($row['issue_value'] ?? 0);
+            $totalNet += (float) ($row['issue_value_net'] ?? 0);
+            $totalGross += (float) ($row['issue_value_gross'] ?? 0);
         }
 
         $sheetRows = array();
-        $sheetRows[] = array('Data', 'Dokument wyjscia', 'Pozycja ksiegowa', 'Z jakiej FV', 'Dostawca z FV', 'Sztuki', 'Wartosc rozchodu PLN');
+        $sheetRows[] = array('Data', 'Dokument wyjscia', 'Pozycja ksiegowa', 'Z jakiej FV', 'Dostawca z FV', 'Sztuki', 'Cena netto PLN', 'Cena brutto PLN');
         foreach ($rows as $row) {
             $sheetRows[] = array(
                 (string) ($row['issue_date'] ?? ''),
@@ -145,10 +147,11 @@ class AccountingWarehouseController extends Controller
                 (string) ($row['source_document_number'] ?? ''),
                 (string) ($row['source_supplier_name'] ?? ''),
                 round((float) ($row['quantity'] ?? 0), 0),
-                round((float) ($row['issue_value'] ?? 0), 2),
+                round((float) ($row['issue_value_net'] ?? 0), 2),
+                round((float) ($row['issue_value_gross'] ?? 0), 2),
             );
         }
-        $sheetRows[] = array('', '', '', '', 'SUMA', round($totalQuantity, 0), round($totalGross, 2));
+        $sheetRows[] = array('', '', '', '', 'SUMA', round($totalQuantity, 0), round($totalNet, 2), round($totalGross, 2));
 
         try {
             $binary = $this->buildSimpleXlsx('Rozchod ' . $month, $sheetRows);
@@ -193,6 +196,72 @@ class AccountingWarehouseController extends Controller
             'stockItems' => $stockItems,
             'currencyOptions' => $this->currencyOptions(),
             'formData' => $this->defaultFormData(),
+        ));
+    }
+
+    public function issuebalancecreate(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+        $balanceFormData = array(
+            'document_number' => 'WYR-' . date('Ymd-His'),
+            'issue_date' => date('Y-m-d'),
+            'sale_date' => date('Y-m-d'),
+            'currency' => 'PLN',
+            'target_mode' => 'gross',
+            'target_value' => '',
+            'notes' => '',
+        );
+
+        if ($this->isPost()) {
+            $balanceFormData = array(
+                'document_number' => trim((string) $this->input('balance_document_number', $balanceFormData['document_number'])),
+                'issue_date' => trim((string) $this->input('balance_issue_date', $balanceFormData['issue_date'])),
+                'sale_date' => trim((string) $this->input('balance_sale_date', $balanceFormData['sale_date'])),
+                'currency' => trim((string) $this->input('balance_currency', $balanceFormData['currency'])) ?: 'PLN',
+                'target_mode' => strtolower(trim((string) $this->input('balance_target_mode', 'gross'))) === 'net' ? 'net' : 'gross',
+                'target_value' => trim((string) $this->input('balance_target_value', '')),
+                'notes' => trim((string) $this->input('balance_notes', '')),
+            );
+        }
+
+        $previewResult = null;
+        if ($this->isPost()) {
+            try {
+                $targetValue = $this->toDecimal($balanceFormData['target_value']);
+                if ($targetValue == 0.0) {
+                    throw new RuntimeException('Podaj kwote wyrownania rozna od 0.');
+                }
+
+                $header = array(
+                    'source_type' => 'manual',
+                    'document_kind' => 'issue',
+                    'document_number' => $balanceFormData['document_number'],
+                    'supplier_name' => 'Wyrownanie stanu magazynu',
+                    'supplier_tax_id' => '',
+                    'issue_date' => $balanceFormData['issue_date'],
+                    'sale_date' => $balanceFormData['sale_date'],
+                    'currency' => $balanceFormData['currency'],
+                    'notes' => $balanceFormData['notes'],
+                );
+
+                $previewResult = $this->warehouse->previewAutoBalanceIssue($header, $targetValue, $balanceFormData['target_mode']);
+            } catch (Throwable $exception) {
+                $this->setFlash('error', $exception->getMessage());
+                $this->redirect('./index.php?controller=accountingwarehouse&action=issuebalancecreate');
+            }
+        }
+
+        $this->render('accounting_warehouse/issue_balance_form', array(
+            'pageTitle' => 'Wyrownanie stanu magazynu',
+            'contentTitle' => 'Wyrownanie stanu magazynu',
+            'pageDescription' => 'Automatyczne odjecie sztuk z towarow bez wczesniejszego wyjscia, aby zblizyc sie do zadanej kwoty.',
+            'breadcrumbCurrent' => 'Wyrownanie stanu',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'currencyOptions' => $this->currencyOptions(),
+            'balanceFormData' => $balanceFormData,
+            'balancePreview' => $previewResult,
         ));
     }
 
@@ -591,6 +660,47 @@ class AccountingWarehouseController extends Controller
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
             $this->redirect('./index.php?controller=accountingwarehouse&action=create');
+        }
+    }
+
+    public function storeissuebalance(): void
+    {
+        $currentUser = $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=issuebalancecreate');
+        }
+
+        try {
+            $targetGross = $this->toDecimal($this->input('balance_target_value', '0'));
+            if ($targetGross == 0.0) {
+                throw new RuntimeException('Podaj kwote wyrownania rozna od 0.');
+            }
+            $targetMode = strtolower(trim((string) $this->input('balance_target_mode', 'gross'))) === 'net' ? 'net' : 'gross';
+
+            $header = array(
+                'source_type' => 'manual',
+                'document_kind' => 'issue',
+                'document_number' => trim((string) $this->input('balance_document_number', 'WYR-' . date('Ymd-His'))),
+                'supplier_name' => 'Wyrownanie stanu magazynu',
+                'supplier_tax_id' => '',
+                'issue_date' => trim((string) $this->input('balance_issue_date', date('Y-m-d'))),
+                'sale_date' => trim((string) $this->input('balance_sale_date', date('Y-m-d'))),
+                'currency' => trim((string) $this->input('balance_currency', 'PLN')) ?: 'PLN',
+                'notes' => trim((string) $this->input('balance_notes', '')),
+            );
+
+            $result = $this->warehouse->saveAutoBalanceIssue($header, $targetGross, $targetMode, (int) ($currentUser['id'] ?? 0));
+            $this->setFlash(
+                'success',
+                'Wyrownanie zapisane. Cel ' . ($targetMode === 'net' ? 'netto' : 'brutto') . ': ' . number_format(abs($targetGross), 2, '.', '') . ' PLN,'
+                . ' osiagniete brutto: ' . number_format((float) ($result['actual_gross'] ?? 0), 2, '.', '') . ' PLN,'
+                . ' sztuk: ' . (int) ($result['quantity'] ?? 0) . '.'
+            );
+            $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . (int) ($result['document_id'] ?? 0));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=issuebalancecreate');
         }
     }
 

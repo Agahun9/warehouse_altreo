@@ -946,6 +946,129 @@ class AccountingWarehouseRepository
         });
     }
 
+    public function previewAutoBalanceIssue(array $header, float $targetValue, string $targetMode = 'gross'): array
+    {
+        $targetMode = strtolower(trim($targetMode)) === 'net' ? 'net' : 'gross';
+        $requestedValue = abs(round($targetValue, 2));
+        if ($requestedValue <= 0.0) {
+            throw new RuntimeException('Podaj kwote wyrownania rozna od 0.');
+        }
+
+        $lots = $this->untouchedTowarSourceLots();
+        if ($lots === array()) {
+            throw new RuntimeException('Nie znaleziono pozycji typu towar bez wczesniejszego wyjscia magazynowego.');
+        }
+
+        $selection = $this->selectLotsClosestToTarget($lots, $requestedValue, $targetMode);
+        $selectedLots = isset($selection['lots']) && is_array($selection['lots']) ? $selection['lots'] : array();
+        if ($selectedLots === array()) {
+            throw new RuntimeException('Nie udalo sie dobrac pozycji do wyrownania dla wskazanej kwoty.');
+        }
+
+        $preparedLines = array();
+        $totalNet = 0.0;
+        $totalGross = 0.0;
+        $totalQuantity = 0;
+        $summaryRows = array();
+        $previewRows = array();
+        foreach ($selectedLots as $selectedLot) {
+            $row = isset($selectedLot['row']) && is_array($selectedLot['row']) ? $selectedLot['row'] : array();
+            $quantity = (int) ($selectedLot['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $itemId = (int) ($row['warehouse_item_id'] ?? 0);
+            $canonicalName = trim((string) ($row['canonical_name'] ?? ''));
+            $originalName = trim((string) ($row['original_name'] ?? ''));
+            $unit = trim((string) ($row['unit'] ?? 'szt.')) ?: 'szt.';
+            $unitNet = (float) ($row['unit_net'] ?? 0);
+            $unitGross = (float) ($row['unit_gross'] ?? 0);
+            $vatRate = (float) ($row['vat_rate'] ?? 23);
+            $sourceLineId = (int) ($row['id'] ?? 0);
+
+            for ($index = 0; $index < $quantity; $index++) {
+                $preparedLines[] = array(
+                    'warehouse_item_id' => $itemId,
+                    'related_line_id' => $sourceLineId,
+                    'original_name' => $originalName !== '' ? $originalName : $canonicalName,
+                    'canonical_name' => $canonicalName,
+                    'quantity' => -1,
+                    'unit' => $unit,
+                    'unit_net' => $unitNet,
+                    'unit_gross' => $unitGross,
+                    'line_net' => round(-1 * $unitNet, 2),
+                    'line_gross' => round(-1 * $unitGross, 2),
+                    'vat_rate' => $vatRate,
+                    'stock_event_date' => $this->nullableDate($header['sale_date'] ?? $header['issue_date'] ?? null),
+                );
+            }
+
+            $totalQuantity += $quantity;
+            $totalNet += $unitNet * $quantity;
+            $totalGross += $unitGross * $quantity;
+            $summaryRows[] = $canonicalName . ' x ' . $quantity . ' (' . number_format($unitGross, 2, '.', '') . ' brutto/szt.)';
+            $previewRows[] = array(
+                'canonical_name' => $canonicalName,
+                'original_name' => $originalName,
+                'quantity' => $quantity,
+                'unit' => $unit,
+                'unit_net' => $unitNet,
+                'unit_gross' => $unitGross,
+                'line_net' => round($unitNet * $quantity, 2),
+                'line_gross' => round($unitGross * $quantity, 2),
+                'source_document_id' => (int) ($row['document_id'] ?? 0),
+                'source_document_number' => (string) ($row['document_number'] ?? ''),
+                'source_supplier_name' => (string) ($row['supplier_name'] ?? ''),
+                'source_date' => (string) (($row['sale_date'] ?? '') ?: ($row['issue_date'] ?? '')),
+            );
+        }
+
+        if ($preparedLines === array()) {
+            throw new RuntimeException('Nie znaleziono poprawnych pozycji do wyrownania.');
+        }
+
+        $header['source_type'] = trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual';
+        $header['document_kind'] = 'issue';
+        $header['supplier_name'] = trim((string) ($header['supplier_name'] ?? 'Wyrownanie stanu magazynu')) ?: 'Wyrownanie stanu magazynu';
+        $header['total_net'] = round($totalNet, 2);
+        $header['total_gross'] = round($totalGross, 2);
+
+        $notes = trim((string) ($header['notes'] ?? ''));
+        $targetLabel = $targetMode === 'net' ? 'netto' : 'brutto';
+        $autoNote = 'Wyrownanie automatyczne. Cel ' . $targetLabel . ': ' . number_format($requestedValue, 2, '.', '')
+            . ' PLN. Osiagniete netto: ' . number_format($totalNet, 2, '.', '')
+            . ' PLN. Osiagniete brutto: ' . number_format($totalGross, 2, '.', '')
+            . ' PLN. Pozycje: ' . implode('; ', $summaryRows) . '.';
+        $header['notes'] = $notes !== '' ? ($notes . ' | ' . $autoNote) : $autoNote;
+
+        return array(
+            'header' => $header,
+            'prepared_lines' => $preparedLines,
+            'preview_rows' => $previewRows,
+            'requested_value' => $requestedValue,
+            'requested_mode' => $targetMode,
+            'actual_gross' => round($totalGross, 2),
+            'actual_net' => round($totalNet, 2),
+            'quantity' => $totalQuantity,
+        );
+    }
+
+    public function saveAutoBalanceIssue(array $header, float $targetValue, string $targetMode, int $userId): array
+    {
+        $plan = $this->previewAutoBalanceIssue($header, $targetValue, $targetMode);
+        $documentId = $this->persistIssueDocument(
+            (array) ($plan['header'] ?? $header),
+            (array) ($plan['prepared_lines'] ?? array()),
+            $userId,
+            (float) ($plan['actual_net'] ?? 0),
+            (float) ($plan['actual_gross'] ?? 0)
+        );
+
+        $plan['document_id'] = $documentId;
+        return $plan;
+    }
+
     public function monthlyIssueReport(string $month): array
     {
         if (preg_match('/^\d{4}\-\d{2}$/', $month) !== 1) {
@@ -957,7 +1080,7 @@ class AccountingWarehouseRepository
 
         $rows = $this->database->fetchAll(
             'SELECT issue_lines.id, issue_lines.document_id, issue_lines.warehouse_item_id, issue_lines.original_name, issue_lines.canonical_name,'
-            . ' issue_lines.quantity, issue_lines.stock_event_date, issue_lines.unit_gross,'
+            . ' issue_lines.quantity, issue_lines.stock_event_date, issue_lines.unit_net, issue_lines.unit_gross,'
             . ' issue_docs.document_number AS issue_document_number, issue_docs.sale_date AS issue_sale_date, issue_docs.issue_date AS issue_issue_date,'
             . ' items.name AS item_name,'
             . ' source_lines.document_id AS source_document_id,'
@@ -999,12 +1122,14 @@ class AccountingWarehouseRepository
                     'source_supplier_name' => (string) ($row['source_supplier_name'] ?? ''),
                     'source_date' => (string) (($row['source_sale_date'] ?? '') ?: ($row['source_issue_date'] ?? '')),
                     'quantity' => 0,
-                    'issue_value' => 0.0,
+                    'issue_value_net' => 0.0,
+                    'issue_value_gross' => 0.0,
                 );
             }
 
             $grouped[$groupKey]['quantity'] += abs((float) ($row['quantity'] ?? 0));
-            $grouped[$groupKey]['issue_value'] += abs((float) ($row['unit_gross'] ?? 0));
+            $grouped[$groupKey]['issue_value_net'] += abs((float) ($row['unit_net'] ?? 0));
+            $grouped[$groupKey]['issue_value_gross'] += abs((float) ($row['unit_gross'] ?? 0));
         }
 
         return array_values($grouped);
@@ -1185,48 +1310,7 @@ class AccountingWarehouseRepository
             throw new RuntimeException('Nie znaleziono poprawnych pozycji do wydania z magazynu.');
         }
 
-        return (int) $this->database->transaction(function (Database $database) use ($header, $preparedLines, $userId, $totalNet, $totalGross): int {
-            $documentId = (int) $database->insert(self::DOCUMENTS_TABLE, array(
-                'source_type' => trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual',
-                'document_kind' => 'issue',
-                'document_number' => $this->nullableString($header['document_number'] ?? null),
-                'supplier_name' => $this->nullableString($header['supplier_name'] ?? 'Wyjscie z magazynu'),
-                'supplier_tax_id' => $this->nullableString($header['supplier_tax_id'] ?? null),
-                'issue_date' => $this->nullableDate($header['issue_date'] ?? null),
-                'sale_date' => $this->nullableDate($header['sale_date'] ?? null),
-                'receipt_date' => $this->nullableDate($header['sale_date'] ?? null),
-                'currency' => trim((string) ($header['currency'] ?? 'PLN')) ?: 'PLN',
-                'total_net' => round($totalNet, 2),
-                'total_gross' => round($totalGross, 2),
-                'notes' => $this->nullableString($header['notes'] ?? null),
-                'created_by_user_id' => $userId > 0 ? $userId : null,
-            ));
-
-            foreach ($preparedLines as $line) {
-                $database->insert(self::LINES_TABLE, array(
-                    'document_id' => $documentId,
-                    'warehouse_item_id' => $line['warehouse_item_id'],
-                    'related_line_id' => $line['related_line_id'],
-                    'original_name' => $line['original_name'],
-                    'canonical_name' => $line['canonical_name'],
-                    'quantity' => $line['quantity'],
-                    'unit' => $line['unit'],
-                    'unit_net' => $line['unit_net'],
-                    'unit_gross' => $line['unit_gross'],
-                    'line_net' => $line['line_net'],
-                    'line_gross' => $line['line_gross'],
-                    'vat_rate' => $line['vat_rate'],
-                    'stock_event_date' => $line['stock_event_date'] ?? $this->nullableDate($header['sale_date'] ?? $header['issue_date'] ?? null),
-                    'stock_before_quantity' => null,
-                    'stock_after_quantity' => null,
-                    'stock_before_value' => null,
-                    'stock_after_value' => null,
-                    'deducted_value' => null,
-                ));
-            }
-
-            return $documentId;
-        });
+        return $this->persistIssueDocument($header, $preparedLines, $userId, $totalNet, $totalGross);
     }
 
     private function explodeInboundUnits(float $quantity): array
@@ -1259,6 +1343,44 @@ class AccountingWarehouseRepository
         );
 
         return (float) ($row['quantity'] ?? 0);
+    }
+
+    private function currentStockQuantitiesForItems(array $itemIds): array
+    {
+        $itemIds = array_values(array_unique(array_map('intval', $itemIds)));
+        $itemIds = array_values(array_filter($itemIds, static function (int $itemId): bool {
+            return $itemId > 0;
+        }));
+        if ($itemIds === array()) {
+            return array();
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($itemIds as $index => $itemId) {
+            $placeholder = ':item_id_' . $index;
+            $placeholders[] = $placeholder;
+            $params['item_id_' . $index] = $itemId;
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT warehouse_item_id, ROUND(COALESCE(SUM(quantity), 0), 3) AS quantity'
+            . ' FROM ' . self::LINES_TABLE
+            . ' WHERE warehouse_item_id IN (' . implode(', ', $placeholders) . ')'
+            . ' GROUP BY warehouse_item_id',
+            $params
+        );
+
+        $quantities = array_fill_keys($itemIds, 0.0);
+        foreach ($rows as $row) {
+            $itemId = (int) ($row['warehouse_item_id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+            $quantities[$itemId] = (float) ($row['quantity'] ?? 0);
+        }
+
+        return $quantities;
     }
 
     private function findItemByCanonicalName(string $name): ?array
@@ -1307,6 +1429,229 @@ class AccountingWarehouseRepository
         }
 
         return $units;
+    }
+
+    private function untouchedTowarSourceLots(): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT source_lines.*, items.name AS item_name, items.item_kind, source_docs.document_number, source_docs.supplier_name, source_docs.sale_date, source_docs.issue_date,'
+            . ' COALESCE(used_lines.issue_units, 0) AS issue_units'
+            . ' FROM ' . self::LINES_TABLE . ' source_lines'
+            . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' source_docs ON source_docs.id = source_lines.document_id'
+            . ' INNER JOIN ' . self::ITEMS_TABLE . ' items ON items.id = source_lines.warehouse_item_id'
+            . ' LEFT JOIN ('
+            . '   SELECT related_line_id, COUNT(*) AS issue_units'
+            . '   FROM ' . self::LINES_TABLE
+            . '   WHERE quantity < 0 AND related_line_id IS NOT NULL'
+            . '   GROUP BY related_line_id'
+            . ' ) used_lines ON used_lines.related_line_id = source_lines.id'
+            . ' WHERE source_lines.quantity > 0'
+            . ' AND LOWER(TRIM(items.item_kind)) = :item_kind'
+            . ' AND COALESCE(used_lines.issue_units, 0) = 0'
+            . ' ORDER BY COALESCE(source_docs.sale_date, source_docs.issue_date, source_docs.created_at) ASC, source_lines.id ASC',
+            array('item_kind' => 'towar')
+        );
+
+        $itemIds = array();
+        foreach ($rows as $row) {
+            $itemId = (int) ($row['warehouse_item_id'] ?? 0);
+            if ($itemId > 0) {
+                $itemIds[] = $itemId;
+            }
+        }
+
+        $stockQuantities = $this->currentStockQuantitiesForItems($itemIds);
+        $remainingStockByItem = array();
+        $lots = array();
+        foreach ($rows as $row) {
+            $itemId = (int) ($row['warehouse_item_id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            if (!isset($remainingStockByItem[$itemId])) {
+                $remainingStockByItem[$itemId] = max(0, (int) floor(((float) ($stockQuantities[$itemId] ?? 0)) + 0.0001));
+            }
+
+            $lineQuantity = max(0, (int) floor(abs((float) ($row['quantity'] ?? 0)) + 0.0001));
+            $usableQuantity = min($lineQuantity, (int) $remainingStockByItem[$itemId]);
+            if ($usableQuantity <= 0) {
+                continue;
+            }
+
+            $remainingStockByItem[$itemId] -= $usableQuantity;
+            $lots[] = array(
+                'row' => $row,
+                'quantity' => $usableQuantity,
+                'unit_net' => (float) ($row['unit_net'] ?? 0),
+                'unit_gross' => (float) ($row['unit_gross'] ?? 0),
+                'gross_cents' => max(0, (int) round(abs((float) ($row['unit_gross'] ?? 0)) * 100)),
+            );
+        }
+
+        return $lots;
+    }
+
+    private function selectLotsClosestToTarget(array $lots, float $targetValue, string $targetMode = 'gross'): array
+    {
+        $targetCents = max(1, (int) round($targetValue * 100));
+        $valueKey = $targetMode === 'net' ? 'net_cents' : 'gross_cents';
+        $workingLots = array();
+
+        foreach (array_values($lots) as $index => $lot) {
+            $lot['lot_index'] = $index;
+            $lot['net_cents'] = max(0, (int) round(abs((float) ($lot['unit_net'] ?? 0)) * 100));
+            $lot['gross_cents'] = max(0, (int) round(abs((float) ($lot['unit_gross'] ?? 0)) * 100));
+            $workingLots[] = $lot;
+        }
+
+        usort($workingLots, static function (array $left, array $right) use ($valueKey): int {
+            $leftValue = (int) ($left[$valueKey] ?? 0);
+            $rightValue = (int) ($right[$valueKey] ?? 0);
+            if ($leftValue !== $rightValue) {
+                return $rightValue <=> $leftValue;
+            }
+            return ((int) (($left['lot_index'] ?? 0))) <=> ((int) (($right['lot_index'] ?? 0)));
+        });
+
+        $selectedQuantities = array();
+        $currentSum = 0;
+        foreach ($workingLots as $lot) {
+            $unitValue = (int) ($lot[$valueKey] ?? 0);
+            $availableQuantity = (int) ($lot['quantity'] ?? 0);
+            $lotIndex = (int) ($lot['lot_index'] ?? 0);
+            if ($unitValue <= 0 || $availableQuantity <= 0) {
+                continue;
+            }
+
+            $missing = max(0, $targetCents - $currentSum);
+            $take = $missing > 0 ? min($availableQuantity, (int) floor($missing / $unitValue)) : 0;
+            if ($take > 0) {
+                $selectedQuantities[$lotIndex] = $take;
+                $currentSum += $take * $unitValue;
+            }
+        }
+
+        $bestSum = $currentSum;
+        $bestDiff = abs($targetCents - $currentSum);
+        $iterations = 0;
+        do {
+            $iterations++;
+            $improved = false;
+            $bestMove = null;
+            $iterationBestDiff = $bestDiff;
+            $iterationBestSum = $bestSum;
+
+            foreach ($workingLots as $lot) {
+                $lotIndex = (int) ($lot['lot_index'] ?? 0);
+                $unitValue = (int) ($lot[$valueKey] ?? 0);
+                $availableQuantity = (int) ($lot['quantity'] ?? 0);
+                $selectedQuantity = (int) ($selectedQuantities[$lotIndex] ?? 0);
+                if ($unitValue <= 0) {
+                    continue;
+                }
+
+                if ($selectedQuantity < $availableQuantity) {
+                    $newSum = $currentSum + $unitValue;
+                    $newDiff = abs($targetCents - $newSum);
+                    if ($newDiff < $iterationBestDiff || ($newDiff === $iterationBestDiff && $newSum <= $targetCents && $iterationBestSum > $targetCents)) {
+                        $bestMove = array('type' => 'add', 'lot_index' => $lotIndex, 'new_sum' => $newSum, 'new_diff' => $newDiff);
+                        $iterationBestDiff = $newDiff;
+                        $iterationBestSum = $newSum;
+                        $improved = true;
+                    }
+                }
+
+                if ($selectedQuantity > 0) {
+                    $newSum = $currentSum - $unitValue;
+                    $newDiff = abs($targetCents - $newSum);
+                    if ($newDiff < $iterationBestDiff || ($newDiff === $iterationBestDiff && $newSum <= $targetCents && $iterationBestSum > $targetCents)) {
+                        $bestMove = array('type' => 'remove', 'lot_index' => $lotIndex, 'new_sum' => $newSum, 'new_diff' => $newDiff);
+                        $iterationBestDiff = $newDiff;
+                        $iterationBestSum = $newSum;
+                        $improved = true;
+                    }
+                }
+            }
+
+            if ($improved && is_array($bestMove)) {
+                $moveLotIndex = (int) ($bestMove['lot_index'] ?? 0);
+                if (($bestMove['type'] ?? '') === 'add') {
+                    $selectedQuantities[$moveLotIndex] = (int) ($selectedQuantities[$moveLotIndex] ?? 0) + 1;
+                } else {
+                    $selectedQuantities[$moveLotIndex] = max(0, (int) ($selectedQuantities[$moveLotIndex] ?? 0) - 1);
+                }
+                $currentSum = (int) ($bestMove['new_sum'] ?? $currentSum);
+                $bestDiff = $iterationBestDiff;
+                $bestSum = $iterationBestSum;
+            }
+        } while ($improved && $iterations < 300);
+
+        $selectedLots = array();
+        $actualGross = 0.0;
+        foreach ($lots as $index => $lot) {
+            $quantity = (int) ($selectedQuantities[$index] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $selectedLots[] = array(
+                'row' => $lot['row'],
+                'quantity' => $quantity,
+            );
+            $actualGross += ((float) ($lot['unit_gross'] ?? 0)) * $quantity;
+        }
+
+        return array(
+            'lots' => $selectedLots,
+            'actual_gross' => round($actualGross, 2),
+        );
+    }
+
+    private function persistIssueDocument(array $header, array $preparedLines, int $userId, float $totalNet, float $totalGross): int
+    {
+        return (int) $this->database->transaction(function (Database $database) use ($header, $preparedLines, $userId, $totalNet, $totalGross): int {
+            $documentId = (int) $database->insert(self::DOCUMENTS_TABLE, array(
+                'source_type' => trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual',
+                'document_kind' => 'issue',
+                'document_number' => $this->nullableString($header['document_number'] ?? null),
+                'supplier_name' => $this->nullableString($header['supplier_name'] ?? 'Wyjscie z magazynu'),
+                'supplier_tax_id' => $this->nullableString($header['supplier_tax_id'] ?? null),
+                'issue_date' => $this->nullableDate($header['issue_date'] ?? null),
+                'sale_date' => $this->nullableDate($header['sale_date'] ?? null),
+                'receipt_date' => $this->nullableDate($header['sale_date'] ?? null),
+                'currency' => trim((string) ($header['currency'] ?? 'PLN')) ?: 'PLN',
+                'total_net' => round($totalNet, 2),
+                'total_gross' => round($totalGross, 2),
+                'notes' => $this->nullableString($header['notes'] ?? null),
+                'created_by_user_id' => $userId > 0 ? $userId : null,
+            ));
+
+            foreach ($preparedLines as $line) {
+                $database->insert(self::LINES_TABLE, array(
+                    'document_id' => $documentId,
+                    'warehouse_item_id' => $line['warehouse_item_id'],
+                    'related_line_id' => $line['related_line_id'],
+                    'original_name' => $line['original_name'],
+                    'canonical_name' => $line['canonical_name'],
+                    'quantity' => $line['quantity'],
+                    'unit' => $line['unit'],
+                    'unit_net' => $line['unit_net'],
+                    'unit_gross' => $line['unit_gross'],
+                    'line_net' => $line['line_net'],
+                    'line_gross' => $line['line_gross'],
+                    'vat_rate' => $line['vat_rate'],
+                    'stock_event_date' => $line['stock_event_date'] ?? $this->nullableDate($header['sale_date'] ?? $header['issue_date'] ?? null),
+                    'stock_before_quantity' => null,
+                    'stock_after_quantity' => null,
+                    'stock_before_value' => null,
+                    'stock_after_value' => null,
+                    'deducted_value' => null,
+                ));
+            }
+
+            return $documentId;
+        });
     }
 
     public function saveMacroDefinition(string $name, string $unit, array $aliases = array(), string $itemKind = 'towar'): int
