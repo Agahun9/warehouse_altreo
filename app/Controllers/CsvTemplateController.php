@@ -293,9 +293,11 @@ class CsvTemplateController extends Controller
             'availableFieldsJson' => json_encode($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
             'presets' => $presets,
             'previewCsv' => '',
             'templateColumnsJson' => json_encode(isset($template['columns']) ? $template['columns'] : array()),
+            'descriptionTemplatesJson' => json_encode(isset($template['description_templates']) ? $template['description_templates'] : array()),
         ));
     }
 
@@ -435,6 +437,8 @@ class CsvTemplateController extends Controller
 
         try {
             $templateData = $this->validatedTemplateData();
+            $descriptionTemplates = $this->validatedDescriptionTemplatesPayload();
+            $templateData['description_templates_json'] = json_encode($descriptionTemplates);
             $columns = $this->validatedColumnsPayload();
 
             if ($this->templates->existsByName($templateData['name'])) {
@@ -472,9 +476,11 @@ class CsvTemplateController extends Controller
             'availableFieldsJson' => json_encode($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
             'templateColumnsJson' => json_encode($this->columnsForPreview(isset($template['columns']) ? $template['columns'] : array())),
+            'descriptionTemplatesJson' => json_encode(isset($template['description_templates']) ? $template['description_templates'] : array()),
         ));
     }
 
@@ -496,6 +502,8 @@ class CsvTemplateController extends Controller
 
         try {
             $templateData = $this->validatedTemplateData();
+            $descriptionTemplates = $this->validatedDescriptionTemplatesPayload();
+            $templateData['description_templates_json'] = json_encode($descriptionTemplates);
             $columns = $this->validatedColumnsPayload();
 
             if ($this->templates->existsByName($templateData['name'], $id)) {
@@ -569,11 +577,13 @@ class CsvTemplateController extends Controller
 
         try {
             $templateData = $this->validatedTemplateData();
+            $descriptionTemplates = $this->validatedDescriptionTemplatesPayload();
             $columns = $this->validatedColumnsPayload();
 
             $previewTemplate = $templateData;
             $previewTemplate['id'] = $templateId;
             $previewTemplate['columns'] = $this->columnsForPreview($columns);
+            $previewTemplate['description_templates'] = $descriptionTemplates;
 
             $products = $this->products->exportRows(array(), 10);
             $csv = $this->exportService->buildCsv($previewTemplate, $products, 10, $this->exportOptionsFromInput());
@@ -593,9 +603,11 @@ class CsvTemplateController extends Controller
                 'availableFieldsJson' => json_encode($this->availableFieldOptions()),
                 'availableFunctions' => $this->availableComputedFunctions(),
                 'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
+                'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
                 'presets' => $this->presetDefinitions(),
                 'previewCsv' => $csv,
                 'templateColumnsJson' => json_encode(isset($previewTemplate['columns']) ? $previewTemplate['columns'] : array()),
+                'descriptionTemplatesJson' => json_encode($descriptionTemplates),
             ));
         } catch (Throwable $exception) {
             $this->renderFormWithError($mode, $templateId > 0 ? $templateId : null, $exception->getMessage());
@@ -815,6 +827,144 @@ class CsvTemplateController extends Controller
         return $columns;
     }
 
+    private function validatedDescriptionTemplatesPayload(): array
+    {
+        $payloadRaw = (string) $this->input('description_templates_payload', '[]');
+        $payload = json_decode($payloadRaw, true);
+
+        if (!is_array($payload)) {
+            throw new RuntimeException('Niepoprawny format szablonow opisu.');
+        }
+
+        return $this->normalizeDescriptionTemplates($payload);
+    }
+
+    private function normalizeDescriptionTemplates(array $templates): array
+    {
+        $normalized = array();
+        $usedKeys = array();
+
+        foreach ($templates as $index => $template) {
+            if (!is_array($template)) {
+                continue;
+            }
+
+            $name = trim((string) ($template['name'] ?? ''));
+            $sections = isset($template['sections']) && is_array($template['sections']) ? $template['sections'] : array();
+
+            if ($name === '' && $sections === array()) {
+                continue;
+            }
+
+            if ($name === '') {
+                throw new RuntimeException('Kazdy szablon opisu musi miec nazwe.');
+            }
+
+            $key = $this->slugifyDescriptionTemplateKey((string) ($template['key'] ?? $name));
+            if ($key === '') {
+                $key = 'opis_' . ($index + 1);
+            }
+
+            if (isset($usedKeys[$key])) {
+                throw new RuntimeException('Szablony opisu musza miec unikalne nazwy lub klucze. Powtorzony klucz: ' . $key);
+            }
+
+            $normalizedSections = $this->normalizeDescriptionSections($sections, $name);
+            $usedKeys[$key] = true;
+            $normalized[] = array(
+                'name' => $name,
+                'key' => $key,
+                'sections' => $normalizedSections,
+            );
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeDescriptionSections(array $sections, string $templateName): array
+    {
+        $allowedLayouts = array('image_image', 'image_text', 'text_image', 'text', 'text_text');
+        $normalized = array();
+
+        foreach ($sections as $section) {
+            if (!is_array($section)) {
+                continue;
+            }
+
+            $layout = trim((string) ($section['layout'] ?? 'text'));
+            if (!in_array($layout, $allowedLayouts, true)) {
+                $layout = 'text';
+            }
+
+            $leftText = trim((string) ($section['left_text'] ?? ''));
+            $rightText = trim((string) ($section['right_text'] ?? ''));
+            $singleText = trim((string) ($section['text'] ?? ''));
+            $leftImage = $this->normalizeDescriptionImageSlot($section['left_image'] ?? array());
+            $rightImage = $this->normalizeDescriptionImageSlot($section['right_image'] ?? array());
+
+            if ($layout === 'image_text' && $rightText === '' && $leftImage['source'] === '') {
+                continue;
+            }
+
+            if ($layout === 'text_image' && $leftText === '' && $rightImage['source'] === '') {
+                continue;
+            }
+
+            if ($layout === 'image_image' && $leftImage['source'] === '' && $rightImage['source'] === '') {
+                continue;
+            }
+
+            if ($layout === 'text' && $singleText === '') {
+                continue;
+            }
+
+            if ($layout === 'text_text' && $leftText === '' && $rightText === '') {
+                continue;
+            }
+
+            $normalized[] = array(
+                'layout' => $layout,
+                'text' => $singleText,
+                'left_text' => $leftText,
+                'right_text' => $rightText,
+                'left_image' => $leftImage,
+                'right_image' => $rightImage,
+            );
+        }
+
+        if ($sections !== array() && $normalized === array()) {
+            throw new RuntimeException('Szablon opisu "' . $templateName . '" ma sekcje bez tresci.');
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeDescriptionImageSlot($slot): array
+    {
+        $slot = is_array($slot) ? $slot : array();
+        $source = trim((string) ($slot['source'] ?? ''));
+        if (!array_key_exists($source, $this->availableDescriptionImageSources())) {
+            $source = '';
+        }
+
+        return array(
+            'source' => $source,
+            'index' => max(1, (int) ($slot['index'] ?? 1)),
+        );
+    }
+
+    private function slugifyDescriptionTemplateKey(string $value): string
+    {
+        $value = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if (is_string($converted) && $converted !== '') {
+            $value = $converted;
+        }
+
+        $value = preg_replace('/[^a-z0-9]+/', '_', $value);
+        return trim((string) $value, '_');
+    }
+
     private function renderFormWithError(string $mode, ?int $id, string $error): void
     {
         $templateData = $this->defaultTemplateFormData();
@@ -826,6 +976,9 @@ class CsvTemplateController extends Controller
         $templateData['encoding'] = (string) $this->input('encoding', 'UTF-8');
         $templateData['add_bom'] = $this->input('add_bom', '1') === '1' ? 1 : 0;
         $templateData['array_separator'] = (string) $this->input('array_separator', '|');
+        $descriptionTemplatesRaw = (string) $this->input('description_templates_payload', '[]');
+        $descriptionTemplates = json_decode($descriptionTemplatesRaw, true);
+        $templateData['description_templates'] = is_array($descriptionTemplates) ? $descriptionTemplates : array();
 
         $columnsRaw = (string) $this->input('columns_payload', '[]');
         $columns = json_decode($columnsRaw, true);
@@ -844,9 +997,11 @@ class CsvTemplateController extends Controller
             'availableFieldsJson' => json_encode($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
             'templateColumnsJson' => json_encode(isset($templateData['columns']) ? $templateData['columns'] : array()),
+            'descriptionTemplatesJson' => json_encode($templateData['description_templates']),
             'flashError' => $error,
         ));
     }
@@ -1993,6 +2148,7 @@ class CsvTemplateController extends Controller
             'encoding' => 'UTF-8',
             'add_bom' => 1,
             'array_separator' => '|',
+            'description_templates' => array(),
             'columns' => array(),
         );
     }
@@ -2007,7 +2163,7 @@ class CsvTemplateController extends Controller
         );
     }
 
-    private function availableFieldOptions(): array
+    private function availableFieldOptions(array $descriptionTemplates = array()): array
     {
         $options = array(
             'product.id' => 'ID produktu',
@@ -2056,6 +2212,38 @@ class CsvTemplateController extends Controller
             }
 
             $options['product.custom_fields.' . $slug] = 'Pole wlasne: ' . $name;
+        }
+
+        foreach ($this->descriptionTemplateFieldOptions($descriptionTemplates) as $fieldKey => $fieldLabel) {
+            $options[$fieldKey] = $fieldLabel;
+        }
+
+        return $options;
+    }
+
+    private function availableDescriptionImageSources(): array
+    {
+        return array(
+            'IMG_EU' => 'Generowane sciezki obrazow (EU)',
+        );
+    }
+
+    private function descriptionTemplateFieldOptions(array $descriptionTemplates): array
+    {
+        $options = array();
+
+        foreach ($descriptionTemplates as $template) {
+            if (!is_array($template)) {
+                continue;
+            }
+
+            $key = trim((string) ($template['key'] ?? ''));
+            $name = trim((string) ($template['name'] ?? ''));
+            if ($key === '' || $name === '') {
+                continue;
+            }
+
+            $options['product.csv_description.' . $key] = 'Opis CSV: ' . $name;
         }
 
         return $options;

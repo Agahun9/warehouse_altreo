@@ -22,9 +22,383 @@
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
 
+      <style>
+        #csv-template-form {
+          --csv-shell-bg: linear-gradient(180deg, #f7f8fc 0%, #eef2f8 100%);
+          --csv-card-bg: rgba(255, 255, 255, 0.96);
+          --csv-border: rgba(24, 39, 75, 0.12);
+          --csv-border-strong: rgba(24, 39, 75, 0.18);
+          --csv-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+          --csv-shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.05);
+          --csv-title: #122033;
+          --csv-text: #334155;
+          --csv-muted: #64748b;
+          --csv-accent: #0d6efd;
+          --csv-accent-soft: rgba(13, 110, 253, 0.08);
+          background: var(--csv-shell-bg);
+          border: 1px solid rgba(255, 255, 255, 0.7);
+          border-radius: 28px;
+          padding: 1.25rem;
+          box-shadow: var(--csv-shadow);
+        }
+
+        #csv-template-form > .card,
+        #csv-template-form > div > .card {
+          margin-bottom: 1.15rem !important;
+        }
+
+        #csv-template-form .card {
+          border: 1px solid var(--csv-border);
+          border-radius: 22px;
+          overflow: hidden;
+          background: var(--csv-card-bg);
+          box-shadow: var(--csv-shadow-soft);
+        }
+
+        #csv-template-form .card-header {
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.96));
+          border-bottom: 1px solid var(--csv-border);
+          padding: 1rem 1.2rem;
+        }
+
+        #csv-template-form .card-title {
+          color: var(--csv-title);
+          font-size: 1.03rem;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+        }
+
+        #csv-template-form .card-body {
+          padding: 1.2rem;
+        }
+
+        #csv-template-form label.form-label {
+          color: var(--csv-title);
+          font-size: 0.82rem;
+          font-weight: 700;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          margin-bottom: 0.45rem;
+        }
+
+        #csv-template-form .form-control,
+        #csv-template-form .form-select {
+          border-radius: 14px;
+          border: 1px solid rgba(148, 163, 184, 0.4);
+          background: rgba(255, 255, 255, 0.98);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+        }
+
+        #csv-template-form .form-control:focus,
+        #csv-template-form .form-select:focus {
+          border-color: rgba(13, 110, 253, 0.5);
+          box-shadow: 0 0 0 0.22rem rgba(13, 110, 253, 0.12);
+        }
+
+        #csv-template-form .form-text,
+        #csv-template-form .text-secondary,
+        #csv-template-form .small {
+          color: var(--csv-muted) !important;
+        }
+
+        #csv-template-form .h6,
+        #csv-template-form h4.h6 {
+          color: var(--csv-title);
+          font-size: 0.92rem;
+          font-weight: 800;
+          margin-bottom: 0.55rem;
+        }
+
+        #csv-template-form code {
+          background: rgba(15, 23, 42, 0.06);
+          color: #0f172a;
+          border-radius: 8px;
+          padding: 0.12rem 0.35rem;
+        }
+
+        #csv-template-form pre {
+          border-radius: 16px !important;
+          background: #f8fafc !important;
+        }
+
+        #csv-template-form .alert {
+          border-radius: 18px;
+          border-width: 1px;
+        }
+
+        #csv-template-form .alert-info {
+          background: linear-gradient(180deg, rgba(13, 202, 240, 0.1), rgba(13, 202, 240, 0.04));
+          border-color: rgba(13, 202, 240, 0.2);
+        }
+
+        #csv-template-form .description-template-card,
+        #csv-template-form .column-card {
+          border-radius: 20px;
+          border: 1px solid var(--csv-border-strong);
+          background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96));
+          box-shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        #csv-template-form .description-template-card .card-body,
+        #csv-template-form .column-card .card-body {
+          padding: 1rem;
+        }
+
+        #csv-template-form .description-template-card {
+          position: relative;
+        }
+
+        #csv-template-form .description-template-card::before,
+        #csv-template-form .column-card::before {
+          content: "";
+          display: block;
+          height: 4px;
+          background: linear-gradient(90deg, rgba(13,110,253,0.95), rgba(14,165,233,0.55));
+        }
+
+        #csv-template-form .description-section-card {
+          border-radius: 18px !important;
+          border: 1px solid rgba(148, 163, 184, 0.28) !important;
+          background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.92)) !important;
+          padding: 1rem !important;
+        }
+
+        #csv-template-form .description-section-card > .row > div > .border,
+        #csv-template-form .column-card .border.rounded {
+          border-color: rgba(148, 163, 184, 0.28) !important;
+          border-radius: 16px !important;
+          background: rgba(255,255,255,0.72);
+        }
+
+        #csv-template-form #descriptionTemplatesBuilder > .card,
+        #csv-template-form #columnsBuilder > .card {
+          transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        #csv-template-form #descriptionTemplatesBuilder > .card:hover,
+        #csv-template-form #columnsBuilder > .card:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 20px 36px rgba(15, 23, 42, 0.08);
+          border-color: rgba(13, 110, 253, 0.22);
+        }
+
+        #csv-template-form .is-dragging {
+          opacity: 0.55;
+          transform: scale(0.99);
+        }
+
+        #csv-template-form .drag-insert-before,
+        #csv-template-form .drag-insert-after {
+          position: relative;
+        }
+
+        #csv-template-form .drag-insert-before::before,
+        #csv-template-form .drag-insert-after::after {
+          content: "";
+          position: absolute;
+          left: 14px;
+          right: 14px;
+          height: 4px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, rgba(13,110,253,1), rgba(14,165,233,0.8));
+          box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.12);
+          pointer-events: none;
+        }
+
+        #csv-template-form .drag-insert-before::before {
+          top: -8px;
+        }
+
+        #csv-template-form .drag-insert-after::after {
+          bottom: -8px;
+        }
+
+        #csv-template-form .drag-placeholder {
+          border: 2px dashed rgba(13, 110, 253, 0.45);
+          border-radius: 18px;
+          background:
+            linear-gradient(180deg, rgba(13,110,253,0.05), rgba(14,165,233,0.08));
+          min-height: 28px;
+          margin: 0.15rem 0;
+          position: relative;
+          overflow: hidden;
+        }
+
+        #csv-template-form .drag-placeholder::before {
+          content: "Upusc tutaj";
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(13, 110, 253, 0.9);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        #csv-template-form .description-section-card .small.fw-semibold,
+        #csv-template-form .column-card .small.fw-semibold {
+          color: var(--csv-title) !important;
+          font-weight: 800 !important;
+          letter-spacing: 0.02em;
+        }
+
+        #csv-template-form .description-template-card .desc-template-label-preview {
+          display: inline-flex;
+          align-items: center;
+          min-height: 2rem;
+          padding: 0.22rem 0.7rem;
+          border-radius: 999px;
+          background: rgba(15, 23, 42, 0.06);
+          color: var(--csv-title);
+          font-weight: 700;
+        }
+
+        #csv-template-form .description-section-card .btn-outline-danger,
+        #csv-template-form .column-card .btn-outline-danger {
+          border-radius: 12px;
+        }
+
+        #csv-template-form .description-sections-list,
+        #csv-template-form #columnsBuilder,
+        #csv-template-form #descriptionTemplatesBuilder {
+          gap: 1rem !important;
+        }
+
+        #csv-template-form .btn {
+          border-radius: 14px;
+          font-weight: 600;
+        }
+
+        #csv-template-form .btn-sm {
+          border-radius: 12px;
+        }
+
+        #csv-template-form .desc-image-index {
+          background: linear-gradient(180deg, #ffffff, #f8fbff);
+          border-color: rgba(13, 110, 253, 0.22);
+        }
+
+        #csv-template-form .desc-image-index-label {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 2rem;
+          padding: 0.2rem 0.7rem;
+          border-radius: 999px;
+          background: var(--csv-accent-soft);
+          color: var(--csv-accent);
+          font-size: 0.84rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+        }
+
+        #csv-template-form .tutorial-grid > [class*="col-"] > *:not(style):not(script) {
+          height: 100%;
+        }
+
+        #csv-template-form .csv-tutorial-block {
+          height: 100%;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 18px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248,250,252,0.92));
+          padding: 1rem;
+        }
+
+        #csv-template-form .csv-tutorial-block ul,
+        #csv-template-form .csv-tutorial-block ol,
+        #csv-template-form .csv-tutorial-block p {
+          margin-bottom: 0;
+        }
+
+        #csv-template-form .csv-builder-intro {
+          border: 1px dashed rgba(13, 110, 253, 0.22);
+          border-radius: 16px;
+          background: rgba(13, 110, 253, 0.04);
+          padding: 0.9rem 1rem;
+        }
+
+        #csv-template-form .csv-builder-intro + .alert {
+          margin-top: 0.85rem;
+        }
+
+        #csv-template-form .computed-json-wrap,
+        #csv-template-form .desc-left-text,
+        #csv-template-form .desc-right-text,
+        #csv-template-form .desc-single-text {
+          scroll-margin-top: 90px;
+        }
+
+        #csv-template-form .csv-template-actions {
+          position: sticky;
+          bottom: 12px;
+          z-index: 20;
+          margin-top: 1.5rem;
+          padding: 1rem 1.1rem;
+          border: 1px solid rgba(148, 163, 184, 0.24);
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.92);
+          backdrop-filter: blur(14px);
+          box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+        }
+
+        #csv-template-form .csv-template-actions .btn {
+          min-width: 150px;
+        }
+
+        #csv-template-form .csv-template-preview textarea {
+          font-family: Consolas, "Courier New", monospace;
+          font-size: 0.88rem;
+          border-radius: 18px;
+        }
+
+        @media (max-width: 991.98px) {
+          #csv-template-form {
+            padding: 0.9rem;
+            border-radius: 22px;
+          }
+
+          #csv-template-form .card-body,
+          #csv-template-form .card-header {
+            padding: 0.95rem;
+          }
+
+          #csv-template-form .csv-template-actions {
+            position: static;
+            padding: 0.9rem;
+          }
+
+          #csv-template-form .csv-template-actions,
+          #csv-template-form .csv-template-actions > div {
+            gap: 0.75rem !important;
+          }
+
+          #csv-template-form .csv-template-actions .btn,
+          #csv-template-form .csv-template-actions a {
+            width: 100%;
+            min-width: 0;
+          }
+        }
+
+        @media (max-width: 767.98px) {
+          #csv-template-form .card-title {
+            font-size: 0.95rem;
+          }
+
+          #csv-template-form .description-section-card,
+          #csv-template-form .column-card .card-body,
+          #csv-template-form .description-template-card .card-body {
+            padding: 0.8rem !important;
+          }
+        }
+      </style>
+
       <form method="post" action="{$formAction|escape}" id="csv-template-form">
         <input type="hidden" name="id" value="{$template.id|default:0|escape}">
         <input type="hidden" name="columns_payload" id="columnsPayload" value="[]">
+        <input type="hidden" name="description_templates_payload" id="descriptionTemplatesPayload" value="[]">
 
         <div class="card mb-4">
           <div class="card-header"><h3 class="card-title mb-0">Dane glowne</h3></div>
@@ -69,8 +443,9 @@
         <div class="card mb-4">
           <div class="card-header"><h3 class="card-title mb-0">Tutorial uzycia</h3></div>
           <div class="card-body">
-            <div class="row g-3">
+            <div class="row g-3 tutorial-grid">
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">1. Jak zbudowac prosty szablon</h4>
                 <ol class="small mb-0 ps-3">
                   <li>Wpisz nazwe szablonu, np. <code>Google Merchant</code> albo <code>Eksport magazynowy</code>.</li>
@@ -79,16 +454,20 @@
                   <li>Dla kazdej kolumny podaj naglowek i wybierz typ zrodla: <code>field</code>, <code>static</code> albo <code>computed</code>.</li>
                   <li>Zapisz szablon albo uzyj przycisku <code>Podglad CSV</code>, aby sprawdzic pierwsze rekordy.</li>
                 </ol>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">2. Typy kolumn</h4>
                 <ul class="small mb-0">
                   <li><code>field</code>: pobiera wartosc z produktu, np. <code>product.sku</code>, <code>product.product_name</code>, <code>product.category_name</code>.</li>
                   <li><code>static</code>: wpisuje stala wartosc do kazdego wiersza, np. <code>PLN</code>, <code>nowy</code>, <code>ALTREO</code>.</li>
                   <li><code>computed</code>: wylicza wartosc z kilku pol lub transformacji, np. laczy cene z waluta albo zamienia tekst na wielkie litery.</li>
                 </ul>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">3. Przyklady pol i relacji</h4>
                 <ul class="small mb-0">
                   <li><code>product.sku</code> - SKU produktu</li>
@@ -103,8 +482,10 @@
                   <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
                   <li><code>images</code> lub <code>product.generated_images</code> - generowana lista sciezek obrazow EasyUploader</li>
                 </ul>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">4. Funkcje computed</h4>
                 <div class="small">
                   <p class="mb-2">W argumencie JSON mozesz uzywac tokenow typu <code>field:product.price_gross</code>.</p>
@@ -116,8 +497,10 @@
                   <pre class="bg-light border rounded p-2 small"><code>{ldelim}"value":"field:product.product_name"{rdelim}</code></pre>
                   <p class="mb-0 text-secondary">Dokladny klucz parametru bierzesz z listy pol ponizej. Przy polach Allegro i Empik pokazuje sie teraz nazwa parametru, jego ID oraz nazwy kategorii, z ktorych jest brany.</p>
                 </div>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">5. Mapowanie wartosci</h4>
                 <div class="small">
                   <p class="mb-2">Mapowanie zamienia jedna wartosc na inna po obliczeniu kolumny.</p>
@@ -127,8 +510,10 @@
                     <li><code>23.00</code> -> <code>23%</code></li>
                   </ul>
                 </div>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">6. Warunki</h4>
                 <div class="small">
                   <p class="mb-2">Warunek nadpisuje wynik kolumny, gdy wskazane pole spelni porownanie.</p>
@@ -141,8 +526,10 @@
                     <li><code>else</code>: <code>Standard</code></li>
                   </ul>
                 </div>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">7. Formatowanie</h4>
                 <ul class="small mb-0">
                   <li><code>upper</code> - zamiana na wielkie litery</li>
@@ -151,8 +538,10 @@
                   <li><code>date:Y-m-d</code> - format daty</li>
                   <li><code>number:2:,: </code> - format liczbowy: 2 miejsca, przecinek dziesietny, spacja tysieczna</li>
                 </ul>
+                </div>
               </div>
               <div class="col-lg-6">
+                <div class="csv-tutorial-block">
                 <h4 class="h6">8. Jak wykonac eksport</h4>
                 <ol class="small mb-0 ps-3">
                   <li>Zapisz szablon.</li>
@@ -161,8 +550,29 @@
                   <li>Jesli uzywasz pola <code>images</code>, uzupelnij w modalu eksportu kolekcje, ilosci zdjec, miniatur i mockupow oraz makra sciezek.</li>
                   <li>Kliknij <code>Eksport CSV</code>, wybierz szablon i wygeneruj plik.</li>
                 </ol>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title mb-0">Szablony opisu</h3>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="addDescriptionTemplateBtn">Dodaj opis</button>
+          </div>
+          <div class="card-body">
+            <div class="small text-secondary mb-2 csv-builder-intro">
+              Tutaj budujesz gotowe opisy HTML skladane z sekcji jak w Allegro. Kazdy zapisany opis pojawi sie potem na liscie pol jako
+              <code>Opis CSV: nazwa</code>.
+            </div>
+            <div class="alert alert-info py-2 px-3 small">
+              Dla obrazow wybierasz zrodlo <code>IMG_EU</code> i numer zdjecia, np. 1, 2, 3. Teksty obsluguja tokeny
+              <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>,
+              <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>,
+              <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>.
+            </div>
+            <div id="descriptionTemplatesBuilder" class="d-grid gap-3"></div>
           </div>
         </div>
 
@@ -175,7 +585,7 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="small text-secondary mb-2">
+            <div class="small text-secondary mb-2 csv-builder-intro">
               Przeciagnij wiersze za uchwyt, aby zmienic kolejnosc. Dla funkcji obliczanych uzywaj tokenow typu
               <code>field:product.price_gross</code> lub <code>field:product.category_name</code>.
             </div>
@@ -197,7 +607,7 @@
         </div>
 
         {if $previewCsv}
-          <div class="card mb-4">
+          <div class="card mb-4 csv-template-preview">
             <div class="card-header"><h3 class="card-title mb-0">Podglad CSV (10 rekordow)</h3></div>
             <div class="card-body">
               <textarea class="form-control" rows="14" readonly>{$previewCsv|escape}</textarea>
@@ -205,9 +615,9 @@
           </div>
         {/if}
 
-        <div class="d-flex justify-content-between mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap csv-template-actions">
           <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-outline-secondary">Wroc do listy</a>
-          <div class="d-flex gap-2">
+          <div class="d-flex gap-2 flex-wrap">
             <a href="{$baseUrl}?controller=csvtemplates&action=titlegenerator" class="btn btn-outline-secondary">Generator tytulow</a>
             <button type="submit" formaction="{$baseUrl}?controller=csvtemplates&action=preview" class="btn btn-outline-dark">Podglad CSV</button>
             <button type="submit" class="btn btn-primary">Zapisz szablon</button>
@@ -220,17 +630,27 @@
 
 <script>
 (function () {
-  var availableFields = {$availableFieldsJson nofilter};
+  var baseAvailableFields = {$availableFieldsJson nofilter};
+  var availableFields = Object.assign({}, baseAvailableFields);
   var availableFunctions = {$availableFunctionsJson nofilter};
   var initialColumns = {$templateColumnsJson nofilter};
+  var initialDescriptionTemplates = {$descriptionTemplatesJson nofilter};
+  var descriptionImageSources = {$descriptionImageSourcesJson nofilter};
 
   var builder = document.getElementById('columnsBuilder');
+  var descriptionBuilder = document.getElementById('descriptionTemplatesBuilder');
   var addButton = document.getElementById('addColumnBtn');
   var addPresetButton = document.getElementById('addPresetColumnBtn');
+  var addDescriptionTemplateButton = document.getElementById('addDescriptionTemplateBtn');
   var form = document.getElementById('csv-template-form');
   var payloadInput = document.getElementById('columnsPayload');
+  var descriptionPayloadInput = document.getElementById('descriptionTemplatesPayload');
+  var currentDrag = null;
+  var currentDragType = '';
+  var currentDragPlaceholder = null;
+  var armedDragItem = null;
 
-  if (!builder || !addButton || !form || !payloadInput) {
+  if (!builder || !descriptionBuilder || !addButton || !form || !payloadInput || !descriptionPayloadInput) {
     return;
   }
 
@@ -241,6 +661,111 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function clearDragIndicators(scope) {
+    var root = scope || document;
+    var marked = root.querySelectorAll('.drag-insert-before, .drag-insert-after');
+    for (var i = 0; i < marked.length; i++) {
+      marked[i].classList.remove('drag-insert-before', 'drag-insert-after');
+    }
+  }
+
+  function ensureDragPlaceholder(parent, referenceNode, height) {
+    if (!parent) {
+      return null;
+    }
+
+    if (!currentDragPlaceholder) {
+      currentDragPlaceholder = document.createElement('div');
+      currentDragPlaceholder.className = 'drag-placeholder';
+    }
+
+    var normalizedHeight = 28;
+    if (height && height > 0) {
+      normalizedHeight = Math.max(24, Math.min(42, Math.round(height * 0.16)));
+    }
+
+    currentDragPlaceholder.style.height = normalizedHeight + 'px';
+    if (referenceNode) {
+      parent.insertBefore(currentDragPlaceholder, referenceNode);
+    } else {
+      parent.appendChild(currentDragPlaceholder);
+    }
+
+    return currentDragPlaceholder;
+  }
+
+  function removeDragPlaceholder() {
+    if (currentDragPlaceholder && currentDragPlaceholder.parentNode) {
+      currentDragPlaceholder.parentNode.removeChild(currentDragPlaceholder);
+    }
+  }
+
+  function startDragItem(item, dragType) {
+    currentDrag = item;
+    currentDragType = dragType || '';
+    item.classList.add('is-dragging');
+    item.dataset.dragging = '1';
+  }
+
+  function endDragItem() {
+    var activeDragged = document.querySelectorAll('.is-dragging, [data-dragging="1"]');
+    for (var i = 0; i < activeDragged.length; i++) {
+      activeDragged[i].classList.remove('is-dragging');
+      activeDragged[i].dataset.dragging = '0';
+    }
+
+    currentDrag = null;
+    currentDragType = '';
+    armedDragItem = null;
+    clearDragIndicators(document);
+    removeDragPlaceholder();
+  }
+
+  function forceEndDragItemSoon() {
+    window.setTimeout(function () {
+      endDragItem();
+    }, 0);
+  }
+
+  function computeInsertPosition(event, target) {
+    var rect = target.getBoundingClientRect();
+    var offset = event.clientY - rect.top;
+    return offset < (rect.height / 2) ? 'before' : 'after';
+  }
+
+  function moveDraggedItem(parent, target, position) {
+    if (!currentDrag || !parent || !target || currentDrag === target) {
+      return;
+    }
+
+    if (position === 'before') {
+      parent.insertBefore(currentDrag, target);
+      return;
+    }
+
+    if (target.nextSibling) {
+      parent.insertBefore(currentDrag, target.nextSibling);
+    } else {
+      parent.appendChild(currentDrag);
+    }
+  }
+
+  function armDragFromHandle(card) {
+    armedDragItem = card || null;
+  }
+
+  function canStartDrag(card) {
+    return armedDragItem === card;
+  }
+
+  function descriptionTextScopeFromNode(node) {
+    if (!node || !node.closest) {
+      return null;
+    }
+
+    return node.closest('.desc-left-text, .desc-right-text, .desc-single-text');
   }
 
   function fieldOptions(selected) {
@@ -265,6 +790,50 @@
     Object.keys(availableFunctions).forEach(function (key) {
       var isSelected = String(selected || 'concat') === key ? ' selected' : '';
       html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(availableFunctions[key]) + '</option>';
+    });
+    return html;
+  }
+
+  function slugifyDescriptionKey(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  function descriptionImageSourceOptions(selected) {
+    var html = '<option value="">Wybierz zrodlo</option>';
+    Object.keys(descriptionImageSources || {}).forEach(function (key) {
+      var isSelected = String(selected || '') === key ? ' selected' : '';
+      html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(descriptionImageSources[key]) + '</option>';
+    });
+    return html;
+  }
+
+  function descriptionSectionLayoutOptions(selected) {
+    var options = {
+      image_image: 'Zdjecie + zdjecie',
+      image_text: 'Zdjecie + tekst',
+      text_image: 'Tekst + zdjecie',
+      text: 'Tekst',
+      text_text: 'Tekst + tekst'
+    };
+    var html = '';
+    Object.keys(options).forEach(function (key) {
+      var isSelected = String(selected || 'text') === key ? ' selected' : '';
+      html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(options[key]) + '</option>';
+    });
+    return html;
+  }
+
+  function descriptionTokenOptions() {
+    var html = '<option value="">Wybierz token</option>';
+    html += '<option value="{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}">Opcja: Kolekcja wpisana przy eksporcie</option>';
+    html += '<option value="{ldelim}{ldelim}option:price_to_csv{rdelim}{rdelim}">Opcja: Cena wpisana przy eksporcie</option>';
+    Object.keys(availableFields).forEach(function (key) {
+      html += '<option value="{ldelim}{ldelim}field:' + escapeHtml(key) + '{rdelim}{rdelim}">' + escapeHtml(availableFields[key]) + '</option>';
     });
     return html;
   }
@@ -298,7 +867,7 @@
       var staticStyle = type === 'static' ? '' : ' style="display:none;"';
       return '<div class="border rounded p-2 mb-2 bg-light image-layout-item" draggable="true">'
         + '<div class="d-flex justify-content-between align-items-center gap-2">'
-        + '<span class="text-secondary small" style="cursor:move;">:: przeciagnij</span>'
+        + '<span class="text-secondary small js-drag-handle" style="cursor:move;">:: przeciagnij</span>'
         + '<button type="button" class="btn btn-sm btn-outline-danger remove-image-layout-item">Usun</button>'
         + '</div>'
         + '<div class="row g-2 mt-1">'
@@ -312,6 +881,397 @@
         + '</div>'
         + '</div>';
     }).join('');
+  }
+
+  function descriptionImagePickerHtml(slot, label) {
+    var imageSlot = slot || {};
+    var sourceValue = imageSlot.source || 'IMG_EU';
+    var imageIndex = parseInt(imageSlot.index || 1, 10);
+    if (!imageIndex || imageIndex < 1) {
+      imageIndex = 1;
+    }
+    return '<div class="row g-2">'
+      + '<div class="col-12"><div class="small fw-semibold mb-1">' + escapeHtml(label || 'Obraz') + '</div></div>'
+      + '<div class="col-lg-7"><label class="form-label small">Zrodlo obrazu</label><select class="form-select form-select-sm desc-image-source">' + descriptionImageSourceOptions(sourceValue) + '</select></div>'
+      + '<div class="col-lg-5">'
+      + '<label class="form-label small desc-image-index-label">ZDJECIE ' + escapeHtml(imageIndex) + '</label>'
+      + '<input type="number" min="1" step="1" class="form-control form-control-lg fw-bold text-center desc-image-index" value="' + escapeHtml(imageIndex) + '" style="font-size:1.4rem;min-height:58px;">'
+      + '</div>'
+      + '</div>';
+  }
+
+  function descriptionTextEditorHtml(value, placeholder, label) {
+    return '<div class="small fw-semibold mb-1">' + escapeHtml(label || 'Tekst') + '</div>'
+      + '<textarea class="form-control form-control-sm desc-text-input" rows="5" placeholder="' + escapeHtml(placeholder || 'Wpisz tekst lub tokeny {ldelim}{ldelim}field:...{rdelim}{rdelim}') + '">' + escapeHtml(value || '') + '</textarea>'
+      + '<div class="border rounded bg-light-subtle p-2 mt-2">'
+      + '<div class="small fw-semibold mb-2">Wstaw token</div>'
+      + '<div class="row g-2 align-items-end">'
+      + '<div class="col-lg-4"><label class="form-label small mb-1">Wyszukiwarka</label><input type="text" class="form-control form-control-sm desc-token-search" placeholder="Szukaj np. sku, allegro, opis"></div>'
+      + '<div class="col-lg-6"><label class="form-label small mb-1">Pole / opcja</label><select class="form-select form-select-sm desc-token-select">' + descriptionTokenOptions() + '</select></div>'
+      + '<div class="col-lg-2 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary desc-insert-token">Wstaw</button></div>'
+      + '</div>'
+      + '</div>'
+      + '<div class="form-text">Tokeny: <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>.</div>';
+  }
+
+  function createDescriptionSectionCard(section) {
+    var data = section || {
+      layout: 'text',
+      text: '',
+      left_text: '',
+      right_text: '',
+      left_image: { source: 'IMG_EU', index: 1 },
+      right_image: { source: 'IMG_EU', index: 1 }
+    };
+
+    var card = document.createElement('div');
+    card.className = 'border rounded p-3 bg-light-subtle description-section-card';
+    card.draggable = true;
+    card.innerHTML = ''
+      + '<div class="d-flex justify-content-between align-items-center gap-2 mb-2">'
+      + '<span class="text-secondary small js-drag-handle" style="cursor:move;">:: przeciagnij sekcje</span>'
+      + '<div class="d-flex gap-2 align-items-center">'
+      + '<select class="form-select form-select-sm desc-layout" style="min-width:220px;">' + descriptionSectionLayoutOptions(data.layout || 'text') + '</select>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger remove-description-section">Usun sekcje</button>'
+      + '</div>'
+      + '</div>'
+      + '<div class="row g-3">'
+      + '  <div class="col-12 col-lg-6 desc-left-image"><div class="border rounded p-2 h-100">' + descriptionImagePickerHtml(data.left_image || {}, 'Lewy obraz') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-right-image"><div class="border rounded p-2 h-100">' + descriptionImagePickerHtml(data.right_image || {}, 'Prawy obraz') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-left-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.left_text || '', 'Lewy tekst', 'Lewy tekst') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-right-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.right_text || '', 'Prawy tekst', 'Prawy tekst') + '</div></div>'
+      + '  <div class="col-12 desc-single-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.text || '', 'Tresci sekcji', 'Tekst') + '</div></div>'
+      + '</div>';
+
+    function updateVisibility() {
+      var layout = card.querySelector('.desc-layout').value;
+      var leftImage = card.querySelector('.desc-left-image');
+      var rightImage = card.querySelector('.desc-right-image');
+      var leftText = card.querySelector('.desc-left-text');
+      var rightText = card.querySelector('.desc-right-text');
+      var singleText = card.querySelector('.desc-single-text');
+
+      leftImage.style.display = (layout === 'image_image' || layout === 'image_text') ? '' : 'none';
+      rightImage.style.display = (layout === 'image_image' || layout === 'text_image') ? '' : 'none';
+      leftText.style.display = (layout === 'text_image' || layout === 'text_text') ? '' : 'none';
+      rightText.style.display = (layout === 'image_text' || layout === 'text_text') ? '' : 'none';
+      singleText.style.display = layout === 'text' ? '' : 'none';
+
+      leftImage.style.order = '1';
+      leftText.style.order = '1';
+      rightImage.style.order = '2';
+      rightText.style.order = '2';
+      singleText.style.order = '1';
+    }
+
+    card.querySelector('.desc-layout').addEventListener('change', function () {
+      updateVisibility();
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.querySelector('.remove-description-section').addEventListener('click', function () {
+      card.remove();
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('input', function (event) {
+      if (!event.target.classList.contains('desc-image-index')) {
+        return;
+      }
+
+      var value = parseInt(event.target.value || 1, 10);
+      if (!value || value < 1) {
+        value = 1;
+      }
+
+      var scope = event.target.closest('.col-lg-5, .col-md-4, .col-12, .col-lg-6');
+      var label = scope ? scope.querySelector('.desc-image-index-label') : null;
+      if (label) {
+        label.textContent = 'ZDJECIE ' + value;
+      }
+    });
+    card.addEventListener('input', function (event) {
+      if (event.target.classList.contains('desc-token-search')) {
+        return;
+      }
+
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('change', function (event) {
+      if (event.target.classList.contains('desc-token-search')) {
+        return;
+      }
+
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('input', function (event) {
+      if (!event.target.classList.contains('desc-token-search')) {
+        return;
+      }
+
+      var scope = descriptionTextScopeFromNode(event.target);
+      var select = scope ? scope.querySelector('.desc-token-select') : null;
+      if (!select) {
+        return;
+      }
+
+      var query = String(event.target.value || '').toLowerCase().trim();
+      var options = select.querySelectorAll('option');
+      for (var optionIndex = 0; optionIndex < options.length; optionIndex++) {
+        if (optionIndex === 0) {
+          options[optionIndex].hidden = false;
+          continue;
+        }
+
+        var haystack = String(options[optionIndex].textContent || '').toLowerCase();
+        options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
+      }
+    });
+    card.addEventListener('click', function (event) {
+      if (!event.target.classList.contains('desc-insert-token')) {
+        return;
+      }
+
+      var scope = descriptionTextScopeFromNode(event.target);
+      var textarea = scope ? scope.querySelector('.desc-text-input') : null;
+      var select = scope ? scope.querySelector('.desc-token-select') : null;
+      if (!textarea || !select || !select.value) {
+        return;
+      }
+
+      var token = String(select.value || '');
+      var start = typeof textarea.selectionStart === 'number' ? textarea.selectionStart : textarea.value.length;
+      var end = typeof textarea.selectionEnd === 'number' ? textarea.selectionEnd : textarea.value.length;
+      var currentValue = String(textarea.value || '');
+      textarea.value = currentValue.slice(0, start) + token + currentValue.slice(end);
+      textarea.focus();
+      var caretPosition = start + token.length;
+      if (typeof textarea.setSelectionRange === 'function') {
+        textarea.setSelectionRange(caretPosition, caretPosition);
+      }
+
+      refreshAvailableFieldsFromDescriptions();
+    });
+    var dragHandle = card.querySelector('.js-drag-handle');
+    if (dragHandle) {
+      dragHandle.addEventListener('mousedown', function () {
+        armDragFromHandle(card);
+      });
+      dragHandle.addEventListener('touchstart', function () {
+        armDragFromHandle(card);
+      }, { passive: true });
+    }
+
+    card.addEventListener('dragstart', function (event) {
+      if (!canStartDrag(card)) {
+        event.preventDefault();
+        return;
+      }
+
+      startDragItem(card, 'description-section');
+      ensureDragPlaceholder(card.parentNode, card.nextSibling, card.offsetHeight);
+      event.stopPropagation();
+    });
+    card.addEventListener('dragend', function (event) {
+      endDragItem();
+      event.stopPropagation();
+    });
+    card.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      if (currentDragType !== 'description-section' || !currentDrag || currentDrag === card || !card.parentNode) {
+        return;
+      }
+
+      clearDragIndicators(card.parentNode);
+      var position = computeInsertPosition(event, card);
+      card.classList.add(position === 'before' ? 'drag-insert-before' : 'drag-insert-after');
+      ensureDragPlaceholder(card.parentNode, position === 'before' ? card : card.nextSibling, currentDrag.offsetHeight);
+      event.stopPropagation();
+    });
+    card.addEventListener('dragleave', function (event) {
+      if (!card.contains(event.relatedTarget)) {
+        card.classList.remove('drag-insert-before', 'drag-insert-after');
+      }
+      event.stopPropagation();
+    });
+    card.addEventListener('drop', function (event) {
+      event.preventDefault();
+      var list = card.parentNode;
+      if (currentDragType !== 'description-section' || !list || !currentDrag || currentDrag === card) {
+        return;
+      }
+
+      var position = computeInsertPosition(event, card);
+      moveDraggedItem(list, card, position);
+      refreshAvailableFieldsFromDescriptions();
+      clearDragIndicators(list);
+      endDragItem();
+      event.stopPropagation();
+    });
+
+    updateVisibility();
+    return card;
+  }
+
+  function collectDescriptionSectionData(card) {
+    var leftSource = card.querySelector('.desc-left-image .desc-image-source');
+    var leftIndex = card.querySelector('.desc-left-image .desc-image-index');
+    var rightSource = card.querySelector('.desc-right-image .desc-image-source');
+    var rightIndex = card.querySelector('.desc-right-image .desc-image-index');
+    var leftText = card.querySelector('.desc-left-text .desc-text-input');
+    var rightText = card.querySelector('.desc-right-text .desc-text-input');
+    var singleText = card.querySelector('.desc-single-text .desc-text-input');
+
+    return {
+      layout: card.querySelector('.desc-layout').value,
+      text: singleText ? singleText.value : '',
+      left_text: leftText ? leftText.value : '',
+      right_text: rightText ? rightText.value : '',
+      left_image: {
+        source: leftSource ? leftSource.value : '',
+        index: leftIndex ? leftIndex.value : 1
+      },
+      right_image: {
+        source: rightSource ? rightSource.value : '',
+        index: rightIndex ? rightIndex.value : 1
+      }
+    };
+  }
+
+  function createDescriptionTemplateCard(template) {
+    var data = template || { name: '', key: '', sections: [] };
+    var card = document.createElement('div');
+    card.className = 'card border description-template-card';
+    card.draggable = true;
+    card.innerHTML = ''
+      + '<div class="card-body">'
+      + '  <div class="row g-2 mb-3">'
+      + '    <div class="col-md-5"><label class="form-label small">Nazwa opisu</label><input type="text" class="form-control form-control-sm desc-template-name" value="' + escapeHtml(data.name || '') + '" placeholder="np. Opis glowny"></div>'
+      + '    <div class="col-md-4"><label class="form-label small">Klucz pola</label><input type="text" class="form-control form-control-sm desc-template-key" value="' + escapeHtml(data.key || '') + '" placeholder="np. opis_glowny"></div>'
+      + '    <div class="col-md-3 d-flex align-items-end justify-content-end"><button type="button" class="btn btn-sm btn-outline-danger remove-description-template">Usun opis</button></div>'
+      + '  </div>'
+      + '  <div class="small text-secondary mb-3">To pole bedzie dostepne jako <span class="desc-template-label-preview">Opis CSV: ' + escapeHtml(data.name || '...') + '</span>.</div>'
+      + '  <div class="d-flex gap-2 flex-wrap mb-3">'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_image">Zdjecie + zdjecie</button>'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_text">Zdjecie + tekst</button>'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text_image">Tekst + zdjecie</button>'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text">Tekst</button>'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text_text">Tekst + tekst</button>'
+      + '  </div>'
+      + '  <div class="description-sections-list d-grid gap-2"></div>'
+      + '</div>';
+
+    var nameInput = card.querySelector('.desc-template-name');
+    var keyInput = card.querySelector('.desc-template-key');
+    var previewLabel = card.querySelector('.desc-template-label-preview');
+    var sectionsList = card.querySelector('.description-sections-list');
+
+    function syncTemplatePresentation() {
+      if (!String(keyInput.value || '').trim()) {
+        keyInput.value = slugifyDescriptionKey(nameInput.value || '');
+      }
+      if (previewLabel) {
+        previewLabel.textContent = 'Opis CSV: ' + String(nameInput.value || '...');
+      }
+      refreshAvailableFieldsFromDescriptions();
+    }
+
+    if (Array.isArray(data.sections) && data.sections.length) {
+      data.sections.forEach(function (section) {
+        sectionsList.appendChild(createDescriptionSectionCard(section));
+      });
+    } else {
+      sectionsList.appendChild(createDescriptionSectionCard({ layout: 'text', text: '', left_text: '', right_text: '', left_image: { source: 'IMG_EU', index: 1 }, right_image: { source: 'IMG_EU', index: 1 } }));
+    }
+
+    bindContainerDropzone(sectionsList, '.description-section-card', 'description-section', refreshAvailableFieldsFromDescriptions);
+
+    nameInput.addEventListener('input', syncTemplatePresentation);
+    keyInput.addEventListener('input', refreshAvailableFieldsFromDescriptions);
+    card.querySelector('.remove-description-template').addEventListener('click', function () {
+      card.remove();
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('click', function (event) {
+      if (!event.target.classList.contains('add-description-section')) {
+        return;
+      }
+
+      sectionsList.appendChild(createDescriptionSectionCard({
+        layout: String(event.target.getAttribute('data-layout') || 'text'),
+        text: '',
+        left_text: '',
+        right_text: '',
+        left_image: { source: 'IMG_EU', index: 1 },
+        right_image: { source: 'IMG_EU', index: 1 }
+      }));
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('input', function (event) {
+      if (event.target.classList.contains('desc-token-search')) {
+        return;
+      }
+
+      refreshAvailableFieldsFromDescriptions();
+    });
+    card.addEventListener('change', function (event) {
+      if (event.target.classList.contains('desc-token-search')) {
+        return;
+      }
+
+      refreshAvailableFieldsFromDescriptions();
+    });
+    var dragHandle = card.querySelector('.js-drag-handle');
+    if (dragHandle) {
+      dragHandle.addEventListener('mousedown', function () {
+        armDragFromHandle(card);
+      });
+      dragHandle.addEventListener('touchstart', function () {
+        armDragFromHandle(card);
+      }, { passive: true });
+    }
+
+    card.addEventListener('dragstart', function (event) {
+      if (!canStartDrag(card)) {
+        event.preventDefault();
+        return;
+      }
+
+      startDragItem(card, 'description-template');
+      ensureDragPlaceholder(descriptionBuilder, card.nextSibling, card.offsetHeight);
+    });
+    card.addEventListener('dragend', function () {
+      endDragItem();
+    });
+    card.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      if (currentDragType !== 'description-template' || !currentDrag || currentDrag === card || !descriptionBuilder) {
+        return;
+      }
+
+      clearDragIndicators(descriptionBuilder);
+      var position = computeInsertPosition(event, card);
+      card.classList.add(position === 'before' ? 'drag-insert-before' : 'drag-insert-after');
+      ensureDragPlaceholder(descriptionBuilder, position === 'before' ? card : card.nextSibling, currentDrag.offsetHeight);
+    });
+    card.addEventListener('dragleave', function (event) {
+      if (!card.contains(event.relatedTarget)) {
+        card.classList.remove('drag-insert-before', 'drag-insert-after');
+      }
+    });
+    card.addEventListener('drop', function (event) {
+      event.preventDefault();
+      if (currentDragType !== 'description-template' || !currentDrag || currentDrag === card) {
+        return;
+      }
+
+      var position = computeInsertPosition(event, card);
+      moveDraggedItem(descriptionBuilder, card, position);
+      clearDragIndicators(descriptionBuilder);
+      refreshAvailableFieldsFromDescriptions();
+      endDragItem();
+    });
+
+    syncTemplatePresentation();
+    return card;
   }
 
   function createColumnCard(column) {
@@ -333,7 +1293,7 @@
     card.innerHTML = ''
       + '<div class="card-body py-2">'
       + '  <div class="d-flex justify-content-between align-items-center mb-2">'
-      + '    <span class="text-secondary small" style="cursor:move;">:: przeciagnij</span>'
+      + '    <span class="text-secondary small js-drag-handle" style="cursor:move;">:: przeciagnij</span>'
       + '    <div class="d-flex gap-2">'
       + '      <button type="button" class="btn btn-sm btn-outline-secondary duplicate-column">Duplikuj</button>'
       + '      <button type="button" class="btn btn-sm btn-outline-danger remove-column">Usun</button>'
@@ -529,28 +1489,57 @@
       }
     });
 
-    card.addEventListener('dragstart', function () {
-      card.classList.add('opacity-50');
-      card.dataset.dragging = '1';
+    var dragHandle = card.querySelector('.js-drag-handle');
+    if (dragHandle) {
+      dragHandle.addEventListener('mousedown', function () {
+        armDragFromHandle(card);
+      });
+      dragHandle.addEventListener('touchstart', function () {
+        armDragFromHandle(card);
+      }, { passive: true });
+    }
+
+    card.addEventListener('dragstart', function (event) {
+      if (!canStartDrag(card)) {
+        event.preventDefault();
+        return;
+      }
+
+      startDragItem(card, 'column-card');
+      ensureDragPlaceholder(builder, card.nextSibling, card.offsetHeight);
     });
 
     card.addEventListener('dragend', function () {
-      card.classList.remove('opacity-50');
-      card.dataset.dragging = '0';
+      endDragItem();
     });
 
     card.addEventListener('dragover', function (event) {
       event.preventDefault();
+      if (currentDragType !== 'column-card' || !currentDrag || currentDrag === card || !builder) {
+        return;
+      }
+
+      clearDragIndicators(builder);
+      var position = computeInsertPosition(event, card);
+      card.classList.add(position === 'before' ? 'drag-insert-before' : 'drag-insert-after');
+      ensureDragPlaceholder(builder, position === 'before' ? card : card.nextSibling, currentDrag.offsetHeight);
+    });
+    card.addEventListener('dragleave', function (event) {
+      if (!card.contains(event.relatedTarget)) {
+        card.classList.remove('drag-insert-before', 'drag-insert-after');
+      }
     });
 
     card.addEventListener('drop', function (event) {
       event.preventDefault();
-      var dragging = builder.querySelector('.column-card[data-dragging="1"]');
-      if (!dragging || dragging === card) {
+      if (currentDragType !== 'column-card' || !currentDrag || currentDrag === card) {
         return;
       }
 
-      builder.insertBefore(dragging, card);
+      var position = computeInsertPosition(event, card);
+      moveDraggedItem(builder, card, position);
+      clearDragIndicators(builder);
+      endDragItem();
     });
 
     function bindImageLayoutInteractions(scope) {
@@ -562,33 +1551,59 @@
           }
 
           item.dataset.imageLayoutBound = '1';
+          var dragHandle = item.querySelector('.js-drag-handle');
+          if (dragHandle) {
+            dragHandle.addEventListener('mousedown', function () {
+              armDragFromHandle(item);
+            });
+            dragHandle.addEventListener('touchstart', function () {
+              armDragFromHandle(item);
+            }, { passive: true });
+          }
+
           item.addEventListener('dragstart', function (event) {
-            item.classList.add('opacity-50');
-            item.dataset.dragging = '1';
+            if (!canStartDrag(item)) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+
+            startDragItem(item, 'image-layout-item');
+            ensureDragPlaceholder(item.parentNode, item.nextSibling, item.offsetHeight);
             event.stopPropagation();
           });
 
           item.addEventListener('dragend', function (event) {
-            item.classList.remove('opacity-50');
-            item.dataset.dragging = '0';
+            endDragItem();
             event.stopPropagation();
           });
 
           item.addEventListener('dragover', function (event) {
             event.preventDefault();
             event.stopPropagation();
+            var list = scope.querySelector('.image-layout-list');
+            if (currentDragType !== 'image-layout-item' || !currentDrag || currentDrag === item || !list) {
+              return;
+            }
+
+            clearDragIndicators(list);
+            var position = computeInsertPosition(event, item);
+            item.classList.add(position === 'before' ? 'drag-insert-before' : 'drag-insert-after');
+            ensureDragPlaceholder(list, position === 'before' ? item : item.nextSibling, currentDrag.offsetHeight);
           });
 
           item.addEventListener('drop', function (event) {
             event.preventDefault();
             event.stopPropagation();
             var list = scope.querySelector('.image-layout-list');
-            var dragging = list ? list.querySelector('.image-layout-item[data-dragging="1"]') : null;
-            if (!list || !dragging || dragging === item) {
+            if (currentDragType !== 'image-layout-item' || !list || !currentDrag || currentDrag === item) {
               return;
             }
 
-            list.insertBefore(dragging, item);
+            var position = computeInsertPosition(event, item);
+            moveDraggedItem(list, item, position);
+            clearDragIndicators(list);
+            endDragItem();
           });
         })(items[index]);
       }
@@ -680,6 +1695,140 @@
     };
   }
 
+  function collectDescriptionTemplates() {
+    var cards = descriptionBuilder.querySelectorAll('.description-template-card');
+    var templates = [];
+
+    for (var i = 0; i < cards.length; i++) {
+      var nameInput = cards[i].querySelector('.desc-template-name');
+      var keyInput = cards[i].querySelector('.desc-template-key');
+      var normalizedKey = keyInput ? String(keyInput.value || '').trim() : '';
+      if (!normalizedKey) {
+        normalizedKey = slugifyDescriptionKey(nameInput ? nameInput.value : '') || ('opis_' + (i + 1));
+        if (keyInput) {
+          keyInput.value = normalizedKey;
+        }
+      }
+      var sections = [];
+      var sectionCards = cards[i].querySelectorAll('.description-section-card');
+
+      for (var sectionIndex = 0; sectionIndex < sectionCards.length; sectionIndex++) {
+        sections.push(collectDescriptionSectionData(sectionCards[sectionIndex]));
+      }
+
+      templates.push({
+        name: nameInput ? nameInput.value : '',
+        key: normalizedKey,
+        sections: sections
+      });
+    }
+
+    return templates;
+  }
+
+  function updateSelectOptions(select, optionsHtml, selectedValue) {
+    if (!select) {
+      return;
+    }
+
+    select.innerHTML = optionsHtml;
+    if (typeof selectedValue !== 'undefined') {
+      select.value = selectedValue;
+    }
+  }
+
+  function refreshAvailableFieldsFromDescriptions() {
+    var nextFields = Object.assign({}, baseAvailableFields);
+    var templateCards = descriptionBuilder.querySelectorAll('.description-template-card');
+    var descriptionTemplates = collectDescriptionTemplates();
+
+    descriptionTemplates.forEach(function (template, index) {
+      var name = String(template && template.name ? template.name : '').trim();
+      var key = String(template && template.key ? template.key : '').trim();
+      if (!name) {
+        return;
+      }
+
+      if (!key) {
+        key = slugifyDescriptionKey(name) || ('opis_' + (index + 1));
+        template.key = key;
+      }
+
+      if (templateCards[index]) {
+        var keyInput = templateCards[index].querySelector('.desc-template-key');
+        if (keyInput && !String(keyInput.value || '').trim()) {
+          keyInput.value = key;
+        }
+      }
+
+      nextFields['product.csv_description.' + key] = 'Opis CSV: ' + name;
+    });
+
+    availableFields = nextFields;
+
+    var columnCards = builder.querySelectorAll('.column-card');
+    for (var i = 0; i < columnCards.length; i++) {
+      var fieldSelect = columnCards[i].querySelector('.col-field');
+      var fnFieldSelect = columnCards[i].querySelector('.col-fn-field-insert');
+      var fieldValue = fieldSelect ? fieldSelect.value : '';
+      var fnFieldValue = fnFieldSelect ? fnFieldSelect.value : '';
+      updateSelectOptions(fieldSelect, fieldOptions(fieldValue), fieldValue);
+      updateSelectOptions(fnFieldSelect, fieldInsertOptions(), fnFieldValue);
+    }
+
+    var descriptionTokenSelects = descriptionBuilder.querySelectorAll('.desc-token-select');
+    for (var tokenIndex = 0; tokenIndex < descriptionTokenSelects.length; tokenIndex++) {
+      var tokenValue = descriptionTokenSelects[tokenIndex].value;
+      updateSelectOptions(descriptionTokenSelects[tokenIndex], descriptionTokenOptions(), tokenValue);
+    }
+  }
+
+  function bindContainerDropzone(container, itemSelector, dragType, onDropCallback) {
+    if (!container) {
+      return;
+    }
+
+    container.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      if (!currentDrag || currentDragType !== dragType) {
+        return;
+      }
+
+      var target = event.target.closest(itemSelector);
+      if (target) {
+        return;
+      }
+
+      clearDragIndicators(container);
+      ensureDragPlaceholder(container, null, currentDrag.offsetHeight);
+    });
+
+    container.addEventListener('drop', function (event) {
+      event.preventDefault();
+      if (!currentDrag || currentDragType !== dragType) {
+        return;
+      }
+
+      var target = event.target.closest(itemSelector);
+      if (target) {
+        return;
+      }
+
+      container.appendChild(currentDrag);
+      clearDragIndicators(container);
+      if (typeof onDropCallback === 'function') {
+        onDropCallback();
+      }
+      endDragItem();
+    });
+
+    container.addEventListener('dragleave', function (event) {
+      if (!container.contains(event.relatedTarget)) {
+        clearDragIndicators(container);
+      }
+    });
+  }
+
   function collectColumns() {
     var cards = builder.querySelectorAll('.column-card');
     var columns = [];
@@ -694,6 +1843,13 @@
   addButton.addEventListener('click', function () {
     builder.appendChild(createColumnCard());
   });
+
+  if (addDescriptionTemplateButton) {
+    addDescriptionTemplateButton.addEventListener('click', function () {
+      descriptionBuilder.appendChild(createDescriptionTemplateCard());
+      refreshAvailableFieldsFromDescriptions();
+    });
+  }
 
   if (addPresetButton) {
     addPresetButton.addEventListener('click', function () {
@@ -717,8 +1873,41 @@
   }
 
   form.addEventListener('submit', function () {
+    refreshAvailableFieldsFromDescriptions();
     payloadInput.value = JSON.stringify(collectColumns());
+    descriptionPayloadInput.value = JSON.stringify(collectDescriptionTemplates());
   });
+
+  if (Array.isArray(initialDescriptionTemplates) && initialDescriptionTemplates.length) {
+    initialDescriptionTemplates.forEach(function (template) {
+      descriptionBuilder.appendChild(createDescriptionTemplateCard(template));
+    });
+  }
+
+  bindContainerDropzone(builder, '.column-card', 'column-card', null);
+  bindContainerDropzone(descriptionBuilder, '.description-template-card', 'description-template', refreshAvailableFieldsFromDescriptions);
+
+  document.addEventListener('drop', function () {
+    forceEndDragItemSoon();
+  });
+
+  document.addEventListener('dragend', function () {
+    forceEndDragItemSoon();
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!currentDrag) {
+      armedDragItem = null;
+    }
+  });
+
+  document.addEventListener('touchend', function () {
+    if (!currentDrag) {
+      armedDragItem = null;
+    }
+  });
+
+  refreshAvailableFieldsFromDescriptions();
 
   if (!Array.isArray(initialColumns) || initialColumns.length === 0) {
     builder.appendChild(createColumnCard());

@@ -31,6 +31,7 @@ class TemplateParser
             'encoding' => isset($template['encoding']) ? (string) $template['encoding'] : 'UTF-8',
             'add_bom' => isset($template['add_bom']) ? (int) $template['add_bom'] : 1,
             'array_separator' => isset($template['array_separator']) ? (string) $template['array_separator'] : '|',
+            'description_templates' => isset($template['description_templates']) && is_array($template['description_templates']) ? $template['description_templates'] : array(),
             'columns' => $parsedColumns,
         );
     }

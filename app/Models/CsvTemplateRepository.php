@@ -38,6 +38,7 @@ class CsvTemplateRepository
             . "id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
             . "name VARCHAR(190) NOT NULL,\n"
             . "description TEXT DEFAULT NULL,\n"
+            . "description_templates_json LONGTEXT DEFAULT NULL,\n"
             . "delimiter VARCHAR(1) NOT NULL DEFAULT ';',\n"
             . "encoding VARCHAR(30) NOT NULL DEFAULT 'UTF-8',\n"
             . "add_bom TINYINT(1) NOT NULL DEFAULT 1,\n"
@@ -77,6 +78,23 @@ class CsvTemplateRepository
             . "CONSTRAINT fk_csv_template_mappings_column FOREIGN KEY (column_id) REFERENCES csv_template_columns(id) ON DELETE CASCADE\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        $databaseName = isset($config['database']) ? (string) $config['database'] : '';
+        if ($databaseName !== '') {
+            $hasDescriptionTemplatesColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array(
+                    'schema' => $databaseName,
+                    'table' => 'csv_templates',
+                    'column' => 'description_templates_json',
+                )
+            );
+
+            if ($hasDescriptionTemplatesColumn === 0) {
+                $this->database->query('ALTER TABLE csv_templates ADD COLUMN description_templates_json LONGTEXT NULL AFTER description');
+            }
+        }
+
         self::$schemaEnsured = true;
     }
 
@@ -131,7 +149,16 @@ class CsvTemplateRepository
             $columns[$index]['mappings'] = $mappings;
         }
 
+        $descriptionTemplates = array();
+        if (!empty($template['description_templates_json'])) {
+            $decodedDescriptions = json_decode((string) $template['description_templates_json'], true);
+            if (is_array($decodedDescriptions)) {
+                $descriptionTemplates = $decodedDescriptions;
+            }
+        }
+
         $template['columns'] = $columns;
+        $template['description_templates'] = $descriptionTemplates;
         return $template;
     }
 
@@ -190,6 +217,7 @@ class CsvTemplateRepository
             array(
                 'name' => $name,
                 'description' => isset($template['description']) ? (string) $template['description'] : null,
+                'description_templates_json' => json_encode(isset($template['description_templates']) && is_array($template['description_templates']) ? $template['description_templates'] : array()),
                 'delimiter' => isset($template['delimiter']) ? (string) $template['delimiter'] : ';',
                 'encoding' => isset($template['encoding']) ? (string) $template['encoding'] : 'UTF-8',
                 'add_bom' => isset($template['add_bom']) ? (int) $template['add_bom'] : 1,

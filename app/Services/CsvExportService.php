@@ -25,6 +25,10 @@ class CsvExportService
         $encoding = strtoupper($tpl['encoding']);
         $addBom = (int) $tpl['add_bom'] === 1;
         $arraySeparator = $tpl['array_separator'] !== '' ? $tpl['array_separator'] : '|';
+        $exportOptions['csv_description_templates'] = isset($tpl['description_templates']) && is_array($tpl['description_templates'])
+            ? $tpl['description_templates']
+            : array();
+        $exportOptions['csv_generated_images_settings'] = $this->generatedImagesColumnSettings($tpl['columns']);
 
         $stream = fopen('php://temp', 'r+');
         $headers = array();
@@ -87,6 +91,29 @@ class CsvExportService
         }
 
         return $csv;
+    }
+
+    private function generatedImagesColumnSettings(array $columns): array
+    {
+        foreach ($columns as $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $sourceType = strtolower(trim((string) ($column['source_type'] ?? 'field')));
+            $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
+            if ($sourceType !== 'field') {
+                continue;
+            }
+
+            if (!in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true)) {
+                continue;
+            }
+
+            return isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
+        }
+
+        return array();
     }
 
     private function resolveColumnValue(array $product, array $column, string $arraySeparator, array $exportOptions = array()): string

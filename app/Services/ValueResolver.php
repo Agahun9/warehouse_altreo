@@ -94,6 +94,10 @@ class ValueResolver
             return $this->generateImageExportLines($product, $exportOptions);
         }
 
+        if (strpos($normalized, 'csv_description.') === 0) {
+            return $this->renderCsvDescriptionTemplate($product, substr($normalized, 16), $exportOptions);
+        }
+
         return $this->walkPath($product, $normalized);
     }
 
@@ -159,6 +163,7 @@ class ValueResolver
             'images' => 'generated_images',
             'generated_title' => 'generated_title',
             'csv_title' => 'generated_title',
+            'csv_description' => 'csv_description',
             'allegro_parameters' => 'allegro_parameters',
             'allegro_parameters_eu' => 'allegro_parameters_eu',
             'empik_parameters' => 'empik_parameters',
@@ -846,9 +851,212 @@ class ValueResolver
         return array('');
     }
 
+    public function generateImageExportAssetPaths(array $product, array $exportOptions, array $settings = array()): array
+    {
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
+        $productName = isset($product['product_name']) ? (string) $product['product_name'] : '';
+        $collectionCode = strtoupper(trim((string) ($exportOptions['image_collection_code'] ?? ($imageOptions['image_collection_code'] ?? ''))));
+        $collectionName = trim((string) ($exportOptions['collection_name'] ?? ''));
+        $imageCount = max(0, (int) ($exportOptions['image_count'] ?? ($imageOptions['image_count'] ?? 0)));
+        $baseDirectory = trim((string) ($exportOptions['image_base_directory'] ?? ($imageOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU')));
+        $imageMacro = trim((string) ($imageOptions['image_macro'] ?? ($exportOptions['image_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')));
+
+        $imageLines = array();
+        for ($i = 1; $i <= $imageCount; $i++) {
+            $path = $this->renderImageExportMacro($imageMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $imageLines[] = $path;
+            }
+        }
+
+        return $imageLines;
+    }
+
+    public function generateImageExportFlattenedLines(array $product, array $exportOptions, array $settings = array()): array
+    {
+        $rows = $this->generateImageExportRows($product, $exportOptions, $settings);
+        $lines = array();
+
+        foreach ($rows as $row) {
+            if (!is_scalar($row)) {
+                continue;
+            }
+
+            $items = preg_split('/\r\n|\r|\n/', (string) $row);
+            if (!is_array($items)) {
+                continue;
+            }
+
+            foreach ($items as $item) {
+                $item = trim((string) $item);
+                if ($item === '') {
+                    continue;
+                }
+
+                $lines[] = $item;
+            }
+        }
+
+        return $lines;
+    }
+
     private function generateImageExportLines(array $product, array $exportOptions): string
     {
         return implode("\n", $this->generateImageExportRows($product, $exportOptions));
+    }
+
+    private function renderCsvDescriptionTemplate(array $product, string $templateKey, array $exportOptions): string
+    {
+        $templateKey = trim($templateKey);
+        if ($templateKey === '') {
+            return '';
+        }
+
+        $templates = isset($exportOptions['csv_description_templates']) && is_array($exportOptions['csv_description_templates'])
+            ? $exportOptions['csv_description_templates']
+            : array();
+
+        foreach ($templates as $template) {
+            if (!is_array($template) || trim((string) ($template['key'] ?? '')) !== $templateKey) {
+                continue;
+            }
+
+            return $this->buildCsvDescriptionHtml($product, $template, $exportOptions);
+        }
+
+        return '';
+    }
+
+    private function buildCsvDescriptionHtml(array $product, array $template, array $exportOptions): string
+    {
+        $sections = isset($template['sections']) && is_array($template['sections']) ? $template['sections'] : array();
+        $html = array();
+
+        foreach ($sections as $section) {
+            if (!is_array($section)) {
+                continue;
+            }
+
+            $layout = trim((string) ($section['layout'] ?? 'text'));
+            $sectionHtml = $this->buildCsvDescriptionSectionHtml($product, $section, $layout, $exportOptions);
+            if ($sectionHtml !== '') {
+                $html[] = $sectionHtml;
+            }
+        }
+
+        if ($html === array()) {
+            return '';
+        }
+
+        $style = '<style>'
+            . '@media only screen and (max-width: 640px) {'
+            . '.csv-desc-two-col,.csv-desc-two-col tbody,.csv-desc-two-col tr,.csv-desc-two-col td{display:block!important;width:100%!important;}'
+            . '.csv-desc-two-col td{padding-left:0!important;padding-right:0!important;padding-bottom:12px!important;}'
+            . '}'
+            . '</style>';
+
+        return $style . implode("\n", $html);
+    }
+
+    private function buildCsvDescriptionSectionHtml(array $product, array $section, string $layout, array $exportOptions): string
+    {
+        $leftImage = $this->csvDescriptionImageHtml($product, $section['left_image'] ?? array(), $exportOptions);
+        $rightImage = $this->csvDescriptionImageHtml($product, $section['right_image'] ?? array(), $exportOptions);
+        $text = $this->csvDescriptionTextHtml($product, (string) ($section['text'] ?? ''), $exportOptions);
+        $leftText = $this->csvDescriptionTextHtml($product, (string) ($section['left_text'] ?? ''), $exportOptions);
+        $rightText = $this->csvDescriptionTextHtml($product, (string) ($section['right_text'] ?? ''), $exportOptions);
+
+        switch ($layout) {
+            case 'image_image':
+                return $this->csvDescriptionTwoColumnSection($leftImage, $rightImage);
+            case 'image_text':
+                return $this->csvDescriptionTwoColumnSection($leftImage, $rightText);
+            case 'text_image':
+                return $this->csvDescriptionTwoColumnSection($leftText, $rightImage);
+            case 'text_text':
+                return $this->csvDescriptionTwoColumnSection($leftText, $rightText);
+            case 'text':
+            default:
+                return $this->csvDescriptionSingleColumnSection($text);
+        }
+    }
+
+    private function csvDescriptionSingleColumnSection(string $content): string
+    {
+        $content = trim($content);
+        if ($content === '') {
+            return '';
+        }
+
+        return '<table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr><td style="vertical-align:top;">'
+            . $content
+            . '</td></tr></table>';
+    }
+
+    private function csvDescriptionTwoColumnSection(string $leftContent, string $rightContent): string
+    {
+        $leftContent = trim($leftContent);
+        $rightContent = trim($rightContent);
+        if ($leftContent === '' && $rightContent === '') {
+            return '';
+        }
+
+        return '<table role="presentation" class="csv-desc-two-col" style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr>'
+            . '<td style="width:50%;vertical-align:top;padding-right:12px;">' . $leftContent . '</td>'
+            . '<td style="width:50%;vertical-align:top;padding-left:12px;">' . $rightContent . '</td>'
+            . '</tr></table>';
+    }
+
+    private function csvDescriptionTextHtml(array $product, string $template, array $exportOptions): string
+    {
+        $template = trim($template);
+        if ($template === '') {
+            return '';
+        }
+
+        $rendered = preg_replace_callback('/\{\{\s*(field|option):\s*([^}]+)\}\}/i', function (array $matches) use ($product, $exportOptions): string {
+            $kind = strtolower(trim((string) ($matches[1] ?? 'field')));
+            $token = trim((string) ($matches[2] ?? ''));
+            if ($token === '') {
+                return '';
+            }
+
+            if ($kind === 'option') {
+                return (string) $this->resolveField($product, $token, '|', $exportOptions);
+            }
+
+            return (string) $this->resolveField($product, $token, '|', $exportOptions);
+        }, $template);
+
+        $escaped = htmlspecialchars((string) $rendered, ENT_QUOTES, 'UTF-8');
+        return nl2br($escaped);
+    }
+
+    private function csvDescriptionImageHtml(array $product, $slot, array $exportOptions): string
+    {
+        $slot = is_array($slot) ? $slot : array();
+        $source = trim((string) ($slot['source'] ?? ''));
+        $index = max(1, (int) ($slot['index'] ?? 1));
+        if ($source === '') {
+            return '';
+        }
+
+        $imageUrl = '';
+        if ($source === 'IMG_EU') {
+            $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
+                ? $exportOptions['csv_generated_images_settings']
+                : array();
+            $images = $this->generateImageExportFlattenedLines($product, $exportOptions, $settings);
+            if (isset($images[$index - 1])) {
+                $imageUrl = trim((string) $images[$index - 1]);
+            }
+        }
+
+        if ($imageUrl === '') {
+            return '';
+        }
+
+        return '<img src="' . htmlspecialchars($imageUrl, ENT_QUOTES, 'UTF-8') . '" alt="" style="display:block;max-width:100%;height:auto;">';
     }
 
     private function renderImageExportMacro(
