@@ -1743,10 +1743,16 @@ class AllegroStorageRepository
     {
         $whereParts = array('accounts.is_active = 1');
 
-        $accountId = isset($filters['account_id']) ? trim((string) $filters['account_id']) : '';
-        if ($accountId !== '' && ctype_digit($accountId)) {
-            $whereParts[] = 'offers.account_id = :account_id';
-            $params['account_id'] = (int) $accountId;
+        $accountIds = $this->normalizeOfferAccountIdsFilter($filters['account_ids'] ?? ($filters['account_id'] ?? ''));
+        if ($accountIds !== array()) {
+            $placeholders = array();
+            foreach ($accountIds as $index => $accountId) {
+                $paramKey = 'account_id_' . $index;
+                $placeholders[] = ':' . $paramKey;
+                $params[$paramKey] = $accountId;
+            }
+
+            $whereParts[] = 'offers.account_id IN (' . implode(', ', $placeholders) . ')';
         }
 
         $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
@@ -2030,6 +2036,32 @@ class AllegroStorageRepository
             'needs_shared_stock' => $needsSharedStock,
             'needs_warehouse_category' => $needsWarehouseCategory,
         );
+    }
+
+    private function normalizeOfferAccountIdsFilter($rawValue): array
+    {
+        $values = array();
+
+        if (is_array($rawValue)) {
+            $values = $rawValue;
+        } else {
+            $raw = trim((string) $rawValue);
+            if ($raw !== '') {
+                $values = preg_split('/[\s,;]+/', $raw) ?: array();
+            }
+        }
+
+        $normalized = array();
+        foreach ($values as $value) {
+            $item = trim((string) $value);
+            if ($item === '' || !ctype_digit($item)) {
+                continue;
+            }
+
+            $normalized[] = (int) $item;
+        }
+
+        return array_values(array_unique($normalized));
     }
 
     private function buildOfferSort(string $sortBy, string $sortDir): string

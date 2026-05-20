@@ -663,9 +663,11 @@ class AllegroController extends Controller
         $warehouseQuantityFrom = trim((string) $this->input('warehouse_quantity_from', ''));
         $warehouseQuantityTo = trim((string) $this->input('warehouse_quantity_to', ''));
         $warehouseQuantity = trim((string) $this->input('warehouse_quantity', ''));
+        $accountIds = $this->normalizeAccountIdsFilter($this->input('account_id', ''));
 
         return array(
-            'account_id' => trim((string) $this->input('account_id', '')),
+            'account_id' => implode(',', $accountIds),
+            'account_ids' => $accountIds,
             'q' => trim((string) $this->input('q', '')),
             'sku' => trim((string) $this->input('sku', '')),
             'error_query' => trim((string) $this->input('error_query', '')),
@@ -1013,6 +1015,10 @@ class AllegroController extends Controller
         }
 
         foreach ($filters as $key => $value) {
+            if ($key === 'account_ids') {
+                continue;
+            }
+
             $value = trim((string) $value);
             if ($value !== '') {
                 $params[$key] = $value;
@@ -1020,5 +1026,31 @@ class AllegroController extends Controller
         }
 
         return './index.php?' . http_build_query($params);
+    }
+
+    private function normalizeAccountIdsFilter($rawValue): array
+    {
+        $values = array();
+
+        if (is_array($rawValue)) {
+            $values = $rawValue;
+        } else {
+            $raw = trim((string) $rawValue);
+            if ($raw !== '') {
+                $values = preg_split('/[\s,;]+/', $raw) ?: array();
+            }
+        }
+
+        $normalized = array();
+        foreach ($values as $value) {
+            $item = trim((string) $value);
+            if ($item === '' || !ctype_digit($item)) {
+                continue;
+            }
+
+            $normalized[] = (string) ((int) $item);
+        }
+
+        return array_values(array_unique($normalized));
     }
 }

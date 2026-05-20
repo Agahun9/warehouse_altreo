@@ -342,12 +342,12 @@
             <input type="hidden" name="queue_status" value="{$queueStatusFilter|escape}">
             <div class="col-xl-2 col-md-6">
               <label class="form-label">Konto</label>
-              <select name="account_id" class="form-select">
-                <option value="">Wszystkie</option>
+              <select name="account_id[]" class="form-select" multiple size="6">
                 {foreach $accounts as $account}
-                  <option value="{$account.id}"{if $filters.account_id == $account.id} selected{/if}>{$account.name|escape}</option>
+                  <option value="{$account.id}"{if in_array((string) $account.id, $filters.account_ids|default:[])} selected{/if}>{$account.name|escape}</option>
                 {/foreach}
               </select>
+              <div class="form-text">Mozesz wybrac kilka kont naraz klawiszem Ctrl albo Shift.</div>
             </div>
             <div class="col-xl-2 col-md-6">
               <label class="form-label">Szukaj</label>
@@ -1367,7 +1367,7 @@
     var warehouseProductIdInput = document.getElementById('bulk-warehouse-product-id');
     var producerAccountBox = document.getElementById('bulk-producer-account-box');
     var safetyDescriptionInput = document.getElementById('bulk-safety-description');
-    var filterAccountSelect = document.querySelector('#allegroFiltersForm select[name="account_id"]');
+    var filterAccountSelect = document.querySelector('#allegroFiltersForm select[name="account_id[]"]') || document.querySelector('#allegroFiltersForm select[name="account_id"]');
     var selectionChoices = Array.prototype.slice.call(document.querySelectorAll('.js-selection-choice'));
     var selectionScopeInputs = Array.prototype.slice.call(bulkForm.querySelectorAll('input[name="selection_scope"]'));
     var bulkFields = Array.prototype.slice.call(document.querySelectorAll('.js-bulk-field'));
@@ -1790,13 +1790,22 @@
             };
           }
         });
-      } else if (filterAccountSelect && String(filterAccountSelect.value || '').trim() !== '') {
-        itemsById[String(filterAccountSelect.value).trim()] = {
-          id: String(filterAccountSelect.value).trim(),
-          name: filterAccountSelect.options[filterAccountSelect.selectedIndex]
-            ? String(filterAccountSelect.options[filterAccountSelect.selectedIndex].text || '').trim()
-            : ''
-        };
+      } else if (filterAccountSelect) {
+        Array.prototype.slice.call(filterAccountSelect.options || []).forEach(function (option) {
+          if (!option || !option.selected) {
+            return;
+          }
+
+          var accountId = String(option.value || '').trim();
+          if (accountId === '') {
+            return;
+          }
+
+          itemsById[accountId] = {
+            id: accountId,
+            name: String(option.text || '').trim()
+          };
+        });
       }
 
       return Object.keys(itemsById).sort().map(function (key) {
