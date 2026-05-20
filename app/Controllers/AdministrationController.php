@@ -167,6 +167,12 @@ class AdministrationController extends Controller
             'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
             'apiBearerToken' => $this->settings->get('api_bearer_token', ''),
             'apiBaseUrl' => $this->apiBaseUrl(),
+            'moreleApiUrl' => $this->settings->get('morele_api_url', ''),
+            'moreleAccount' => $this->settings->get('morele_account', ''),
+            'moreleClientId' => $this->settings->get('morele_client_id', ''),
+            'moreleClientSecret' => $this->settings->get('morele_client_secret', ''),
+            'computersMoreleCategoryId' => $this->settings->get('computers_morele_category_id', '672'),
+            'computersEmpikCategoryId' => $this->settings->get('computers_empik_category_id', '21-16-1'),
         ));
     }
 
@@ -322,6 +328,54 @@ class AdministrationController extends Controller
             } else {
                 $this->setFlash('success', 'Token API zostal zapisany.');
             }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function savemorele(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        try {
+            $apiUrl = rtrim(trim((string) $this->input('morele_api_url', '')), '/');
+            $account = trim((string) $this->input('morele_account', ''));
+            $clientId = trim((string) $this->input('morele_client_id', ''));
+            $clientSecret = trim((string) $this->input('morele_client_secret', ''));
+            $moreleCategoryId = trim((string) $this->input('computers_morele_category_id', '672'));
+            $empikCategoryId = trim((string) $this->input('computers_empik_category_id', '21-16-1'));
+
+            if ($apiUrl !== '' && filter_var($apiUrl, FILTER_VALIDATE_URL) === false) {
+                throw new RuntimeException('Adres API Morele musi byc poprawnym URL.');
+            }
+
+            if (($clientId !== '' && $clientSecret === '') || ($clientId === '' && $clientSecret !== '')) {
+                throw new RuntimeException('Dla Morele uzupelnij jednoczesnie Client ID i Client Secret.');
+            }
+
+            if ($moreleCategoryId !== '' && !preg_match('/^\d+$/', $moreleCategoryId)) {
+                throw new RuntimeException('Kategoria Morele musi byc liczba calkowita.');
+            }
+
+            if ($empikCategoryId === '') {
+                $empikCategoryId = '21-16-1';
+            }
+
+            $this->settings->set('morele_api_url', $apiUrl !== '' ? $apiUrl : 'https://api-marketplace.morele.net');
+            $this->settings->set('morele_account', $account);
+            $this->settings->set('morele_client_id', $clientId);
+            $this->settings->set('morele_client_secret', $clientSecret);
+            $this->settings->set('computers_morele_category_id', $moreleCategoryId !== '' ? $moreleCategoryId : '672');
+            $this->settings->set('computers_empik_category_id', $empikCategoryId);
+
+            $this->setFlash('success', 'Ustawienia Morele i fallback kategorii dla komputerow zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

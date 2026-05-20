@@ -1,4 +1,4 @@
-<main class="app-main">
+﻿<main class="app-main">
   <div class="app-content-header">
     <div class="container-fluid">
       <div class="row">
@@ -252,6 +252,9 @@
                 </li>
                 <li class="nav-item" role="presentation">
                   <button class="nav-link" id="erli-tab" data-bs-toggle="pill" data-bs-target="#erli-pane" type="button" role="tab" aria-controls="erli-pane" aria-selected="false">Erli</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="morele-tab" data-bs-toggle="pill" data-bs-target="#morele-pane" type="button" role="tab" aria-controls="morele-pane" aria-selected="false">Morele</button>
                 </li>
               </ul>
 
@@ -625,6 +628,81 @@
                                 {/foreach}
                               </tbody>
                             </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tab-pane fade" id="morele-pane" role="tabpanel" aria-labelledby="morele-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-5">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">API Morele i fallback komputerow</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=administration&action=savemorele" class="row g-3">
+                            <div class="col-12">
+                              <label class="form-label">API URL Morele</label>
+                              <input type="url" name="morele_api_url" class="form-control" value="{$moreleApiUrl|default:'https://api-marketplace.morele.net'|escape}" placeholder="https://api-marketplace.morele.net">
+                              <div class="form-text">Domyslnie endpoint marketplace Morele. Ten tryb dziala jak w starym module: rejestracja / refresh tokena, a potem pobranie cech kategorii.</div>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Konto Morele</label>
+                              <input type="text" name="morele_account" class="form-control" value="{$moreleAccount|escape}" placeholder="np. kontakt@pc-masters.pl">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Client ID Morele</label>
+                              <input type="text" name="morele_client_id" class="form-control" value="{$moreleClientId|escape}" placeholder="np. 3230">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Client Secret Morele</label>
+                              <input type="text" name="morele_client_secret" class="form-control" value="{$moreleClientSecret|escape}" placeholder="Wklej Client Secret">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Kategoria Morele dla komputerow</label>
+                              <input type="number" min="1" step="1" name="computers_morele_category_id" class="form-control" value="{$computersMoreleCategoryId|escape}">
+                              <div class="form-text">Domyslnie <code>672</code>.</div>
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Kategoria Empik dla komputerow</label>
+                              <input type="text" name="computers_empik_category_id" class="form-control" value="{$computersEmpikCategoryId|escape}">
+                              <div class="form-text">Domyslnie <code>21-16-1</code>.</div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz ustawienia Morele</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-7">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Jak to dziala</h3>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border small text-secondary mb-3">
+                            Ta sekcja zasila ekran <code>Komputery -&gt; Komponenty</code>. Morele dziala teraz w logice starego modulu: <code>Basic client_id:client_secret -&gt; /auth/register lub /auth/refresh -&gt; Bearer access_token -&gt; /offer/category/features/{ldelim}id{rdelim}</code>. Empik fallback bierze podane tutaj ID kategorii.
+                          </div>
+                          <div class="row g-3">
+                            <div class="col-md-6">
+                              <div class="border rounded p-3 h-100">
+                                <div class="fw-semibold mb-2">Aktywne fallbacki</div>
+                                <div class="small mb-1">Morele: <code>{$computersMoreleCategoryId|escape}</code></div>
+                                <div class="small">Empik: <code>{$computersEmpikCategoryId|escape}</code></div>
+                              </div>
+                            </div>
+                            <div class="col-md-6">
+                              <div class="border rounded p-3 h-100">
+                                <div class="fw-semibold mb-2">Stan konfiguracji API</div>
+                                <div class="small mb-1">URL: {if $moreleApiUrl neq ''}<span class="text-success">uzupelniony</span>{else}<span class="text-danger">brak</span>{/if}</div>
+                                <div class="small mb-1">Client ID: {if $moreleClientId neq ''}<span class="text-success">uzupelniony</span>{else}<span class="text-danger">brak</span>{/if}</div>
+                                <div class="small">Client Secret: {if $moreleClientSecret neq ''}<span class="text-success">uzupelniony</span>{else}<span class="text-danger">brak</span>{/if}</div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>

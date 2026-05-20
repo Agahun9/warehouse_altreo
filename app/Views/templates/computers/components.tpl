@@ -2,7 +2,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-<div class="container-xl py-4">
+<div class="container-fluid py-4 computers-components-page">
   <ul class="nav nav-tabs mb-4">
     <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'products'} active{/if}" href="{$baseUrl}?controller=computers&action=products">Produkty</a>
@@ -96,8 +96,8 @@
     <div class="row g-4">
 
       <!-- Panel dodawania/edycji komponentu -->
-      <div class="col-12 col-lg-4">
-        <div class="card shadow-sm h-100">
+      <div class="col-12 col-xl-5 col-xxl-4">
+        <div class="card shadow-sm components-editor-card">
           <div class="card-header bg-primary text-white">
             <i class="bi bi-plus-circle me-2"></i>{if $editItem}Edytuj komponent{else}Dodaj nowy komponent{/if}
           </div>
@@ -191,7 +191,7 @@
               {if $editItem.img}
                 <div class="mb-3">
                   <label class="form-label">Aktualne zdjęcia:</label><br />
-                  {assign var="imgList" value=","|explode:$editItem.img}
+                  {assign var="imgList" value=$editItem.img|split:","}
                   {foreach from=$imgList item=imgFile}
                     {if $imgFile}
                       <div style="display:inline-block; margin:3px; text-align:center;">
@@ -209,7 +209,7 @@
               {if $editItem.img_morele}
                 <div class="mb-3">
                   <label class="form-label">Aktualne zdjęcia Morele:</label><br />
-                  {assign var="imgListMorele" value=","|explode:$editItem.img_morele}
+                  {assign var="imgListMorele" value=$editItem.img_morele|split:","}
                   {foreach from=$imgListMorele item=imgFile}
                     {if $imgFile}
                       <div style="display:inline-block; margin:3px; text-align:center;">
@@ -227,7 +227,7 @@
               {if $editItem.img_empik}
                 <div class="mb-3">
                   <label class="form-label">Aktualne zdjęcia Empik:</label><br />
-                  {assign var="imgListEmpik" value=","|explode:$editItem.img_empik}
+                  {assign var="imgListEmpik" value=$editItem.img_empik|split:","}
                   {foreach from=$imgListEmpik item=imgFile}
                     {if $imgFile}
                       <div style="display:inline-block; margin:3px; text-align:center;">
@@ -259,7 +259,7 @@
       </div>
 
       <!-- Panel lista komponentów -->
-      <div class="col-12 col-lg-8">
+      <div class="col-12 col-xl-7 col-xxl-8">
         <div class="card shadow-sm">
           <div class="card-header bg-light fw-bold d-flex align-items-center justify-content-between">
             <span><i class="bi bi-table me-2"></i>Lista komponentów</span>
@@ -354,7 +354,7 @@
                         <td><input type="checkbox" class="component_checkbox" name="component_ids[]" value="{$item.id}"
                             data-price="{$item.price}" /></td>
                         <td>
-                          <span class="component-title_" data-comp-id="{$item.id}">{$item.name|escape:'html'}
+                          <span class="component-title" data-comp-id="{$item.id}">{$item.name|escape:'html'}
                          
                           </span>
                           <br>
@@ -378,7 +378,7 @@
         </div>
         <div class="img-wrapper">
           {if $item.img_morele}
-            {assign var="imgListMorele" value=","|explode:$item.img_morele}
+            {assign var="imgListMorele" value=$item.img_morele|split:","}
             {foreach from=$imgListMorele item=imgFile}
               {if $imgFile}
                 <img src="{$imgFolder}/{$imgFile|escape:'html'}" class="thumb-img" alt="morele" />
@@ -397,7 +397,7 @@
         </div>
         <div class="img-wrapper">
           {if $item.img_empik}
-            {assign var="imgListEmpik" value=","|explode:$item.img_empik}
+            {assign var="imgListEmpik" value=$item.img_empik|split:","}
             {foreach from=$imgListEmpik item=imgFile}
               {if $imgFile}
                 <img src="{$imgFolder}/{$imgFile|escape:'html'}" class="thumb-img" alt="empik" />
@@ -416,7 +416,7 @@
         </div>
         <div class="img-wrapper">
           {if $item.img}
-            {assign var="imgList" value=","|explode:$item.img}
+            {assign var="imgList" value=$item.img|split:","}
             {foreach from=$imgList item=imgFile}
               {if $imgFile}
                 <img src="{$imgFolder}/{$imgFile|escape:'html'}" class="thumb-img" alt="allegro" />
@@ -470,6 +470,46 @@
   </div>
 
   <style>
+    .computers-components-page {
+      max-width: none;
+      padding-left: 24px;
+      padding-right: 24px;
+    }
+
+    .components-editor-card .card-body {
+      padding: 1.5rem;
+    }
+
+    .market-params {
+      background: #f8fafc;
+      border: 1px solid #dbe4f0;
+      border-radius: 14px;
+      padding: 16px;
+      margin-top: 14px;
+    }
+
+    .market-params .param-option-box {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px 12px;
+    }
+
+    .accordion-button,
+    .btn,
+    .form-control,
+    .form-select {
+      border-radius: 10px;
+    }
+
+    #parametersBox,
+    #parametersBoxMorele,
+    #parametersBoxEmpik {
+      margin-top: 12px;
+    }
+
     .component-img-thumb:hover {
       cursor: pointer;
       filter: brightness(0.95) drop-shadow(0 0 2px #007bff);
@@ -483,6 +523,13 @@
     .card-header {
       font-size: 1.1rem;
       font-weight: 500;
+    }
+
+    @media (max-width: 767.98px) {
+      .computers-components-page {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
     }
   </style>
 

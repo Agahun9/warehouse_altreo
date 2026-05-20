@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Services\AllegroService;
+use App\Services\EmpikService;
+use App\Services\MoreleService;
 use RuntimeException;
+use Throwable;
 
 class ComputersController extends Controller
 {
@@ -13,13 +17,28 @@ class ComputersController extends Controller
     private const COMPONENTS_TABLE = 'pr_components_altreo';
     private const TEMPLATES_TABLE = 'pr_altreo_template';
     private const TASK_QUEUE_TABLE = 'pr_task_queue';
+    private const DEFAULT_DESKTOP_EU_CATEGORY_ID = '486';
+    private const DEFAULT_DESKTOP_MORELE_CATEGORY_ID = 672;
+    private const DEFAULT_DESKTOP_EMPIK_CATEGORY_ID = '21-16-1';
+    private const DESKTOP_CATEGORY_KEYWORDS = array(
+        'komputery stacjonarne',
+        'komputer stacjonarny',
+        'komputery',
+        'desktop',
+        'pc',
+    );
 
     /** @var bool */
     private static $schemaEnsured = false;
 
+    /** @var \App\Models\SettingRepository|null */
+    private $settings = null;
+
     public function __construct()
     {
         $this->ensureSchema();
+        $this->settings = new \App\Models\SettingRepository($this->db());
+        $this->settings->ensureSchema();
     }
 
     public function index(): void
@@ -174,9 +193,7 @@ class ComputersController extends Controller
         if ($editId > 0) {
             $editItem = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $editId));
             if (is_array($editItem)) {
-                $editItem['param'] = $this->decodeJsonMap((string) ($editItem['parameters_eu'] ?? ''));
-                $editItem['param_morele'] = $this->decodeJsonMap((string) ($editItem['parameters_morele'] ?? ''));
-                $editItem['param_empik'] = $this->decodeJsonMap((string) ($editItem['parameters_empik'] ?? ''));
+                $editItem = $this->hydrateComponentParameterMaps($editItem);
             }
         }
 
@@ -652,23 +669,38 @@ class ComputersController extends Controller
         if ($editId > 0) {
             $row = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $editId));
             if (is_array($row)) {
-                $row['param'] = $this->decodeJsonMap((string) ($row['parameters_eu'] ?? ''));
-                $row['param_morele'] = $this->decodeJsonMap((string) ($row['parameters_morele'] ?? ''));
-                $row['param_empik'] = $this->decodeJsonMap((string) ($row['parameters_empik'] ?? ''));
-                $product = $row;
+                $product = $this->hydrateComponentParameterMaps($row);
             }
         }
 
         if ($which === 'empik') {
-            $this->partial('computers/partials/params_empik', array('product' => $product));
+            $payload = $this->loadEmpikParameterPayload();
+            $this->partial('computers/partials/params_empik', array(
+                'product' => $product,
+                'empik_parameters' => $payload['items'],
+                'empik_parameters_error' => $payload['error'],
+                'empik_parameters_meta' => $payload['meta'],
+            ));
             return;
         }
         if ($which === 'eu') {
-            $this->partial('computers/partials/params_eu', array('product' => $product, 'parameters' => array()));
+            $payload = $this->loadEuParameterPayload();
+            $this->partial('computers/partials/params_eu', array(
+                'product' => $product,
+                'parameters' => $payload['items'],
+                'parameters_error' => $payload['error'],
+                'parameters_meta' => $payload['meta'],
+            ));
             return;
         }
         if ($which === 'morele') {
-            $this->partial('computers/partials/params_morele', array('product' => $product, 'morele_parameters' => array('category_characteristics' => array())));
+            $payload = $this->loadMoreleParameterPayload();
+            $this->partial('computers/partials/params_morele', array(
+                'product' => $product,
+                'morele_parameters' => $payload['items'],
+                'morele_parameters_error' => $payload['error'],
+                'morele_parameters_meta' => $payload['meta'],
+            ));
             return;
         }
 
@@ -941,9 +973,9 @@ class ComputersController extends Controller
 
     private function collectEmpikParams(): array
     {
+        $result = $this->collectStructuredEmpikParams();
         $names = (array) $this->input('empik_custom_name', array());
         $values = (array) $this->input('empik_custom_value', array());
-        $result = array();
         foreach ($names as $index => $name) {
             $name = trim((string) $name);
             $value = trim((string) ($values[$index] ?? ''));
@@ -955,10 +987,411 @@ class ComputersController extends Controller
         return $result;
     }
 
+    private function collectStructuredEmpikParams(): array
+    {
+        $input = $this->input('empik_parameters', array());
+        if (!is_array($input)) {
+            return array();
+        }
+
+        $payload = $this->loadEmpikParameterPayload();
+        $definitions = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : array();
+        if ($definitions === array()) {
+            return array();
+        }
+
+        $result = array();
+        foreach ($definitions as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+
+            $id = trim((string) ($definition['id'] ?? ''));
+            $name = trim((string) ($definition['name'] ?? $id));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+
+            $rawValue = array_key_exists($id, $input) ? $input[$id] : null;
+            $normalized = $this->normalizeEmpikPostedValue($definition, $rawValue);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+
+            $result[$name] = $normalized;
+        }
+
+        return $result;
+    }
+
+    private function normalizeEmpikPostedValue(array $definition, $rawValue): ?string
+    {
+        $type = strtolower(trim((string) ($definition['type'] ?? 'text')));
+        $multiple = !empty($definition['multiple']);
+        $dictionary = isset($definition['dictionary']) && is_array($definition['dictionary']) ? $definition['dictionary'] : array();
+        $labelsById = array();
+
+        foreach ($dictionary as $option) {
+            if (!is_array($option)) {
+                continue;
+            }
+
+            $optionId = trim((string) ($option['id'] ?? ''));
+            $optionLabel = trim((string) ($option['value'] ?? $optionId));
+            if ($optionId !== '') {
+                $labelsById[$optionId] = $optionLabel !== '' ? $optionLabel : $optionId;
+            }
+        }
+
+        if ($multiple) {
+            $values = is_array($rawValue) ? $rawValue : ($rawValue !== null && trim((string) $rawValue) !== '' ? preg_split('/\r\n|\r|\n|\|/', (string) $rawValue) : array());
+            $values = is_array($values) ? $values : array();
+            $normalized = array();
+
+            foreach ($values as $value) {
+                $value = trim((string) $value);
+                if ($value === '') {
+                    continue;
+                }
+
+                $normalized[] = isset($labelsById[$value]) ? $labelsById[$value] : $value;
+            }
+
+            $normalized = array_values(array_unique(array_filter($normalized, static function (string $value): bool {
+                return trim($value) !== '';
+            })));
+
+            return $normalized !== array() ? implode(' | ', $normalized) : null;
+        }
+
+        if (is_array($rawValue)) {
+            return null;
+        }
+
+        $value = trim((string) $rawValue);
+        if ($value === '') {
+            return null;
+        }
+
+        if (isset($labelsById[$value])) {
+            return $labelsById[$value];
+        }
+
+        if ($type === 'dictionary') {
+            $lowerValue = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+            foreach ($labelsById as $optionId => $optionLabel) {
+                $lowerId = function_exists('mb_strtolower') ? mb_strtolower($optionId, 'UTF-8') : strtolower($optionId);
+                $lowerLabel = function_exists('mb_strtolower') ? mb_strtolower($optionLabel, 'UTF-8') : strtolower($optionLabel);
+                if ($lowerValue === $lowerId || $lowerValue === $lowerLabel) {
+                    return $optionLabel;
+                }
+            }
+        }
+
+        return $value;
+    }
+
     private function decodeJsonMap(string $json): array
     {
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $decoded : array();
+    }
+
+    private function hydrateComponentParameterMaps(array $row): array
+    {
+        $row['param'] = $this->decodeJsonMap((string) ($row['parameters_eu'] ?? ''));
+        $row['param_morele'] = $this->decodeJsonMap((string) ($row['parameters_morele'] ?? ''));
+        $row['param_empik'] = $this->decodeJsonMap((string) ($row['parameters_empik'] ?? ''));
+        $row['param_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param']) && is_array($row['param']) ? $row['param'] : array());
+        $row['param_morele_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param_morele']) && is_array($row['param_morele']) ? $row['param_morele'] : array());
+        $row['param_empik_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_empik']) && is_array($row['param_empik']) ? $row['param_empik'] : array());
+
+        return $row;
+    }
+
+    private function normalizeStoredMarketParamValues(array $values): array
+    {
+        $result = array();
+        foreach ($values as $fullKey => $value) {
+            $fullKey = trim((string) $fullKey);
+            if ($fullKey === '') {
+                continue;
+            }
+
+            $parts = explode('|', $fullKey);
+            $paramId = trim((string) ($parts[0] ?? ''));
+            if ($paramId === '') {
+                continue;
+            }
+
+            $result[$paramId] = $value;
+        }
+
+        return $result;
+    }
+
+    private function normalizeStoredLabelMap(array $values): array
+    {
+        $result = array();
+        foreach ($values as $key => $value) {
+            $normalizedKey = $this->normalizeLookupText((string) $key);
+            if ($normalizedKey === '') {
+                continue;
+            }
+
+            if (is_array($value)) {
+                $labels = array();
+                foreach ($value as $item) {
+                    $item = trim((string) $item);
+                    if ($item !== '') {
+                        $labels[] = $this->normalizeLookupText($item);
+                    }
+                }
+                $result[$normalizedKey] = array_values(array_unique(array_filter($labels, static function (string $item): bool {
+                    return $item !== '';
+                })));
+                continue;
+            }
+
+            $chunks = preg_split('/\s*\|\s*|\r\n|\r|\n/', (string) $value) ?: array();
+            $labels = array();
+            foreach ($chunks as $chunk) {
+                $chunk = trim((string) $chunk);
+                if ($chunk !== '') {
+                    $labels[] = $this->normalizeLookupText($chunk);
+                }
+            }
+            $result[$normalizedKey] = array_values(array_unique(array_filter($labels, static function (string $item): bool {
+                return $item !== '';
+            })));
+        }
+
+        return $result;
+    }
+
+    private function normalizeLookupText(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    }
+
+    private function loadEuParameterPayload(): array
+    {
+        $meta = array(
+            'label' => 'Allegro EU',
+            'category_id' => '',
+            'source' => '',
+        );
+
+        try {
+            $desktopCategory = $this->findDesktopCategoryMapping();
+            $categoryId = trim((string) ($desktopCategory['allegro_category_id'] ?? ''));
+            $meta['source'] = trim((string) ($desktopCategory['name'] ?? ''));
+
+            if ($categoryId === '') {
+                $categoryId = self::DEFAULT_DESKTOP_EU_CATEGORY_ID;
+                $meta['source'] = 'Fallback kategorii desktop';
+            }
+
+            $meta['category_id'] = $categoryId;
+            $service = new AllegroService();
+
+            return array(
+                'items' => $service->categoryParameters($categoryId),
+                'error' => '',
+                'meta' => $meta,
+            );
+        } catch (Throwable $exception) {
+            return array(
+                'items' => array(),
+                'error' => 'Nie udalo sie pobrac parametrow EU z API: ' . $exception->getMessage(),
+                'meta' => $meta,
+            );
+        }
+    }
+
+    private function loadEmpikParameterPayload(): array
+    {
+        $meta = array(
+            'label' => 'Empik',
+            'category_id' => '',
+            'source' => '',
+        );
+
+        try {
+            $desktopCategory = $this->findDesktopCategoryMapping();
+            $categoryId = trim((string) ($desktopCategory['empik_category_id'] ?? ''));
+            $meta['source'] = trim((string) ($desktopCategory['name'] ?? ''));
+
+            if ($categoryId === '') {
+                $categoryId = trim($this->settings ? $this->settings->get('computers_empik_category_id', self::DEFAULT_DESKTOP_EMPIK_CATEGORY_ID) : self::DEFAULT_DESKTOP_EMPIK_CATEGORY_ID);
+                $meta['source'] = $meta['source'] !== '' ? $meta['source'] : 'Fallback ustawien administracji';
+            }
+
+            $meta['category_id'] = $categoryId;
+            $service = new EmpikService();
+
+            return array(
+                'items' => $service->categoryAttributes($categoryId),
+                'error' => '',
+                'meta' => $meta,
+            );
+        } catch (Throwable $exception) {
+            return array(
+                'items' => array(),
+                'error' => 'Nie udalo sie pobrac parametrow Empik z API: ' . $exception->getMessage(),
+                'meta' => $meta,
+            );
+        }
+    }
+
+    private function loadMoreleParameterPayload(): array
+    {
+        $meta = array(
+            'label' => 'Morele',
+            'category_id' => (string) ($this->settings ? $this->settings->get('computers_morele_category_id', (string) self::DEFAULT_DESKTOP_MORELE_CATEGORY_ID) : (string) self::DEFAULT_DESKTOP_MORELE_CATEGORY_ID),
+            'source' => 'API Morele / ustawienia administracji',
+        );
+
+        try {
+            $categoryId = (int) $meta['category_id'];
+            if ($categoryId <= 0) {
+                $categoryId = self::DEFAULT_DESKTOP_MORELE_CATEGORY_ID;
+            }
+
+            if ($this->hasConfiguredMoreleApiCredentials()) {
+                $service = new MoreleService();
+                $items = $service->categoryCharacteristics($categoryId);
+                return array(
+                    'items' => $items,
+                    'error' => '',
+                    'meta' => $meta,
+                );
+            }
+
+            $this->includeLegacyMoreleApi();
+            if (!function_exists('morele_get_all_parameters')) {
+                throw new RuntimeException('Brak konfiguracji Morele API w administracji oraz brak legacy adaptera morele_api.php.');
+            }
+
+            $meta['source'] = 'Legacy API / fallback';
+            $payload = morele_get_all_parameters($categoryId);
+            $items = is_array($payload) ? $payload : array();
+            if (!isset($items['category_characteristics']) || !is_array($items['category_characteristics'])) {
+                $items['category_characteristics'] = array();
+            }
+
+            return array(
+                'items' => $items,
+                'error' => '',
+                'meta' => $meta,
+            );
+        } catch (Throwable $exception) {
+            if (strpos($exception->getMessage(), 'Brak konfiguracji Morele API') !== false) {
+                $message = 'Brak konfiguracji Morele API w administracji albo legacy adaptera morele_api.php na serwerze.';
+            } else {
+                $message = 'Nie udalo sie pobrac parametrow Morele: ' . $exception->getMessage();
+            }
+            return array(
+                'items' => array('category_characteristics' => array()),
+                'error' => $message,
+                'meta' => $meta,
+            );
+        }
+    }
+
+    private function includeLegacyMoreleApi(): void
+    {
+        $configuredApiUrl = trim($this->settings ? $this->settings->get('morele_api_url', '') : '');
+        if ($configuredApiUrl !== '' && !defined('MORELE_API_URL')) {
+            define('MORELE_API_URL', $configuredApiUrl);
+        }
+
+        $candidates = array(
+            BASE_PATH . '/temporary/partials/morele_api.php',
+            BASE_PATH . '/temporary/morele/morele_api.php',
+            dirname(BASE_PATH) . '/temporary/partials/morele_api.php',
+            dirname(BASE_PATH) . '/temporary/morele/morele_api.php',
+            dirname(BASE_PATH, 2) . '/temporary/partials/morele_api.php',
+            dirname(BASE_PATH, 2) . '/temporary/morele/morele_api.php',
+        );
+
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                require_once $path;
+                return;
+            }
+        }
+    }
+
+    private function hasConfiguredMoreleApiCredentials(): bool
+    {
+        if ($this->settings === null) {
+            return false;
+        }
+
+        $clientId = trim((string) $this->settings->get('morele_client_id', ''));
+        $clientSecret = trim((string) $this->settings->get('morele_client_secret', ''));
+
+        return $clientId !== '' && $clientSecret !== '';
+    }
+
+    private function findDesktopCategoryMapping(): array
+    {
+        $rows = $this->db()->fetchAll('SELECT id, name, slug, allegro_category_id, empik_category_id FROM categories ORDER BY name ASC');
+        if ($rows === array()) {
+            return array();
+        }
+
+        $scored = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $name = trim((string) ($row['name'] ?? ''));
+            $slug = trim((string) ($row['slug'] ?? ''));
+            $haystack = function_exists('mb_strtolower') ? mb_strtolower($name . ' ' . $slug, 'UTF-8') : strtolower($name . ' ' . $slug);
+            $score = 0;
+
+            foreach (self::DESKTOP_CATEGORY_KEYWORDS as $index => $keyword) {
+                $needle = function_exists('mb_strtolower') ? mb_strtolower($keyword, 'UTF-8') : strtolower($keyword);
+                if ($needle !== '' && strpos($haystack, $needle) !== false) {
+                    $score += 100 - ($index * 10);
+                }
+            }
+
+            if ($score <= 0) {
+                continue;
+            }
+
+            if (trim((string) ($row['allegro_category_id'] ?? '')) !== '') {
+                $score += 15;
+            }
+            if (trim((string) ($row['empik_category_id'] ?? '')) !== '') {
+                $score += 15;
+            }
+
+            $row['_score'] = $score;
+            $scored[] = $row;
+        }
+
+        if ($scored === array()) {
+            return array();
+        }
+
+        usort($scored, static function (array $left, array $right): int {
+            return (int) ($right['_score'] ?? 0) <=> (int) ($left['_score'] ?? 0);
+        });
+
+        $best = $scored[0];
+        unset($best['_score']);
+
+        return $best;
     }
 
     private function mergeComponentImages(string $oldCsv, array $removeImages, string $field, string $prefix, int $componentId): string
