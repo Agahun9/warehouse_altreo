@@ -327,6 +327,10 @@
       background: rgba(31, 111, 120, 0.08);
     }
 
+    .empik-remote-select {
+      min-height: 14.5rem;
+    }
+
     @keyframes productTabFade {
       from {
         opacity: 0;
@@ -1409,29 +1413,13 @@
           } else {
             var singleValue = value === null || typeof value === 'undefined' ? '' : String(value);
             if (singleDictionaryMode === 'autocomplete') {
-              var datalistId = 'empik_datalist_' + escapeHtml(pid);
-              var hiddenInputId = 'empik_hidden_' + escapeHtml(pid);
-              var displayValue = singleValue;
-              for (var s = 0; s < dict.length; s++) {
-                var previewOption = dict[s] || {};
-                var previewId = String(previewOption.id || '');
-                var previewLabel = String(previewOption.value || previewId);
-                if (singleValue !== '' && (singleValue === previewId || singleValue.toLowerCase() === previewLabel.toLowerCase())) {
-                  displayValue = previewLabel;
-                  break;
-                }
-              }
-              html += '<input type="text" class="form-control form-control-sm js-param-autocomplete" list="' + datalistId + '" data-hidden-input-id="' + hiddenInputId + '" data-datalist-id="' + datalistId + '" data-attribute-id="' + escapeHtml(pid) + '" value="' + escapeHtml(displayValue) + '" placeholder="Zacznij wpisywac, aby zobaczyc podpowiedzi...">';
-              html += '<input type="hidden" id="' + hiddenInputId + '" name="' + inputName + '[' + escapeHtml(pid) + ']" value="' + escapeHtml(singleValue) + '">';
-              html += '<datalist id="' + datalistId + '">';
-              for (var s = 0; s < dict.length; s++) {
-                var autoOption = dict[s] || {};
-                var autoId = String(autoOption.id || '');
-                var autoLabel = String(autoOption.value || autoId);
-                html += '<option value="' + escapeHtml(autoLabel) + '" data-option-id="' + escapeHtml(autoId) + '"></option>';
-              }
-              html += '</datalist>';
-              html += '<div class="form-text js-param-autocomplete-status">Wpisuj, aby pobrac warianty z Empik.</div>';
+              html += '<select class="form-select form-select-sm empik-remote-select js-param-remote-select"'
+                + ' data-attribute-id="' + escapeHtml(pid) + '"'
+                + ' data-current-value="' + escapeHtml(singleValue) + '"'
+                + ' name="' + inputName + '[' + escapeHtml(pid) + ']">'
+                + '<option value="">Ladowanie wariantow Empik...</option>'
+                + '</select>';
+              html += '<div class="form-text js-param-autocomplete-status">Ladowanie pierwszych 10 wariantow z Empik...</div>';
             } else {
               html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
               html += '<select class="form-select form-select-sm js-param-select" data-param-id="' + escapeHtml(pid) + '" name="' + inputName + '[' + escapeHtml(pid) + ']" style="max-height: 38px;">';
@@ -1476,7 +1464,7 @@
 
       containerNode.innerHTML = html;
       bindOptionFilters(containerNode);
-      bindAutocompleteMappings(containerNode);
+      bindRemoteSelectMappings(containerNode);
       if (infoNode) {
         infoNode.textContent = loadedLabel;
       }
@@ -1530,55 +1518,28 @@
       }
     }
 
-    function bindAutocompleteMappings(scopeNode) {
+    function bindRemoteSelectMappings(scopeNode) {
       if (!scopeNode) {
         return;
       }
 
-      var inputs = scopeNode.querySelectorAll('.js-param-autocomplete');
-      for (var i = 0; i < inputs.length; i++) {
-        var renderAutocompleteOptions = function (datalist, items) {
-          if (!datalist) {
-            return;
-          }
-
-          datalist.innerHTML = '';
-          for (var j = 0; j < items.length; j++) {
-            var option = items[j] || {};
-            var optionId = String(option.id || '');
-            var optionLabel = String(option.value || optionId);
-            var node = document.createElement('option');
-            node.value = optionLabel;
-            node.setAttribute('data-option-id', optionId);
-            datalist.appendChild(node);
-          }
-        };
-
-        var fetchAutocompleteOptions = function (inputNode) {
-          var attributeId = String(inputNode.getAttribute('data-attribute-id') || '');
-          var datalistId = String(inputNode.getAttribute('data-datalist-id') || '');
+      var selects = scopeNode.querySelectorAll('.js-param-remote-select');
+      for (var i = 0; i < selects.length; i++) {
+        var fetchRemoteSelectOptions = function (selectNode) {
+          var attributeId = String(selectNode.getAttribute('data-attribute-id') || '');
+          var currentValue = String(selectNode.getAttribute('data-current-value') || '');
           var categoryId = categoryInput ? String(categoryInput.value || '') : '';
-          var phrase = String(inputNode.value || '').trim();
-          var datalist = datalistId ? document.getElementById(datalistId) : null;
-          var statusNode = inputNode.parentNode ? inputNode.parentNode.querySelector('.js-param-autocomplete-status') : null;
+          var statusNode = selectNode.parentNode ? selectNode.parentNode.querySelector('.js-param-autocomplete-status') : null;
 
-          if (!attributeId || !categoryId || !datalist) {
-            return;
-          }
-
-          if (phrase.length < 1) {
-            renderAutocompleteOptions(datalist, []);
-            if (statusNode) {
-              statusNode.textContent = 'Wpisuj, aby pobrac warianty z Empik.';
-            }
+          if (!attributeId || !categoryId) {
             return;
           }
 
           if (statusNode) {
-            statusNode.textContent = 'Szukanie wariantow w Empik...';
+            statusNode.textContent = 'Ladowanie pierwszych 10 wariantow z Empik...';
           }
 
-          var url = '{$baseUrl|escape:"javascript"}?controller=products&action=empikparameteroptions&category_id=' + encodeURIComponent(categoryId) + '&attribute_id=' + encodeURIComponent(attributeId) + '&q=' + encodeURIComponent(phrase) + '&limit=25';
+          var url = '{$baseUrl|escape:"javascript"}?controller=products&action=empikparameteroptions&category_id=' + encodeURIComponent(categoryId) + '&attribute_id=' + encodeURIComponent(attributeId) + '&q=&limit=10';
           fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (response) {
               return response.text().then(function (rawText) {
@@ -1596,74 +1557,37 @@
             })
             .then(function (data) {
               var items = data && data.items ? data.items : [];
-              renderAutocompleteOptions(datalist, items);
+              var optionsHtml = '<option value="">Wybierz wariant</option>';
+              var hasCurrentValue = false;
+              for (var j = 0; j < items.length; j++) {
+                var option = items[j] || {};
+                var optionId = String(option.id || '');
+                var optionLabel = String(option.value || optionId);
+                var selected = currentValue !== '' && (currentValue === optionId || currentValue.toLowerCase() === optionLabel.toLowerCase());
+                if (selected) {
+                  hasCurrentValue = true;
+                }
+                optionsHtml += '<option value="' + escapeHtml(optionId) + '"' + (selected ? ' selected' : '') + '>' + escapeHtml(optionLabel) + ' [ID: ' + optionId + ']</option>';
+              }
+
+              if (currentValue !== '' && !hasCurrentValue) {
+                optionsHtml = '<option value="' + escapeHtml(currentValue) + '" selected>Aktualna wartosc [ID: ' + escapeHtml(currentValue) + ']</option>' + optionsHtml;
+              }
+
+              selectNode.innerHTML = optionsHtml;
               if (statusNode) {
-                statusNode.textContent = items.length ? ('Znaleziono ' + items.length + ' wariantow z Empik.') : 'Brak wariantow dla tej frazy.';
+                statusNode.textContent = items.length ? ('Pokazano pierwsze ' + items.length + ' wariantow z Empik.') : 'Brak wariantow do pokazania.';
               }
             })
             .catch(function (error) {
-              renderAutocompleteOptions(datalist, []);
+              selectNode.innerHTML = '<option value="">Nie udalo sie zaladowac wariantow</option>';
               if (statusNode) {
                 statusNode.textContent = error && error.message ? error.message : 'Nie udalo sie pobrac wariantow Empik.';
               }
             });
         };
 
-        var syncHidden = function (inputNode) {
-          var hiddenId = String(inputNode.getAttribute('data-hidden-input-id') || '');
-          var datalistId = String(inputNode.getAttribute('data-datalist-id') || '');
-          if (!hiddenId || !datalistId) {
-            return;
-          }
-
-          var hiddenInput = document.getElementById(hiddenId);
-          var datalist = document.getElementById(datalistId);
-          if (!hiddenInput || !datalist) {
-            return;
-          }
-
-          var typedValue = String(inputNode.value || '').trim();
-          if (typedValue === '') {
-            hiddenInput.value = '';
-            return;
-          }
-
-          var normalizedTyped = typedValue.toLowerCase();
-          var options = datalist.querySelectorAll('option');
-          for (var j = 0; j < options.length; j++) {
-            var option = options[j];
-            var label = String(option.value || '').trim();
-            var optionId = String(option.getAttribute('data-option-id') || '').trim();
-            if (normalizedTyped === label.toLowerCase() || (optionId !== '' && normalizedTyped === optionId.toLowerCase())) {
-              hiddenInput.value = optionId !== '' ? optionId : label;
-              return;
-            }
-          }
-
-          hiddenInput.value = typedValue;
-        };
-
-        inputs[i].addEventListener('input', function () {
-          syncHidden(this);
-          if (this._empikAutocompleteTimer) {
-            clearTimeout(this._empikAutocompleteTimer);
-          }
-          var self = this;
-          this._empikAutocompleteTimer = setTimeout(function () {
-            fetchAutocompleteOptions(self);
-          }, 250);
-        });
-
-        inputs[i].addEventListener('change', function () {
-          syncHidden(this);
-          fetchAutocompleteOptions(this);
-        });
-
-        inputs[i].addEventListener('focus', function () {
-          if (String(this.value || '').trim() !== '') {
-            fetchAutocompleteOptions(this);
-          }
-        });
+        fetchRemoteSelectOptions(selects[i]);
       }
     }
 
@@ -2548,12 +2472,6 @@
     syncSummary();
   })();
 </script>
-
-
-
-
-
-
 
 
 

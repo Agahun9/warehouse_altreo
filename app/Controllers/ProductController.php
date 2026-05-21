@@ -549,7 +549,7 @@ class ProductController extends Controller
         $categoryId = (int) $this->input('category_id', 0);
         $attributeId = trim((string) $this->input('attribute_id', ''));
         $query = trim((string) $this->input('q', ''));
-        $limit = max(1, min(50, (int) $this->input('limit', 20)));
+        $limit = max(1, min(50, (int) $this->input('limit', 10)));
 
         if ($categoryId <= 0 || $attributeId === '') {
             $this->jsonResponse(array('items' => array()));
@@ -1117,10 +1117,17 @@ class ProductController extends Controller
                 try {
                     $product = $this->products->find($id);
                     if ($product) {
-                        $product['category_id'] = $categoryId;
-                        $this->products->updateById($id, $product);
-                        // Clear Allegro parameters when category changes
+                        $currentCategoryId = isset($product['category_id']) ? (int) $product['category_id'] : 0;
+                        if ($currentCategoryId === $categoryId) {
+                            continue;
+                        }
+
+                        $this->products->updateById($id, array(
+                            'category_id' => $categoryId,
+                        ));
                         $this->allegroParameters->replaceForProduct($id, array());
+                        $this->empikParameters->replaceForProduct($id, array());
+                        $this->allegro->queueWarehouseProductSync(array($id), 180);
                         $updateCount++;
                     }
                 } catch (Throwable $e) {
