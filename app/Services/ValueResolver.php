@@ -62,6 +62,10 @@ class ValueResolver
             return $this->formatAllegroParameters($product);
         }
 
+        if (in_array($normalized, array('allegro_compatibility_list', 'allegro_compatibility_list_text', 'allegro_pasuje_do'), true)) {
+            return $this->formatAllegroCompatibilityList($product);
+        }
+
         if (in_array($normalized, array('allegro_parameters_eu', 'allegro_parameters_raw_eu'), true)) {
             return $this->formatAllegroParametersEu($product);
         }
@@ -96,6 +100,10 @@ class ValueResolver
 
         if (in_array($normalized, array('image_queue_to', 'queue_to', 'export_queue_to'), true)) {
             return isset($exportOptions['image_queue_to']) ? (string) $exportOptions['image_queue_to'] : '';
+        }
+
+        if (in_array($normalized, array('image_queue_item', 'queue_item', 'export_queue_item'), true)) {
+            return isset($exportOptions['image_queue_item']) ? (string) $exportOptions['image_queue_item'] : '';
         }
 
         if (in_array($normalized, array('grid_layout', 'grid', 'export_grid'), true)) {
@@ -189,6 +197,7 @@ class ValueResolver
             'csv_title' => 'generated_title',
             'csv_description' => 'csv_description',
             'allegro_parameters' => 'allegro_parameters',
+            'allegro_compatibility_list' => 'allegro_compatibility_list',
             'allegro_parameters_eu' => 'allegro_parameters_eu',
             'empik_parameters' => 'empik_parameters',
             'categories.name' => 'category_name',
@@ -199,6 +208,7 @@ class ValueResolver
             'image_queue_range' => 'image_queue_range',
             'image_queue_from' => 'image_queue_from',
             'image_queue_to' => 'image_queue_to',
+            'image_queue_item' => 'image_queue_item',
             'grid_layout' => 'grid_layout',
             'grid_columns' => 'grid_columns',
             'grid_rows' => 'grid_rows',
@@ -291,6 +301,41 @@ class ValueResolver
             }
 
             $lines[] = $label . ': ' . $formattedValue;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function formatAllegroCompatibilityList(array $product): string
+    {
+        $raw = isset($product['allegro_compatibility_list_raw']) && is_array($product['allegro_compatibility_list_raw'])
+            ? $product['allegro_compatibility_list_raw']
+            : array();
+        $items = isset($raw['items']) && is_array($raw['items']) ? $raw['items'] : array();
+        if ($items === array()) {
+            return '';
+        }
+
+        $lines = array();
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $text = trim((string) ($item['text'] ?? ''));
+            if ($text === '') {
+                $text = trim((string) ($item['id'] ?? ''));
+            }
+            if ($text === '') {
+                continue;
+            }
+
+            $additionalInfo = '';
+            if (isset($item['additionalInfo']) && is_array($item['additionalInfo']) && isset($item['additionalInfo'][0]) && is_array($item['additionalInfo'][0])) {
+                $additionalInfo = trim((string) ($item['additionalInfo'][0]['value'] ?? ''));
+            }
+
+            $lines[] = $additionalInfo !== '' ? ($text . ' (' . $additionalInfo . ')') : $text;
         }
 
         return implode("\n", $lines);
@@ -765,6 +810,12 @@ class ValueResolver
         $collectionName = trim((string) ($exportOptions['collection_name'] ?? ''));
         $imageCount = max(0, (int) ($exportOptions['image_count'] ?? ($imageOptions['image_count'] ?? 0)));
         $thumbnailCount = max(0, (int) ($exportOptions['thumbnail_count'] ?? ($imageOptions['thumbnail_count'] ?? 0)));
+        $queueItems = isset($exportOptions['thumbnail_pattern_items']) && is_array($exportOptions['thumbnail_pattern_items'])
+            ? $exportOptions['thumbnail_pattern_items']
+            : array();
+        if ($queueItems !== array()) {
+            $thumbnailCount = count($queueItems);
+        }
         $mockupCount = max(0, (int) ($exportOptions['mockup_count'] ?? ($exportOptions['grid_count'] ?? ($imageOptions['mockup_count'] ?? 0))));
         $baseDirectory = trim((string) ($exportOptions['image_base_directory'] ?? ($imageOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU')));
         $thumbnailMacro = trim((string) ($imageOptions['thumbnail_macro'] ?? ($exportOptions['thumbnail_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')));
@@ -1113,6 +1164,7 @@ class ValueResolver
         $queueRange = trim((string) ($exportOptions['image_queue_range'] ?? ''));
         $queueFrom = trim((string) ($exportOptions['image_queue_from'] ?? ''));
         $queueTo = trim((string) ($exportOptions['image_queue_to'] ?? ''));
+        $queueItem = $this->queueItemForIndex($exportOptions, $index);
         $gridLayout = trim((string) ($exportOptions['grid_layout'] ?? ''));
         $gridColumns = trim((string) ($exportOptions['grid_columns'] ?? ''));
         $gridRows = trim((string) ($exportOptions['grid_rows'] ?? ''));
@@ -1127,6 +1179,9 @@ class ValueResolver
             '{{queue_range}}' => $queueRange,
             '{{queue_from}}' => $queueFrom,
             '{{queue_to}}' => $queueTo,
+            '{{queue_item}}' => $queueItem,
+            '{{image_queue_item}}' => $queueItem,
+            '{{pattern_code}}' => $queueItem,
             '{{grid}}' => $gridLayout,
             '{{grid_layout}}' => $gridLayout,
             '{{grid_columns}}' => $gridColumns,
@@ -1152,6 +1207,22 @@ class ValueResolver
         }
 
         return trim((string) $rendered);
+    }
+
+    private function queueItemForIndex(array $exportOptions, int $index): string
+    {
+        $items = isset($exportOptions['thumbnail_pattern_items']) && is_array($exportOptions['thumbnail_pattern_items'])
+            ? array_values(array_filter($exportOptions['thumbnail_pattern_items'], static function ($item): bool {
+                return trim((string) $item) !== '';
+            }))
+            : array();
+
+        $position = max(0, $index - 1);
+        if (isset($items[$position])) {
+            return trim((string) $items[$position]);
+        }
+
+        return '';
     }
 
     private function gridGraphicCount(array $exportOptions): string

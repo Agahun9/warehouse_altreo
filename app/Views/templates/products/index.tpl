@@ -1079,6 +1079,10 @@
                 <input type="text" name="image_queue_range" class="form-control form-control-sm" placeholder="np. A100-A250">
               </div>
               <div class="col-md-4">
+                <label class="form-label small">Wzory miniatur</label>
+                <input type="text" name="thumbnail_pattern_list" class="form-control form-control-sm" placeholder="np. A100 A200 A234">
+              </div>
+              <div class="col-md-4">
                 <label class="form-label small">Grid</label>
                 <div class="input-group input-group-sm">
                   <input type="text" name="grid_layout" class="form-control form-control-sm" placeholder="np. 3x2">
@@ -1110,7 +1114,7 @@
               </div>
             </div>
             <div class="form-text">
-              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu. Zakres kolejki i grid trafiaja tez do CSV jako pola / tokeny generatora grafik.
+              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu. Zakres kolejki zostaje osobno dla gridow, a w polu wzorow miniatur mozesz wpisac np. <code>A100 A200 A234</code>. Liczba miniatur ustawi sie wtedy automatycznie, a biezacy wzor bedzie dostepny w makrze jako <code>{ldelim}{ldelim}queue_item{rdelim}{rdelim}</code>.
             </div>
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3">
@@ -1319,6 +1323,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var collectionNameInput = document.getElementById('csvExportCollectionName');
   var imageCollectionCodeInput = document.querySelector('input[name="image_collection_code"]');
   var imageQueueRangeInput = document.querySelector('input[name="image_queue_range"]');
+  var thumbnailPatternListInput = document.querySelector('input[name="thumbnail_pattern_list"]');
   var gridLayoutInput = document.querySelector('input[name="grid_layout"]');
   var gridAutoButton = document.getElementById('csvExportGridAutoBtn');
   var gridHint = document.getElementById('csvExportGridHint');
@@ -1488,6 +1493,27 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 
+  function parseThumbnailPatternList(value) {
+    var normalized = String(value || '').trim().toUpperCase();
+    if (normalized === '') {
+      return [];
+    }
+
+    var rawItems = normalized.split(/\s+/);
+    var uniqueItems = [];
+    var seen = {};
+    for (var itemIndex = 0; itemIndex < rawItems.length; itemIndex++) {
+      var item = String(rawItems[itemIndex] || '').trim();
+      if (item === '' || seen[item]) {
+        continue;
+      }
+      seen[item] = true;
+      uniqueItems.push(item);
+    }
+
+    return uniqueItems;
+  }
+
   function suggestedGridLayout(count) {
     var total = Math.max(0, Number(count || 0));
     var variants = [
@@ -1527,6 +1553,44 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 
+  function parseGridLayoutValue(value) {
+    var normalized = String(value || '').trim().toLowerCase();
+    var match = normalized.match(/^(\d+)\s*x\s*(\d+)$/);
+    if (!match) {
+      return { layout: normalized, columns: 0, rows: 0, capacity: 0 };
+    }
+
+    var columns = Math.max(0, Number(match[1] || 0));
+    var rows = Math.max(0, Number(match[2] || 0));
+    return {
+      layout: columns > 0 && rows > 0 ? (String(columns) + 'x' + String(rows)) : normalized,
+      columns: columns,
+      rows: rows,
+      capacity: columns * rows
+    };
+  }
+
+  function syncImageCountWithQueueAndGrid() {
+    if (!imageCountInput) {
+      return;
+    }
+
+    var queue = parseQueueRange(imageQueueRangeInput ? imageQueueRangeInput.value : '');
+    if (!queue.count) {
+      imageCountInput.value = '0';
+      return;
+    }
+
+    var parsedGrid = parseGridLayoutValue(gridLayoutInput ? gridLayoutInput.value : '');
+    if (!parsedGrid.capacity) {
+      var fallbackSuggestion = suggestedGridLayout(queue.count);
+      imageCountInput.value = String(fallbackSuggestion && fallbackSuggestion.graphics ? fallbackSuggestion.graphics : 0);
+      return;
+    }
+
+    imageCountInput.value = String(Math.ceil(queue.count / parsedGrid.capacity));
+  }
+
   function updateGridHint(count, suggestion, manual) {
     if (!gridHint) {
       return;
@@ -1559,6 +1623,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateGridHint(queue.count, suggested, manualOverride);
+    syncImageCountWithQueueAndGrid();
   }
 
   function fillSelectedProductsContainer(containerId, ids) {
@@ -1826,6 +1891,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (imageQueueRangeInput) {
       imageQueueRangeInput.value = String(item.image_queue_range || '');
     }
+    if (thumbnailPatternListInput) {
+      thumbnailPatternListInput.value = String(item.thumbnail_pattern_list || '');
+    }
     if (gridLayoutInput) {
       gridLayoutInput.value = String(item.grid_layout || '');
       gridLayoutInput.dataset.manualOverride = '0';
@@ -1870,6 +1938,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (imageQueueRangeInput) {
       imageQueueRangeInput.value = String(item.image_queue_range || '');
+    }
+    if (thumbnailPatternListInput) {
+      thumbnailPatternListInput.value = String(item.thumbnail_pattern_list || '');
     }
     if (gridLayoutInput) {
       gridLayoutInput.value = String(item.grid_layout || '');
@@ -2280,12 +2351,21 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  if (thumbnailPatternListInput) {
+    thumbnailPatternListInput.addEventListener('input', function () {
+      if (thumbnailCountInput) {
+        thumbnailCountInput.value = String(parseThumbnailPatternList(thumbnailPatternListInput.value).length);
+      }
+    });
+  }
+
   if (gridLayoutInput) {
     gridLayoutInput.dataset.manualOverride = '0';
     gridLayoutInput.addEventListener('input', function () {
       gridLayoutInput.dataset.manualOverride = '1';
       var queueCount = parseQueueRange(imageQueueRangeInput ? imageQueueRangeInput.value : '').count;
       updateGridHint(queueCount, suggestedGridLayout(queueCount), true);
+      syncImageCountWithQueueAndGrid();
       updateGeneratedTitlePreview();
     });
   }

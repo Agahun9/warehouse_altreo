@@ -935,8 +935,13 @@ class ProductRepository
             'SELECT product_id, parameter_id, value FROM product_allegro_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') AND parameter_id <> :compatibility_key ORDER BY product_id ASC, parameter_id ASC',
             $params + array('compatibility_key' => ProductAllegroParameterRepository::COMPATIBILITY_LIST_KEY)
         );
+        $compatibilityRows = $this->database->fetchAll(
+            'SELECT product_id, value FROM product_allegro_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') AND parameter_id = :compatibility_key ORDER BY product_id ASC',
+            $params + array('compatibility_key' => ProductAllegroParameterRepository::COMPATIBILITY_LIST_KEY)
+        );
 
         $parametersByProduct = array();
+        $compatibilityByProduct = array();
         foreach ($parameterRows as $parameterRow) {
             $productId = (int) $parameterRow['product_id'];
             if (!isset($parametersByProduct[$productId])) {
@@ -947,9 +952,16 @@ class ProductRepository
             $parametersByProduct[$productId][(string) $parameterRow['parameter_id']] = $decoded;
         }
 
+        foreach ($compatibilityRows as $compatibilityRow) {
+            $productId = (int) $compatibilityRow['product_id'];
+            $decoded = json_decode((string) $compatibilityRow['value'], true);
+            $compatibilityByProduct[$productId] = is_array($decoded) ? $decoded : array();
+        }
+
         foreach ($rows as $index => $row) {
             $productId = isset($row['id']) ? (int) $row['id'] : 0;
             $rows[$index]['allegro_parameters_raw'] = isset($parametersByProduct[$productId]) ? $parametersByProduct[$productId] : array();
+            $rows[$index]['allegro_compatibility_list_raw'] = isset($compatibilityByProduct[$productId]) ? $compatibilityByProduct[$productId] : array();
         }
 
         return $rows;

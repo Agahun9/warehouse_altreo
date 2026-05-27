@@ -95,6 +95,7 @@ class CsvTemplateController extends Controller
         $this->derivedStockLinks->ensureSchema();
 
         $this->exportService = new CsvExportService();
+        $this->ensureWarehouseProductsExportTemplate();
     }
 
     public function index(): void
@@ -2191,6 +2192,7 @@ class CsvTemplateController extends Controller
             'product.images[0].url' => 'Pierwsze zdjecie URL',
             'product.images' => 'Wszystkie zdjecia',
             'product.allegro_parameters' => 'Parametry Allegro (nazwa: wartosc)',
+            'product.allegro_compatibility_list' => 'Allegro Pasuje do (lista modeli telefonow)',
             'product.allegro_parameters_eu' => 'Parametry ALLEGRO EU (parameter_id|type|value|)',
             'product.empik_parameters' => 'Parametry Empik (nazwa: wartosc)',
             'product.generated_title' => 'Generowany tytul CSV',
@@ -2638,6 +2640,8 @@ class CsvTemplateController extends Controller
             'thumbnail_macro' => trim((string) $source('thumbnail_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')),
             'mockup_macro' => trim((string) $source('mockup_macro', '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')),
             'image_macro' => trim((string) $source('image_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')),
+            'thumbnail_pattern_list' => trim((string) $source('thumbnail_pattern_list', '')),
+            'thumbnail_pattern_items' => $this->parseThumbnailPatternList(trim((string) $source('thumbnail_pattern_list', ''))),
         ) + $this->normalizeQueueAndGridExportOptions(
             trim((string) $source('image_queue_range', '')),
             trim((string) $source('grid_layout', ''))
@@ -2658,6 +2662,7 @@ class CsvTemplateController extends Controller
             'image_queue_from' => $queue['from'],
             'image_queue_to' => $queue['to'],
             'image_queue_count' => $queue['count'],
+            'image_queue_items' => $queue['items'],
             'grid_layout' => $grid['layout'],
             'grid_columns' => $grid['columns'],
             'grid_rows' => $grid['rows'],
@@ -2673,6 +2678,7 @@ class CsvTemplateController extends Controller
                 'from' => '',
                 'to' => '',
                 'count' => 0,
+                'items' => array(),
             );
         }
 
@@ -2691,6 +2697,7 @@ class CsvTemplateController extends Controller
                     'from' => $from,
                     'to' => $to,
                     'count' => ($numberTo - $numberFrom) + 1,
+                    'items' => $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2])),
                 );
             }
         }
@@ -2700,7 +2707,49 @@ class CsvTemplateController extends Controller
             'from' => $value,
             'to' => $value,
             'count' => 1,
+            'items' => array($value),
         );
+    }
+
+    private function parseThumbnailPatternList(string $value): array
+    {
+        $value = strtoupper(trim($value));
+        if ($value === '') {
+            return array();
+        }
+
+        $parts = preg_split('/\s+/', $value);
+        $items = array();
+
+        if (!is_array($parts)) {
+            return $items;
+        }
+
+        foreach ($parts as $part) {
+            $part = strtoupper(trim((string) $part));
+            if ($part === '') {
+                continue;
+            }
+
+            $items[] = $part;
+        }
+
+        return array_values(array_unique($items));
+    }
+
+    private function expandQueueRangeItems(string $prefix, int $from, int $to, int $padLength = 0): array
+    {
+        $items = array();
+        if ($to < $from) {
+            return $items;
+        }
+
+        for ($number = $from; $number <= $to; $number++) {
+            $suffix = $padLength > 0 ? str_pad((string) $number, $padLength, '0', STR_PAD_LEFT) : (string) $number;
+            $items[] = $prefix . $suffix;
+        }
+
+        return $items;
     }
 
     private function parseGridLayout(string $value): array
@@ -2888,6 +2937,61 @@ class CsvTemplateController extends Controller
                 ),
             ),
         );
+    }
+
+    private function ensureWarehouseProductsExportTemplate(): void
+    {
+        $name = 'Eksport produktów magazynu';
+        if ($this->templates->existsByName($name)) {
+            return;
+        }
+
+        $columns = array(
+            array('header_name' => 'id', 'source_type' => 'field', 'source_value' => 'product.id', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'sku', 'source_type' => 'field', 'source_value' => 'product.sku', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'ean', 'source_type' => 'field', 'source_value' => 'product.ean', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'product_name', 'source_type' => 'field', 'source_value' => 'product.product_name', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'description', 'source_type' => 'field', 'source_value' => 'product.description', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'category_name', 'source_type' => 'field', 'source_value' => 'product.category_name', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'category_slug', 'source_type' => 'field', 'source_value' => 'product.category_slug', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'category_id_allegro', 'source_type' => 'field', 'source_value' => 'product.category_id_allegro', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'category_id_empik', 'source_type' => 'field', 'source_value' => 'product.category_id_empik', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'quantity', 'source_type' => 'field', 'source_value' => 'product.quantity', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'localization', 'source_type' => 'field', 'source_value' => 'product.localization', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'dimensions', 'source_type' => 'field', 'source_value' => 'product.dimensions', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'contours', 'source_type' => 'field', 'source_value' => 'product.contours', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'img', 'source_type' => 'field', 'source_value' => 'product.img', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'first_image_url', 'source_type' => 'field', 'source_value' => 'product.images[0].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'images', 'source_type' => 'field', 'source_value' => 'product.images', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'price_net', 'source_type' => 'field', 'source_value' => 'product.price_net', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'price_gross', 'source_type' => 'field', 'source_value' => 'product.price_gross', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'vat_rate', 'source_type' => 'field', 'source_value' => 'product.vat_rate', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'allegro_parameters', 'source_type' => 'field', 'source_value' => 'product.allegro_parameters', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'allegro_compatibility_list', 'source_type' => 'field', 'source_value' => 'product.allegro_compatibility_list', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'allegro_parameters_eu', 'source_type' => 'field', 'source_value' => 'product.allegro_parameters_eu', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'empik_parameters', 'source_type' => 'field', 'source_value' => 'product.empik_parameters', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'created_at', 'source_type' => 'field', 'source_value' => 'product.created_at', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'updated_at', 'source_type' => 'field', 'source_value' => 'product.updated_at', 'settings' => array(), 'mappings' => array()),
+        );
+
+        try {
+            $this->templates->create(
+                array(
+                    'name' => $name,
+                    'description' => 'Pelny eksport danych produktow magazynowych do dalszej edycji i analiz.',
+                    'description_templates_json' => json_encode(array()),
+                    'delimiter' => ';',
+                    'encoding' => 'UTF-8',
+                    'add_bom' => 1,
+                    'array_separator' => '|',
+                ),
+                $columns
+            );
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Nie udalo sie automatycznie utworzyc szablonu "Eksport produktów magazynu": ' . $exception->getMessage(), 'WARNING');
+            }
+        }
     }
 
     private function titleTemplateDefinitions(): array

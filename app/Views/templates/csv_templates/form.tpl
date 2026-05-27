@@ -476,6 +476,7 @@
                   <li><code>product.images[0].url</code> - pierwszy obrazek</li>
                   <li><code>product.images</code> - wszystkie obrazki, polaczone separatorem tablicy</li>
                   <li><code>product.allegro_parameters</code> - wszystkie parametry Allegro w jednej komorce, kazdy w nowej linii</li>
+                  <li><code>product.allegro_compatibility_list</code> - sekcja Allegro Pasuje do, kazdy model telefonu w nowej linii</li>
                   <li><code>product.allegro_parameters_eu</code> - wszystkie parametry Allegro w formacie EU: <code>parameter_id|type|value|</code></li>
                   <li><code>product.empik_parameters</code> - wszystkie parametry Empik w jednej komorce, kazdy w nowej linii</li>
                   <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
@@ -1340,6 +1341,7 @@
       + '        <div><code>{ldelim}{ldelim}queue_range{rdelim}{rdelim}</code> - zakres kolejki wpisany przy eksporcie, np. <code>A100-A250</code>.</div>'
       + '        <div><code>{ldelim}{ldelim}queue_from{rdelim}{rdelim}</code> - poczatek zakresu kolejki, np. <code>A100</code>.</div>'
       + '        <div><code>{ldelim}{ldelim}queue_to{rdelim}{rdelim}</code> - koniec zakresu kolejki, np. <code>A250</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}queue_item{rdelim}{rdelim}</code> - aktualny numer wzoru dla danej miniatury, np. <code>A200</code> z pola wzorow miniatur wpisanego przy eksporcie.</div>'
       + '        <div><code>{ldelim}{ldelim}grid{rdelim}{rdelim}</code> lub <code>{ldelim}{ldelim}grid_layout{rdelim}{rdelim}</code> - grid wpisany / wyliczony przy eksporcie, np. <code>4x3</code>.</div>'
       + '        <div><code>{ldelim}{ldelim}grid_columns{rdelim}{rdelim}</code> - liczba kolumn grida.</div>'
       + '        <div><code>{ldelim}{ldelim}grid_rows{rdelim}{rdelim}</code> - liczba wierszy grida.</div>'
