@@ -55,6 +55,10 @@ class CategoryController extends Controller
             'sku_prefix' => '',
             'allegro_category_id' => '',
             'empik_category_id' => '',
+            'temu_category_id' => '',
+            'temu_category_name' => '',
+            'temu_category_path' => '',
+            'temu_category_parameters' => '',
             'end_offers_below_quantity' => '',
             'description' => '',
         ));
@@ -73,6 +77,10 @@ class CategoryController extends Controller
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
             $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
+            $temuCategoryId = $this->categories->normalizeTemuCategoryId($this->input('temu_category_id', ''));
+            $temuCategoryName = $this->categories->normalizeTemuCategoryName($this->input('temu_category_name', ''));
+            $temuCategoryPath = $this->categories->normalizeTemuCategoryPath($this->input('temu_category_path', ''));
+            $temuCategoryParameters = $this->normalizeTemuCategoryParametersInput($this->input('temu_category_parameters', ''));
             $endOffersBelowQuantity = $this->categories->normalizeEndOffersBelowQuantity($this->input('end_offers_below_quantity', ''));
 
             if ($name === '') {
@@ -94,6 +102,10 @@ class CategoryController extends Controller
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
                 'empik_category_id' => $empikCategoryId,
+                'temu_category_id' => $temuCategoryId,
+                'temu_category_name' => $temuCategoryName,
+                'temu_category_path' => $temuCategoryPath,
+                'temu_category_parameters' => $temuCategoryParameters,
                 'end_offers_below_quantity' => $endOffersBelowQuantity,
                 'description' => ($description !== '' ? $description : null),
             ));
@@ -105,6 +117,10 @@ class CategoryController extends Controller
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
                 'empik_category_id' => (string) $this->input('empik_category_id', ''),
+                'temu_category_id' => (string) $this->input('temu_category_id', ''),
+                'temu_category_name' => (string) $this->input('temu_category_name', ''),
+                'temu_category_path' => (string) $this->input('temu_category_path', ''),
+                'temu_category_parameters' => (string) $this->input('temu_category_parameters', ''),
                 'end_offers_below_quantity' => (string) $this->input('end_offers_below_quantity', ''),
                 'description' => (string) $this->input('description', ''),
             ), $exception->getMessage());
@@ -145,6 +161,10 @@ class CategoryController extends Controller
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
             $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
+            $temuCategoryId = $this->categories->normalizeTemuCategoryId($this->input('temu_category_id', ''));
+            $temuCategoryName = $this->categories->normalizeTemuCategoryName($this->input('temu_category_name', ''));
+            $temuCategoryPath = $this->categories->normalizeTemuCategoryPath($this->input('temu_category_path', ''));
+            $temuCategoryParameters = $this->normalizeTemuCategoryParametersInput($this->input('temu_category_parameters', ''));
             $endOffersBelowQuantity = $this->categories->normalizeEndOffersBelowQuantity($this->input('end_offers_below_quantity', ''));
 
             if ($name === '') {
@@ -166,6 +186,10 @@ class CategoryController extends Controller
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
                 'empik_category_id' => $empikCategoryId,
+                'temu_category_id' => $temuCategoryId,
+                'temu_category_name' => $temuCategoryName,
+                'temu_category_path' => $temuCategoryPath,
+                'temu_category_parameters' => $temuCategoryParameters,
                 'end_offers_below_quantity' => $endOffersBelowQuantity,
                 'description' => ($description !== '' ? $description : null),
             ));
@@ -178,6 +202,10 @@ class CategoryController extends Controller
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
                 'empik_category_id' => (string) $this->input('empik_category_id', ''),
+                'temu_category_id' => (string) $this->input('temu_category_id', ''),
+                'temu_category_name' => (string) $this->input('temu_category_name', ''),
+                'temu_category_path' => (string) $this->input('temu_category_path', ''),
+                'temu_category_parameters' => (string) $this->input('temu_category_parameters', ''),
                 'end_offers_below_quantity' => (string) $this->input('end_offers_below_quantity', ''),
                 'description' => (string) $this->input('description', ''),
             ), $exception->getMessage());
@@ -288,5 +316,20 @@ class CategoryController extends Controller
             'category' => $category,
             'flashError' => $flashError,
         ));
+    }
+
+    private function normalizeTemuCategoryParametersInput($value)
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        $normalized = $this->categories->normalizeTemuCategoryParameters($raw);
+        if ($normalized === null) {
+            throw new RuntimeException('Parametry kategorii Temu musza byc poprawnym JSON-em.');
+        }
+
+        return $normalized;
     }
 }

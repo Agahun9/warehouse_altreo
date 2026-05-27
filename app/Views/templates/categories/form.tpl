@@ -80,6 +80,34 @@
               <div class="col-12">
                 <div id="empik_category_selected" class="small text-secondary mb-2"></div>
               </div>
+              <div class="col-12">
+                <hr class="my-2">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <div>
+                    <label for="temu_category_id" class="form-label mb-1">Mapowanie Temu</label>
+                    <div class="small text-secondary">Na razie bez pobierania ofert. Tutaj zapisujemy polaczenie kategorii Temu z kategoria magazynowa i surowe parametry kategorii.</div>
+                  </div>
+                  <span class="badge text-bg-warning">Manualne mapowanie</span>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label for="temu_category_id" class="form-label">Temu category ID</label>
+                <input type="text" class="form-control" id="temu_category_id" name="temu_category_id" value="{$category.temu_category_id|default:''|escape}" placeholder="np. 123456789">
+              </div>
+              <div class="col-md-4">
+                <label for="temu_category_name" class="form-label">Nazwa kategorii Temu</label>
+                <input type="text" class="form-control" id="temu_category_name" name="temu_category_name" value="{$category.temu_category_name|default:''|escape}" placeholder="np. Etui i pokrowce">
+              </div>
+              <div class="col-md-4">
+                <label for="temu_category_path" class="form-label">Sciezka kategorii Temu</label>
+                <input type="text" class="form-control" id="temu_category_path" name="temu_category_path" value="{$category.temu_category_path|default:''|escape}" placeholder="np. Elektronika > Telefony > Etui">
+              </div>
+              <div class="col-12">
+                <label for="temu_category_parameters" class="form-label">Parametry kategorii Temu (JSON)</label>
+                <textarea class="form-control font-monospace" id="temu_category_parameters" name="temu_category_parameters" rows="10">{$category.temu_category_parameters|default:''|escape}</textarea>
+                <div class="form-text">Zapisujemy tutaj surowa definicje parametrow kategorii Temu do dalszej rozbudowy integracji. Pole jest opcjonalne, ale jesli je wypelnisz, JSON musi byc poprawny.</div>
+                <div class="form-text"><code>[&#123;"id":"color","name":"Kolor","required":true,"type":"enum","values":["Czarny","Bezowy"]&#125;]</code></div>
+              </div>
               <div class="col-md-6">
                 <div class="border rounded p-2">
                   <div class="small fw-semibold mb-2">Wyniki</div>
@@ -346,5 +374,23 @@
       selectedId: 'empik_category_selected',
       categoryInputId: 'empik_category_id'
     });
+
+    var temuPathInput = document.getElementById('temu_category_path');
+    var temuNameInput = document.getElementById('temu_category_name');
+
+    if (temuPathInput && temuNameInput) {
+      temuPathInput.addEventListener('blur', function () {
+        var path = String(temuPathInput.value || '').trim();
+        var currentName = String(temuNameInput.value || '').trim();
+        if (!path || currentName) {
+          return;
+        }
+
+        var parts = path.split('>').map(function (part) { return part.trim(); }).filter(Boolean);
+        if (parts.length) {
+          temuNameInput.value = parts[parts.length - 1];
+        }
+      });
+    }
   })();
 </script>

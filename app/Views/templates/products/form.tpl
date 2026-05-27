@@ -435,6 +435,10 @@
             <i class="bi bi-bag"></i>
             <span>Empik<small>Parametry kategorii</small></span>
           </button>
+          <button type="button" class="product-tab-button" data-product-tab-trigger="temu" aria-pressed="false">
+            <i class="bi bi-grid-3x3-gap"></i>
+            <span>Temu<small>Parametry kategorii</small></span>
+          </button>
         </div>
         <form method="post" action="{$formAction|escape}" id="product-form">
           <input type="hidden" name="return_url" value="{$returnUrl|default:'./index.php?controller=products&action=index'|escape}">
@@ -497,7 +501,7 @@
                           <select class="form-select" id="category_id" name="category_id" required>
                             <option value="">Wybierz kategorie</option>
                             {foreach $categories as $category}
-                              <option value="{$category.id}" data-sku-prefix="{$category.sku_prefix|default:'PRD'|escape}" data-allegro-category-id="{$category.allegro_category_id|default:''|escape}" data-empik-category-id="{$category.empik_category_id|default:''|escape}"{if $product.category_id|default:'' == $category.id} selected{/if}>{$category.name|escape}</option>
+                              <option value="{$category.id}" data-sku-prefix="{$category.sku_prefix|default:'PRD'|escape}" data-allegro-category-id="{$category.allegro_category_id|default:''|escape}" data-empik-category-id="{$category.empik_category_id|default:''|escape}" data-temu-category-id="{$category.temu_category_id|default:''|escape}"{if $product.category_id|default:'' == $category.id} selected{/if}>{$category.name|escape}</option>
                             {/foreach}
                           </select>
                         </div>
@@ -818,6 +822,17 @@
                       </div>
                     </div>
                   </div>
+                  <input type="hidden" name="allegro_compatibility_list_payload" id="allegroCompatibilityListPayload" value="">
+                  <div class="product-section-box soft mb-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <div class="fw-semibold">Pasuje do</div>
+                        <div class="small text-secondary">Oficjalna sekcja Allegro `compatibilityList` do wskazywania modeli telefonow.</div>
+                      </div>
+                    </div>
+                    <div id="allegro-compatibility-info" class="small text-secondary mb-3">Sprawdzam, czy ta kategoria wspiera sekcje Pasuje do.</div>
+                    <div id="allegro-compatibility-container" class="border rounded-4 p-3 bg-light-subtle"></div>
+                  </div>
                   <div id="allegro-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
                 </div>
                 </div>
@@ -833,6 +848,20 @@
                   </div>
                   <div id="empik-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z Empik, aby zaladowac parametry.</div>
                   <div id="empik-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
+                </div>
+                </div>
+
+                <div class="product-tab-panel" data-product-tab-panel="temu">
+                <div class="product-section-box">
+                  <div class="product-section-title">
+                    <div>
+                      <h5><i class="bi bi-grid-3x3-gap me-2"></i>Parametry Temu</h5>
+                      <p>Sekcja laduje pola z JSON-a zapisanego przy kategorii Temu. To dziala juz bez pobierania ofert.</p>
+                    </div>
+                    <span class="product-section-chip"><i class="bi bi-sliders2"></i>Z kategorii Temu</span>
+                  </div>
+                  <div id="temu-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z Temu, aby zaladowac parametry.</div>
+                  <div id="temu-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
                 </div>
                 </div>
               </div>
@@ -919,8 +948,13 @@
     var eanInput = document.getElementById('ean');
     var allegroInfo = document.getElementById('allegro-parameters-info');
     var allegroContainer = document.getElementById('allegro-parameters-container');
+    var allegroCompatibilityInfo = document.getElementById('allegro-compatibility-info');
+    var allegroCompatibilityContainer = document.getElementById('allegro-compatibility-container');
+    var allegroCompatibilityListPayload = document.getElementById('allegroCompatibilityListPayload');
     var empikInfo = document.getElementById('empik-parameters-info');
     var empikContainer = document.getElementById('empik-parameters-container');
+    var temuInfo = document.getElementById('temu-parameters-info');
+    var temuContainer = document.getElementById('temu-parameters-container');
     var copyProductSearch = document.getElementById('copy-product-search');
     var copyProductSelect = document.getElementById('copy-product-select');
     var copyProductButton = document.getElementById('copy-product-button');
@@ -954,12 +988,18 @@
     var heroSku = document.getElementById('heroSku');
     var tabButtons = document.querySelectorAll('[data-product-tab-trigger]');
     var tabPanels = document.querySelectorAll('[data-product-tab-panel]');
+    var productForm = document.getElementById('product-form');
     var hasAssignedSku = {if isset($product.id) and $product.sku|default:'' neq ''}true{else}false{/if};
     var productId = '{if isset($product.id)}{$product.id}{/if}';
     var existingAllegroValues = {$allegroValuesJson|default:'{}'};
+    var existingAllegroCompatibilityList = {$allegroCompatibilityListJson|default:'[]' nofilter};
     var existingEmpikValues = {$empikValuesJson|default:'{}'};
+    var existingTemuValues = {$temuValuesJson|default:'{}'};
     var currentAllegroItems = [];
+    var currentAllegroCompatibilitySupport = null;
+    var currentAllegroCompatibilityList = Array.isArray(existingAllegroCompatibilityList.items) ? existingAllegroCompatibilityList.items.slice() : [];
     var currentEmpikItems = [];
+    var currentTemuItems = [];
 
     function toNumber(value) {
       value = String(value || '').replace(',', '.');
@@ -1359,6 +1399,22 @@
       }
     }
 
+    function normalizeParameterName(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function isFitsToParameter(item) {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      var normalizedName = normalizeParameterName(item.name || '');
+      return normalizedName.indexOf('pasuje do') !== -1;
+    }
+
     function renderMarketplaceParameterFields(containerNode, infoNode, items, values, inputName, emptyLabel, loadedLabel, singleDictionaryMode) {
       if (!containerNode) {
         return;
@@ -1383,6 +1439,7 @@
         var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
         var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
         var optionLookup = !!item.option_lookup;
+        var fitsToMode = multiple && dict.length && isFitsToParameter(item);
         var value = values && typeof values === 'object' ? values[pid] : '';
         var selectedValues = normalizeSelectedArray(value);
 
@@ -1394,7 +1451,18 @@
         if (dict.length || (singleDictionaryMode === 'autocomplete' && optionLookup && !multiple)) {
           if (multiple) {
             html += '<div class="border rounded p-2">';
-            html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
+            if (fitsToMode) {
+              html += '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">';
+              html += '<div class="small fw-semibold text-dark js-fits-to-summary">Wybrano 0 z ' + dict.length + ' modeli</div>';
+              html += '<div class="d-flex flex-wrap gap-2">';
+              html += '<button type="button" class="btn btn-outline-secondary btn-sm js-fits-to-select-visible">Zaznacz widoczne</button>';
+              html += '<button type="button" class="btn btn-outline-secondary btn-sm js-fits-to-clear">Wyczysc</button>';
+              html += '</div>';
+              html += '</div>';
+              html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Szukaj modelu telefonu..." data-param-id="' + escapeHtml(pid) + '">';
+            } else {
+              html += '<input type="text" class="form-control form-control-sm mb-2 js-param-option-filter" placeholder="Filtruj opcje..." data-param-id="' + escapeHtml(pid) + '">';
+            }
             html += '<div class="js-param-options" style="max-height: 160px; overflow-y: auto; overflow-x: hidden; padding-right: 4px;">';
             for (var d = 0; d < dict.length; d++) {
               var option = dict[d] || {};
@@ -1408,8 +1476,11 @@
               html += '</div>';
             }
             html += '</div>';
+            if (fitsToMode) {
+              html += '<div class="small text-secondary mt-2 js-fits-to-selected-list"></div>';
+            }
             html += '</div>';
-            html += '<div class="form-text">Wielokrotny wybor z listy.</div>';
+            html += '<div class="form-text">' + (fitsToMode ? 'Lista modeli telefonow z Allegro. Mozesz wyszukiwac i zaznaczyc wiele pozycji.' : 'Wielokrotny wybor z listy.') + '</div>';
           } else {
             var singleValue = value === null || typeof value === 'undefined' ? '' : String(value);
             if (singleDictionaryMode === 'autocomplete') {
@@ -1465,6 +1536,7 @@
       containerNode.innerHTML = html;
       bindOptionFilters(containerNode);
       bindRemoteSelectMappings(containerNode);
+      bindFitsToPickers(containerNode);
       if (infoNode) {
         infoNode.textContent = loadedLabel;
       }
@@ -1479,6 +1551,11 @@
     function renderEmpikParameterFields(items, values) {
       renderMarketplaceParameterFields(empikContainer, empikInfo, items, values, 'empik_parameters', 'Brak parametrow dla tej kategorii Empik.', 'Parametry Empik zaladowane.', 'autocomplete');
       currentEmpikItems = items || [];
+    }
+
+    function renderTemuParameterFields(items, values) {
+      renderMarketplaceParameterFields(temuContainer, temuInfo, items, values, 'temu_parameters', 'Brak parametrow dla tej kategorii Temu.', 'Parametry Temu zaladowane.', 'select');
+      currentTemuItems = items || [];
     }
 
     function bindOptionFilters(scopeNode) {
@@ -1501,6 +1578,8 @@
             var label = String(option.getAttribute('data-option-label') || '');
             option.style.display = (phrase === '' || label.indexOf(phrase) !== -1) ? '' : 'none';
           }
+
+          refreshFitsToCard(card);
 
           var select = card.querySelector('.js-param-select');
           if (select) {
@@ -1589,6 +1668,430 @@
 
         fetchRemoteSelectOptions(selects[i]);
       }
+    }
+
+    function refreshFitsToCard(card) {
+      if (!card) {
+        return;
+      }
+
+      var summaryNode = card.querySelector('.js-fits-to-summary');
+      var listNode = card.querySelector('.js-fits-to-selected-list');
+      if (!summaryNode && !listNode) {
+        return;
+      }
+
+      var allOptions = card.querySelectorAll('.js-param-option');
+      var checkedOptions = card.querySelectorAll('.js-param-option input[type="checkbox"]:checked');
+      var selectedLabels = [];
+      var visibleCount = 0;
+
+      for (var v = 0; v < allOptions.length; v++) {
+        if (allOptions[v].style.display !== 'none') {
+          visibleCount++;
+        }
+      }
+
+      for (var i = 0; i < checkedOptions.length; i++) {
+        var checkbox = checkedOptions[i];
+        var optionRow = checkbox.closest('.js-param-option');
+        if (!optionRow) {
+          continue;
+        }
+
+        var labelNode = optionRow.querySelector('label');
+        selectedLabels.push(labelNode ? String(labelNode.textContent || '').trim() : String(checkbox.value || '').trim());
+      }
+
+      if (summaryNode) {
+        summaryNode.textContent = 'Wybrano ' + checkedOptions.length + ' z ' + allOptions.length + ' modeli';
+        if (visibleCount !== allOptions.length) {
+          summaryNode.textContent += ' | widoczne: ' + visibleCount;
+        }
+      }
+
+      if (listNode) {
+        if (!selectedLabels.length) {
+          listNode.textContent = 'Brak wybranych modeli.';
+        } else {
+          listNode.textContent = 'Wybrane: ' + selectedLabels.slice(0, 8).join(', ') + (selectedLabels.length > 8 ? ' +' + (selectedLabels.length - 8) : '');
+        }
+      }
+    }
+
+    function bindFitsToPickers(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var cards = scopeNode.querySelectorAll('.js-param-card');
+      for (var i = 0; i < cards.length; i++) {
+        (function (card) {
+          if (!card.querySelector('.js-fits-to-summary')) {
+            return;
+          }
+
+          if (card.getAttribute('data-fits-to-bound') === '1') {
+            refreshFitsToCard(card);
+            return;
+          }
+
+          card.setAttribute('data-fits-to-bound', '1');
+          refreshFitsToCard(card);
+
+          var selectVisibleButton = card.querySelector('.js-fits-to-select-visible');
+          if (selectVisibleButton) {
+            selectVisibleButton.addEventListener('click', function () {
+              var visibleCheckboxes = card.querySelectorAll('.js-param-option input[type="checkbox"]');
+              for (var c = 0; c < visibleCheckboxes.length; c++) {
+                var optionRow = visibleCheckboxes[c].closest('.js-param-option');
+                if (optionRow && optionRow.style.display === 'none') {
+                  continue;
+                }
+                visibleCheckboxes[c].checked = true;
+              }
+              refreshFitsToCard(card);
+            });
+          }
+
+          var clearButton = card.querySelector('.js-fits-to-clear');
+          if (clearButton) {
+            clearButton.addEventListener('click', function () {
+              var checkboxes = card.querySelectorAll('.js-param-option input[type="checkbox"]');
+              for (var c = 0; c < checkboxes.length; c++) {
+                checkboxes[c].checked = false;
+              }
+              refreshFitsToCard(card);
+            });
+          }
+
+          card.addEventListener('change', function (event) {
+            if (event.target && event.target.matches('.js-param-option input[type="checkbox"]')) {
+              refreshFitsToCard(card);
+            }
+          });
+        })(cards[i]);
+      }
+    }
+
+    function syncCompatibilityPayload() {
+      if (!allegroCompatibilityListPayload) {
+        return;
+      }
+
+      if (!currentAllegroCompatibilitySupport || !Array.isArray(currentAllegroCompatibilityList) || !currentAllegroCompatibilityList.length) {
+        allegroCompatibilityListPayload.value = '';
+        return;
+      }
+
+      allegroCompatibilityListPayload.value = JSON.stringify({
+        input_type: String(currentAllegroCompatibilitySupport.input_type || ''),
+        items_type: String(currentAllegroCompatibilitySupport.items_type || ''),
+        items: currentAllegroCompatibilityList
+      });
+    }
+
+    function normalizeCompatibilityItem(item) {
+      item = item && typeof item === 'object' ? item : {};
+      var normalized = {
+        id: String(item.id || ''),
+        text: String(item.text || ''),
+        additional_info: ''
+      };
+
+      if (Array.isArray(item.additionalInfo) && item.additionalInfo.length) {
+        normalized.additional_info = String((item.additionalInfo[0] && item.additionalInfo[0].value) || '');
+      } else if (typeof item.additional_info !== 'undefined') {
+        normalized.additional_info = String(item.additional_info || '');
+      }
+
+      if (!normalized.text && normalized.id) {
+        normalized.text = normalized.id;
+      }
+
+      return normalized;
+    }
+
+    function currentCompatibilityIds() {
+      var ids = [];
+      for (var i = 0; i < currentAllegroCompatibilityList.length; i++) {
+        var item = normalizeCompatibilityItem(currentAllegroCompatibilityList[i]);
+        if (item.id) {
+          ids.push(item.id);
+        }
+      }
+      return ids;
+    }
+
+    function updateCompatibilityAdditionalInfo(itemId, value) {
+      for (var i = 0; i < currentAllegroCompatibilityList.length; i++) {
+        var item = normalizeCompatibilityItem(currentAllegroCompatibilityList[i]);
+        if (item.id !== itemId) {
+          continue;
+        }
+
+        item.additional_info = String(value || '').trim();
+        currentAllegroCompatibilityList[i] = item;
+        syncCompatibilityPayload();
+        return;
+      }
+    }
+
+    function removeCompatibilityItem(itemId) {
+      var nextItems = [];
+      for (var i = 0; i < currentAllegroCompatibilityList.length; i++) {
+        var item = normalizeCompatibilityItem(currentAllegroCompatibilityList[i]);
+        if (item.id && item.id === itemId) {
+          continue;
+        }
+        nextItems.push(item);
+      }
+
+      currentAllegroCompatibilityList = nextItems;
+      renderCompatibilitySection();
+    }
+
+    function addCompatibilityItem(item) {
+      var normalized = normalizeCompatibilityItem(item);
+      if (!normalized.id) {
+        return;
+      }
+
+      var existingIds = currentCompatibilityIds();
+      if (existingIds.indexOf(normalized.id) !== -1) {
+        return;
+      }
+
+      currentAllegroCompatibilityList.push(normalized);
+      renderCompatibilitySection();
+    }
+
+    function renderCompatibilityResults(items) {
+      var html = '<option value="">Wybierz pozycje z wynikow...</option>';
+      var selectedIds = currentCompatibilityIds();
+
+      for (var i = 0; i < items.length; i++) {
+        var item = normalizeCompatibilityItem(items[i]);
+        if (!item.id) {
+          continue;
+        }
+
+        html += '<option value="' + escapeHtml(item.id) + '"'
+          + ' data-text="' + escapeHtml(item.text) + '"'
+          + (selectedIds.indexOf(item.id) !== -1 ? ' disabled' : '')
+          + '>' + escapeHtml(item.text || item.id) + '</option>';
+      }
+
+      return html;
+    }
+
+    function renderCompatibilitySection() {
+      if (!allegroCompatibilityContainer) {
+        return;
+      }
+
+      syncCompatibilityPayload();
+
+      if (!currentAllegroCompatibilitySupport) {
+        allegroCompatibilityContainer.innerHTML = '<div class="small text-secondary">Ta kategoria nie ma aktywnej sekcji Pasuje do.</div>';
+        return;
+      }
+
+      var inputType = String(currentAllegroCompatibilitySupport.input_type || '');
+      var itemsType = String(currentAllegroCompatibilitySupport.items_type || '');
+      var validationRules = currentAllegroCompatibilitySupport.validation_rules || {};
+      var maxRows = parseInt(validationRules.maxRows || 0, 10);
+      var html = '';
+
+      if (inputType === 'ID') {
+        html += '<div class="row g-2 mb-3">';
+        html += '  <div class="col-md-8">';
+        html += '    <label class="form-label">Wyszukaj model telefonu</label>';
+        html += '    <input type="text" id="allegro-compatibility-search" class="form-control form-control-sm" placeholder="np. iPhone 15 Pro, Galaxy S24, Redmi Note 13">';
+        html += '    <div class="form-text">Wyszukiwanie modeli telefonow z oficjalnej listy Allegro dla typu ' + escapeHtml(itemsType || '-') + '.</div>';
+        html += '  </div>';
+        html += '  <div class="col-md-4">';
+        html += '    <label class="form-label">Wyniki</label>';
+        html += '    <select id="allegro-compatibility-results" class="form-select form-select-sm"><option value="">Wpisz min. 3 znaki...</option></select>';
+        html += '  </div>';
+        html += '</div>';
+      } else if (inputType === 'TEXT') {
+        html += '<label class="form-label">Lista kompatybilnosci</label>';
+        html += '<textarea id="allegro-compatibility-text" class="form-control" rows="6" placeholder="Jedna pozycja w jednej linii"></textarea>';
+        html += '<div class="form-text">Kategoria wymaga tekstowej wersji Pasuje do.</div>';
+      }
+
+      html += '<div class="small text-secondary mb-2">Typ wejscia: ' + escapeHtml(inputType || '-') + (maxRows > 0 ? ' | limit pozycji: ' + maxRows : '') + '</div>';
+      html += '<div id="allegro-compatibility-selected">';
+
+      if (inputType === 'ID') {
+        if (!currentAllegroCompatibilityList.length) {
+          html += '<div class="alert alert-light border mb-0">Brak wybranych pozycji Pasuje do.</div>';
+        } else {
+          html += '<div class="row g-2">';
+          for (var i = 0; i < currentAllegroCompatibilityList.length; i++) {
+            var item = normalizeCompatibilityItem(currentAllegroCompatibilityList[i]);
+            html += '<div class="col-12" data-compatibility-id="' + escapeHtml(item.id) + '">';
+            html += '  <div class="border rounded p-3 bg-white">';
+            html += '    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">';
+            html += '      <div>';
+            html += '        <div class="fw-semibold">' + escapeHtml(item.text || item.id) + '</div>';
+            html += '        <div class="small text-secondary">' + escapeHtml(item.id) + '</div>';
+            html += '      </div>';
+            html += '      <button type="button" class="btn btn-sm btn-outline-danger js-remove-compatibility-item" data-compatibility-id="' + escapeHtml(item.id) + '">Usun</button>';
+            html += '    </div>';
+            html += '    <input type="text" class="form-control form-control-sm js-compatibility-additional-info" data-compatibility-id="' + escapeHtml(item.id) + '" value="' + escapeHtml(item.additional_info || '') + '" placeholder="Dodatkowa informacja, np. wersja 5G / 4G / rocznik serii">';
+            html += '  </div>';
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+      }
+
+      html += '</div>';
+
+      allegroCompatibilityContainer.innerHTML = html;
+
+      if (inputType === 'TEXT') {
+        var compatibilityTextArea = document.getElementById('allegro-compatibility-text');
+        if (compatibilityTextArea) {
+          var lines = [];
+          for (var l = 0; l < currentAllegroCompatibilityList.length; l++) {
+            if (currentAllegroCompatibilityList[l] && currentAllegroCompatibilityList[l].text) {
+              lines.push(String(currentAllegroCompatibilityList[l].text));
+            }
+          }
+          compatibilityTextArea.value = lines.join('\n');
+          compatibilityTextArea.addEventListener('input', function () {
+            var splitLines = String(this.value || '').split(/\r\n|\r|\n/);
+            var nextItems = [];
+            for (var s = 0; s < splitLines.length; s++) {
+              var text = String(splitLines[s] || '').trim();
+              if (text !== '') {
+                nextItems.push({ text: text });
+              }
+            }
+            currentAllegroCompatibilityList = nextItems;
+            syncCompatibilityPayload();
+          });
+        }
+      }
+
+      bindCompatibilitySectionInteractions();
+      syncCompatibilityPayload();
+    }
+
+    function bindCompatibilitySectionInteractions() {
+      if (!allegroCompatibilityContainer) {
+        return;
+      }
+
+      var removeButtons = allegroCompatibilityContainer.querySelectorAll('.js-remove-compatibility-item');
+      for (var i = 0; i < removeButtons.length; i++) {
+        removeButtons[i].addEventListener('click', function () {
+          removeCompatibilityItem(String(this.getAttribute('data-compatibility-id') || ''));
+        });
+      }
+
+      var additionalInfoInputs = allegroCompatibilityContainer.querySelectorAll('.js-compatibility-additional-info');
+      for (var j = 0; j < additionalInfoInputs.length; j++) {
+        additionalInfoInputs[j].addEventListener('input', function () {
+          updateCompatibilityAdditionalInfo(String(this.getAttribute('data-compatibility-id') || ''), this.value);
+        });
+      }
+
+      var searchInput = document.getElementById('allegro-compatibility-search');
+      var resultsSelect = document.getElementById('allegro-compatibility-results');
+      if (searchInput && resultsSelect) {
+        searchInput.addEventListener('input', function () {
+          var phrase = String(this.value || '').trim();
+          if (phrase.length < 3) {
+            resultsSelect.innerHTML = '<option value="">Wpisz min. 3 znaki...</option>';
+            return;
+          }
+
+          resultsSelect.innerHTML = '<option value="">Szukam...</option>';
+          var query = '{$baseUrl|escape:"javascript"}?controller=products&action=allegrocompatibleproducts&category_id=' + encodeURIComponent(categoryInput ? categoryInput.value : '') + '&phrase=' + encodeURIComponent(phrase);
+          fetch(query, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (data && data.error) {
+                resultsSelect.innerHTML = '<option value="">' + escapeHtml(data.error) + '</option>';
+                return;
+              }
+
+              var items = data && data.items ? data.items : [];
+              resultsSelect.innerHTML = renderCompatibilityResults(items);
+            })
+            .catch(function () {
+              resultsSelect.innerHTML = '<option value="">Nie udalo sie pobrac wynikow</option>';
+            });
+        });
+
+        resultsSelect.addEventListener('change', function () {
+          var option = this.options[this.selectedIndex];
+          var itemId = option ? String(option.value || '') : '';
+          if (!itemId) {
+            return;
+          }
+
+          addCompatibilityItem({
+            id: itemId,
+            text: String(option.getAttribute('data-text') || option.text || '')
+          });
+          this.value = '';
+        });
+      }
+    }
+
+    function loadAllegroCompatibilitySupport() {
+      if (!categoryInput || !allegroCompatibilityInfo || !allegroCompatibilityContainer) {
+        return;
+      }
+
+      var categoryId = String(categoryInput.value || '');
+      if (!categoryId) {
+        currentAllegroCompatibilitySupport = null;
+        currentAllegroCompatibilityList = [];
+        allegroCompatibilityInfo.textContent = 'Wybierz kategorie powiazana z Allegro, aby sprawdzic sekcje Pasuje do.';
+        renderCompatibilitySection();
+        return;
+      }
+
+      allegroCompatibilityInfo.textContent = 'Sprawdzam konfiguracje Pasuje do dla tej kategorii...';
+      var url = '{$baseUrl|escape:"javascript"}?controller=products&action=allegrocompatibilitysupport&category_id=' + encodeURIComponent(categoryId) + '&include_values=1';
+      if (productId) {
+        url += '&id=' + encodeURIComponent(productId);
+      }
+
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.error) {
+            currentAllegroCompatibilitySupport = null;
+            currentAllegroCompatibilityList = [];
+            allegroCompatibilityInfo.textContent = data.error;
+            renderCompatibilitySection();
+            return;
+          }
+
+          currentAllegroCompatibilitySupport = data && data.support ? data.support : null;
+          currentAllegroCompatibilityList = data && data.values && Array.isArray(data.values.items) ? data.values.items.slice() : [];
+
+          if (!currentAllegroCompatibilitySupport) {
+            allegroCompatibilityInfo.textContent = 'Ta kategoria nie wspiera sekcji Pasuje do.';
+          } else {
+            allegroCompatibilityInfo.textContent = 'Sekcja Pasuje do jest dostepna dla tej kategorii.';
+          }
+
+          renderCompatibilitySection();
+        })
+        .catch(function () {
+          currentAllegroCompatibilitySupport = null;
+          currentAllegroCompatibilityList = [];
+          allegroCompatibilityInfo.textContent = 'Nie udalo sie sprawdzic sekcji Pasuje do.';
+          renderCompatibilitySection();
+        });
     }
 
     var copySearchTimer = null;
@@ -1906,7 +2409,9 @@
           }
 
           existingAllegroValues = data && data.values ? data.values : {};
+          currentAllegroCompatibilityList = data && data.compatibility_list && Array.isArray(data.compatibility_list.items) ? data.compatibility_list.items.slice() : [];
           renderAllegroParameterFields(currentAllegroItems, existingAllegroValues);
+          renderCompatibilitySection();
           allegroInfo.textContent = 'Skopiowano parametry z wybranego produktu.';
         })
         .catch(function () {
@@ -2025,6 +2530,51 @@
         .catch(function () {
           empikInfo.textContent = 'Nie udalo sie pobrac parametrow Empik.';
           empikContainer.innerHTML = '';
+        });
+    }
+
+    function loadTemuParameters() {
+      if (!categoryInput || !temuInfo || !temuContainer) {
+        return;
+      }
+
+      var categoryId = categoryInput.value;
+      if (!categoryId) {
+        temuInfo.textContent = 'Wybierz kategorie powiazana z Temu, aby zaladowac parametry.';
+        temuContainer.innerHTML = '';
+        return;
+      }
+
+      var selected = categoryInput.options[categoryInput.selectedIndex];
+      var temuCategoryId = selected ? (selected.getAttribute('data-temu-category-id') || '') : '';
+      if (!temuCategoryId) {
+        temuInfo.textContent = 'Ta kategoria nie ma przypisanego Temu category ID.';
+        temuContainer.innerHTML = '';
+        return;
+      }
+
+      temuInfo.textContent = 'Pobieranie parametrow Temu...';
+      var url = '{$baseUrl|escape:"javascript"}?controller=products&action=temuparameters&category_id=' + encodeURIComponent(categoryId) + '&include_values=1';
+      if (productId) {
+        url += '&id=' + encodeURIComponent(productId);
+      }
+
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.error) {
+            temuInfo.textContent = data.error;
+            temuContainer.innerHTML = '';
+            return;
+          }
+
+          var items = data && data.items ? data.items : [];
+          var values = data && data.values ? data.values : existingTemuValues;
+          renderTemuParameterFields(items, values);
+        })
+        .catch(function () {
+          temuInfo.textContent = 'Nie udalo sie pobrac parametrow Temu.';
+          temuContainer.innerHTML = '';
         });
     }
 
@@ -2166,7 +2716,9 @@
       categoryInput.addEventListener('change', function () {
         refreshSku();
         loadAllegroParameters();
+        loadAllegroCompatibilitySupport();
         loadEmpikParameters();
+        loadTemuParameters();
         syncSummary();
       });
 
@@ -2175,10 +2727,20 @@
       }
 
       loadAllegroParameters();
+      loadAllegroCompatibilitySupport();
       loadEmpikParameters();
+      loadTemuParameters();
     } else {
       loadAllegroParameters();
+      loadAllegroCompatibilitySupport();
       loadEmpikParameters();
+      loadTemuParameters();
+    }
+
+    if (productForm) {
+      productForm.addEventListener('submit', function () {
+        syncCompatibilityPayload();
+      });
     }
 
     var productGalleryInput = document.getElementById('img');
@@ -2472,9 +3034,6 @@
     syncSummary();
   })();
 </script>
-
-
-
 
 
 

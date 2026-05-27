@@ -10,6 +10,7 @@ use App\Models\UserRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\ErliService;
+use App\Services\TemuService;
 use RuntimeException;
 use Throwable;
 
@@ -30,6 +31,9 @@ class AdministrationController extends Controller
     /** @var ErliService */
     private $erli;
 
+    /** @var TemuService */
+    private $temu;
+
     public function __construct()
     {
         $this->users = new UserRepository($this->db());
@@ -37,6 +41,7 @@ class AdministrationController extends Controller
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
         $this->erli = new ErliService();
+        $this->temu = new TemuService();
         $this->settings = new SettingRepository($this->db());
         $this->settings->ensureSchema();
     }
@@ -137,6 +142,7 @@ class AdministrationController extends Controller
         $accounts = $this->allegro->listAccounts();
         $empikAccounts = $this->empik->listAccounts();
         $erliAccounts = $this->erli->listAccounts();
+        $temuSettings = $this->temu->connectionSettings();
 
         foreach ($accounts as &$account) {
             $account['trigger_url'] = $this->allegro->triggerUrl($account, $baseUrl);
@@ -160,6 +166,12 @@ class AdministrationController extends Controller
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
             'erliAccounts' => $erliAccounts,
+            'temuApiUrl' => (string) ($temuSettings['api_url'] ?? ''),
+            'temuAppKey' => (string) ($temuSettings['app_key'] ?? ''),
+            'temuAppSecret' => (string) ($temuSettings['app_secret'] ?? ''),
+            'temuAccessToken' => (string) ($temuSettings['access_token'] ?? ''),
+            'temuShopId' => (string) ($temuSettings['shop_id'] ?? ''),
+            'temuRegion' => (string) ($temuSettings['region'] ?? 'PL'),
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
@@ -328,6 +340,33 @@ class AdministrationController extends Controller
             } else {
                 $this->setFlash('success', 'Token API zostal zapisany.');
             }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function savetemu(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        try {
+            $this->temu->saveConnectionSettings(array(
+                'api_url' => $this->input('temu_api_url', ''),
+                'app_key' => $this->input('temu_app_key', ''),
+                'app_secret' => $this->input('temu_app_secret', ''),
+                'access_token' => $this->input('temu_access_token', ''),
+                'shop_id' => $this->input('temu_shop_id', ''),
+                'region' => $this->input('temu_region', 'PL'),
+            ));
+
+            $this->setFlash('success', 'Ustawienia polaczenia Temu zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

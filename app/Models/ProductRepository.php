@@ -932,8 +932,8 @@ class ProductRepository
         }
 
         $parameterRows = $this->database->fetchAll(
-            'SELECT product_id, parameter_id, value FROM product_allegro_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') ORDER BY product_id ASC, parameter_id ASC',
-            $params
+            'SELECT product_id, parameter_id, value FROM product_allegro_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') AND parameter_id <> :compatibility_key ORDER BY product_id ASC, parameter_id ASC',
+            $params + array('compatibility_key' => ProductAllegroParameterRepository::COMPATIBILITY_LIST_KEY)
         );
 
         $parametersByProduct = array();
@@ -1474,6 +1474,11 @@ class ProductRepository
         $allegroParams = $allegroParameters->allForProduct($id);
         if (!empty($allegroParams)) {
             $allegroParameters->replaceForProduct($newId, $allegroParams);
+        }
+
+        $compatibilityList = $allegroParameters->compatibilityListForProduct($id);
+        if ($compatibilityList !== array()) {
+            $allegroParameters->replaceCompatibilityListForProduct($newId, $compatibilityList);
         }
 
         // Copy shared stock group relations

@@ -86,6 +86,30 @@ class ValueResolver
             return isset($exportOptions['price_to_csv']) ? (string) $exportOptions['price_to_csv'] : '';
         }
 
+        if (in_array($normalized, array('image_queue_range', 'queue_range', 'export_queue_range'), true)) {
+            return isset($exportOptions['image_queue_range']) ? (string) $exportOptions['image_queue_range'] : '';
+        }
+
+        if (in_array($normalized, array('image_queue_from', 'queue_from', 'export_queue_from'), true)) {
+            return isset($exportOptions['image_queue_from']) ? (string) $exportOptions['image_queue_from'] : '';
+        }
+
+        if (in_array($normalized, array('image_queue_to', 'queue_to', 'export_queue_to'), true)) {
+            return isset($exportOptions['image_queue_to']) ? (string) $exportOptions['image_queue_to'] : '';
+        }
+
+        if (in_array($normalized, array('grid_layout', 'grid', 'export_grid'), true)) {
+            return isset($exportOptions['grid_layout']) ? (string) $exportOptions['grid_layout'] : '';
+        }
+
+        if (in_array($normalized, array('grid_columns', 'grid_cols', 'export_grid_columns'), true)) {
+            return isset($exportOptions['grid_columns']) ? (string) $exportOptions['grid_columns'] : '';
+        }
+
+        if (in_array($normalized, array('grid_rows', 'export_grid_rows'), true)) {
+            return isset($exportOptions['grid_rows']) ? (string) $exportOptions['grid_rows'] : '';
+        }
+
         if (in_array($normalized, array('generated_title', 'title_generated', 'csv_title'), true)) {
             return $this->generateTitleExportValue($product, $exportOptions);
         }
@@ -172,6 +196,12 @@ class ValueResolver
             'categories.allegro_id' => 'allegro_category_id',
             'collection_name' => 'collection_name',
             'price_to_csv' => 'price_to_csv',
+            'image_queue_range' => 'image_queue_range',
+            'image_queue_from' => 'image_queue_from',
+            'image_queue_to' => 'image_queue_to',
+            'grid_layout' => 'grid_layout',
+            'grid_columns' => 'grid_columns',
+            'grid_rows' => 'grid_rows',
    
         );
 
@@ -1079,12 +1109,29 @@ class ValueResolver
         $oldSku = trim((string) (($product['custom_fields']['old_sku'] ?? '') ?: ($product['old_sku'] ?? '')));
         $price = trim((string) ($exportOptions['price_to_csv'] ?? ''));
         $slug = $this->slugForImagePath($productName);
+        $collectionCodeIndex = $this->incrementCollectionCode($collectionCode, $index);
+        $queueRange = trim((string) ($exportOptions['image_queue_range'] ?? ''));
+        $queueFrom = trim((string) ($exportOptions['image_queue_from'] ?? ''));
+        $queueTo = trim((string) ($exportOptions['image_queue_to'] ?? ''));
+        $gridLayout = trim((string) ($exportOptions['grid_layout'] ?? ''));
+        $gridColumns = trim((string) ($exportOptions['grid_columns'] ?? ''));
+        $gridRows = trim((string) ($exportOptions['grid_rows'] ?? ''));
+        $indexGridCount = $this->gridGraphicCount($exportOptions);
 
         $rendered = strtr($macro, array(
             '{{base_directory}}' => rtrim($baseDirectory, '\\/'),
             '{{contours}}' => $contours,
             '{{collection_code}}' => $collectionCode,
+            '{{collection_code_index}}' => $collectionCodeIndex,
             '{{collection_name}}' => $collectionName,
+            '{{queue_range}}' => $queueRange,
+            '{{queue_from}}' => $queueFrom,
+            '{{queue_to}}' => $queueTo,
+            '{{grid}}' => $gridLayout,
+            '{{grid_layout}}' => $gridLayout,
+            '{{grid_columns}}' => $gridColumns,
+            '{{grid_rows}}' => $gridRows,
+            '{{index_grid_count}}' => $indexGridCount,
             '{{product_name}}' => $productName,
             '{{product_slug}}' => $slug,
             '{{sku}}' => $sku,
@@ -1094,11 +1141,50 @@ class ValueResolver
             '{{index0}}' => (string) max(0, $index - 1),
         ));
 
-        $rendered = str_replace('/', '\\', $rendered);
-        $rendered = preg_replace_callback('/\\\\+/', static function (): string {
-            return '\\';
-        }, $rendered);
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $rendered) === 1) {
+            $rendered = str_replace('\\', '/', $rendered);
+            $rendered = preg_replace('#(?<!:)/{2,}#', '/', $rendered);
+        } else {
+            $rendered = str_replace('/', '\\', $rendered);
+            $rendered = preg_replace_callback('/\\\\+/', static function (): string {
+                return '\\';
+            }, $rendered);
+        }
+
         return trim((string) $rendered);
+    }
+
+    private function gridGraphicCount(array $exportOptions): string
+    {
+        $queueCount = max(0, (int) ($exportOptions['image_queue_count'] ?? 0));
+        $gridColumns = max(0, (int) ($exportOptions['grid_columns'] ?? 0));
+        $gridRows = max(0, (int) ($exportOptions['grid_rows'] ?? 0));
+        $capacity = $gridColumns * $gridRows;
+
+        if ($queueCount <= 0 || $capacity <= 0) {
+            return '';
+        }
+
+        return (string) (int) ceil($queueCount / $capacity);
+    }
+
+    private function incrementCollectionCode(string $collectionCode, int $index): string
+    {
+        $collectionCode = trim($collectionCode);
+        if ($collectionCode === '') {
+            return '';
+        }
+
+        $index = max(1, $index);
+        if (preg_match('/^(.*?)(\d+)$/', $collectionCode, $matches) !== 1) {
+            return $collectionCode . (string) $index;
+        }
+
+        $prefix = (string) $matches[1];
+        $number = (string) $matches[2];
+        $nextValue = (int) $number + ($index - 1);
+
+        return $prefix . str_pad((string) $nextValue, strlen($number), '0', STR_PAD_LEFT);
     }
 
     private function slugForImagePath(string $value): string

@@ -256,6 +256,9 @@
                 <li class="nav-item" role="presentation">
                   <button class="nav-link" id="morele-tab" data-bs-toggle="pill" data-bs-target="#morele-pane" type="button" role="tab" aria-controls="morele-pane" aria-selected="false">Morele</button>
                 </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="temu-tab" data-bs-toggle="pill" data-bs-target="#temu-pane" type="button" role="tab" aria-controls="temu-pane" aria-selected="false">Temu</button>
+                </li>
               </ul>
 
               <div class="tab-content" id="marketplaceTabsContent">
@@ -384,6 +387,72 @@
                               </tbody>
                             </table>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tab-pane fade" id="temu-pane" role="tabpanel" aria-labelledby="temu-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-6">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Polaczenie Temu</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=administration&action=savetemu" class="row g-3">
+                            <div class="col-12">
+                              <label class="form-label">Adres API</label>
+                              <input type="url" name="temu_api_url" class="form-control" value="{$temuApiUrl|escape}" placeholder="https://...">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">App Key</label>
+                              <input type="text" name="temu_app_key" class="form-control" value="{$temuAppKey|escape}">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">App Secret</label>
+                              <input type="text" name="temu_app_secret" class="form-control" value="{$temuAppSecret|escape}">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Access Token</label>
+                              <input type="text" name="temu_access_token" class="form-control" value="{$temuAccessToken|escape}">
+                            </div>
+                            <div class="col-md-3">
+                              <label class="form-label">Shop ID</label>
+                              <input type="text" name="temu_shop_id" class="form-control" value="{$temuShopId|escape}">
+                            </div>
+                            <div class="col-md-3">
+                              <label class="form-label">Region</label>
+                              <input type="text" name="temu_region" class="form-control" value="{$temuRegion|default:'PL'|escape}" placeholder="PL">
+                            </div>
+                            <div class="col-12">
+                              <div class="small text-secondary">
+                                Ten etap przygotowuje system pod integracje Temu: zapis polaczenia, tokenow i mapowania kategorii. Pobieranie ofert i aukcji dodamy pozniej.
+                              </div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz polaczenie Temu</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-6">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header">
+                          <h3 class="card-title mb-0">Jak teraz dziala Temu</h3>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border administration-note mb-3">
+                            Integracja jest przygotowana pod dalsza rozbudowe, ale juz teraz laczy system z konfiguracja Temu i pozwala przypisywac kategorie Temu do kategorii magazynowych.
+                          </div>
+                          <ul class="small text-secondary mb-0">
+                            <li>Ustawienia polaczenia zapisujesz tutaj, w administracji.</li>
+                            <li>Kategorie Temu mapujesz w edycji kategorii magazynowej.</li>
+                            <li>Definicje parametrow kategorii Temu mozna zapisac jako JSON przy kategorii.</li>
+                            <li>Import aukcji i synchronizacje ofert zostawiamy na kolejny etap.</li>
+                          </ul>
                         </div>
                       </div>
                     </div>

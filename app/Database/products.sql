@@ -5,6 +5,10 @@ CREATE TABLE IF NOT EXISTS categories (
     sku_prefix VARCHAR(20) NOT NULL DEFAULT 'PRD',
     allegro_category_id VARCHAR(64) DEFAULT NULL,
     empik_category_id VARCHAR(190) DEFAULT NULL,
+    temu_category_id VARCHAR(190) DEFAULT NULL,
+    temu_category_name VARCHAR(255) DEFAULT NULL,
+    temu_category_path TEXT DEFAULT NULL,
+    temu_category_parameters LONGTEXT DEFAULT NULL,
     description TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -12,7 +16,8 @@ CREATE TABLE IF NOT EXISTS categories (
     UNIQUE KEY ux_categories_slug (slug),
     KEY idx_categories_name (name),
     KEY idx_categories_allegro (allegro_category_id),
-    KEY idx_categories_empik (empik_category_id)
+    KEY idx_categories_empik (empik_category_id),
+    KEY idx_categories_temu (temu_category_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS products (
@@ -76,4 +81,17 @@ CREATE TABLE IF NOT EXISTS product_allegro_parameters (
     UNIQUE KEY ux_product_allegro_param (product_id, parameter_id),
     KEY idx_product_allegro_product_id (product_id),
     CONSTRAINT fk_product_allegro_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS product_temu_parameters (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id INT UNSIGNED NOT NULL,
+    parameter_id VARCHAR(190) NOT NULL,
+    value LONGTEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY ux_product_temu_param (product_id, parameter_id),
+    KEY idx_product_temu_product_id (product_id),
+    CONSTRAINT fk_product_temu_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

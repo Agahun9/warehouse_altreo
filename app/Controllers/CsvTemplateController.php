@@ -681,10 +681,16 @@ class CsvTemplateController extends Controller
                 'title_template_name' => (string) ($item['title_template_name'] ?? ''),
                 'collection_name' => (string) ($item['collection_name'] ?? ''),
                 'image_collection_code' => (string) ($item['image_collection_code'] ?? ''),
+                'image_queue_range' => (string) ($item['image_queue_range'] ?? ''),
+                'image_queue_from' => (string) ($item['image_queue_from'] ?? ''),
+                'image_queue_to' => (string) ($item['image_queue_to'] ?? ''),
                 'price_to_csv' => (string) ($item['price_to_csv'] ?? ''),
                 'thumbnail_count' => (int) ($item['thumbnail_count'] ?? 0),
                 'mockup_count' => (int) ($item['mockup_count'] ?? 0),
                 'image_count' => (int) ($item['image_count'] ?? 0),
+                'grid_layout' => (string) ($item['grid_layout'] ?? ''),
+                'grid_columns' => (int) ($item['grid_columns'] ?? 0),
+                'grid_rows' => (int) ($item['grid_rows'] ?? 0),
                 'image_base_directory' => (string) ($item['image_base_directory'] ?? ''),
                 'created_at' => (string) ($item['created_at'] ?? ''),
             );
@@ -1569,6 +1575,12 @@ class CsvTemplateController extends Controller
                 case 'product.generated_title':
                 case 'product.generated_images':
                 case 'product.price_to_csv':
+                case 'product.image_queue_range':
+                case 'product.image_queue_from':
+                case 'product.image_queue_to':
+                case 'product.grid_layout':
+                case 'product.grid_columns':
+                case 'product.grid_rows':
                     $warnings[] = 'pole ' . $field . ' jest przeznaczone glownie do eksportu i zostalo pominiete';
                     break;
                 default:
@@ -2183,10 +2195,16 @@ class CsvTemplateController extends Controller
             'product.empik_parameters' => 'Parametry Empik (nazwa: wartosc)',
             'product.generated_title' => 'Generowany tytul CSV',
             'product.collection_name' => 'Kolekcja wpisana przy eksporcie CSV',
+            'product.image_queue_range' => 'Zakres kolejki wpisany przy eksporcie CSV',
+            'product.image_queue_from' => 'Poczatek zakresu kolejki wpisany przy eksporcie CSV',
+            'product.image_queue_to' => 'Koniec zakresu kolejki wpisany przy eksporcie CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
             'product.price_net' => 'Cena netto',
             'product.price_gross' => 'Cena brutto',
             'product.price_to_csv' => 'Cena wpisana przy eksporcie CSV',
+            'product.grid_layout' => 'Grid wpisany / wyliczony przy eksporcie CSV',
+            'product.grid_columns' => 'Liczba kolumn grida wpisana przy eksporcie CSV',
+            'product.grid_rows' => 'Liczba wierszy grida wpisana przy eksporcie CSV',
             'product.vat_rate' => 'VAT',
             'product.category_name' => 'Nazwa kategorii',
             'product.category_slug' => 'Slug kategorii',
@@ -2267,6 +2285,12 @@ class CsvTemplateController extends Controller
         $tokens = array(
             '{{option:collection_name}}' => 'Kolekcja wpisana przy eksporcie',
             '{{option:price_to_csv}}' => 'Cena wpisana przy eksporcie',
+            '{{option:image_queue_range}}' => 'Zakres kolejki wpisany przy eksporcie',
+            '{{option:image_queue_from}}' => 'Poczatek zakresu kolejki wpisany przy eksporcie',
+            '{{option:image_queue_to}}' => 'Koniec zakresu kolejki wpisany przy eksporcie',
+            '{{option:grid_layout}}' => 'Grid wpisany / wyliczony przy eksporcie',
+            '{{option:grid_columns}}' => 'Liczba kolumn grida wpisana przy eksporcie',
+            '{{option:grid_rows}}' => 'Liczba wierszy grida wpisana przy eksporcie',
         );
 
         foreach ($this->availableFieldOptions() as $fieldKey => $fieldLabel) {
@@ -2467,10 +2491,16 @@ class CsvTemplateController extends Controller
                 'title_template_id' => max(0, (int) ($exportOptions['title_template_id'] ?? 0)),
                 'collection_name' => trim((string) ($exportOptions['collection_name'] ?? '')),
                 'image_collection_code' => trim((string) ($exportOptions['image_collection_code'] ?? '')),
+                'image_queue_range' => trim((string) ($exportOptions['image_queue_range'] ?? '')),
+                'image_queue_from' => trim((string) ($exportOptions['image_queue_from'] ?? '')),
+                'image_queue_to' => trim((string) ($exportOptions['image_queue_to'] ?? '')),
                 'price_to_csv' => trim((string) ($exportOptions['price_to_csv'] ?? '')),
                 'thumbnail_count' => max(0, (int) ($exportOptions['thumbnail_count'] ?? 0)),
                 'mockup_count' => max(0, (int) ($exportOptions['mockup_count'] ?? 0)),
                 'image_count' => max(0, (int) ($exportOptions['image_count'] ?? 0)),
+                'grid_layout' => trim((string) ($exportOptions['grid_layout'] ?? '')),
+                'grid_columns' => max(0, (int) ($exportOptions['grid_columns'] ?? 0)),
+                'grid_rows' => max(0, (int) ($exportOptions['grid_rows'] ?? 0)),
                 'image_base_directory' => trim((string) ($exportOptions['image_base_directory'] ?? '')),
             ));
 
@@ -2608,7 +2638,145 @@ class CsvTemplateController extends Controller
             'thumbnail_macro' => trim((string) $source('thumbnail_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')),
             'mockup_macro' => trim((string) $source('mockup_macro', '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')),
             'image_macro' => trim((string) $source('image_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')),
+        ) + $this->normalizeQueueAndGridExportOptions(
+            trim((string) $source('image_queue_range', '')),
+            trim((string) $source('grid_layout', ''))
         ) + $this->titleTemplateExportOptions(max(0, (int) $source('title_template_id', 0)));
+    }
+
+    private function normalizeQueueAndGridExportOptions(string $queueRange, string $gridLayout): array
+    {
+        $queue = $this->parseQueueRange($queueRange);
+        $grid = $this->parseGridLayout($gridLayout);
+
+        if ($grid['layout'] === '') {
+            $grid = $this->suggestGridLayoutForQueueCount($queue['count']);
+        }
+
+        return array(
+            'image_queue_range' => $queue['range'],
+            'image_queue_from' => $queue['from'],
+            'image_queue_to' => $queue['to'],
+            'image_queue_count' => $queue['count'],
+            'grid_layout' => $grid['layout'],
+            'grid_columns' => $grid['columns'],
+            'grid_rows' => $grid['rows'],
+        );
+    }
+
+    private function parseQueueRange(string $value): array
+    {
+        $value = strtoupper(trim($value));
+        if ($value === '') {
+            return array(
+                'range' => '',
+                'from' => '',
+                'to' => '',
+                'count' => 0,
+            );
+        }
+
+        if (preg_match('/^\s*([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)\s*$/', $value, $matches) === 1) {
+            $prefixFrom = (string) $matches[1];
+            $numberFrom = (int) $matches[2];
+            $prefixTo = (string) ($matches[3] !== '' ? $matches[3] : $prefixFrom);
+            $numberTo = (int) $matches[4];
+
+            if ($prefixFrom === $prefixTo && $numberTo >= $numberFrom) {
+                $from = $prefixFrom . $matches[2];
+                $to = $prefixTo . $matches[4];
+
+                return array(
+                    'range' => $from . '-' . $to,
+                    'from' => $from,
+                    'to' => $to,
+                    'count' => ($numberTo - $numberFrom) + 1,
+                );
+            }
+        }
+
+        return array(
+            'range' => $value,
+            'from' => $value,
+            'to' => $value,
+            'count' => 1,
+        );
+    }
+
+    private function parseGridLayout(string $value): array
+    {
+        $value = strtolower(trim($value));
+        if ($value === '') {
+            return array(
+                'layout' => '',
+                'columns' => 0,
+                'rows' => 0,
+            );
+        }
+
+        if (preg_match('/^\s*(\d+)\s*x\s*(\d+)\s*$/', $value, $matches) !== 1) {
+            return array(
+                'layout' => $value,
+                'columns' => 0,
+                'rows' => 0,
+            );
+        }
+
+        $columns = max(0, (int) $matches[1]);
+        $rows = max(0, (int) $matches[2]);
+
+        return array(
+            'layout' => $columns > 0 && $rows > 0 ? ($columns . 'x' . $rows) : '',
+            'columns' => $columns,
+            'rows' => $rows,
+        );
+    }
+
+    private function suggestGridLayoutForQueueCount(int $count): array
+    {
+        if ($count <= 0) {
+            return array(
+                'layout' => '',
+                'columns' => 0,
+                'rows' => 0,
+            );
+        }
+
+        $variants = array(
+            array('columns' => 3, 'rows' => 2),
+            array('columns' => 4, 'rows' => 2),
+            array('columns' => 3, 'rows' => 3),
+            array('columns' => 4, 'rows' => 3),
+            array('columns' => 5, 'rows' => 3),
+            array('columns' => 5, 'rows' => 4),
+            array('columns' => 6, 'rows' => 3),
+            array('columns' => 6, 'rows' => 4),
+            array('columns' => 6, 'rows' => 5),
+        );
+        $targetGraphics = 10;
+
+        foreach ($variants as $variant) {
+            $capacity = (int) $variant['columns'] * (int) $variant['rows'];
+            if ($capacity <= 0) {
+                continue;
+            }
+
+            $graphics = (int) ceil($count / $capacity);
+            if ($graphics <= $targetGraphics) {
+                return array(
+                    'layout' => $variant['columns'] . 'x' . $variant['rows'],
+                    'columns' => (int) $variant['columns'],
+                    'rows' => (int) $variant['rows'],
+                );
+            }
+        }
+
+        $last = $variants[count($variants) - 1];
+        return array(
+            'layout' => $last['columns'] . 'x' . $last['rows'],
+            'columns' => (int) $last['columns'],
+            'rows' => (int) $last['rows'],
+        );
     }
 
     private function columnsForPreview(array $columns): array

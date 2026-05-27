@@ -13,6 +13,7 @@ use App\Models\ProductAllegroParameterRepository;
 use App\Models\ProductChangeLogRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductEmpikParameterRepository;
+use App\Models\ProductTemuParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
@@ -34,6 +35,9 @@ class ProductController extends Controller
 
     /** @var ProductEmpikParameterRepository */
     private $empikParameters;
+
+    /** @var ProductTemuParameterRepository */
+    private $temuParameters;
 
     /** @var CsvTemplateRepository */
     private $csvTemplates;
@@ -66,6 +70,8 @@ class ProductController extends Controller
         $this->allegroParameters->ensureSchema();
         $this->empikParameters = new ProductEmpikParameterRepository($this->db());
         $this->empikParameters->ensureSchema();
+        $this->temuParameters = new ProductTemuParameterRepository($this->db());
+        $this->temuParameters->ensureSchema();
         $this->csvTemplates = new CsvTemplateRepository($this->db());
         $this->csvTemplates->ensureSchema();
         $this->csvTitleTemplates = new CsvTitleTemplateRepository($this->db());
@@ -442,11 +448,34 @@ class ProductController extends Controller
 
         $titleTemplateId = (int) $this->input('title_template_id', 0);
         $titleTemplate = $titleTemplateId > 0 ? $this->csvTitleTemplates->findById($titleTemplateId) : null;
+        $queueRange = strtoupper(trim((string) $this->input('image_queue_range', '')));
+        $queueFrom = $queueRange;
+        $queueTo = $queueRange;
+        if (preg_match('/^\s*([A-Z]*\d+)\s*-\s*([A-Z]*\d+)\s*$/', $queueRange, $queueMatches) === 1) {
+            $queueFrom = (string) $queueMatches[1];
+            $queueTo = (string) $queueMatches[2];
+        }
+
+        $gridLayout = strtolower(trim((string) $this->input('grid_layout', '')));
+        $gridColumns = 0;
+        $gridRows = 0;
+        if (preg_match('/^\s*(\d+)\s*x\s*(\d+)\s*$/', $gridLayout, $gridMatches) === 1) {
+            $gridColumns = max(0, (int) $gridMatches[1]);
+            $gridRows = max(0, (int) $gridMatches[2]);
+            $gridLayout = $gridColumns > 0 && $gridRows > 0 ? ($gridColumns . 'x' . $gridRows) : $gridLayout;
+        }
+
         $exportOptions = array(
             'title_template_id' => $titleTemplateId,
             'title_template_pattern' => is_array($titleTemplate) ? (string) ($titleTemplate['template_body'] ?? '') : '',
             'title_template_name' => is_array($titleTemplate) ? (string) ($titleTemplate['name'] ?? '') : '',
             'collection_name' => trim((string) $this->input('collection_name', '')),
+            'image_queue_range' => $queueRange,
+            'image_queue_from' => $queueFrom,
+            'image_queue_to' => $queueTo,
+            'grid_layout' => $gridLayout,
+            'grid_columns' => $gridColumns,
+            'grid_rows' => $gridRows,
         );
 
         $resolver = new ValueResolver();
@@ -533,6 +562,115 @@ class ProductController extends Controller
                 $product = $this->products->find($productId);
                 if ($product && (int) $product['category_id'] === $categoryId) {
                     $values = $this->empikParameters->allForProduct($productId);
+                }
+            }
+
+            $this->jsonResponse(array('items' => $definitions, 'values' => $values));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function allegrocompatibilitysupport(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        if ($categoryId <= 0) {
+            $this->jsonResponse(array('support' => null, 'values' => array()));
+            return;
+        }
+
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            $this->jsonResponse(array('support' => null, 'values' => array()));
+            return;
+        }
+
+        $allegroCategoryId = trim((string) ($category['allegro_category_id'] ?? ''));
+        if ($allegroCategoryId === '') {
+            $this->jsonResponse(array('support' => null, 'values' => array()));
+            return;
+        }
+
+        try {
+            $support = $this->allegro->compatibilitySupportForCategory($allegroCategoryId);
+            $values = array();
+
+            $includeValues = $this->shouldIncludeCurrentValues();
+            $productId = (int) $this->input('id', 0);
+            if ($includeValues && $productId > 0) {
+                $product = $this->products->find($productId);
+                if ($product && (int) $product['category_id'] === $categoryId) {
+                    $values = $this->allegroParameters->compatibilityListForProduct($productId);
+                }
+            }
+
+            $this->jsonResponse(array('support' => $support, 'values' => $values));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function allegrocompatibleproducts(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        $phrase = trim((string) $this->input('phrase', $this->input('q', '')));
+        if ($categoryId <= 0 || $phrase === '') {
+            $this->jsonResponse(array('items' => array(), 'support' => null));
+            return;
+        }
+
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            $this->jsonResponse(array('items' => array(), 'support' => null));
+            return;
+        }
+
+        $allegroCategoryId = trim((string) ($category['allegro_category_id'] ?? ''));
+        if ($allegroCategoryId === '') {
+            $this->jsonResponse(array('items' => array(), 'support' => null));
+            return;
+        }
+
+        try {
+            $support = $this->allegro->compatibilitySupportForCategory($allegroCategoryId);
+            if (!$support || strtoupper((string) ($support['input_type'] ?? '')) !== 'ID') {
+                $this->jsonResponse(array('items' => array(), 'support' => $support));
+                return;
+            }
+
+            $itemsType = trim((string) ($support['items_type'] ?? ''));
+            $items = $this->allegro->compatibleProductsByPhrase($itemsType, $phrase, 50);
+            $this->jsonResponse(array('items' => $items, 'support' => $support));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+    public function temuparameters(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        if ($categoryId <= 0) {
+            $this->jsonResponse(array('items' => array()));
+            return;
+        }
+
+        try {
+            $definitions = $this->temuDefinitionsForCategory($categoryId);
+            $values = array();
+
+            $includeValues = $this->shouldIncludeCurrentValues();
+            $productId = (int) $this->input('id', 0);
+
+            if ($includeValues && $productId > 0) {
+                $product = $this->products->find($productId);
+                if ($product && (int) $product['category_id'] === $categoryId) {
+                    $values = $this->temuParameters->allForProduct($productId);
                 }
             }
 
@@ -656,6 +794,7 @@ class ProductController extends Controller
 
         $this->jsonResponse(array(
             'values' => $this->allegroParameters->allForProduct($sourceId),
+            'compatibility_list' => $this->allegroParameters->compatibilityListForProduct($sourceId),
             'source' => array(
                 'id' => (int) $sourceProduct['id'],
                 'category_id' => (int) $sourceProduct['category_id'],
@@ -778,6 +917,11 @@ class ProductController extends Controller
                 $this->empikParameters->replaceForProduct($productId, $empikValues);
             }
 
+            $temuDefinitions = $this->temuDefinitionsForCategory((int) $data['category_id']);
+            $temuValues = $this->extractTemuParameters($temuDefinitions);
+            $this->temuParameters->replaceForProduct($productId, $temuValues);
+            $this->allegroParameters->replaceCompatibilityListForProduct($productId, $this->extractCompatibilityList((int) $data['category_id']));
+
             $this->customFields->replaceForProduct($productId, $this->extractCustomFieldValues());
             $this->sharedStockGroups->syncProductRelations(
                 $productId,
@@ -801,7 +945,9 @@ class ProductController extends Controller
                 './index.php?controller=products&action=store',
                 $exception->getMessage(),
                 $this->postedAllegroValues(),
-                $this->postedEmpikValues()
+                $this->postedEmpikValues(),
+                $this->postedTemuValues(),
+                $this->postedCompatibilityList()
             );
         }
     }
@@ -824,7 +970,9 @@ class ProductController extends Controller
             './index.php?controller=products&action=update&id=' . $id,
             null,
             $this->allegroParameters->allForProduct($id),
-            $this->empikParameters->allForProduct($id)
+            $this->empikParameters->allForProduct($id),
+            $this->temuParameters->allForProduct($id),
+            $this->allegroParameters->compatibilityListForProduct($id)
         );
     }
 
@@ -868,6 +1016,15 @@ class ProductController extends Controller
                 $this->empikParameters->replaceForProduct($id, $empikValues);
             }
 
+            if ($categoryChanged) {
+                $this->temuParameters->replaceForProduct($id, array());
+            } else {
+                $temuDefinitions = $this->temuDefinitionsForCategory((int) $data['category_id']);
+                $temuValues = $this->extractTemuParameters($temuDefinitions);
+                $this->temuParameters->replaceForProduct($id, $temuValues);
+            }
+
+            $this->allegroParameters->replaceCompatibilityListForProduct($id, $this->extractCompatibilityList((int) $data['category_id']));
             $this->customFields->replaceForProduct($id, $this->extractCustomFieldValues());
             $this->sharedStockGroups->syncProductRelations(
                 $id,
@@ -894,7 +1051,9 @@ class ProductController extends Controller
                 './index.php?controller=products&action=update&id=' . $id,
                 $exception->getMessage(),
                 $this->postedAllegroValues(),
-                $this->postedEmpikValues()
+                $this->postedEmpikValues(),
+                $this->postedTemuValues(),
+                $this->postedCompatibilityList()
             );
         }
     }
@@ -1223,11 +1382,12 @@ class ProductController extends Controller
         $this->redirect('./index.php?controller=products&action=create');
     }
 
-    private function renderForm(string $pageTitle, string $contentTitle, array $product, string $formAction, $flashError = null, array $allegroValues = array(), array $empikValues = array()): void
+    private function renderForm(string $pageTitle, string $contentTitle, array $product, string $formAction, $flashError = null, array $allegroValues = array(), array $empikValues = array(), array $temuValues = array(), array $compatibilityList = array()): void
     {
         $categoryId = isset($product['category_id']) ? (int) $product['category_id'] : 0;
         $allegroDefinitions = array();
         $empikDefinitions = array();
+        $temuDefinitions = array();
         $productHistory = array();
         $productImages = $this->imageUrlsFromValue(isset($product['img']) ? (string) $product['img'] : '');
         $contourDirectories = $this->contourDirectories();
@@ -1243,6 +1403,14 @@ class ProductController extends Controller
 
             try {
                 $empikDefinitions = $this->empikDefinitionsForCategory($categoryId);
+            } catch (Throwable $exception) {
+                if ($flashError === null) {
+                    $flashError = $exception->getMessage();
+                }
+            }
+
+            try {
+                $temuDefinitions = $this->temuDefinitionsForCategory($categoryId);
             } catch (Throwable $exception) {
                 if ($flashError === null) {
                     $flashError = $exception->getMessage();
@@ -1271,9 +1439,13 @@ class ProductController extends Controller
             'allegroDefinitions' => $allegroDefinitions,
             'allegroValues' => $allegroValues,
             'allegroValuesJson' => json_encode($allegroValues),
+            'allegroCompatibilityListJson' => json_encode($compatibilityList, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             'empikDefinitions' => $empikDefinitions,
             'empikValues' => $empikValues,
             'empikValuesJson' => json_encode($empikValues),
+            'temuDefinitions' => $temuDefinitions,
+            'temuValues' => $temuValues,
+            'temuValuesJson' => json_encode($temuValues),
             'customFieldDefinitions' => $this->customFields->definitions(),
             'customFieldValues' => $this->postedCustomFieldValuesForView($this->customFieldValuesForView($product)),
             'assignedCustomFields' => $this->assignedCustomFieldsForView($product),
@@ -1359,6 +1531,23 @@ class ProductController extends Controller
         return is_array($input) ? $input : array();
     }
 
+    private function postedTemuValues(): array
+    {
+        $input = $this->input('temu_parameters', array());
+        return is_array($input) ? $input : array();
+    }
+
+    private function postedCompatibilityList(): array
+    {
+        $raw = $this->input('allegro_compatibility_list_payload', '');
+        if (!is_string($raw) || trim($raw) === '') {
+            return array();
+        }
+
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : array();
+    }
+
     private function extractCustomFieldValues(): array
     {
         $values = array();
@@ -1395,6 +1584,77 @@ class ProductController extends Controller
         }
 
         return $values;
+    }
+
+    private function extractCompatibilityList(int $categoryId): array
+    {
+        $payload = $this->postedCompatibilityList();
+        if ($payload === array() || $categoryId <= 0) {
+            return array();
+        }
+
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            return array();
+        }
+
+        $allegroCategoryId = trim((string) ($category['allegro_category_id'] ?? ''));
+        if ($allegroCategoryId === '') {
+            return array();
+        }
+
+        $support = $this->allegro->compatibilitySupportForCategory($allegroCategoryId);
+        if (!$support || empty($support['input_type'])) {
+            return array();
+        }
+
+        $inputType = strtoupper(trim((string) ($support['input_type'] ?? '')));
+        $validationRules = isset($support['validation_rules']) && is_array($support['validation_rules']) ? $support['validation_rules'] : array();
+        $maxRows = max(1, (int) ($validationRules['maxRows'] ?? 2000));
+        $items = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : array();
+        $normalizedItems = array();
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if ($inputType === 'ID') {
+                $id = trim((string) ($item['id'] ?? ''));
+                if ($id === '') {
+                    continue;
+                }
+
+                $additionalInfoValue = trim((string) ($item['additional_info'] ?? ''));
+                $normalizedItems[] = array(
+                    'id' => $id,
+                    'type' => 'ID',
+                    'text' => trim((string) ($item['text'] ?? '')),
+                    'additionalInfo' => $additionalInfoValue !== '' ? array(array('value' => $additionalInfoValue)) : array(),
+                );
+            } elseif ($inputType === 'TEXT') {
+                $text = trim((string) ($item['text'] ?? ''));
+                if ($text === '') {
+                    continue;
+                }
+
+                $normalizedItems[] = array('text' => $text);
+            }
+
+            if (count($normalizedItems) >= $maxRows) {
+                break;
+            }
+        }
+
+        if ($normalizedItems === array()) {
+            return array();
+        }
+
+        return array(
+            'input_type' => $inputType,
+            'items_type' => trim((string) ($support['items_type'] ?? '')),
+            'items' => $normalizedItems,
+        );
     }
 
     private function customFieldValuesForView(array $product): array
@@ -1496,6 +1756,38 @@ class ProductController extends Controller
         return $this->empik->categoryAttributes($empikCategoryId);
     }
 
+    private function temuDefinitionsForCategory(int $categoryId): array
+    {
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            return array();
+        }
+
+        $raw = trim((string) ($category['temu_category_parameters'] ?? ''));
+        if ($raw === '') {
+            return array();
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return array();
+        }
+
+        $definitions = array();
+        foreach ($decoded as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $definition = $this->normalizeTemuDefinition($item, $index);
+            if ($definition !== null) {
+                $definitions[] = $definition;
+            }
+        }
+
+        return $definitions;
+    }
+
     private function extractAllegroParameters(array $definitions): array
     {
         if ($definitions === array()) {
@@ -1524,6 +1816,57 @@ class ProductController extends Controller
         return $this->empik->validateAttributeValues($definitions, $input);
     }
 
+    private function extractTemuParameters(array $definitions): array
+    {
+        if ($definitions === array()) {
+            return array();
+        }
+
+        $input = $this->input('temu_parameters', array());
+        if (!is_array($input)) {
+            $input = array();
+        }
+
+        $result = array();
+
+        foreach ($definitions as $definition) {
+            if (!is_array($definition) || empty($definition['id'])) {
+                continue;
+            }
+
+            $id = (string) $definition['id'];
+            $type = strtolower((string) ($definition['type'] ?? 'string'));
+            $multiple = !empty($definition['multiple']);
+            $rawValue = array_key_exists($id, $input) ? $input[$id] : null;
+
+            if ($multiple) {
+                $values = is_array($rawValue) ? $rawValue : ($rawValue !== null && $rawValue !== '' ? array($rawValue) : array());
+                $normalizedValues = array();
+
+                foreach ($values as $value) {
+                    $clean = $this->normalizeTemuParameterValue($type, $value);
+                    if ($clean !== null && $clean !== '') {
+                        $normalizedValues[] = $clean;
+                    }
+                }
+
+                $normalizedValues = array_values(array_unique($normalizedValues, SORT_REGULAR));
+                if ($normalizedValues !== array()) {
+                    $result[$id] = $normalizedValues;
+                }
+
+                continue;
+            }
+
+            $clean = $this->normalizeTemuParameterValue($type, $rawValue);
+            if ($clean !== null && $clean !== '') {
+                $result[$id] = $clean;
+            }
+        }
+
+        return $result;
+    }
+
     private function shouldClearAllegroParameters(): bool
     {
         $value = $this->input('clear_allegro_parameters', '0');
@@ -1534,6 +1877,108 @@ class ProductController extends Controller
     {
         $value = $this->input('clear_empik_parameters', '0');
         return $value === '1' || $value === 1 || $value === true || $value === 'true';
+    }
+
+    private function normalizeTemuDefinition(array $item, int $index): ?array
+    {
+        $id = trim((string) ($item['id'] ?? $item['code'] ?? ''));
+        $name = trim((string) ($item['name'] ?? $item['label'] ?? $id));
+
+        if ($id === '') {
+            $id = 'temu_' . ($index + 1);
+        }
+
+        if ($name === '') {
+            $name = $id;
+        }
+
+        $rawType = strtolower(trim((string) ($item['type'] ?? $item['input_type'] ?? 'string')));
+        $type = $rawType !== '' ? $rawType : 'string';
+        $dictionary = array();
+        $values = isset($item['values']) && is_array($item['values']) ? $item['values'] : (isset($item['dictionary']) && is_array($item['dictionary']) ? $item['dictionary'] : array());
+
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                $optionId = trim((string) ($value['id'] ?? $value['value'] ?? ''));
+                $optionLabel = trim((string) ($value['label'] ?? $value['name'] ?? $optionId));
+            } else {
+                $optionId = trim((string) $value);
+                $optionLabel = $optionId;
+            }
+
+            if ($optionId === '') {
+                continue;
+            }
+
+            $dictionary[] = array(
+                'id' => $optionId,
+                'value' => $optionLabel !== '' ? $optionLabel : $optionId,
+            );
+        }
+
+        if ($dictionary !== array() && in_array($type, array('enum', 'select', 'list'), true)) {
+            $type = 'dictionary';
+        }
+
+        return array(
+            'id' => $id,
+            'name' => $name,
+            'type' => $type,
+            'required' => !empty($item['required']),
+            'multiple' => !empty($item['multiple']),
+            'dictionary' => $dictionary,
+            'restrictions' => isset($item['restrictions']) && is_array($item['restrictions']) ? $item['restrictions'] : array(),
+        );
+    }
+
+    private function normalizeTemuParameterValue(string $type, $value)
+    {
+        if (is_array($value)) {
+            return array_values(array_filter(array_map(function ($item) use ($type) {
+                return $this->normalizeTemuParameterValue($type, $item);
+            }, $value), static function ($item) {
+                return $item !== null && $item !== '';
+            }));
+        }
+
+        if ($value === null) {
+            return null;
+        }
+
+        $clean = trim((string) $value);
+        if ($clean === '') {
+            return null;
+        }
+
+        if (in_array($type, array('integer', 'int', 'number'), true)) {
+            if (!is_numeric(str_replace(',', '.', $clean))) {
+                return null;
+            }
+
+            return (int) round((float) str_replace(',', '.', $clean));
+        }
+
+        if (in_array($type, array('float', 'decimal'), true)) {
+            if (!is_numeric(str_replace(',', '.', $clean))) {
+                return null;
+            }
+
+            return (float) str_replace(',', '.', $clean);
+        }
+
+        if (in_array($type, array('boolean', 'bool'), true)) {
+            $normalized = strtolower($clean);
+            if (in_array($normalized, array('1', 'true', 'tak', 'yes'), true)) {
+                return true;
+            }
+            if (in_array($normalized, array('0', 'false', 'nie', 'no'), true)) {
+                return false;
+            }
+
+            return null;
+        }
+
+        return $clean;
     }
 
     private function shouldIncludeCurrentValues(): bool

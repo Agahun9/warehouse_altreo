@@ -16,7 +16,6 @@
       </div>
     </div>
   </div>
-
   <div class="app-content">
     <div class="container-fluid">
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
@@ -1331,7 +1330,28 @@
       + '      <div class="col-12"><label class="form-label small">Makro miniatur</label><textarea class="form-control form-control-sm image-option-thumbnail-macro" rows="2">' + escapeHtml(imageOptions.thumbnail_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\{ldelim}{ldelim}collection_code{rdelim}{rdelim}\\miniatura_t_{ldelim}{ldelim}index{rdelim}{rdelim}.png') + '</textarea></div>'
       + '      <div class="col-12"><label class="form-label small">Makro mockupow / gridow</label><textarea class="form-control form-control-sm image-option-mockup-macro" rows="2">' + escapeHtml(imageOptions.mockup_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\mockup_{ldelim}{ldelim}index{rdelim}{rdelim}.jpg') + '</textarea></div>'
       + '      <div class="col-12"><label class="form-label small">Makro zdjec</label><textarea class="form-control form-control-sm image-option-image-macro" rows="2">' + escapeHtml(imageOptions.image_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\{ldelim}{ldelim}collection_code{rdelim}{rdelim}\\{ldelim}{ldelim}index{rdelim}{rdelim}.jpg') + '</textarea></div>'
-      + '      <div class="col-12 small text-secondary">Tokeny: {ldelim}{ldelim}base_directory{rdelim}{rdelim}, {ldelim}{ldelim}contours{rdelim}{rdelim}, {ldelim}{ldelim}collection_code{rdelim}{rdelim}, {ldelim}{ldelim}collection_name{rdelim}{rdelim}, {ldelim}{ldelim}product_name{rdelim}{rdelim}, {ldelim}{ldelim}product_slug{rdelim}{rdelim}, {ldelim}{ldelim}sku{rdelim}{rdelim}, {ldelim}{ldelim}old_sku{rdelim}{rdelim}, {ldelim}{ldelim}price{rdelim}{rdelim}, {ldelim}{ldelim}index{rdelim}{rdelim}, {ldelim}{ldelim}index0{rdelim}{rdelim}</div>'
+      + '      <div class="col-12 small text-secondary">'
+      + '        <div class="fw-semibold mb-1">Tokeny makr obrazow</div>'
+      + '        <div><code>{ldelim}{ldelim}base_directory{rdelim}{rdelim}</code> - katalog bazowy eksportu.</div>'
+      + '        <div><code>{ldelim}{ldelim}contours{rdelim}{rdelim}</code> - folder / wartosc z pola contours produktu.</div>'
+      + '        <div><code>{ldelim}{ldelim}collection_code{rdelim}{rdelim}</code> - numer kolekcji wpisany przy eksporcie, np. <code>A100</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}collection_code_index{rdelim}{rdelim}</code> - numeracja od kodu kolekcji, np. dla <code>A100</code>: <code>A100</code>, <code>A101</code>, <code>A102</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}collection_name{rdelim}{rdelim}</code> - nazwa kolekcji wpisana przy eksporcie.</div>'
+      + '        <div><code>{ldelim}{ldelim}queue_range{rdelim}{rdelim}</code> - zakres kolejki wpisany przy eksporcie, np. <code>A100-A250</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}queue_from{rdelim}{rdelim}</code> - poczatek zakresu kolejki, np. <code>A100</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}queue_to{rdelim}{rdelim}</code> - koniec zakresu kolejki, np. <code>A250</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}grid{rdelim}{rdelim}</code> lub <code>{ldelim}{ldelim}grid_layout{rdelim}{rdelim}</code> - grid wpisany / wyliczony przy eksporcie, np. <code>4x3</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}grid_columns{rdelim}{rdelim}</code> - liczba kolumn grida.</div>'
+      + '        <div><code>{ldelim}{ldelim}grid_rows{rdelim}{rdelim}</code> - liczba wierszy grida.</div>'
+      + '        <div><code>{ldelim}{ldelim}index_grid_count{rdelim}{rdelim}</code> - ile finalnie wyjdzie grafik z zakresu kolejki i grida, np. <code>4</code>.</div>'
+      + '        <div><code>{ldelim}{ldelim}product_name{rdelim}{rdelim}</code> - pelna nazwa produktu.</div>'
+      + '        <div><code>{ldelim}{ldelim}product_slug{rdelim}{rdelim}</code> - nazwa produktu zamieniona na bezpieczny slug.</div>'
+      + '        <div><code>{ldelim}{ldelim}sku{rdelim}{rdelim}</code> - aktualne SKU produktu.</div>'
+      + '        <div><code>{ldelim}{ldelim}old_sku{rdelim}{rdelim}</code> - stare SKU produktu, jesli istnieje.</div>'
+      + '        <div><code>{ldelim}{ldelim}price{rdelim}{rdelim}</code> - cena wpisana przy eksporcie.</div>'
+      + '        <div><code>{ldelim}{ldelim}index{rdelim}{rdelim}</code> - numer elementu od 1.</div>'
+      + '        <div><code>{ldelim}{ldelim}index0{rdelim}{rdelim}</code> - numer elementu od 0.</div>'
+      + '      </div>'
       + '    </div>'
       + '    <div class="d-flex justify-content-between align-items-center mb-2">'
       + '      <div>'

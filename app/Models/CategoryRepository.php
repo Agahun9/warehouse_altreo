@@ -42,6 +42,10 @@ class CategoryRepository
             . "sku_prefix VARCHAR(20) NOT NULL DEFAULT 'PRD',\n"
             . "allegro_category_id VARCHAR(64) DEFAULT NULL,\n"
             . "empik_category_id VARCHAR(190) DEFAULT NULL,\n"
+            . "temu_category_id VARCHAR(190) DEFAULT NULL,\n"
+            . "temu_category_name VARCHAR(255) DEFAULT NULL,\n"
+            . "temu_category_path TEXT DEFAULT NULL,\n"
+            . "temu_category_parameters LONGTEXT DEFAULT NULL,\n"
             . "end_offers_below_quantity INT UNSIGNED DEFAULT NULL,\n"
             . "description TEXT DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
@@ -50,7 +54,8 @@ class CategoryRepository
             . "UNIQUE KEY ux_categories_slug (slug),\n"
             . "KEY idx_categories_name (name),\n"
             . "KEY idx_categories_allegro (allegro_category_id),\n"
-            . "KEY idx_categories_empik (empik_category_id)\n"
+            . "KEY idx_categories_empik (empik_category_id),\n"
+            . "KEY idx_categories_temu (temu_category_id)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
@@ -80,6 +85,42 @@ class CategoryRepository
 
             if (!$hasEmpikColumn) {
                 $this->database->query("ALTER TABLE categories ADD COLUMN empik_category_id VARCHAR(190) NULL AFTER allegro_category_id");
+            }
+
+            $hasTemuIdColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'temu_category_id')
+            ) > 0;
+
+            if (!$hasTemuIdColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_id VARCHAR(190) NULL AFTER empik_category_id");
+            }
+
+            $hasTemuNameColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'temu_category_name')
+            ) > 0;
+
+            if (!$hasTemuNameColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_name VARCHAR(255) NULL AFTER temu_category_id");
+            }
+
+            $hasTemuPathColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'temu_category_path')
+            ) > 0;
+
+            if (!$hasTemuPathColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_path TEXT NULL AFTER temu_category_name");
+            }
+
+            $hasTemuParametersColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'temu_category_parameters')
+            ) > 0;
+
+            if (!$hasTemuParametersColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_parameters LONGTEXT NULL AFTER temu_category_path");
             }
 
             $hasEndOffersColumn = (int) $this->database->fetchColumn(
@@ -180,6 +221,10 @@ class CategoryRepository
             'sku_prefix' => 'PRD',
             'allegro_category_id' => null,
             'empik_category_id' => null,
+            'temu_category_id' => null,
+            'temu_category_name' => null,
+            'temu_category_path' => null,
+            'temu_category_parameters' => null,
             'end_offers_below_quantity' => null,
             'description' => 'Domyslna kategoria systemowa.',
         ));
@@ -249,6 +294,60 @@ class CategoryRepository
         return max(0, (int) $value);
     }
 
+    public function normalizeTemuCategoryId($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/[[:cntrl:]]+/u', '', $value);
+        $value = trim((string) $value);
+
+        return $value !== '' ? mb_substr($value, 0, 190, 'UTF-8') : null;
+    }
+
+    public function normalizeTemuCategoryName($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/[[:cntrl:]]+/u', '', $value);
+        $value = trim((string) $value);
+
+        return $value !== '' ? mb_substr($value, 0, 255, 'UTF-8') : null;
+    }
+
+    public function normalizeTemuCategoryPath($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/[[:cntrl:]]+/u', '', $value);
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
+    }
+
+    public function normalizeTemuCategoryParameters($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return null;
+        }
+
+        return json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
     public function slugify($text): string
     {
         $text = trim((string) $text);
@@ -264,4 +363,3 @@ class CategoryRepository
         return $text !== '' ? $text : 'kategoria';
     }
 }
-

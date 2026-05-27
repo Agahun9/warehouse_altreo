@@ -1115,6 +1115,153 @@ class AllegroService
         return $result;
     }
 
+    public function compatibilitySupportedCategories(): array
+    {
+        $cacheKey = 'allegro_compatibility_supported_categories_v1';
+        $cached = $this->storage->getCache($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $payload = $this->requestApi(
+            'GET',
+            '/sale/compatibility-list/supported-categories',
+            array(),
+            null,
+            array('Accept: application/vnd.allegro.public.v1+json')
+        );
+        $rows = isset($payload['supportedCategories']) && is_array($payload['supportedCategories'])
+            ? $payload['supportedCategories']
+            : array();
+
+        $result = array();
+        foreach ($rows as $row) {
+            if (!is_array($row) || empty($row['categoryId'])) {
+                continue;
+            }
+
+            $result[] = array(
+                'category_id' => (string) $row['categoryId'],
+                'input_type' => strtoupper(trim((string) ($row['inputType'] ?? ''))),
+                'items_type' => strtoupper(trim((string) ($row['itemsType'] ?? ''))),
+                'name' => trim((string) ($row['name'] ?? '')),
+                'validation_rules' => isset($row['validationRules']) && is_array($row['validationRules']) ? $row['validationRules'] : array(),
+            );
+        }
+
+        $this->storage->putCache($cacheKey, $result, $this->cacheTtl());
+        return $result;
+    }
+
+    public function compatibilitySupportForCategory(string $categoryId): ?array
+    {
+        $categoryId = trim($categoryId);
+        if ($categoryId === '') {
+            return null;
+        }
+
+        $supported = $this->compatibilitySupportedCategories();
+        if ($supported === array()) {
+            return null;
+        }
+
+        $byCategoryId = array();
+        foreach ($supported as $item) {
+            if (!is_array($item) || empty($item['category_id'])) {
+                continue;
+            }
+
+            $byCategoryId[(string) $item['category_id']] = $item;
+        }
+
+        $currentId = $categoryId;
+        $visited = array();
+        while ($currentId !== '' && !isset($visited[$currentId])) {
+            $visited[$currentId] = true;
+
+            if (isset($byCategoryId[$currentId])) {
+                return $byCategoryId[$currentId];
+            }
+
+            $details = $this->categoryDetails($currentId, false);
+            if (!$details || empty($details['parent_id'])) {
+                break;
+            }
+
+            $currentId = (string) $details['parent_id'];
+        }
+
+        return null;
+    }
+
+    public function compatibleProductsByPhrase(string $itemsType, string $phrase, int $limit = 50): array
+    {
+        $itemsType = strtoupper(trim($itemsType));
+        $phrase = trim($phrase);
+        if ($itemsType === '' || $phrase === '') {
+            return array();
+        }
+
+        $payload = $this->requestApi(
+            'GET',
+            '/sale/compatible-products',
+            array(
+                'type' => $itemsType,
+                'phrase' => $phrase,
+            ),
+            null,
+            array('Accept: application/vnd.allegro.public.v1+json')
+        );
+
+        $rows = isset($payload['compatibleProducts']) && is_array($payload['compatibleProducts'])
+            ? $payload['compatibleProducts']
+            : array();
+        $result = array();
+
+        foreach ($rows as $row) {
+            if (!is_array($row) || empty($row['id'])) {
+                continue;
+            }
+
+            $additionalAttributes = array();
+            if (isset($row['attributes']) && is_array($row['attributes'])) {
+                foreach ($row['attributes'] as $attribute) {
+                    if (!is_array($attribute) || empty($attribute['id'])) {
+                        continue;
+                    }
+
+                    $values = isset($attribute['values']) && is_array($attribute['values']) ? $attribute['values'] : array();
+                    $cleanValues = array();
+                    foreach ($values as $value) {
+                        $value = trim((string) $value);
+                        if ($value !== '') {
+                            $cleanValues[] = $value;
+                        }
+                    }
+
+                    if ($cleanValues !== array()) {
+                        $additionalAttributes[] = array(
+                            'id' => (string) $attribute['id'],
+                            'values' => $cleanValues,
+                        );
+                    }
+                }
+            }
+
+            $result[] = array(
+                'id' => (string) $row['id'],
+                'text' => trim((string) ($row['text'] ?? '')),
+                'attributes' => $additionalAttributes,
+            );
+
+            if (count($result) >= $limit) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
     private function responsibleProducersForAccount(array $account): array
     {
         $accountId = (int) ($account['id'] ?? 0);

@@ -42,10 +42,16 @@ class CsvExportPresetRepository
             . "title_template_id INT UNSIGNED NOT NULL DEFAULT 0,\n"
             . "collection_name VARCHAR(255) DEFAULT NULL,\n"
             . "image_collection_code VARCHAR(120) DEFAULT NULL,\n"
+            . "image_queue_range VARCHAR(120) DEFAULT NULL,\n"
+            . "image_queue_from VARCHAR(120) DEFAULT NULL,\n"
+            . "image_queue_to VARCHAR(120) DEFAULT NULL,\n"
             . "price_to_csv VARCHAR(120) DEFAULT NULL,\n"
             . "thumbnail_count INT UNSIGNED NOT NULL DEFAULT 0,\n"
             . "mockup_count INT UNSIGNED NOT NULL DEFAULT 0,\n"
             . "image_count INT UNSIGNED NOT NULL DEFAULT 0,\n"
+            . "grid_layout VARCHAR(32) DEFAULT NULL,\n"
+            . "grid_columns INT UNSIGNED NOT NULL DEFAULT 0,\n"
+            . "grid_rows INT UNSIGNED NOT NULL DEFAULT 0,\n"
             . "image_base_directory VARCHAR(255) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "PRIMARY KEY (id),\n"
@@ -53,6 +59,16 @@ class CsvExportPresetRepository
             . "KEY idx_csv_export_presets_template (template_id)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        $databaseName = isset($config['database']) ? (string) $config['database'] : '';
+        if ($databaseName !== '') {
+            $this->ensureColumnExists($databaseName, 'image_queue_range', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_range VARCHAR(120) DEFAULT NULL AFTER image_collection_code');
+            $this->ensureColumnExists($databaseName, 'image_queue_from', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_from VARCHAR(120) DEFAULT NULL AFTER image_queue_range');
+            $this->ensureColumnExists($databaseName, 'image_queue_to', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_to VARCHAR(120) DEFAULT NULL AFTER image_queue_from');
+            $this->ensureColumnExists($databaseName, 'grid_layout', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_layout VARCHAR(32) DEFAULT NULL AFTER image_count');
+            $this->ensureColumnExists($databaseName, 'grid_columns', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_columns INT UNSIGNED NOT NULL DEFAULT 0 AFTER grid_layout');
+            $this->ensureColumnExists($databaseName, 'grid_rows', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_rows INT UNSIGNED NOT NULL DEFAULT 0 AFTER grid_columns');
+        }
 
         self::$schemaEnsured = true;
     }
@@ -100,5 +116,21 @@ class CsvExportPresetRepository
             . ' LIMIT ' . $limit,
             array('user_id' => $userId)
         );
+    }
+
+    private function ensureColumnExists(string $databaseName, string $columnName, string $alterSql): void
+    {
+        $exists = (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            array(
+                'schema' => $databaseName,
+                'table' => self::TABLE,
+                'column' => $columnName,
+            )
+        );
+
+        if ($exists === 0) {
+            $this->database->query($alterSql);
+        }
     }
 }

@@ -1074,6 +1074,20 @@
                 <label class="form-label small">Kolekcja numeracja</label>
                 <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A100">
               </div>
+              <div class="col-md-4">
+                <label class="form-label small">Zakres kolejki</label>
+                <input type="text" name="image_queue_range" class="form-control form-control-sm" placeholder="np. A100-A250">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Grid</label>
+                <div class="input-group input-group-sm">
+                  <input type="text" name="grid_layout" class="form-control form-control-sm" placeholder="np. 3x2">
+                  <button type="button" class="btn btn-outline-secondary" id="csvExportGridAutoBtn">Auto</button>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="small text-secondary" id="csvExportGridHint">Wpisz zakres kolejki, aby wstepnie wyliczyc grid. Pole grid mozesz potem zmienic recznie.</div>
+              </div>
               <div class="col-md-8">
                 <label class="form-label small">Cena</label>
                 <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="Cena">
@@ -1096,7 +1110,7 @@
               </div>
             </div>
             <div class="form-text">
-              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu.
+              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu. Zakres kolejki i grid trafiaja tez do CSV jako pola / tokeny generatora grafik.
             </div>
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3">
@@ -1304,6 +1318,10 @@ document.addEventListener('DOMContentLoaded', function() {
   var titleTemplateSelect = document.querySelector('select[name="title_template_id"]');
   var collectionNameInput = document.getElementById('csvExportCollectionName');
   var imageCollectionCodeInput = document.querySelector('input[name="image_collection_code"]');
+  var imageQueueRangeInput = document.querySelector('input[name="image_queue_range"]');
+  var gridLayoutInput = document.querySelector('input[name="grid_layout"]');
+  var gridAutoButton = document.getElementById('csvExportGridAutoBtn');
+  var gridHint = document.getElementById('csvExportGridHint');
   var priceToCsvInput = document.querySelector('input[name="price_to_csv"]');
   var thumbnailCountInput = document.querySelector('input[name="thumbnail_count"]');
   var mockupCountInput = document.querySelector('input[name="mockup_count"]');
@@ -1438,6 +1456,109 @@ document.addEventListener('DOMContentLoaded', function() {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function parseQueueRange(value) {
+    var normalized = String(value || '').trim().toUpperCase();
+    if (normalized === '') {
+      return { range: '', from: '', to: '', count: 0 };
+    }
+
+    var match = normalized.match(/^([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)$/);
+    if (!match) {
+      return { range: normalized, from: normalized, to: normalized, count: 1 };
+    }
+
+    var prefixFrom = String(match[1] || '');
+    var prefixTo = String(match[3] || prefixFrom);
+    var numberFrom = Number(match[2] || 0);
+    var numberTo = Number(match[4] || 0);
+
+    if (prefixFrom !== prefixTo || numberTo < numberFrom) {
+      return { range: normalized, from: normalized, to: normalized, count: 1 };
+    }
+
+    var fromValue = prefixFrom + String(match[2] || '');
+    var toValue = prefixTo + String(match[4] || '');
+    return {
+      range: fromValue + '-' + toValue,
+      from: fromValue,
+      to: toValue,
+      count: (numberTo - numberFrom) + 1
+    };
+  }
+
+  function suggestedGridLayout(count) {
+    var total = Math.max(0, Number(count || 0));
+    var variants = [
+      { layout: '3x2', capacity: 6 },
+      { layout: '4x2', capacity: 8 },
+      { layout: '3x3', capacity: 9 },
+      { layout: '4x3', capacity: 12 },
+      { layout: '5x3', capacity: 15 },
+      { layout: '5x4', capacity: 20 },
+      { layout: '6x3', capacity: 18 },
+      { layout: '6x4', capacity: 24 },
+      { layout: '6x5', capacity: 30 }
+    ];
+    var targetGraphics = 10;
+    var fallback = { layout: '', graphics: 0, capacity: 0 };
+
+    if (total <= 0) {
+      return fallback;
+    }
+
+    for (var i = 0; i < variants.length; i++) {
+      var graphics = Math.ceil(total / variants[i].capacity);
+      if (graphics <= targetGraphics) {
+        return {
+          layout: variants[i].layout,
+          graphics: graphics,
+          capacity: variants[i].capacity
+        };
+      }
+    }
+
+    var last = variants[variants.length - 1];
+    return {
+      layout: last.layout,
+      graphics: Math.ceil(total / last.capacity),
+      capacity: last.capacity
+    };
+  }
+
+  function updateGridHint(count, suggestion, manual) {
+    if (!gridHint) {
+      return;
+    }
+
+    if (!count) {
+      gridHint.textContent = 'Wpisz zakres kolejki, aby wstepnie wyliczyc grid. Pole grid mozesz potem zmienic recznie.';
+      return;
+    }
+
+    var layout = suggestion && suggestion.layout ? suggestion.layout : '-';
+    var graphics = suggestion && suggestion.graphics ? suggestion.graphics : 0;
+
+    gridHint.textContent = manual
+      ? ('Zakres obejmuje ' + String(count) + ' pozycji. Autopodpowiedz to ' + layout
+        + ' i wyjdzie z tego ok. ' + String(graphics) + ' grafik, ale obecny grid zostal ustawiony recznie.')
+      : ('Zakres obejmuje ' + String(count) + ' pozycji. Wstepnie wyliczony grid: ' + layout
+        + '. Wyjdzie z tego ok. ' + String(graphics) + ' grafik. Mozesz go zmienic recznie.');
+  }
+
+  function recalculateGridSuggestion(forceApply) {
+    var queue = parseQueueRange(imageQueueRangeInput ? imageQueueRangeInput.value : '');
+    var suggested = suggestedGridLayout(queue.count);
+    var manualOverride = gridLayoutInput && gridLayoutInput.dataset.manualOverride === '1';
+
+    if (gridLayoutInput && suggested.layout !== '' && (forceApply || !manualOverride || String(gridLayoutInput.value || '').trim() === '')) {
+      gridLayoutInput.value = suggested.layout;
+      gridLayoutInput.dataset.manualOverride = forceApply ? '0' : (manualOverride ? '1' : '0');
+      manualOverride = gridLayoutInput.dataset.manualOverride === '1';
+    }
+
+    updateGridHint(queue.count, suggested, manualOverride);
   }
 
   function fillSelectedProductsContainer(containerId, ids) {
@@ -1643,7 +1764,9 @@ document.addEventListener('DOMContentLoaded', function() {
       generatedTitlePreviewUrl
         + '&product_id=' + encodeURIComponent(productId)
         + '&title_template_id=' + encodeURIComponent(titleTemplateId)
-        + '&collection_name=' + encodeURIComponent(collectionName),
+        + '&collection_name=' + encodeURIComponent(collectionName)
+        + '&image_queue_range=' + encodeURIComponent(imageQueueRangeInput ? String(imageQueueRangeInput.value || '').trim() : '')
+        + '&grid_layout=' + encodeURIComponent(gridLayoutInput ? String(gridLayoutInput.value || '').trim() : ''),
       { headers: { 'Accept': 'application/json' } }
     )
       .then(function (response) {
@@ -1700,6 +1823,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (imageCollectionCodeInput) {
       imageCollectionCodeInput.value = String(item.image_collection_code || '');
     }
+    if (imageQueueRangeInput) {
+      imageQueueRangeInput.value = String(item.image_queue_range || '');
+    }
+    if (gridLayoutInput) {
+      gridLayoutInput.value = String(item.grid_layout || '');
+      gridLayoutInput.dataset.manualOverride = '0';
+    }
     if (priceToCsvInput) {
       priceToCsvInput.value = String(item.price_to_csv || '');
     }
@@ -1723,6 +1853,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateGeneratedTitlePreview();
+    recalculateGridSuggestion(false);
   }
 
   function applyPartialRecentExportPresetByIndex(index) {
@@ -1736,6 +1867,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (imageCollectionCodeInput) {
       imageCollectionCodeInput.value = String(item.image_collection_code || '');
+    }
+    if (imageQueueRangeInput) {
+      imageQueueRangeInput.value = String(item.image_queue_range || '');
+    }
+    if (gridLayoutInput) {
+      gridLayoutInput.value = String(item.grid_layout || '');
+      gridLayoutInput.dataset.manualOverride = '0';
     }
     if (thumbnailCountInput) {
       thumbnailCountInput.value = String(item.thumbnail_count || 0);
@@ -1755,6 +1893,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateGeneratedTitlePreview();
+    recalculateGridSuggestion(false);
   }
 
   function scheduleRecentExportPresetsReload() {
@@ -1790,7 +1929,8 @@ document.addEventListener('DOMContentLoaded', function() {
         + '</div>'
         + '<div class="col-lg-5">'
         + '<div class="small text-secondary text-truncate">Kol. tytul: ' + escapeHtml(item.collection_name || '-') + '</div>'
-        + '<div class="small text-secondary text-truncate">Kol. nr: ' + escapeHtml(item.image_collection_code || '-') + ' | Min: ' + escapeHtml(item.thumbnail_count || 0) + ' | Mock: ' + escapeHtml(item.mockup_count || 0) + ' | Zdj: ' + escapeHtml(item.image_count || 0) + '</div>'
+        + '<div class="small text-secondary text-truncate">Kol. nr: ' + escapeHtml(item.image_collection_code || '-') + ' | Kolejka: ' + escapeHtml(item.image_queue_range || '-') + ' | Grid: ' + escapeHtml(item.grid_layout || '-') + '</div>'
+        + '<div class="small text-secondary text-truncate">Min: ' + escapeHtml(item.thumbnail_count || 0) + ' | Mock: ' + escapeHtml(item.mockup_count || 0) + ' | Zdj: ' + escapeHtml(item.image_count || 0) + '</div>'
         + '</div>'
         + '<div class="col-lg-3">'
         + '<div class="d-flex justify-content-lg-end gap-2 flex-wrap">'
@@ -2098,6 +2238,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (csvExportModalEl) {
     csvExportModalEl.addEventListener('show.bs.modal', function () {
       loadRecentExportPresets();
+      recalculateGridSuggestion(false);
     });
   }
 
@@ -2130,6 +2271,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (collectionNameInput) {
     collectionNameInput.addEventListener('input', updateGeneratedTitlePreview);
+  }
+
+  if (imageQueueRangeInput) {
+    imageQueueRangeInput.addEventListener('input', function () {
+      recalculateGridSuggestion(false);
+      updateGeneratedTitlePreview();
+    });
+  }
+
+  if (gridLayoutInput) {
+    gridLayoutInput.dataset.manualOverride = '0';
+    gridLayoutInput.addEventListener('input', function () {
+      gridLayoutInput.dataset.manualOverride = '1';
+      var queueCount = parseQueueRange(imageQueueRangeInput ? imageQueueRangeInput.value : '').count;
+      updateGridHint(queueCount, suggestedGridLayout(queueCount), true);
+      updateGeneratedTitlePreview();
+    });
+  }
+
+  if (gridAutoButton) {
+    gridAutoButton.addEventListener('click', function () {
+      if (gridLayoutInput) {
+        gridLayoutInput.dataset.manualOverride = '0';
+      }
+      recalculateGridSuggestion(true);
+      updateGeneratedTitlePreview();
+    });
   }
 
   // Bulk Cancel handler
@@ -2210,6 +2378,7 @@ document.addEventListener('DOMContentLoaded', function() {
     productsFiltersForm.addEventListener('submit', syncCategoryFilterValue);
   }
 
+  recalculateGridSuggestion(false);
   updateCount();
 });
 </script>

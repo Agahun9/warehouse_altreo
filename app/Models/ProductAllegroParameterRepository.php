@@ -12,6 +12,8 @@ use Throwable;
 
 class ProductAllegroParameterRepository
 {
+    public const COMPATIBILITY_LIST_KEY = '__compatibility_list__';
+
     /** @var bool */
     private static $schemaEnsured = false;
 
@@ -59,8 +61,11 @@ class ProductAllegroParameterRepository
     public function allForProduct($productId): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT parameter_id, value FROM product_allegro_parameters WHERE product_id = :product_id ORDER BY parameter_id',
-            array('product_id' => (int) $productId)
+            'SELECT parameter_id, value FROM product_allegro_parameters WHERE product_id = :product_id AND parameter_id <> :compatibility_key ORDER BY parameter_id',
+            array(
+                'product_id' => (int) $productId,
+                'compatibility_key' => self::COMPATIBILITY_LIST_KEY,
+            )
         );
 
         $result = array();
@@ -83,7 +88,14 @@ class ProductAllegroParameterRepository
         try {
             $this->database->transaction(function () use ($productId, $values) {
                 app_log("W transakcji - usuwam parametry dla produktu ID: $productId");
-                $this->database->delete('product_allegro_parameters', 'product_id = :product_id', array('product_id' => $productId));
+                $this->database->delete(
+                    'product_allegro_parameters',
+                    'product_id = :product_id AND parameter_id <> :compatibility_key',
+                    array(
+                        'product_id' => $productId,
+                        'compatibility_key' => self::COMPATIBILITY_LIST_KEY,
+                    )
+                );
 
                 foreach ($values as $parameterId => $value) {
                     app_log("Dodaje parametr $parameterId dla produktu $productId");
@@ -113,7 +125,10 @@ class ProductAllegroParameterRepository
             . ' INNER JOIN products p ON p.id = pap.product_id'
             . ' INNER JOIN categories c ON c.id = p.category_id'
             . ' WHERE p.deleted_at IS NULL'
+            . ' AND pap.parameter_id <> :compatibility_key'
             . ' ORDER BY pap.parameter_id ASC, c.name ASC'
+            ,
+            array('compatibility_key' => self::COMPATIBILITY_LIST_KEY)
         );
 
         if ($rows === array()) {
@@ -167,6 +182,48 @@ class ProductAllegroParameterRepository
         }
 
         return $options;
+    }
+
+    public function compatibilityListForProduct($productId): array
+    {
+        $row = $this->database->fetch(
+            'SELECT value FROM product_allegro_parameters WHERE product_id = :product_id AND parameter_id = :compatibility_key LIMIT 1',
+            array(
+                'product_id' => (int) $productId,
+                'compatibility_key' => self::COMPATIBILITY_LIST_KEY,
+            )
+        );
+
+        if (!$row || !isset($row['value'])) {
+            return array();
+        }
+
+        $decoded = json_decode((string) $row['value'], true);
+        return is_array($decoded) ? $decoded : array();
+    }
+
+    public function replaceCompatibilityListForProduct($productId, array $compatibilityList): void
+    {
+        $productId = (int) $productId;
+
+        $this->database->delete(
+            'product_allegro_parameters',
+            'product_id = :product_id AND parameter_id = :compatibility_key',
+            array(
+                'product_id' => $productId,
+                'compatibility_key' => self::COMPATIBILITY_LIST_KEY,
+            )
+        );
+
+        if ($compatibilityList === array()) {
+            return;
+        }
+
+        $this->database->insert('product_allegro_parameters', array(
+            'product_id' => $productId,
+            'parameter_id' => self::COMPATIBILITY_LIST_KEY,
+            'value' => json_encode($compatibilityList),
+        ));
     }
 
     private function parameterNamesForCategory(string $categoryAllegroId): array
