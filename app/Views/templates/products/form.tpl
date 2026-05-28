@@ -545,15 +545,15 @@
                         <div class="col-md-6">
                           <label for="contoursSearch" class="form-label">Obrys</label>
                           <input type="hidden" id="contours" name="contours" value="{$product.contours|default:''|escape}">
-                          <input type="text" class="form-control mb-2" id="contoursSearch" value="{$product.contours|default:''|escape}" placeholder="Wyszukaj folder z OBRYSY_GENERATOR">
+                          <input type="text" class="form-control mb-2" id="contoursSearch" value="{$product.contours|default:''|escape}" placeholder="Wyszukaj nazwe obrysu">
                           <div class="contour-picker-results" id="contourPickerResults">
                             {foreach $contourDirectories as $contourDirectory}
                               <button type="button" class="contour-picker-option{if $product.contours|default:'' == $contourDirectory} active{/if}" data-contour-option="{$contourDirectory|escape}">{$contourDirectory|escape}</button>
                             {foreachelse}
-                              <div class="small text-secondary p-2">Brak folderow w `OBRYSY_GENERATOR`.</div>
+                              <div class="small text-secondary p-2">Brak zapisanych nazw obrysow.</div>
                             {/foreach}
                           </div>
-                          <div class="form-text">Wybierasz folder z katalogu `OBRYSY_GENERATOR`. Kliknij wynik albo wyszukaj po nazwie.</div>
+                          <div class="form-text">Wybierasz nazwe obrysu z bazy. Kliknij wynik albo wyszukaj po nazwie.</div>
                         </div>
                       </div>
                     </div>
@@ -2991,7 +2991,7 @@
       if (!filtered.length) {
         var empty = document.createElement('div');
         empty.className = 'small text-secondary p-2';
-        empty.textContent = 'Brak folderow pasujacych do wyszukiwania.';
+        empty.textContent = 'Brak obrysow pasujacych do wyszukiwania.';
         contourPickerResults.appendChild(empty);
         return;
       }

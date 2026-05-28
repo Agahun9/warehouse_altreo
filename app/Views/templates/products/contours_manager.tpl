@@ -135,6 +135,11 @@
       transform: translateY(-1px);
     }
 
+    .contours-upload-dropzone.is-busy {
+      opacity: .72;
+      pointer-events: none;
+    }
+
     .contours-upload-dropzone input[type=file] {
       position: absolute;
       inset: 0;
@@ -177,18 +182,9 @@
       <div class="contours-manager-hero mb-4">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
-            <div class="small text-uppercase fw-semibold text-success mb-2">OBRYSY_GENERATOR</div>
-            <h4 class="mb-1">Foldery obrysow i wrzutka plikow</h4>
-            <p class="text-secondary mb-0">Wybierz folder z listy, zmien mu nazwe, usun go albo przerzuc pliki bezposrednio do wybranego katalogu.</p>
-            {if $selectedContourDirectory}
-              <div class="small mt-2 {if $selectedContourDirectoryWritable}text-success{else}text-danger{/if}">
-                {if $selectedContourDirectoryWritable}
-                  Wybrany folder ma uprawnienia do zapisu.
-                {else}
-                  Wybrany folder nie ma uprawnien do zapisu albo serwer nie moze do niego wejsc.
-                {/if}
-              </div>
-            {/if}
+            <div class="small text-uppercase fw-semibold text-success mb-2">Baza danych</div>
+            <h4 class="mb-1">Nazwy obrysow</h4>
+            <p class="text-secondary mb-0">Tutaj zarzadzasz sama lista nazw obrysow. Pliki i foldery mozesz trzymac osobno, a system zapamietuje tylko nazwe potrzebna na produkcie.</p>
           </div>
           <div class="d-flex gap-2">
             <a href="{$baseUrl}?controller=products&action=index" class="btn btn-outline-secondary">Wroc do produktow</a>
@@ -200,16 +196,40 @@
         <div class="col-xl-4">
           <div class="card contours-manager-card mb-4">
             <div class="card-header">
-              <h5 class="mb-1">Dodaj folder</h5>
-              <div class="small text-secondary">Utworz nowy katalog obrysu widoczny potem na formularzu produktu.</div>
+              <h5 class="mb-1">Dodaj obrys</h5>
+              <div class="small text-secondary">Dodaj nowa nazwe obrysu widoczna potem na formularzu produktu.</div>
             </div>
             <div class="card-body">
               <form method="post" action="{$baseUrl}?controller=products&action=createcontourdirectory" class="contours-manager-form">
                 <div>
-                  <label for="contourNewName" class="form-label">Nazwa folderu</label>
+                  <label for="contourNewName" class="form-label">Nazwa obrysu</label>
                   <input type="text" id="contourNewName" name="name" class="form-control" placeholder="np. iphone_16_clear" required>
                 </div>
-                <button type="submit" class="btn btn-success">Dodaj folder</button>
+                <button type="submit" class="btn btn-success">Dodaj obrys</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card contours-manager-card mb-4">
+            <div class="card-header">
+              <h5 class="mb-1">Import folderow</h5>
+              <div class="small text-secondary">Mozesz wskazac wiele folderow naraz. System odczyta ich nazwy i doda tylko brakujace.</div>
+            </div>
+            <div class="card-body">
+              <form method="post" action="{$baseUrl}?controller=products&action=uploadcontourfiles" class="contours-manager-form" enctype="multipart/form-data">
+                <input type="hidden" name="contour_directory_names" id="contourDirectoryNames" value="">
+                <div>
+                  <label for="contourDirectoryFiles" class="form-label">Foldery do porownania</label>
+                  <label class="contours-upload-dropzone" id="contourDirectoryDropzone">
+                    <input type="file" id="contourDirectoryFiles" name="contour_directory_files[]" class="form-control" webkitdirectory directory multiple>
+                    <div class="fw-semibold mb-2">Upusc tutaj kilka folderow naraz</div>
+                    <div class="small text-secondary">Mozesz przeciagnac wiele katalogow jednoczesnie albo kliknac i wybrac folder.</div>
+                    <div class="small text-secondary mt-2" id="contourDirectoryFilesSummary">Nie wybrano jeszcze folderow.</div>
+                  </label>
+                  <div class="form-text">Wrzucone foldery beda porownane z baza. Duplikaty zostana pominiete.</div>
+                  <div class="small mt-2 d-none" id="contourDirectoryImportStatus" role="status" aria-live="polite"></div>
+                </div>
+                <button type="submit" class="btn btn-success" id="contourDirectoryImportButton">Importuj foldery</button>
               </form>
             </div>
           </div>
@@ -217,13 +237,13 @@
           <div class="card contours-manager-card">
             <div class="card-header d-flex justify-content-between align-items-center">
               <div>
-                <h5 class="mb-1">Foldery</h5>
+                <h5 class="mb-1">Obrysy</h5>
                 <div class="small text-secondary">Lacznie: {$contourDirectories|@count}</div>
               </div>
             </div>
             <div class="card-body">
               <div class="contours-directory-search">
-                <input type="text" id="contoursDirectorySearch" class="form-control" placeholder="Wyszukaj folder obrysu">
+                <input type="text" id="contoursDirectorySearch" class="form-control" placeholder="Wyszukaj obrys">
               </div>
               <div class="contours-directory-list">
                 {if $contourDirectories}
@@ -231,7 +251,7 @@
                     <a href="{$baseUrl}?controller=products&action=contoursmanager&directory={$directory.name|escape:'url'}" class="contours-directory-item{if $selectedContourDirectory eq $directory.name} active{/if}" data-directory-item data-directory-name="{$directory.name|lower|escape}">
                       <div class="contours-directory-name">{$directory.name|escape}</div>
                       <div class="contours-directory-meta">
-                        Plikow: {$directory.files_count|escape}
+                        Przypisanych produktow: {$directory.products_count|escape}
                         {if $directory.modified_at}
                           <span class="mx-1">•</span> Ostatnia zmiana: {$directory.modified_at|escape}
                         {/if}
@@ -239,10 +259,10 @@
                     </a>
                   {/foreach}
                 {else}
-                  <div class="text-secondary small">Brak folderow w katalogu OBRYSY_GENERATOR.</div>
+                  <div class="text-secondary small">Brak zapisanych nazw obrysow.</div>
                 {/if}
               </div>
-              <div class="contours-directory-empty mt-3 d-none" id="contoursDirectoryEmpty">Brak folderow pasujacych do wyszukiwania.</div>
+              <div class="contours-directory-empty mt-3 d-none" id="contoursDirectoryEmpty">Brak obrysow pasujacych do wyszukiwania.</div>
             </div>
           </div>
         </div>
@@ -250,12 +270,12 @@
         <div class="col-xl-8">
           <div class="card contours-manager-card mb-4">
             <div class="card-header">
-              <h5 class="mb-1">Wybrany folder</h5>
+              <h5 class="mb-1">Wybrany obrys</h5>
               <div class="small text-secondary">
                 {if $selectedContourDirectory}
                   Aktualnie pracujesz na: <strong>{$selectedContourDirectory|escape}</strong>
                 {else}
-                  Wybierz folder z listy po lewej.
+                  Wybierz obrys z listy po lewej.
                 {/if}
               </div>
             </div>
@@ -266,53 +286,28 @@
                     <form method="post" action="{$baseUrl}?controller=products&action=renamecontourdirectory" class="contours-manager-form">
                       <input type="hidden" name="directory" value="{$selectedContourDirectory|escape}">
                       <div>
-                        <label for="contourRename" class="form-label">Zmien nazwe folderu</label>
+                        <label for="contourRename" class="form-label">Zmien nazwe obrysu</label>
                         <input type="text" id="contourRename" name="new_name" class="form-control" value="{$selectedContourDirectory|escape}" required>
                       </div>
                       <button type="submit" class="btn btn-primary">Zapisz nowa nazwe</button>
                     </form>
                   </div>
                   <div class="col-lg-6">
-                    <form method="post" action="{$baseUrl}?controller=products&action=deletecontourdirectory" class="contours-manager-form" onsubmit="return confirm('Usunac folder {$selectedContourDirectory|escape:'javascript'} wraz z cala zawartoscia?');">
+                    <form method="post" action="{$baseUrl}?controller=products&action=deletecontourdirectory" class="contours-manager-form" onsubmit="return confirm('Usunac obrys {$selectedContourDirectory|escape:'javascript'} z listy? Produkty z tym obrysem zostana wyczyszczone.');">
                       <input type="hidden" name="directory" value="{$selectedContourDirectory|escape}">
                       <div class="small text-secondary">
-                        Usuwanie dziala rekurencyjnie, wiec skasuje tez pliki i podfoldery z wybranego obrysu.
+                        Usuniecie obrysu wyczysci jego nazwe w produktach, ktore sa do niego przypiete.
                       </div>
-                      <button type="submit" class="btn btn-outline-danger">Usun folder</button>
+                      <button type="submit" class="btn btn-outline-danger">Usun obrys</button>
                     </form>
                   </div>
                 </div>
               {else}
-                <div class="text-secondary">Brak wybranego folderu.</div>
+                <div class="text-secondary">Brak wybranego obrysu.</div>
               {/if}
             </div>
           </div>
 
-          <div class="card contours-manager-card mb-4">
-            <div class="card-header">
-              <h5 class="mb-1">Przerzuc aby wgrac</h5>
-              <div class="small text-secondary">Mozesz wrzucic wiele plikow naraz do wybranego folderu obrysu.</div>
-            </div>
-            <div class="card-body">
-              {if $selectedContourDirectory}
-                <form method="post" action="{$contoursUploadUrl|escape}" enctype="multipart/form-data" class="contours-manager-form" id="contoursUploadForm" data-no-page-loader="1">
-                  <input type="hidden" name="directory" value="{$selectedContourDirectory|escape}">
-                  <label class="contours-upload-dropzone" id="contoursUploadDropzone">
-                    <input type="file" name="contour_files[]" id="contourFiles" multiple>
-                    <div class="fw-semibold mb-2">Przerzuc pliki tutaj albo kliknij, aby wybrac</div>
-                    <div class="small text-secondary">Pliki zostana zapisane bezposrednio w folderze <strong>{$selectedContourDirectory|escape}</strong>.</div>
-                    <div class="small mt-2 text-secondary" id="contourFilesSummary">Nie wybrano jeszcze plikow.</div>
-                  </label>
-                  <div class="small mt-2 d-none" id="contourUploadStatus" role="status" aria-live="polite"></div>
-                  <div>
-                    <button type="submit" class="btn btn-success">Wgraj pliki</button>
-                  </div>
-                </form>
-              {else}
-                <div class="text-secondary">Najpierw wybierz folder, do ktorego chcesz wrzucic pliki.</div>
-              {/if}
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -321,39 +316,124 @@
 
 <script>
   (function () {
-    var input = document.getElementById('contourFiles');
-    var summary = document.getElementById('contourFilesSummary');
-    var dropzone = document.getElementById('contoursUploadDropzone');
-    var uploadForm = document.getElementById('contoursUploadForm');
-    var uploadStatus = document.getElementById('contourUploadStatus');
+    var directoryFilesInput = document.getElementById('contourDirectoryFiles');
+    var directoryNamesInput = document.getElementById('contourDirectoryNames');
+    var directoryFilesSummary = document.getElementById('contourDirectoryFilesSummary');
+    var directoryDropzone = document.getElementById('contourDirectoryDropzone');
+    var directoryImportStatus = document.getElementById('contourDirectoryImportStatus');
+    var directoryImportButton = document.getElementById('contourDirectoryImportButton');
+    var importForm = directoryFilesInput ? directoryFilesInput.form : null;
     var searchInput = document.getElementById('contoursDirectorySearch');
     var directoryItems = Array.prototype.slice.call(document.querySelectorAll('[data-directory-item]'));
     var emptyState = document.getElementById('contoursDirectoryEmpty');
+    var stagedDirectoryNames = [];
 
-    function setUploadStatus(message, type) {
-      if (!uploadStatus) {
+    function setDirectoryImportStatus(message, type) {
+      if (!directoryImportStatus) {
         return;
       }
 
-      uploadStatus.classList.remove('d-none', 'text-secondary', 'text-success', 'text-danger');
-      uploadStatus.classList.add(type === 'error' ? 'text-danger' : (type === 'success' ? 'text-success' : 'text-secondary'));
-      uploadStatus.textContent = message || '';
+      directoryImportStatus.classList.remove('d-none', 'text-secondary', 'text-success', 'text-danger');
+      directoryImportStatus.classList.add(type === 'error' ? 'text-danger' : (type === 'success' ? 'text-success' : 'text-secondary'));
+      directoryImportStatus.textContent = message || '';
     }
 
-    function renderSummary() {
-      if (!summary || !input) {
+    function uniqueSortedNames(names) {
+      var seen = {};
+      var result = [];
+      (names || []).forEach(function (name) {
+        var value = String(name || '').trim();
+        if (!value || seen[value]) {
+          return;
+        }
+        seen[value] = true;
+        result.push(value);
+      });
+
+      return result.sort(function (left, right) {
+        return left.localeCompare(right);
+      });
+    }
+
+    function syncDirectoryNamesInput() {
+      if (directoryNamesInput) {
+        directoryNamesInput.value = stagedDirectoryNames.length ? JSON.stringify(stagedDirectoryNames) : '';
+      }
+    }
+
+    function renderDirectoryImportSummary() {
+      if (!directoryFilesInput || !directoryFilesSummary) {
         return;
       }
 
-      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      if (stagedDirectoryNames.length) {
+        directoryFilesSummary.textContent = 'Wykryte foldery: ' + stagedDirectoryNames.join(', ');
+        syncDirectoryNamesInput();
+        return;
+      }
+
+      var files = directoryFilesInput.files ? Array.prototype.slice.call(directoryFilesInput.files) : [];
       if (!files.length) {
-        summary.textContent = 'Nie wybrano jeszcze plikow.';
+        directoryFilesSummary.textContent = 'Nie wybrano jeszcze folderow.';
+        syncDirectoryNamesInput();
         return;
       }
 
-      summary.textContent = 'Wybrane pliki: ' + files.map(function (file) {
-        return file.name;
-      }).join(', ');
+      var uniqueFolders = {};
+      files.forEach(function (file) {
+        var relativePath = String(file.webkitRelativePath || file.name || '');
+        var normalizedPath = relativePath.replace(/\\/g, '/');
+        var folderName = normalizedPath.split('/')[0] || '';
+        if (folderName) {
+          uniqueFolders[folderName] = true;
+        }
+      });
+
+      var names = uniqueSortedNames(Object.keys(uniqueFolders));
+      if (!names.length) {
+        directoryFilesSummary.textContent = 'Wybrano pliki, ale nie udalo sie wykryc nazw folderow.';
+        syncDirectoryNamesInput();
+        return;
+      }
+
+      stagedDirectoryNames = names;
+      directoryFilesSummary.textContent = 'Wykryte foldery: ' + names.join(', ');
+      syncDirectoryNamesInput();
+    }
+
+    function applyDroppedDirectoryNames(names) {
+      stagedDirectoryNames = uniqueSortedNames(names);
+      renderDirectoryImportSummary();
+      setDirectoryImportStatus('', 'info');
+    }
+
+    function extractDroppedDirectoryNames(items) {
+      var result = [];
+      Array.prototype.slice.call(items || []).forEach(function (item) {
+        if (!item) {
+          return;
+        }
+
+        var entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+        if (entry && entry.isDirectory && entry.name) {
+          result.push(entry.name);
+          return;
+        }
+
+        var file = typeof item.getAsFile === 'function' ? item.getAsFile() : null;
+        if (!file) {
+          return;
+        }
+
+        var relativePath = String(file.webkitRelativePath || file.name || '');
+        var normalizedPath = relativePath.replace(/\\/g, '/');
+        var folderName = normalizedPath.split('/')[0] || '';
+        if (folderName) {
+          result.push(folderName);
+        }
+      });
+
+      return uniqueSortedNames(result);
     }
 
     function filterDirectories() {
@@ -378,57 +458,64 @@
       }
     }
 
-    if (input) {
-      input.addEventListener('change', renderSummary);
+    if (directoryFilesInput) {
+      directoryFilesInput.addEventListener('change', function () {
+        stagedDirectoryNames = [];
+        renderDirectoryImportSummary();
+        setDirectoryImportStatus('', 'info');
+      });
+      renderDirectoryImportSummary();
     }
 
-    if (searchInput) {
-      searchInput.addEventListener('input', filterDirectories);
-      filterDirectories();
-    }
-
-    if (dropzone) {
+    if (directoryDropzone) {
       ['dragenter', 'dragover'].forEach(function (eventName) {
-        dropzone.addEventListener(eventName, function (event) {
+        directoryDropzone.addEventListener(eventName, function (event) {
           event.preventDefault();
-          dropzone.classList.add('is-dragover');
+          directoryDropzone.classList.add('is-dragover');
         });
       });
 
-      ['dragleave', 'drop'].forEach(function (eventName) {
-        dropzone.addEventListener(eventName, function (event) {
+      ['dragleave', 'dragend', 'drop'].forEach(function (eventName) {
+        directoryDropzone.addEventListener(eventName, function (event) {
           event.preventDefault();
-          dropzone.classList.remove('is-dragover');
+          directoryDropzone.classList.remove('is-dragover');
         });
       });
 
-      dropzone.addEventListener('drop', function (event) {
-        if (!input || !event.dataTransfer || !event.dataTransfer.files) {
+      directoryDropzone.addEventListener('drop', function (event) {
+        var items = event.dataTransfer && event.dataTransfer.items ? event.dataTransfer.items : [];
+        var names = extractDroppedDirectoryNames(items);
+        if (!names.length) {
+          setDirectoryImportStatus('Nie udalo sie wykryc nazw folderow z upuszczonych elementow.', 'error');
           return;
         }
 
-        input.files = event.dataTransfer.files;
-        renderSummary();
+        applyDroppedDirectoryNames(names);
       });
     }
 
-    if (uploadForm && input && window.fetch && window.FormData) {
-      uploadForm.addEventListener('submit', function (event) {
-        if (!input.files || !input.files.length) {
+    if (importForm && window.fetch && window.FormData) {
+      importForm.addEventListener('submit', function (event) {
+        var files = directoryFilesInput && directoryFilesInput.files ? Array.prototype.slice.call(directoryFilesInput.files) : [];
+        var hasNames = stagedDirectoryNames.length > 0 || (directoryNamesInput && directoryNamesInput.value);
+        if (!hasNames && !files.length) {
           return;
         }
 
         event.preventDefault();
-        setUploadStatus('Trwa wysylanie plikow...', 'info');
+        syncDirectoryNamesInput();
+        setDirectoryImportStatus('Trwa import folderow...', 'info');
 
-        var submitButton = uploadForm.querySelector('button[type="submit"]');
-        if (submitButton) {
-          submitButton.disabled = true;
+        if (directoryImportButton) {
+          directoryImportButton.disabled = true;
+        }
+        if (directoryDropzone) {
+          directoryDropzone.classList.add('is-busy');
         }
 
-        fetch(uploadForm.action, {
+        fetch(importForm.action, {
           method: 'POST',
-          body: new FormData(uploadForm),
+          body: new FormData(importForm),
           credentials: 'same-origin',
           headers: {
             'Accept': 'application/json',
@@ -446,26 +533,31 @@
           })
           .then(function (result) {
             if (!result.ok || result.payload.error) {
-              throw new Error(result.payload.error || ('Upload nie udal sie. Kod: ' + result.status));
+              throw new Error(result.payload.error || ('Import nie udal sie. Kod: ' + result.status));
             }
 
-            setUploadStatus(result.payload.message || 'Pliki zostaly wgrane.', 'success');
-            input.value = '';
-            renderSummary();
-
+            setDirectoryImportStatus(result.payload.message || 'Foldery zostaly zaimportowane.', 'success');
             window.setTimeout(function () {
               window.location.href = result.payload.redirect || window.location.href;
-            }, 450);
+            }, 350);
           })
           .catch(function (error) {
-            setUploadStatus(error && error.message ? error.message : 'Przegladarka zablokowala wysylke lub serwer odrzucil upload.', 'error');
+            setDirectoryImportStatus(error && error.message ? error.message : 'Nie udalo sie zaimportowac folderow.', 'error');
           })
           .finally(function () {
-            if (submitButton) {
-              submitButton.disabled = false;
+            if (directoryImportButton) {
+              directoryImportButton.disabled = false;
+            }
+            if (directoryDropzone) {
+              directoryDropzone.classList.remove('is-busy');
             }
           });
       });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', filterDirectories);
+      filterDirectories();
     }
   })();
 </script>

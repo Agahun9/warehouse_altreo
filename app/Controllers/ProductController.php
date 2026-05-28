@@ -102,6 +102,7 @@ class ProductController extends Controller
             'quantity' => trim((string) $this->input('filter_quantity', '')),
             'localization' => trim((string) $this->input('filter_localization', '')),
             'with_glass' => trim((string) $this->input('filter_with_glass', '0')),
+            'contours' => trim((string) $this->input('filter_contours', '')),
         );
 
         $sortBy = trim((string) $this->input('sort_by', ''));
@@ -159,6 +160,7 @@ class ProductController extends Controller
             'totalProducts' => $totalProducts,
             'filters' => $filters,
             'withGlassFilter' => isset($filters['with_glass']) ? (string) $filters['with_glass'] : '0',
+            'contoursFilter' => isset($filters['contours']) ? (string) $filters['contours'] : '',
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'sortIndicators' => $sortIndicators,
@@ -279,7 +281,7 @@ class ProductController extends Controller
     {
         $this->requireModule('products');
 
-        $directories = $this->contourDirectorySummaries();
+        $directories = $this->products->contourCatalogSummaries();
         $selectedDirectory = trim((string) $this->input('directory', ''));
         if ($selectedDirectory === '' && $directories !== array()) {
             $selectedDirectory = (string) ($directories[0]['name'] ?? '');
@@ -288,7 +290,7 @@ class ProductController extends Controller
         $this->render('products/contours_manager', array(
             'pageTitle' => 'Obrysy',
             'contentTitle' => 'Manager obrysow',
-            'pageDescription' => 'Dodawanie, zmiana nazwy, usuwanie folderow oraz wrzucanie plikow do OBRYSY_GENERATOR.',
+            'pageDescription' => 'Lista nazw obrysow trzymana w bazie danych i uzywana na formularzu produktu.',
             'breadcrumbCurrent' => 'Manager obrysow',
             'contourDirectories' => $directories,
             'selectedContourDirectory' => $selectedDirectory,
@@ -305,17 +307,12 @@ class ProductController extends Controller
 
         try {
             $name = $this->normalizeContourDirectoryName($this->input('name', ''));
-            $targetPath = $this->contourDirectoryPath($name, false);
-
-            if (is_dir($targetPath)) {
-                throw new RuntimeException('Folder obrysu o tej nazwie juz istnieje.');
+            if (in_array($name, $this->products->contourCatalogNames(), true)) {
+                throw new RuntimeException('Obrys o tej nazwie juz istnieje.');
             }
+            $this->products->ensureContourCatalogName($name);
 
-            if (!mkdir($targetPath, 0775, true) && !is_dir($targetPath)) {
-                throw new RuntimeException('Nie udalo sie utworzyc folderu obrysu.');
-            }
-
-            $this->setFlash('success', 'Dodano nowy folder obrysu.');
+            $this->setFlash('success', 'Dodano nowa nazwe obrysu.');
             $this->redirect('./index.php?controller=products&action=contoursmanager&directory=' . urlencode($name));
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
@@ -340,18 +337,9 @@ class ProductController extends Controller
                 throw new RuntimeException('Nowa nazwa musi byc inna niz obecna.');
             }
 
-            $currentPath = $this->contourDirectoryPath($currentName, true);
-            $newPath = $this->contourDirectoryPath($newName, false);
+            $updatedProducts = $this->products->renameContourCatalogName($currentName, $newName);
 
-            if (is_dir($newPath)) {
-                throw new RuntimeException('Docelowy folder juz istnieje.');
-            }
-
-            if (!rename($currentPath, $newPath)) {
-                throw new RuntimeException('Nie udalo sie zmienic nazwy folderu.');
-            }
-
-            $this->setFlash('success', 'Zmieniono nazwe folderu obrysu.');
+            $this->setFlash('success', 'Zmieniono nazwe obrysu. Zaktualizowane produkty: ' . $updatedProducts . '.');
             $this->redirect('./index.php?controller=products&action=contoursmanager&directory=' . urlencode($newName));
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
@@ -369,9 +357,8 @@ class ProductController extends Controller
 
         try {
             $name = $this->normalizeContourDirectoryName($this->input('directory', ''));
-            $path = $this->contourDirectoryPath($name, true);
-            $this->deleteDirectoryRecursively($path);
-            $this->setFlash('success', 'Usunieto folder obrysu wraz z zawartoscia.');
+            $clearedProducts = $this->products->deleteContourCatalogName($name);
+            $this->setFlash('success', 'Usunieto nazwe obrysu. Wyczyszczone produkty: ' . $clearedProducts . '.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
@@ -386,30 +373,59 @@ class ProductController extends Controller
             $this->redirect('./index.php?controller=products&action=contoursmanager');
         }
 
-        $redirectDirectory = trim((string) $this->input('directory', ''));
-
         try {
-            $directory = $this->normalizeContourDirectoryName($this->input('directory', ''));
-            $targetDirectory = $this->contourDirectoryPath($directory, true);
-            $files = $this->normalizeUploadedContourFiles('contour_files');
-
-            if ($files === array()) {
-                throw new RuntimeException('Nie przeslano zadnych plikow.');
+            $names = $this->normalizePostedContourDirectoryNames();
+            if ($names === array()) {
+                $names = $this->normalizeUploadedContourDirectoryNames('contour_directory_files');
+            }
+            if ($names === array()) {
+                throw new RuntimeException('Nie wykryto zadnych folderow do importu.');
             }
 
-            $uploadedCount = 0;
-            foreach ($files as $file) {
-                $this->storeUploadedContourFile($targetDirectory, $file);
-                $uploadedCount++;
+            $existing = array_fill_keys($this->products->contourCatalogNames(), true);
+            $added = 0;
+            $skipped = 0;
+            $firstAddedName = '';
+
+            foreach ($names as $name) {
+                if (isset($existing[$name])) {
+                    $skipped++;
+                    continue;
+                }
+
+                $this->products->ensureContourCatalogName($name);
+                $existing[$name] = true;
+                if ($firstAddedName === '') {
+                    $firstAddedName = $name;
+                }
+                $added++;
             }
 
-            $this->setFlash('success', 'Wgrano pliki do folderu obrysu: ' . $uploadedCount . '.');
+            $message = 'Import zakonczony. Dodane: ' . $added . '. Pominiete duplikaty: ' . $skipped . '.';
+            if ($firstAddedName !== '') {
+                $redirect = './index.php?controller=products&action=contoursmanager&directory=' . urlencode($firstAddedName);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(array('ok' => true, 'message' => $message, 'redirect' => $redirect));
+                    return;
+                }
+                $this->setFlash('success', $message);
+                $this->redirect($redirect);
+            }
+
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('ok' => true, 'message' => $message, 'redirect' => './index.php?controller=products&action=contoursmanager'));
+                return;
+            }
+            $this->setFlash('success', $message);
         } catch (Throwable $exception) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 422);
+                return;
+            }
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $target = $redirectDirectory !== '' ? '&directory=' . urlencode($redirectDirectory) : '';
-        $this->redirect('./index.php?controller=products&action=contoursmanager' . $target);
+        $this->redirect('./index.php?controller=products&action=contoursmanager');
     }
 
     public function quicksearch(): void
@@ -976,6 +992,7 @@ class ProductController extends Controller
         try {
             $data = $this->validatedData();
             $productId = (int) $this->products->create($data);
+            $this->syncContourCatalogSelection($data['contours'] ?? null);
             $relatedProductIds = $this->normalizeIntegerArray($this->input('related_product_ids', array()));
             $derivedSourceProductIds = $this->normalizeIntegerArray($this->input('derived_source_product_ids', array()));
 
@@ -1074,6 +1091,7 @@ class ProductController extends Controller
         try {
             $data = $this->validatedData($existingProduct);
             $this->products->updateById($id, $data);
+            $this->syncContourCatalogSelection($data['contours'] ?? null);
             $relatedProductIds = $this->normalizeIntegerArray($this->input('related_product_ids', array()));
             $derivedSourceProductIds = $this->normalizeIntegerArray($this->input('derived_source_product_ids', array()));
 
@@ -1468,7 +1486,16 @@ class ProductController extends Controller
         $temuDefinitions = array();
         $productHistory = array();
         $productImages = $this->imageUrlsFromValue(isset($product['img']) ? (string) $product['img'] : '');
-        $contourDirectories = $this->contourDirectories();
+        if (isset($product['contours']) && trim((string) $product['contours']) === '0') {
+            $product['contours'] = '';
+        }
+        $contourDirectories = $this->products->contourCatalogNames();
+        $currentContour = trim((string) ($product['contours'] ?? ''));
+        if ($currentContour !== '' && $currentContour !== '0' && !in_array($currentContour, $contourDirectories, true)) {
+            $contourDirectories[] = $currentContour;
+            natcasesort($contourDirectories);
+            $contourDirectories = array_values($contourDirectories);
+        }
 
         if ($categoryId > 0) {
             try {
@@ -1595,6 +1622,16 @@ class ProductController extends Controller
             'price_gross' => (string) $this->input('price_gross', '0.00'),
             'vat_rate' => (string) $this->input('vat_rate', '23.00'),
         );
+    }
+
+    private function syncContourCatalogSelection($value): void
+    {
+        $name = trim((string) $value);
+        if ($name === '' || $name === '0') {
+            return;
+        }
+
+        $this->products->ensureContourCatalogName($name);
     }
 
     private function postedAllegroValues(): array
@@ -2503,6 +2540,86 @@ class ProductController extends Controller
         return $result;
     }
 
+    private function normalizeUploadedContourDirectoryNames(string $field): array
+    {
+        if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+            return array();
+        }
+
+        $files = $_FILES[$field];
+        $errors = isset($files['error']) && is_array($files['error']) ? $files['error'] : array($files['error'] ?? UPLOAD_ERR_NO_FILE);
+        $fullPaths = isset($files['full_path']) && is_array($files['full_path']) ? $files['full_path'] : array();
+        $names = isset($files['name']) && is_array($files['name']) ? $files['name'] : array($files['name'] ?? '');
+
+        $count = max(count($errors), count($fullPaths), count($names));
+        $directoryNames = array();
+
+        for ($index = 0; $index < $count; $index++) {
+            $error = (int) ($errors[$index] ?? UPLOAD_ERR_NO_FILE);
+            if ($error === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+
+            if ($error !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Nie udalo sie odczytac jednego z przesylanych folderow.');
+            }
+
+            $fullPath = trim((string) ($fullPaths[$index] ?? ''));
+            $fallbackName = trim((string) ($names[$index] ?? ''));
+
+            if ($fullPath !== '') {
+                $normalizedPath = str_replace('\\', '/', $fullPath);
+                $parts = array_values(array_filter(explode('/', $normalizedPath), static function ($part): bool {
+                    return trim((string) $part) !== '';
+                }));
+
+                if ($parts !== array()) {
+                    $candidate = $this->normalizeContourDirectoryName((string) $parts[0]);
+                    $directoryNames[$candidate] = true;
+                    continue;
+                }
+            }
+
+            if ($fallbackName !== '') {
+                $candidate = $this->normalizeContourDirectoryName(pathinfo($fallbackName, PATHINFO_FILENAME));
+                if ($candidate !== '') {
+                    $directoryNames[$candidate] = true;
+                }
+            }
+        }
+
+        return array_keys($directoryNames);
+    }
+
+    private function normalizePostedContourDirectoryNames(): array
+    {
+        $raw = $this->input('contour_directory_names', '');
+        if (!is_string($raw) || trim($raw) === '') {
+            return array();
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Nie udalo sie odczytac listy folderow do importu.');
+        }
+
+        $names = array();
+        foreach ($decoded as $value) {
+            $name = $this->normalizeContourDirectoryName((string) $value);
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+        }
+
+        return array_keys($names);
+    }
+
+    private function isAjaxRequest(): bool
+    {
+        $requestedWith = isset($_SERVER['HTTP_X_REQUESTED_WITH']) ? strtolower(trim((string) $_SERVER['HTTP_X_REQUESTED_WITH'])) : '';
+        return $requestedWith === 'xmlhttprequest';
+    }
+
     private function storeUploadedContourFile(string $targetDirectory, array $file): void
     {
         $tmpName = isset($file['tmp_name']) ? (string) $file['tmp_name'] : '';
@@ -2635,6 +2752,9 @@ class ProductController extends Controller
         }
         if (isset($filters['with_glass']) && $filters['with_glass'] !== '') {
             $params['filter_with_glass'] = $filters['with_glass'];
+        }
+        if (isset($filters['contours']) && $filters['contours'] !== '') {
+            $params['filter_contours'] = $filters['contours'];
         }
 
         if ($sortBy !== '' && $sortDir !== '') {

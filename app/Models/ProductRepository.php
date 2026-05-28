@@ -13,6 +13,7 @@ use Throwable;
 class ProductRepository
 {
     const TABLE = 'products';
+    const CONTOUR_NAMES_TABLE = 'product_contour_names';
     /** @var bool */
     private static $schemaEnsured = false;
 
@@ -69,6 +70,9 @@ class ProductRepository
         if (!$tableExists) {
             $sql = str_replace('__DEFAULT_CATEGORY__', (string) $defaultCategoryId, $this->createTableSql());
             $this->database->query($sql);
+            $this->ensureContourNamesSchema();
+            $this->syncContourNamesFromProducts();
+            self::$schemaEnsured = true;
             return;
         }
 
@@ -140,6 +144,8 @@ class ProductRepository
             $this->database->query('ALTER TABLE ' . self::TABLE . ' ADD CONSTRAINT fk_products_shared_stock_group FOREIGN KEY (shared_stock_group_id) REFERENCES shared_stock_groups(id) ON DELETE SET NULL');
         }
 
+        $this->ensureContourNamesSchema();
+        $this->syncContourNamesFromProducts();
         self::$schemaEnsured = true;
     }
 
@@ -203,6 +209,13 @@ class ProductRepository
             $whereParts[] = '(products.product_name NOT LIKE :filter_with_glass_no_ascii AND products.product_name NOT LIKE :filter_with_glass_no_utf)';
             $params['filter_with_glass_no_ascii'] = '%+ SZKLO%';
             $params['filter_with_glass_no_utf'] = '%+ SZKŁO%';
+        }
+
+        $contours = isset($filters['contours']) ? trim((string) $filters['contours']) : '';
+        if ($contours === '1') {
+            $whereParts[] = "(products.contours IS NOT NULL AND TRIM(products.contours) <> '' AND TRIM(products.contours) <> '0')";
+        } elseif ($contours === '0') {
+            $whereParts[] = "(products.contours IS NULL OR TRIM(products.contours) = '' OR TRIM(products.contours) = '0')";
         }
 
         if ($whereParts !== array()) {
@@ -291,11 +304,156 @@ class ProductRepository
             $params['filter_with_glass_no_utf'] = '%+ SZKŁO%';
         }
 
+        $contours = isset($filters['contours']) ? trim((string) $filters['contours']) : '';
+        if ($contours === '1') {
+            $whereParts[] = "(products.contours IS NOT NULL AND TRIM(products.contours) <> '' AND TRIM(products.contours) <> '0')";
+        } elseif ($contours === '0') {
+            $whereParts[] = "(products.contours IS NULL OR TRIM(products.contours) = '' OR TRIM(products.contours) = '0')";
+        }
+
         if ($whereParts !== array()) {
             $sql .= ' WHERE ' . implode(' AND ', $whereParts);
         }
 
         return (int) $this->database->fetchColumn($sql, $params);
+    }
+
+    public function contourCatalogNames(): array
+    {
+        $this->ensureSchema();
+
+        $rows = $this->database->fetchAll(
+            'SELECT name FROM ' . self::CONTOUR_NAMES_TABLE . ' ORDER BY name ASC'
+        );
+
+        return array_values(array_filter(array_map(static function (array $row): string {
+            return isset($row['name']) ? trim((string) $row['name']) : '';
+        }, $rows)));
+    }
+
+    public function contourCatalogSummaries(): array
+    {
+        $this->ensureSchema();
+
+        $rows = $this->database->fetchAll(
+            'SELECT contour_names.name, COUNT(products.id) AS products_count'
+            . ' FROM ' . self::CONTOUR_NAMES_TABLE . ' contour_names'
+            . ' LEFT JOIN ' . self::TABLE . ' products ON TRIM(products.contours) = contour_names.name AND products.deleted_at IS NULL'
+            . ' GROUP BY contour_names.id, contour_names.name'
+            . ' ORDER BY contour_names.name ASC'
+        );
+
+        return array_map(static function (array $row): array {
+            return array(
+                'name' => isset($row['name']) ? (string) $row['name'] : '',
+                'products_count' => isset($row['products_count']) ? (int) $row['products_count'] : 0,
+            );
+        }, $rows);
+    }
+
+    public function ensureContourCatalogName(string $name): void
+    {
+        $this->ensureSchema();
+
+        $name = trim($name);
+        if ($name === '' || $name === '0') {
+            return;
+        }
+
+        $existing = $this->database->fetch(
+            'SELECT id FROM ' . self::CONTOUR_NAMES_TABLE . ' WHERE name = :name LIMIT 1',
+            array('name' => $name)
+        );
+
+        if ($existing) {
+            return;
+        }
+
+        $this->database->insert(self::CONTOUR_NAMES_TABLE, array('name' => $name));
+    }
+
+    public function renameContourCatalogName(string $currentName, string $newName): int
+    {
+        $this->ensureSchema();
+
+        $currentName = trim($currentName);
+        $newName = trim($newName);
+
+        if ($currentName === '' || $currentName === '0') {
+            throw new RuntimeException('Niepoprawna nazwa obrysu.');
+        }
+
+        if ($newName === '' || $newName === '0') {
+            throw new RuntimeException('Nowa nazwa obrysu jest niepoprawna.');
+        }
+
+        $current = $this->database->fetch(
+            'SELECT id FROM ' . self::CONTOUR_NAMES_TABLE . ' WHERE name = :name LIMIT 1',
+            array('name' => $currentName)
+        );
+
+        if (!$current) {
+            throw new RuntimeException('Wybrany obrys nie istnieje.');
+        }
+
+        $duplicate = $this->database->fetch(
+            'SELECT id FROM ' . self::CONTOUR_NAMES_TABLE . ' WHERE name = :name LIMIT 1',
+            array('name' => $newName)
+        );
+
+        if ($duplicate) {
+            throw new RuntimeException('Obrys o tej nazwie juz istnieje.');
+        }
+
+        return (int) $this->database->transaction(function (Database $database) use ($currentName, $newName, $current): int {
+            $database->update(
+                self::CONTOUR_NAMES_TABLE,
+                array('name' => $newName),
+                'id = :id',
+                array('id' => (int) ($current['id'] ?? 0))
+            );
+
+            return $database->update(
+                self::TABLE,
+                array('contours' => $newName),
+                'TRIM(contours) = :name',
+                array('name' => $currentName)
+            );
+        });
+    }
+
+    public function deleteContourCatalogName(string $name): int
+    {
+        $this->ensureSchema();
+
+        $name = trim($name);
+        if ($name === '' || $name === '0') {
+            throw new RuntimeException('Niepoprawna nazwa obrysu.');
+        }
+
+        $existing = $this->database->fetch(
+            'SELECT id FROM ' . self::CONTOUR_NAMES_TABLE . ' WHERE name = :name LIMIT 1',
+            array('name' => $name)
+        );
+
+        if (!$existing) {
+            throw new RuntimeException('Wybrany obrys nie istnieje.');
+        }
+
+        return (int) $this->database->transaction(function (Database $database) use ($name, $existing): int {
+            $database->delete(
+                self::CONTOUR_NAMES_TABLE,
+                'id = :id',
+                array('id' => (int) ($existing['id'] ?? 0))
+            );
+
+            return $database->update(
+                self::TABLE,
+                array('contours' => null),
+                'TRIM(contours) = :name',
+                array('name' => $name)
+            );
+        });
     }
 
     private function appendTextFilterCondition(array &$whereParts, array &$params, array $columns, string $rawValue, string $paramPrefix): void
@@ -867,6 +1025,13 @@ class ProductRepository
             $whereParts[] = '(products.product_name NOT LIKE :filter_with_glass_no_ascii AND products.product_name NOT LIKE :filter_with_glass_no_utf)';
             $params['filter_with_glass_no_ascii'] = '%+ SZKLO%';
             $params['filter_with_glass_no_utf'] = '%+ SZKŁO%';
+        }
+
+        $contours = isset($filters['contours']) ? trim((string) $filters['contours']) : '';
+        if ($contours === '1') {
+            $whereParts[] = "(products.contours IS NOT NULL AND TRIM(products.contours) <> '' AND TRIM(products.contours) <> '0')";
+        } elseif ($contours === '0') {
+            $whereParts[] = "(products.contours IS NULL OR TRIM(products.contours) = '' OR TRIM(products.contours) = '0')";
         }
 
         if ($whereParts !== array()) {
@@ -1581,6 +1746,9 @@ class ProductRepository
         $temuParametersRows = $this->database->fetchAll(
             'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_temu_parameters ORDER BY id ASC'
         );
+        $contourNames = $this->database->fetchAll(
+            'SELECT id, name, created_at, updated_at FROM ' . self::CONTOUR_NAMES_TABLE . ' ORDER BY id ASC'
+        );
 
         return array(
             'module' => 'products',
@@ -1596,6 +1764,7 @@ class ProductRepository
                 'allegro_parameters' => count($allegroParametersRows),
                 'empik_parameters' => count($empikParametersRows),
                 'temu_parameters' => count($temuParametersRows),
+                'contour_names' => count($contourNames),
             ),
             'tables' => array(
                 'categories' => $categories,
@@ -1607,6 +1776,7 @@ class ProductRepository
                 'product_allegro_parameters' => $allegroParametersRows,
                 'product_empik_parameters' => $empikParametersRows,
                 'product_temu_parameters' => $temuParametersRows,
+                self::CONTOUR_NAMES_TABLE => $contourNames,
             ),
         );
     }
@@ -1662,6 +1832,9 @@ class ProductRepository
         $temuParameters = $this->normalizeBackupRows($tables['product_temu_parameters'], array(
             'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
         ));
+        $contourNames = $this->normalizeBackupRows($tables[self::CONTOUR_NAMES_TABLE] ?? array(), array(
+            'id', 'name', 'created_at', 'updated_at',
+        ));
 
         $this->database->transaction(function (Database $database) use (
             $categories,
@@ -1672,7 +1845,8 @@ class ProductRepository
             $customFieldValues,
             $allegroParameters,
             $empikParameters,
-            $temuParameters
+            $temuParameters,
+            $contourNames
         ): void {
             $database->query('SET FOREIGN_KEY_CHECKS = 0');
             try {
@@ -1684,6 +1858,7 @@ class ProductRepository
                 $database->delete('products', '1 = 1');
                 $database->delete('shared_stock_groups', '1 = 1');
                 $database->delete('product_custom_field_definitions', '1 = 1');
+                $database->delete(self::CONTOUR_NAMES_TABLE, '1 = 1');
 
                 if ($categories !== array()) {
                     $categoryIds = array_values(array_unique(array_filter(array_map(static function ($row): int {
@@ -1721,6 +1896,9 @@ class ProductRepository
                 foreach ($derivedLinks as $row) {
                     $database->insert('product_derived_stock_links', $row);
                 }
+                foreach ($contourNames as $row) {
+                    $database->insert(self::CONTOUR_NAMES_TABLE, $row);
+                }
 
                 $this->resetAutoIncrement('categories', $categories);
                 $this->resetAutoIncrement('shared_stock_groups', $sharedGroups);
@@ -1729,10 +1907,13 @@ class ProductRepository
                 $this->resetAutoIncrement('product_allegro_parameters', $allegroParameters);
                 $this->resetAutoIncrement('product_empik_parameters', $empikParameters);
                 $this->resetAutoIncrement('product_temu_parameters', $temuParameters);
+                $this->resetAutoIncrement(self::CONTOUR_NAMES_TABLE, $contourNames);
             } finally {
                 $database->query('SET FOREIGN_KEY_CHECKS = 1');
             }
         });
+
+        $this->syncContourNamesFromProducts();
 
         return array(
             'categories' => count($categories),
@@ -1744,6 +1925,7 @@ class ProductRepository
             'allegro_parameters' => count($allegroParameters),
             'empik_parameters' => count($empikParameters),
             'temu_parameters' => count($temuParameters),
+            'contour_names' => count($contourNames),
         );
     }
 
@@ -1882,6 +2064,30 @@ class ProductRepository
             'idx_products_price_net' => 'ALTER TABLE products ADD KEY idx_products_price_net (price_net)',
             'idx_products_price_gross' => 'ALTER TABLE products ADD KEY idx_products_price_gross (price_gross)',
             'idx_products_category_id' => 'ALTER TABLE products ADD KEY idx_products_category_id (category_id)',
+        );
+    }
+
+    private function ensureContourNamesSchema(): void
+    {
+        $this->database->query(
+            "CREATE TABLE IF NOT EXISTS " . self::CONTOUR_NAMES_TABLE . " (\n"
+            . "    id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
+            . "    name VARCHAR(255) NOT NULL,\n"
+            . "    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+            . "    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
+            . "    PRIMARY KEY (id),\n"
+            . "    UNIQUE KEY ux_product_contour_names_name (name)\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+
+    private function syncContourNamesFromProducts(): void
+    {
+        $this->database->query(
+            'INSERT IGNORE INTO ' . self::CONTOUR_NAMES_TABLE . ' (name)'
+            . ' SELECT DISTINCT TRIM(contours) AS name'
+            . ' FROM ' . self::TABLE
+            . " WHERE contours IS NOT NULL AND TRIM(contours) <> '' AND TRIM(contours) <> '0'"
         );
     }
 
