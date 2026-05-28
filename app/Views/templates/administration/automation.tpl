@@ -1042,6 +1042,29 @@
                     </form>
                   </div>
                 </div>
+                <div class="col-xl-6">
+                  <div class="administration-backup-box">
+                    <h3 class="h5 mb-2">Kopia modulu produktow</h3>
+                    <p class="text-secondary small mb-3">Pobiera pelny JSON z produktami, kategoriami, polami wlasnymi, parametrami Allegro/Empik/Temu, grupami wspolnego stanu i powiazaniami stanow pochodnych.</p>
+                    <a href="{$baseUrl}?controller=products&action=exportbackup" class="btn btn-outline-success">Pobierz pelna kopie JSON produktow</a>
+                  </div>
+                </div>
+                <div class="col-xl-6">
+                  <div class="administration-backup-box">
+                    <h3 class="h5 mb-2">Przywroc kopie modulu produktow</h3>
+                    <p class="text-secondary small mb-3">Wgranie pliku nadpisze rekordy produktow, parametrow, pol wlasnych, grup wspolnego stanu i powiazan pochodnych. Uzywaj tylko jako operacji serwisowej.</p>
+                    <form method="post" action="{$baseUrl}?controller=products&action=importbackup" enctype="multipart/form-data" onsubmit="return confirm('Przywrocic pelna kopie produktow? Operacja nadpisze obecne rekordy modulu produktow.');">
+                      <input type="file" name="backup_file" accept=".json,application/json" class="form-control mb-2" required>
+                      <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="confirm_restore" value="1" id="confirmProductsRestoreAdmin" required>
+                        <label class="form-check-label small" for="confirmProductsRestoreAdmin">
+                          Potwierdzam nadpisanie danych modulu produktow wraz z parametrami i powiazaniami.
+                        </label>
+                      </div>
+                      <button type="submit" class="btn btn-outline-danger">Wgraj kopie i odtworz produkty</button>
+                    </form>
+                  </div>
+                </div>
               </div>
 
               <div class="card administration-panel border-warning-subtle">

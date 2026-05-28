@@ -197,6 +197,84 @@ class ProductController extends Controller
         ), './index.php?controller=products&action=store', array());
     }
 
+    public function exportbackup(): void
+    {
+        $this->requireModule('products');
+
+        try {
+            $payload = $this->products->backupSnapshot();
+            $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                throw new RuntimeException('Nie udalo sie wygenerowac pliku kopii produktow.');
+            }
+
+            $filename = 'products_backup_' . date('Ymd_His') . '.json';
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($json));
+            echo $json;
+            exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=products&action=index');
+        }
+    }
+
+    public function importbackup(): void
+    {
+        $this->requireModuleWrite('products');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=products&action=index');
+        }
+
+        try {
+            if ((string) $this->input('confirm_restore', '') !== '1') {
+                throw new RuntimeException('Potwierdz, ze chcesz nadpisac wszystkie dane modulu produktow.');
+            }
+
+            if (!isset($_FILES['backup_file']) || !is_array($_FILES['backup_file'])) {
+                throw new RuntimeException('Wybierz plik kopii JSON do przywrocenia.');
+            }
+
+            $tmpName = (string) ($_FILES['backup_file']['tmp_name'] ?? '');
+            if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                throw new RuntimeException('Brak poprawnego pliku tymczasowego kopii.');
+            }
+
+            $content = file_get_contents($tmpName);
+            if ($content === false || trim($content) === '') {
+                throw new RuntimeException('Nie udalo sie odczytac pliku kopii.');
+            }
+
+            $payload = json_decode($content, true);
+            if (!is_array($payload)) {
+                throw new RuntimeException('Plik kopii nie jest poprawnym JSON-em.');
+            }
+
+            if (($payload['module'] ?? '') !== 'products') {
+                throw new RuntimeException('Ten plik nie wyglada na kopie modulu produktow.');
+            }
+
+            $result = $this->products->restoreSnapshot($payload);
+            $this->setFlash(
+                'success',
+                'Przywrocono kopie produktow. Kategorie: ' . (int) ($result['categories'] ?? 0)
+                . ', produkty: ' . (int) ($result['products'] ?? 0)
+                . ', grupy wspolnego stanu: ' . (int) ($result['shared_stock_groups'] ?? 0)
+                . ', linki pochodne: ' . (int) ($result['derived_links'] ?? 0)
+                . ', pola wlasne: ' . (int) ($result['custom_field_definitions'] ?? 0) . '/' . (int) ($result['custom_field_values'] ?? 0)
+                . ', Allegro: ' . (int) ($result['allegro_parameters'] ?? 0)
+                . ', Empik: ' . (int) ($result['empik_parameters'] ?? 0)
+                . ', Temu: ' . (int) ($result['temu_parameters'] ?? 0) . '.'
+            );
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
     public function contoursmanager(): void
     {
         $this->requireModule('products');

@@ -6,8 +6,8 @@ namespace App\Models;
 
 use App\Core\Config;
 use App\Core\Database;
-use App\Services\ProductChangeAuditService;
 use RuntimeException;
+use App\Services\ProductChangeAuditService;
 use Throwable;
 
 class ProductRepository
@@ -1530,6 +1530,223 @@ class ProductRepository
         return $newId;
     }
 
+    public function backupSnapshot(): array
+    {
+        $categoryIds = $this->database->fetchAll(
+            'SELECT DISTINCT category_id FROM products WHERE category_id IS NOT NULL ORDER BY category_id ASC'
+        );
+        $categoryIdValues = array_values(array_unique(array_filter(array_map(static function ($row): int {
+            return isset($row['category_id']) ? (int) $row['category_id'] : 0;
+        }, $categoryIds))));
+
+        $categories = array();
+        if ($categoryIdValues !== array()) {
+            $placeholders = array();
+            $params = array();
+            foreach ($categoryIdValues as $index => $categoryId) {
+                $key = 'category_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $categoryId;
+            }
+
+            $categories = $this->database->fetchAll(
+                'SELECT id, name, slug, sku_prefix, allegro_category_id, empik_category_id, temu_category_id, temu_category_name, temu_category_path, temu_category_parameters, end_offers_below_quantity, description, created_at, updated_at'
+                . ' FROM categories WHERE id IN (' . implode(', ', $placeholders) . ') ORDER BY id ASC',
+                $params
+            );
+        }
+
+        $products = $this->database->fetchAll(
+            'SELECT id, sku, ean, product_name, description, category_id, quantity, localization, shared_stock_group_id, dimensions, contours, img, price_net, price_gross, vat_rate, created_at, updated_at, deleted_at'
+            . ' FROM products ORDER BY id ASC'
+        );
+        $sharedGroups = $this->database->fetchAll(
+            'SELECT id, quantity, localization, created_at, updated_at FROM shared_stock_groups ORDER BY id ASC'
+        );
+        $derivedLinks = $this->database->fetchAll(
+            'SELECT owner_product_id, source_product_id, created_at FROM product_derived_stock_links ORDER BY owner_product_id ASC, source_product_id ASC'
+        );
+        $customFieldDefinitions = $this->database->fetchAll(
+            'SELECT id, name, slug, created_at, updated_at FROM product_custom_field_definitions ORDER BY id ASC'
+        );
+        $customFieldValues = $this->database->fetchAll(
+            'SELECT product_id, definition_id, value, created_at, updated_at FROM product_custom_field_values ORDER BY product_id ASC, definition_id ASC'
+        );
+        $allegroParametersRows = $this->database->fetchAll(
+            'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_allegro_parameters ORDER BY id ASC'
+        );
+        $empikParametersRows = $this->database->fetchAll(
+            'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_empik_parameters ORDER BY id ASC'
+        );
+        $temuParametersRows = $this->database->fetchAll(
+            'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_temu_parameters ORDER BY id ASC'
+        );
+
+        return array(
+            'module' => 'products',
+            'format' => 'products-backup-v1',
+            'generated_at' => date('c'),
+            'counts' => array(
+                'categories' => count($categories),
+                'products' => count($products),
+                'shared_stock_groups' => count($sharedGroups),
+                'derived_links' => count($derivedLinks),
+                'custom_field_definitions' => count($customFieldDefinitions),
+                'custom_field_values' => count($customFieldValues),
+                'allegro_parameters' => count($allegroParametersRows),
+                'empik_parameters' => count($empikParametersRows),
+                'temu_parameters' => count($temuParametersRows),
+            ),
+            'tables' => array(
+                'categories' => $categories,
+                'products' => $products,
+                'shared_stock_groups' => $sharedGroups,
+                'product_derived_stock_links' => $derivedLinks,
+                'product_custom_field_definitions' => $customFieldDefinitions,
+                'product_custom_field_values' => $customFieldValues,
+                'product_allegro_parameters' => $allegroParametersRows,
+                'product_empik_parameters' => $empikParametersRows,
+                'product_temu_parameters' => $temuParametersRows,
+            ),
+        );
+    }
+
+    public function restoreSnapshot(array $payload): array
+    {
+        if (($payload['format'] ?? '') !== 'products-backup-v1') {
+            throw new RuntimeException('Nieobslugiwany format kopii produktow.');
+        }
+
+        $tables = isset($payload['tables']) && is_array($payload['tables']) ? $payload['tables'] : array();
+        $requiredTables = array(
+            'categories',
+            'products',
+            'shared_stock_groups',
+            'product_derived_stock_links',
+            'product_custom_field_definitions',
+            'product_custom_field_values',
+            'product_allegro_parameters',
+            'product_empik_parameters',
+            'product_temu_parameters',
+        );
+        foreach ($requiredTables as $tableName) {
+            if (!array_key_exists($tableName, $tables)) {
+                throw new RuntimeException('W pliku kopii brakuje tabeli "' . $tableName . '".');
+            }
+        }
+
+        $categories = $this->normalizeBackupRows($tables['categories'], array(
+            'id', 'name', 'slug', 'sku_prefix', 'allegro_category_id', 'empik_category_id', 'temu_category_id', 'temu_category_name', 'temu_category_path', 'temu_category_parameters', 'end_offers_below_quantity', 'description', 'created_at', 'updated_at',
+        ));
+        $products = $this->normalizeBackupRows($tables['products'], array(
+            'id', 'sku', 'ean', 'product_name', 'description', 'category_id', 'quantity', 'localization', 'shared_stock_group_id', 'dimensions', 'contours', 'img', 'price_net', 'price_gross', 'vat_rate', 'created_at', 'updated_at', 'deleted_at',
+        ));
+        $sharedGroups = $this->normalizeBackupRows($tables['shared_stock_groups'], array(
+            'id', 'quantity', 'localization', 'created_at', 'updated_at',
+        ));
+        $derivedLinks = $this->normalizeBackupRows($tables['product_derived_stock_links'], array(
+            'owner_product_id', 'source_product_id', 'created_at',
+        ));
+        $customFieldDefinitions = $this->normalizeBackupRows($tables['product_custom_field_definitions'], array(
+            'id', 'name', 'slug', 'created_at', 'updated_at',
+        ));
+        $customFieldValues = $this->normalizeBackupRows($tables['product_custom_field_values'], array(
+            'product_id', 'definition_id', 'value', 'created_at', 'updated_at',
+        ));
+        $allegroParameters = $this->normalizeBackupRows($tables['product_allegro_parameters'], array(
+            'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
+        ));
+        $empikParameters = $this->normalizeBackupRows($tables['product_empik_parameters'], array(
+            'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
+        ));
+        $temuParameters = $this->normalizeBackupRows($tables['product_temu_parameters'], array(
+            'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
+        ));
+
+        $this->database->transaction(function (Database $database) use (
+            $categories,
+            $products,
+            $sharedGroups,
+            $derivedLinks,
+            $customFieldDefinitions,
+            $customFieldValues,
+            $allegroParameters,
+            $empikParameters,
+            $temuParameters
+        ): void {
+            $database->query('SET FOREIGN_KEY_CHECKS = 0');
+            try {
+                $database->delete('product_derived_stock_links', '1 = 1');
+                $database->delete('product_temu_parameters', '1 = 1');
+                $database->delete('product_empik_parameters', '1 = 1');
+                $database->delete('product_allegro_parameters', '1 = 1');
+                $database->delete('product_custom_field_values', '1 = 1');
+                $database->delete('products', '1 = 1');
+                $database->delete('shared_stock_groups', '1 = 1');
+                $database->delete('product_custom_field_definitions', '1 = 1');
+
+                if ($categories !== array()) {
+                    $categoryIds = array_values(array_unique(array_filter(array_map(static function ($row): int {
+                        return isset($row['id']) ? (int) $row['id'] : 0;
+                    }, $categories))));
+                    if ($categoryIds !== array()) {
+                        $database->delete('categories', 'id IN (' . implode(', ', array_map('intval', $categoryIds)) . ')');
+                    }
+                }
+
+                foreach ($categories as $row) {
+                    $database->insert('categories', $row);
+                }
+                foreach ($sharedGroups as $row) {
+                    $database->insert('shared_stock_groups', $row);
+                }
+                foreach ($products as $row) {
+                    $database->insert('products', $row);
+                }
+                foreach ($customFieldDefinitions as $row) {
+                    $database->insert('product_custom_field_definitions', $row);
+                }
+                foreach ($customFieldValues as $row) {
+                    $database->insert('product_custom_field_values', $row);
+                }
+                foreach ($allegroParameters as $row) {
+                    $database->insert('product_allegro_parameters', $row);
+                }
+                foreach ($empikParameters as $row) {
+                    $database->insert('product_empik_parameters', $row);
+                }
+                foreach ($temuParameters as $row) {
+                    $database->insert('product_temu_parameters', $row);
+                }
+                foreach ($derivedLinks as $row) {
+                    $database->insert('product_derived_stock_links', $row);
+                }
+
+                $this->resetAutoIncrement('categories', $categories);
+                $this->resetAutoIncrement('shared_stock_groups', $sharedGroups);
+                $this->resetAutoIncrement('products', $products);
+                $this->resetAutoIncrement('product_custom_field_definitions', $customFieldDefinitions);
+                $this->resetAutoIncrement('product_allegro_parameters', $allegroParameters);
+                $this->resetAutoIncrement('product_empik_parameters', $empikParameters);
+                $this->resetAutoIncrement('product_temu_parameters', $temuParameters);
+            } finally {
+                $database->query('SET FOREIGN_KEY_CHECKS = 1');
+            }
+        });
+
+        return array(
+            'categories' => count($categories),
+            'products' => count($products),
+            'shared_stock_groups' => count($sharedGroups),
+            'derived_links' => count($derivedLinks),
+            'custom_field_definitions' => count($customFieldDefinitions),
+            'custom_field_values' => count($customFieldValues),
+            'allegro_parameters' => count($allegroParameters),
+            'empik_parameters' => count($empikParameters),
+            'temu_parameters' => count($temuParameters),
+        );
+    }
+
     private function normalizeSkuPrefix(string $prefix): string
     {
         $prefix = strtoupper(trim($prefix));
@@ -1666,5 +1883,45 @@ class ProductRepository
             'idx_products_price_gross' => 'ALTER TABLE products ADD KEY idx_products_price_gross (price_gross)',
             'idx_products_category_id' => 'ALTER TABLE products ADD KEY idx_products_category_id (category_id)',
         );
+    }
+
+    private function normalizeBackupRows($rows, array $columns): array
+    {
+        if (!is_array($rows)) {
+            throw new RuntimeException('Plik kopii ma niepoprawny format danych.');
+        }
+
+        $normalizedRows = array();
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                throw new RuntimeException('Plik kopii ma niepoprawny wiersz #' . ($index + 1) . '.');
+            }
+
+            $normalized = array();
+            foreach ($columns as $column) {
+                $normalized[$column] = array_key_exists($column, $row) ? $row[$column] : null;
+            }
+
+            $normalizedRows[] = $normalized;
+        }
+
+        return $normalizedRows;
+    }
+
+    private function resetAutoIncrement(string $table, array $rows): void
+    {
+        $config = Config::get('database');
+        if (((string) ($config['driver'] ?? 'mysql')) !== 'mysql') {
+            return;
+        }
+
+        $maxId = 0;
+        foreach ($rows as $row) {
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
+        }
+
+        if ($maxId > 0) {
+            $this->database->query('ALTER TABLE ' . $table . ' AUTO_INCREMENT = ' . (int) ($maxId + 1));
+        }
     }
 }
