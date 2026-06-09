@@ -5,6 +5,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>{$appName|escape} | {$pageTitle|default:'Dashboard'|escape}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/warehouse-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
@@ -105,6 +106,31 @@
       font-size: 0.72rem;
       opacity: 0.78;
     }
+
+    .app-brand-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      width: 100%;
+      text-align: center;
+    }
+
+    .app-brand-icon {
+      width: 34px;
+      height: 34px;
+      margin: 0;
+      object-fit: contain;
+      float: none;
+      flex-shrink: 0;
+    }
+
+    .app-brand-text {
+      margin: 0;
+      line-height: 1;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
   </style>
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
@@ -194,9 +220,9 @@
 
     <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
       <div class="sidebar-brand">
-        <a href="{if $currentUser}{$baseUrl}?controller=index{else}{$baseUrl}?controller=auth&action=login{/if}" class="brand-link">
-          <img src="{$assetBase}/assets/img/AdminLTELogo.png" alt="Logo" class="brand-image opacity-75 shadow">
-          <span class="brand-text fw-light">{$appName|escape}</span>
+        <a href="{if $currentUser}{$baseUrl}?controller=index{else}{$baseUrl}?controller=auth&action=login{/if}" class="brand-link app-brand-link">
+          <img src="{$assetBase}/assets/img/warehouse-icon.svg" alt="Magazyn" class="brand-image app-brand-icon opacity-75 shadow">
+          <span class="brand-text app-brand-text">{$appName|escape}</span>
         </a>
       </div>
 
