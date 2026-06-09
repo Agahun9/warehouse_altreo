@@ -1169,10 +1169,15 @@ class ValueResolver
         $gridColumns = trim((string) ($exportOptions['grid_columns'] ?? ''));
         $gridRows = trim((string) ($exportOptions['grid_rows'] ?? ''));
         $indexGridCount = $this->gridGraphicCount($exportOptions);
+        $currentUser = isset($exportOptions['current_user']) && is_array($exportOptions['current_user'])
+            ? $exportOptions['current_user']
+            : array();
+        $gutenbergNick = trim((string) ($currentUser['gutenberg_nick'] ?? ($exportOptions['gutenberg_nick'] ?? '')));
 
         $rendered = strtr($macro, array(
             '{{base_directory}}' => rtrim($baseDirectory, '\\/'),
             '{{contours}}' => $contours,
+            '{{gutenberg_nick}}' => $gutenbergNick,
             '{{collection_code}}' => $collectionCode,
             '{{collection_code_index}}' => $collectionCodeIndex,
             '{{collection_name}}' => $collectionName,

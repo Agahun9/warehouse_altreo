@@ -208,6 +208,12 @@
                       <input type="text" name="last_name" class="form-control" value="{$user.last_name|default:''|escape}">
                     </div>
 
+                    <div class="col-md-6">
+                      <label class="form-label">Nick konta Gutenberg</label>
+                      <input type="text" name="gutenberg_nick" class="form-control" value="{$user.gutenberg_nick|default:''|escape}">
+                      <div class="form-text">Dostepny w makrach zdjec jako <code>{ldelim}{ldelim}gutenberg_nick{rdelim}{rdelim}</code>.</div>
+                    </div>
+
                     <div class="col-md-4">
                       <label class="form-label">Rola</label>
                       <select name="role" class="form-select">

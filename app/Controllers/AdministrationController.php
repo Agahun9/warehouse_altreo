@@ -93,6 +93,7 @@ class AdministrationController extends Controller
             $role = (string) $this->input('role', 'user');
             $firstName = trim((string) $this->input('first_name', ''));
             $lastName = trim((string) $this->input('last_name', ''));
+            $gutenbergNick = trim((string) $this->input('gutenberg_nick', ''));
             $password = (string) $this->input('new_password', '');
             $permissionLevel = (string) $this->input('permission_level', 'edit');
             $loaderEnabled = $this->input('loader_enabled', '1') === '1' ? 1 : 0;
@@ -107,6 +108,7 @@ class AdministrationController extends Controller
                 'role' => ($role === 'admin' ? 'admin' : 'user'),
                 'first_name' => ($firstName !== '' ? $firstName : null),
                 'last_name' => ($lastName !== '' ? $lastName : null),
+                'gutenberg_nick' => ($gutenbergNick !== '' ? $gutenbergNick : null),
                 'permission_level' => ($permissionLevel === 'read' ? 'read' : 'edit'),
                 'loader_enabled' => $loaderEnabled,
                 'is_active' => $isActive,

@@ -1334,6 +1334,7 @@
       + '      <div class="col-12 small text-secondary">'
       + '        <div class="fw-semibold mb-1">Tokeny makr obrazow</div>'
       + '        <div><code>{ldelim}{ldelim}base_directory{rdelim}{rdelim}</code> - katalog bazowy eksportu.</div>'
+      + '        <div><code>{ldelim}{ldelim}gutenberg_nick{rdelim}{rdelim}</code> - nick konta Gutenberg aktualnie zalogowanego uzytkownika.</div>'
       + '        <div><code>{ldelim}{ldelim}contours{rdelim}{rdelim}</code> - folder / wartosc z pola contours produktu.</div>'
       + '        <div><code>{ldelim}{ldelim}collection_code{rdelim}{rdelim}</code> - numer kolekcji wpisany przy eksporcie, np. <code>A100</code>.</div>'
       + '        <div><code>{ldelim}{ldelim}collection_code_index{rdelim}{rdelim}</code> - numeracja od kodu kolekcji, np. dla <code>A100</code>: <code>A100</code>, <code>A101</code>, <code>A102</code>.</div>'

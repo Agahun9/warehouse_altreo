@@ -2626,6 +2626,7 @@ class CsvTemplateController extends Controller
 
             return $this->input($key, $default);
         };
+        $currentUser = $this->exportCurrentUser();
 
         return array(
             'title_template_id' => max(0, (int) $source('title_template_id', 0)),
@@ -2640,12 +2641,30 @@ class CsvTemplateController extends Controller
             'thumbnail_macro' => trim((string) $source('thumbnail_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')),
             'mockup_macro' => trim((string) $source('mockup_macro', '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')),
             'image_macro' => trim((string) $source('image_macro', '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')),
+            'current_user' => $currentUser,
+            'gutenberg_nick' => $currentUser['gutenberg_nick'] ?? '',
             'thumbnail_pattern_list' => trim((string) $source('thumbnail_pattern_list', '')),
             'thumbnail_pattern_items' => $this->parseThumbnailPatternList(trim((string) $source('thumbnail_pattern_list', ''))),
         ) + $this->normalizeQueueAndGridExportOptions(
             trim((string) $source('image_queue_range', '')),
             trim((string) $source('grid_layout', ''))
         ) + $this->titleTemplateExportOptions(max(0, (int) $source('title_template_id', 0)));
+    }
+
+    private function exportCurrentUser(): array
+    {
+        $user = $this->currentUser();
+        if (!is_array($user)) {
+            return array();
+        }
+
+        return array(
+            'id' => (int) ($user['id'] ?? 0),
+            'email' => (string) ($user['email'] ?? ''),
+            'first_name' => (string) ($user['first_name'] ?? ''),
+            'last_name' => (string) ($user['last_name'] ?? ''),
+            'gutenberg_nick' => trim((string) ($user['gutenberg_nick'] ?? '')),
+        );
     }
 
     private function normalizeQueueAndGridExportOptions(string $queueRange, string $gridLayout): array
