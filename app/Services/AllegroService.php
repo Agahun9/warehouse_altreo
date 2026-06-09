@@ -479,59 +479,111 @@ class AllegroService
         );
     }
 
-    public function autoEndDuplicateOffers(int $limit = 5000): array
+    public function autoEndDuplicateOffers(int $limit = 5000, bool $dryRun = false): array
     {
         $limit = max(1, min(50000, $limit));
-        $rows = $this->offersPage(
-            array(
-                'duplicates' => '1',
-                'status' => 'ACTIVE',
-            ),
-            1,
-            $limit,
-            'id',
-            'asc'
-        );
+        $targets = $this->storage->offerTargetsForFilters(array(
+            'duplicates' => '1',
+            'status' => 'ACTIVE',
+        ), $limit);
 
-        $targets = array();
-        $offers = array();
+        $filteredTargets = $this->storage->filterTerminableEndOfferTargets($targets);
+        $allowedTargets = isset($filteredTargets['allowed']) && is_array($filteredTargets['allowed'])
+            ? $filteredTargets['allowed']
+            : array();
+        $blockedTargets = isset($filteredTargets['blocked']) && is_array($filteredTargets['blocked'])
+            ? $filteredTargets['blocked']
+            : array();
+
+        $allowedOfferRowIds = array_values(array_filter(array_map(static function (array $target): int {
+            return (int) ($target['id'] ?? 0);
+        }, $allowedTargets), static function (int $id): bool {
+            return $id > 0;
+        }));
+        $queuedOfferRowIds = $this->storage->activeQueuedOfferIdsForOperation($allowedOfferRowIds, 'end_offer');
+
+        $targetsToQueue = array();
         $skippedQueued = 0;
-
-        foreach ($rows as $row) {
-            $duplicateMeta = isset($row['duplicate_meta']) && is_array($row['duplicate_meta']) ? $row['duplicate_meta'] : array();
-            if (empty($duplicateMeta['is_duplicate']) || empty($duplicateMeta['can_end_offer'])) {
+        foreach ($allowedTargets as $target) {
+            $offerRowId = (int) ($target['id'] ?? 0);
+            if ($offerRowId <= 0) {
                 continue;
             }
 
-            $queueMeta = isset($row['queue_meta']) && is_array($row['queue_meta']) ? $row['queue_meta'] : array();
-            $queueOperation = (string) ($queueMeta['operation'] ?? '');
-            $queueStatus = (string) ($queueMeta['status'] ?? '');
-            if ($queueOperation === 'end_offer' && in_array($queueStatus, array('pending', 'retry', 'processing'), true)) {
+            if (isset($queuedOfferRowIds[$offerRowId])) {
                 $skippedQueued++;
                 continue;
             }
 
-            $targets[] = array(
-                'id' => (int) ($row['id'] ?? 0),
-                'account_id' => (int) ($row['account_id'] ?? 0),
-                'offer_id' => (string) ($row['offer_id'] ?? ''),
-            );
-            $offers[] = array(
-                'account' => (string) ($row['account_name'] ?? ''),
-                'offer_id' => (string) ($row['offer_id'] ?? ''),
-                'name' => (string) ($row['name'] ?? ''),
-                'sku' => (string) ($row['sku'] ?? ''),
-            );
+            $targetsToQueue[] = $target;
         }
 
-        $queued = $targets !== array()
-            ? $this->storage->enqueueOfferChanges($targets, 'end_offer', array(), null, true)
+        $queued = (!$dryRun && $targetsToQueue !== array())
+            ? $this->storage->enqueueOfferChanges($targetsToQueue, 'end_offer', array(), null, true)
             : 0;
+        $offers = $targetsToQueue !== array()
+            ? $this->storage->offerSummariesForIds(array_map(static function (array $target): int {
+                return (int) ($target['id'] ?? 0);
+            }, $targetsToQueue))
+            : array();
 
         return array(
             'operation' => 'auto_end_offers',
-            'scanned' => count($rows),
-            'candidates' => count($targets),
+            'dry_run' => $dryRun,
+            'scanned' => count($targets),
+            'candidates' => count($targetsToQueue),
+            'would_queue' => count($targetsToQueue),
+            'queued' => $queued,
+            'blocked_oldest' => count($blockedTargets),
+            'skipped_already_queued' => $skippedQueued,
+            'offers' => $offers,
+            'counts' => $this->storage->queueCounts(),
+        );
+    }
+
+    public function autoEndOffersBelowCategoryThreshold(int $limit = 2000, bool $dryRun = false): array
+    {
+        $limit = max(1, min(50000, $limit));
+        $targets = $this->storage->offerTargetsBelowCategoryEndThreshold($limit);
+
+        $offerRowIds = array_values(array_filter(array_map(static function (array $target): int {
+            return (int) ($target['id'] ?? 0);
+        }, $targets), static function (int $id): bool {
+            return $id > 0;
+        }));
+        $queuedOfferRowIds = $this->storage->activeQueuedOfferIdsForOperation($offerRowIds, 'end_offer');
+
+        $targetsToQueue = array();
+        $skippedQueued = 0;
+        foreach ($targets as $target) {
+            $offerRowId = (int) ($target['id'] ?? 0);
+            if ($offerRowId <= 0) {
+                continue;
+            }
+
+            if (isset($queuedOfferRowIds[$offerRowId])) {
+                $skippedQueued++;
+                continue;
+            }
+
+            $targetsToQueue[] = $target;
+        }
+
+        $queued = (!$dryRun && $targetsToQueue !== array())
+            ? $this->storage->enqueueOfferChanges($targetsToQueue, 'end_offer', array(), null, true)
+            : 0;
+        $offers = $targetsToQueue !== array()
+            ? $this->storage->offerCategoryThresholdSummariesForIds(array_map(static function (array $target): int {
+                return (int) ($target['id'] ?? 0);
+            }, $targetsToQueue))
+            : array();
+
+        return array(
+            'operation' => 'auto_end_offers_below_category_threshold',
+            'dry_run' => $dryRun,
+            'scanned' => count($targets),
+            'candidates' => count($targetsToQueue),
+            'would_queue' => count($targetsToQueue),
             'queued' => $queued,
             'skipped_already_queued' => $skippedQueued,
             'offers' => $offers,

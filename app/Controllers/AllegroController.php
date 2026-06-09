@@ -310,10 +310,10 @@ class AllegroController extends Controller
         }
 
         $this->releaseSessionLock();
-        $detached = $this->wantsJson() ? $this->beginAsyncCronResponse('autoendoffers') : false;
+        $detached = false;
 
         try {
-            $result = $this->allegro->autoEndDuplicateOffers((int) $this->input('limit', 5000));
+            $result = $this->allegro->autoEndOffersBelowCategoryThreshold((int) $this->input('limit', 2000), false);
             $mailRecipients = $this->maintenanceMailRecipients();
             if ($mailRecipients !== array() && (int) ($result['queued'] ?? 0) > 0) {
                 $result['mail'] = $this->sendAutoEndOffersReport($mailRecipients, $result);
@@ -323,7 +323,12 @@ class AllegroController extends Controller
                 return;
             }
 
-            $this->jsonResponse($result);
+            if ($this->wantsJson() || $this->input('raw_json', '0') === '1') {
+                $this->jsonResponse($result);
+                return;
+            }
+
+            $this->renderAutoEndOffersDebug($result);
         } catch (Throwable $exception) {
             if ($detached) {
                 $this->logDetachedCronError('autoendoffers', $exception);
@@ -844,19 +849,22 @@ class AllegroController extends Controller
             $rows .= '<tr>'
                 . '<td>' . htmlspecialchars((string) ($offer['account'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
                 . '<td>' . htmlspecialchars((string) ($offer['offer_id'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td style="text-align:right;">' . htmlspecialchars($this->debugValue($offer['end_offers_below_quantity'] ?? null), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td style="text-align:right;">' . htmlspecialchars($this->debugQuantity($offer), ENT_QUOTES, 'UTF-8') . '</td>'
                 . '<td>' . htmlspecialchars((string) ($offer['name'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
-                . '<td>' . htmlspecialchars((string) ($offer['sku'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td>' . htmlspecialchars((string) ($offer['warehouse_product_name'] ?? ''), ENT_QUOTES, 'UTF-8') . '</td>'
                 . '</tr>';
         }
 
         if ($rows === '') {
-            $rows = '<tr><td colspan="4">Brak ofert zakwalifikowanych do zakonczenia.</td></tr>';
+            $rows = '<tr><td colspan="6">Brak ofert dodanych do kolejki zakonczenia.</td></tr>';
         }
 
         $html = '<p>Automatyczne konczenie ofert Allegro.</p>'
             . '<p><strong>Dodano do kolejki:</strong> ' . (int) ($result['queued'] ?? 0) . '</p>'
+            . '<p><strong>Pominieto, bo juz maja aktywne zakonczenie w kolejce:</strong> ' . (int) ($result['skipped_already_queued'] ?? 0) . '</p>'
             . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">'
-            . '<thead><tr><th>Konto</th><th>Offer ID</th><th>Nazwa</th><th>SKU</th></tr></thead>'
+            . '<thead><tr><th>Konto</th><th>Nr oferty</th><th>Zakoncz z kategorii</th><th>Ilosc na magazynie</th><th>Nazwa oferty</th><th>Nazwa produktu na magazynie</th></tr></thead>'
             . '<tbody>' . $rows . '</tbody></table>';
 
         $text = 'Automatyczne konczenie ofert Allegro. Dodano do kolejki: ' . (int) ($result['queued'] ?? 0);
@@ -869,6 +877,88 @@ class AllegroController extends Controller
             'requested' => $recipients,
             'sent' => $sent,
         );
+    }
+
+    private function renderAutoEndOffersDebug(array $result): void
+    {
+        $offers = isset($result['offers']) && is_array($result['offers']) ? $result['offers'] : array();
+        $rows = '';
+
+        foreach ($offers as $offer) {
+            $rows .= '<tr>'
+                . '<td>' . $this->html((string) ($offer['account'] ?? '')) . '</td>'
+                . '<td><code>' . $this->html((string) ($offer['offer_id'] ?? '')) . '</code></td>'
+                . '<td class="number">' . $this->html($this->debugValue($offer['end_offers_below_quantity'] ?? null)) . '</td>'
+                . '<td class="number">' . $this->html($this->debugQuantity($offer)) . '</td>'
+                . '<td>' . $this->html((string) ($offer['name'] ?? '')) . '</td>'
+                . '<td>' . $this->html((string) ($offer['warehouse_product_name'] ?? '')) . '</td>'
+                . '</tr>';
+        }
+
+        if ($rows === '') {
+            $rows = '<tr><td colspan="6" class="empty">Brak ofert kwalifikujacych sie do zakonczenia wedlug progow kategorii.</td></tr>';
+        }
+
+        if (!headers_sent()) {
+            header('Content-Type: text/html; charset=utf-8');
+        }
+
+        echo '<!doctype html><html lang="pl"><head><meta charset="utf-8">'
+            . '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            . '<title>Allegro - podglad zakanczania ofert</title>'
+            . '<style>'
+            . 'body{font-family:Arial,sans-serif;margin:24px;background:#f6f7f9;color:#1f2933}'
+            . 'h1{font-size:24px;margin:0 0 8px}.meta{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}'
+            . '.chip{background:#fff;border:1px solid #d8dde6;border-radius:6px;padding:8px 10px}'
+            . '.note{background:#fff7d6;border:1px solid #f0d36b;border-radius:6px;padding:10px 12px;margin:0 0 16px}'
+            . 'table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d8dde6}'
+            . 'th,td{padding:9px 10px;border-bottom:1px solid #e6eaf0;text-align:left;vertical-align:top}'
+            . 'th{background:#eef2f6;font-size:13px;text-transform:uppercase;letter-spacing:.02em}'
+            . 'tr:hover td{background:#f9fbfd}.number{text-align:right;white-space:nowrap}.empty{text-align:center;color:#6b7280;padding:22px}'
+            . 'code{font-family:Consolas,monospace;background:#f1f5f9;border-radius:4px;padding:2px 4px}'
+            . '</style></head><body>'
+            . '<h1>Allegro - podglad ofert do zakonczenia</h1>'
+            . '<div class="note">Tryb debug: oferty nie sa konczone i nie sa dodawane do kolejki.</div>'
+            . '<div class="meta">'
+            . '<div class="chip">Znalezione: <strong>' . (int) ($result['candidates'] ?? 0) . '</strong></div>'
+            . '<div class="chip">Pominiete, juz w kolejce: <strong>' . (int) ($result['skipped_already_queued'] ?? 0) . '</strong></div>'
+            . '<div class="chip">W kolejce teraz: <strong>' . (int) ($result['queued'] ?? 0) . '</strong></div>'
+            . '</div>'
+            . '<table><thead><tr>'
+            . '<th>Konto</th><th>Nr oferty</th><th>Zakoncz z kategorii</th><th>Ilosc na magazynie</th><th>Nazwa oferty</th><th>Nazwa produktu na magazynie</th>'
+            . '</tr></thead><tbody>' . $rows . '</tbody></table>'
+            . '</body></html>';
+    }
+
+    private function html(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
+    private function debugValue($value): string
+    {
+        if ($value === null || $value === '') {
+            return '-';
+        }
+
+        return (string) $value;
+    }
+
+    private function debugQuantity(array $offer): string
+    {
+        $value = $this->debugValue($offer['warehouse_quantity'] ?? null);
+        $source = trim((string) ($offer['warehouse_quantity_source'] ?? ''));
+        $labels = array(
+            'derived' => 'pochodny',
+            'shared' => 'wspolny',
+            'product' => 'produkt',
+        );
+
+        if ($source === '' || !isset($labels[$source])) {
+            return $value;
+        }
+
+        return $value . ' (' . $labels[$source] . ')';
     }
 
     private function sendMaintenanceReport(array $recipients, array $result): array

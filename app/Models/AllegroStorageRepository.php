@@ -288,6 +288,17 @@ class AllegroStorageRepository
             . ' )';
     }
 
+    private function effectiveWarehouseQuantitySql(): string
+    {
+        return 'COALESCE(('
+            . ' SELECT MIN(COALESCE(source_shared_stock_groups.quantity, source_products.quantity))'
+            . ' FROM product_derived_stock_links derived_links'
+            . ' INNER JOIN products source_products ON source_products.id = derived_links.source_product_id AND source_products.deleted_at IS NULL'
+            . ' LEFT JOIN shared_stock_groups source_shared_stock_groups ON source_shared_stock_groups.id = source_products.shared_stock_group_id'
+            . ' WHERE derived_links.owner_product_id = warehouse.id'
+            . '), shared_stock_groups.quantity, warehouse.quantity)';
+    }
+
     public function allAccounts(): array
     {
         return $this->database->fetchAll(
@@ -1151,6 +1162,160 @@ class AllegroStorageRepository
         }
 
         return $this->database->fetchAll($sql, $params);
+    }
+
+    public function offerTargetsBelowCategoryEndThreshold(int $limit = 2000): array
+    {
+        $limit = max(1, min(50000, $limit));
+        $effectiveQuantitySql = $this->effectiveWarehouseQuantitySql();
+
+        return $this->database->fetchAll(
+            'SELECT offers.id, offers.account_id, offers.offer_id'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . $this->liveWarehouseJoinSql()
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
+            . ' INNER JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
+            . ' WHERE accounts.is_active = 1'
+            . '   AND offers.publication_status = "ACTIVE"'
+            . '   AND warehouse.id IS NOT NULL'
+            . '   AND warehouse_categories.end_offers_below_quantity IS NOT NULL'
+            . '   AND ' . $effectiveQuantitySql . ' <= warehouse_categories.end_offers_below_quantity'
+            . ' ORDER BY offers.id ASC'
+            . ' LIMIT ' . $limit
+        );
+    }
+
+    public function offerCategoryThresholdSummariesForIds(array $offerIds): array
+    {
+        $offerIds = array_values(array_unique(array_filter(array_map('intval', $offerIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($offerIds === array()) {
+            return array();
+        }
+
+        $params = array();
+        $effectiveQuantitySql = $this->effectiveWarehouseQuantitySql();
+        $placeholders = $this->buildIntegerPlaceholders('threshold_summary_offer_id', $offerIds, $params);
+        $rows = $this->database->fetchAll(
+            'SELECT offers.id, offers.offer_id, offers.name, offers.sku, accounts.name AS account,'
+            . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name,'
+            . ' ' . $effectiveQuantitySql . ' AS warehouse_quantity,'
+            . ' CASE'
+            . '   WHEN EXISTS (SELECT 1 FROM product_derived_stock_links derived_flag WHERE derived_flag.owner_product_id = warehouse.id) THEN "derived"'
+            . '   WHEN warehouse.shared_stock_group_id IS NOT NULL THEN "shared"'
+            . '   ELSE "product"'
+            . ' END AS warehouse_quantity_source,'
+            . ' warehouse_categories.name AS category_name,'
+            . ' warehouse_categories.end_offers_below_quantity AS end_offers_below_quantity'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . $this->liveWarehouseJoinSql()
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
+            . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
+            . ' WHERE offers.id IN (' . implode(', ', $placeholders) . ')',
+            $params
+        );
+        $rowsById = array();
+
+        foreach ($rows as $row) {
+            $rowsById[(int) ($row['id'] ?? 0)] = array(
+                'account' => (string) ($row['account'] ?? ''),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'sku' => (string) ($row['sku'] ?? ''),
+                'warehouse_sku' => (string) ($row['warehouse_sku'] ?? ''),
+                'warehouse_product_name' => (string) ($row['warehouse_product_name'] ?? ''),
+                'warehouse_quantity' => isset($row['warehouse_quantity']) ? (int) $row['warehouse_quantity'] : null,
+                'warehouse_quantity_source' => (string) ($row['warehouse_quantity_source'] ?? ''),
+                'category_name' => (string) ($row['category_name'] ?? ''),
+                'end_offers_below_quantity' => isset($row['end_offers_below_quantity']) ? (int) $row['end_offers_below_quantity'] : null,
+            );
+        }
+
+        $orderedRows = array();
+        foreach ($offerIds as $offerId) {
+            if (isset($rowsById[$offerId])) {
+                $orderedRows[] = $rowsById[$offerId];
+            }
+        }
+
+        return $orderedRows;
+    }
+
+    public function activeQueuedOfferIdsForOperation(array $offerIds, string $operation): array
+    {
+        $offerIds = array_values(array_unique(array_filter(array_map('intval', $offerIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+        $operation = trim($operation);
+
+        if ($offerIds === array() || $operation === '') {
+            return array();
+        }
+
+        $params = array('operation' => $operation);
+        $placeholders = $this->buildIntegerPlaceholders('active_queue_offer_id', $offerIds, $params);
+        $rows = $this->database->fetchAll(
+            'SELECT DISTINCT offer_row_id'
+            . ' FROM allegro_offer_change_queue'
+            . ' WHERE offer_row_id IN (' . implode(', ', $placeholders) . ')'
+            . '   AND operation = :operation'
+            . '   AND status IN ("pending", "retry", "processing")',
+            $params
+        );
+
+        $result = array();
+        foreach ($rows as $row) {
+            $offerRowId = (int) ($row['offer_row_id'] ?? 0);
+            if ($offerRowId > 0) {
+                $result[$offerRowId] = true;
+            }
+        }
+
+        return $result;
+    }
+
+    public function offerSummariesForIds(array $offerIds): array
+    {
+        $offerIds = array_values(array_unique(array_filter(array_map('intval', $offerIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($offerIds === array()) {
+            return array();
+        }
+
+        $params = array();
+        $placeholders = $this->buildIntegerPlaceholders('summary_offer_id', $offerIds, $params);
+        $rows = $this->database->fetchAll(
+            'SELECT offers.id, offers.offer_id, offers.name, offers.sku, accounts.name AS account'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . ' WHERE offers.id IN (' . implode(', ', $placeholders) . ')',
+            $params
+        );
+        $rowsById = array();
+
+        foreach ($rows as $row) {
+            $rowsById[(int) ($row['id'] ?? 0)] = array(
+                'account' => (string) ($row['account'] ?? ''),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'sku' => (string) ($row['sku'] ?? ''),
+            );
+        }
+
+        $orderedRows = array();
+        foreach ($offerIds as $offerId) {
+            if (isset($rowsById[$offerId])) {
+                $orderedRows[] = $rowsById[$offerId];
+            }
+        }
+
+        return $orderedRows;
     }
 
     public function enqueueOfferChanges(array $targets, string $operation, array $payload, ?string $availableAt = null, bool $deduplicatePending = false): int
