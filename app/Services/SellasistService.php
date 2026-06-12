@@ -90,7 +90,7 @@ class SellasistService
         $prepared = array();
 
         foreach ($orders as $order) {
-            $prepared[] = $this->prepareOrderForList($order);
+            $prepared[] = $this->prepareOrderForList($this->orderDetailsForList($order));
         }
 
         return array_reverse($prepared);
@@ -410,14 +410,16 @@ class SellasistService
             $qty = max(1, (int) ($item['quantity'] ?? 1));
             $bundleMultiplier = $this->bundleMultiplier((string) ($item['name'] ?? ''));
 
-            $caseStickers[] = $this->buildStickerRow(
-                $order,
-                $item,
-                $mainProduct,
-                $productCount,
-                $qty * $bundleMultiplier,
-                $glassProduct
-            );
+            if (!$this->sameWarehouseProduct($mainProduct, $glassProduct)) {
+                $caseStickers[] = $this->buildStickerRow(
+                    $order,
+                    $item,
+                    $mainProduct,
+                    $productCount,
+                    $qty * $bundleMultiplier,
+                    $glassProduct
+                );
+            }
 
             if ($glassProduct !== null) {
                 $glassStickers[] = $this->buildStickerRow(
@@ -435,6 +437,23 @@ class SellasistService
             'case' => $caseStickers,
             'glass' => $glassStickers,
         );
+    }
+
+    private function sameWarehouseProduct(?array $left, ?array $right): bool
+    {
+        if ($left === null || $right === null) {
+            return false;
+        }
+
+        $leftId = isset($left['id']) ? (int) $left['id'] : 0;
+        $rightId = isset($right['id']) ? (int) $right['id'] : 0;
+        if ($leftId > 0 && $rightId > 0) {
+            return $leftId === $rightId;
+        }
+
+        $leftSku = trim((string) ($left['sku'] ?? ''));
+        $rightSku = trim((string) ($right['sku'] ?? ''));
+        return $leftSku !== '' && $rightSku !== '' && strcasecmp($leftSku, $rightSku) === 0;
     }
 
     private function buildStickerRow(array $order, array $item, array $product, int $productCount, int $qty, ?array $glassProduct): array
@@ -864,15 +883,17 @@ class SellasistService
 
     private function prepareOrderForList(array $order): array
     {
-        $items = isset($order['carts']) && is_array($order['carts']) ? $order['carts'] : array();
+        $items = $this->orderItems($order);
         $itemNames = array();
+        $quantityCount = 0;
 
         foreach ($items as $item) {
-            $name = trim((string) ($item['name'] ?? ''));
+            $name = trim((string) ($item['name'] ?? ($item['product_name'] ?? ($item['title'] ?? ''))));
             if ($name === '') {
                 continue;
             }
             $itemNames[] = $name;
+            $quantityCount += max(1, (int) round((float) ($item['quantity'] ?? ($item['qty'] ?? 1))));
         }
 
         return array(
@@ -882,12 +903,94 @@ class SellasistService
                 (string) ($order['bill_address']['surname'] ?? ''),
                 (string) ($order['bill_address']['company_name'] ?? ''),
             ))),
-            'delivery_name' => trim((string) ($order['external_data']['external_shipment_name'] ?? '')),
-            'comment' => trim((string) ($order['comment'] ?? '')),
+            'delivery_name' => $this->orderDeliveryName($order),
+            'comment' => $this->orderComment($order),
             'creator' => trim((string) ($order['creator'] ?? '')),
             'item_count' => count($items),
+            'quantity_count' => $quantityCount,
             'items_summary' => implode(', ', array_slice($itemNames, 0, 4)),
         );
+    }
+
+    private function orderDetailsForList(array $order): array
+    {
+        if (!$this->orderNeedsDetailsForList($order)) {
+            return $order;
+        }
+
+        $orderId = isset($order['id']) ? (int) $order['id'] : 0;
+        if ($orderId <= 0) {
+            return $order;
+        }
+
+        try {
+            $details = $this->getOrderById($orderId);
+        } catch (\Throwable $exception) {
+            return $order;
+        }
+
+        if (!is_array($details) || $details === array()) {
+            return $order;
+        }
+
+        return array_replace_recursive($order, $details);
+    }
+
+    private function orderNeedsDetailsForList(array $order): bool
+    {
+        return $this->orderItems($order) === array()
+            || $this->orderDeliveryName($order) === ''
+            || $this->orderComment($order) === '';
+    }
+
+    private function orderItems(array $order): array
+    {
+        foreach (array('carts', 'products', 'items', 'order_products') as $key) {
+            if (isset($order[$key]) && is_array($order[$key])) {
+                return $order[$key];
+            }
+        }
+
+        return array();
+    }
+
+    private function orderDeliveryName(array $order): string
+    {
+        $candidates = array(
+            $order['external_data']['external_shipment_name'] ?? null,
+            $order['shipment']['name'] ?? null,
+            $order['shipment_name'] ?? null,
+            $order['delivery_name'] ?? null,
+            $order['delivery']['name'] ?? null,
+        );
+
+        foreach ($candidates as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function orderComment(array $order): string
+    {
+        $candidates = array(
+            $order['comment'] ?? null,
+            $order['customer_comment'] ?? null,
+            $order['buyer_comment'] ?? null,
+            $order['additional_fields'][0]['field_value'] ?? null,
+        );
+
+        foreach ($candidates as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     private function request(string $method, string $path, ?array $payload = null, bool $allowNotFound = false)

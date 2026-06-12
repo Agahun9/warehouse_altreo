@@ -83,7 +83,7 @@
                       <td>{$order.delivery_name|default:'-'|escape}</td>
                       <td>{$order.creator|default:'-'|escape}</td>
                       <td>
-                        <div>{$order.item_count} szt. / pozycji</div>
+                        <div>{$order.quantity_count|default:0} szt. / {$order.item_count|default:0} pozycji</div>
                         {if $order.items_summary neq ''}
                           <div class="small text-secondary">{$order.items_summary|escape}</div>
                         {/if}
