@@ -358,30 +358,34 @@ class AccountingWarehouseController extends Controller
             }
 
             $previews = array();
-            foreach ($this->normalizeUploadedXmlFiles($_FILES['invoice_xml']) as $file) {
-                $tmpName = (string) ($file['tmp_name'] ?? '');
-                if ($tmpName === '' || !is_uploaded_file($tmpName)) {
-                    throw new RuntimeException('Brak poprawnego pliku tymczasowego XML.');
-                }
-
-                $content = file_get_contents($tmpName);
-                if ($content === false) {
-                    throw new RuntimeException('Nie udalo sie odczytac przeslanego pliku XML.');
-                }
-
-                $preview = $this->xmlImporter->parseInvoiceXml($content, (string) ($file['name'] ?? 'faktura.xml'));
-                foreach ($preview['lines'] as $index => $line) {
-                    $rememberedName = $this->warehouse->canonicalNameForSource((string) ($line['original_name'] ?? ''));
-                    if ($rememberedName !== null) {
-                        $preview['lines'][$index]['canonical_name'] = $rememberedName;
-                        $preview['lines'][$index]['classification_confidence'] = 'high';
-                        $preview['lines'][$index]['classification_rule'] = 'alias';
+            foreach ($this->normalizeUploadedXmlFiles($_FILES['invoice_xml']) as $fileIndex => $file) {
+                try {
+                    $tmpName = (string) ($file['tmp_name'] ?? '');
+                    if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                        throw new RuntimeException('Brak poprawnego pliku tymczasowego XML.');
                     }
+
+                    $content = file_get_contents($tmpName);
+                    if ($content === false) {
+                        throw new RuntimeException('Nie udalo sie odczytac przeslanego pliku XML.');
+                    }
+
+                    $preview = $this->xmlImporter->parseInvoiceXml($content, (string) ($file['name'] ?? 'faktura.xml'));
+                    foreach ($preview['lines'] as $index => $line) {
+                        $rememberedName = $this->warehouse->canonicalNameForSource((string) ($line['original_name'] ?? ''));
+                        if ($rememberedName !== null) {
+                            $preview['lines'][$index]['canonical_name'] = $rememberedName;
+                            $preview['lines'][$index]['classification_confidence'] = 'high';
+                            $preview['lines'][$index]['classification_rule'] = 'alias';
+                        }
+                    }
+
+                    $preview['duplicate'] = $this->warehouse->findDuplicateDocument((array) ($preview['header'] ?? array()));
+
+                    $previews[] = $preview;
+                } catch (Throwable $exception) {
+                    throw new RuntimeException($this->uploadedXmlFileErrorMessage($file, $fileIndex, $exception->getMessage()), 0, $exception);
                 }
-
-                $preview['duplicate'] = $this->warehouse->findDuplicateDocument((array) ($preview['header'] ?? array()));
-
-                $previews[] = $preview;
             }
 
             $previews = $this->annotatePreviewDocuments($previews);
@@ -430,8 +434,18 @@ class AccountingWarehouseController extends Controller
             $savedIds = array();
             $skippedAdjustments = 0;
             $skippedDuplicates = 0;
+            $skippedMarked = 0;
             foreach ($documents as $documentData) {
+                $importStatus = trim((string) ($documentData['import_status'] ?? 'ready')) ?: 'ready';
+                if ($importStatus === 'skipped') {
+                    $skippedMarked++;
+                    continue;
+                }
+
                 $documentKind = trim((string) ($documentData['document_kind'] ?? 'receipt')) ?: 'receipt';
+                if ($this->looksLikeCorrectionDocument($documentData)) {
+                    $documentKind = 'adjustment';
+                }
                 if ($documentKind === 'adjustment') {
                     $skippedAdjustments++;
                     continue;
@@ -469,13 +483,16 @@ class AccountingWarehouseController extends Controller
 
             if ($savedIds === array()) {
                 $this->clearStoredXmlPreview();
-                if ($skippedAdjustments > 0 || $skippedDuplicates > 0) {
+                if ($skippedAdjustments > 0 || $skippedDuplicates > 0 || $skippedMarked > 0) {
                     $message = 'Nie zapisano zadnych dokumentow XML.';
                     if ($skippedAdjustments > 0) {
                         $message .= ' Pominieto korekty: ' . $skippedAdjustments . '.';
                     }
                     if ($skippedDuplicates > 0) {
                         $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
+                    }
+                    if ($skippedMarked > 0) {
+                        $message .= ' Pominieto oznaczone do usuniecia: ' . $skippedMarked . '.';
                     }
                     $this->setFlash('success', $message);
                     $this->redirect('./index.php?controller=accountingwarehouse&action=create');
@@ -492,6 +509,9 @@ class AccountingWarehouseController extends Controller
             }
             if ($skippedDuplicates > 0) {
                 $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
+            }
+            if ($skippedMarked > 0) {
+                $message .= ' Pominieto oznaczone do usuniecia: ' . $skippedMarked . '.';
             }
             $this->setFlash('success', $message);
             $this->redirect('./index.php?controller=accountingwarehouse&action=show&id=' . $firstDocumentId);
@@ -1250,6 +1270,17 @@ class AccountingWarehouseController extends Controller
         return $normalized;
     }
 
+    private function uploadedXmlFileErrorMessage(array $file, int $fileIndex, string $message): string
+    {
+        $filename = trim((string) ($file['name'] ?? ''));
+        $label = 'Blad w pliku XML #' . ($fileIndex + 1);
+        if ($filename !== '') {
+            $label .= ' (' . $filename . ')';
+        }
+
+        return $label . ': ' . $message;
+    }
+
     private function xmlDocumentsFromInput(): array
     {
         $documents = $this->input('xml_documents', array());
@@ -1296,7 +1327,9 @@ class AccountingWarehouseController extends Controller
 
             $normalizedDocuments[] = array(
                 'document_number' => $documentNumber,
+                'import_status' => trim((string) ($document['import_status'] ?? 'ready')) === 'skipped' ? 'skipped' : 'ready',
                 'document_kind' => trim((string) ($document['document_kind'] ?? 'receipt')) ?: 'receipt',
+                'invoice_type' => trim((string) ($document['invoice_type'] ?? '')),
                 'supplier_name' => trim((string) ($document['supplier_name'] ?? '')),
                 'supplier_tax_id' => trim((string) ($document['supplier_tax_id'] ?? '')),
                 'issue_date' => trim((string) ($document['issue_date'] ?? '')),
@@ -1338,7 +1371,7 @@ class AccountingWarehouseController extends Controller
 
     private function currencyOptions(): array
     {
-        return array('PLN', 'EUR', 'USD', 'GBP', 'CZK', 'NOK', 'SEK', 'CHF');
+        return array('PLN', 'EUR', 'USD', 'GBP', 'CZK', 'HUF', 'NOK', 'SEK', 'CHF');
     }
 
     private function buildSimpleXlsx(string $sheetName, array $rows): string
@@ -1529,6 +1562,10 @@ class AccountingWarehouseController extends Controller
                 continue;
             }
 
+            if (isset($document['header']) && is_array($document['header']) && $this->looksLikeCorrectionDocument($document['header'])) {
+                $documents[$documentIndex]['header']['document_kind'] = 'adjustment';
+            }
+
             foreach ($document['lines'] as $lineIndex => $line) {
                 $canonicalName = trim((string) ($line['canonical_name'] ?? ''));
                 $confidence = trim((string) ($line['classification_confidence'] ?? 'low'));
@@ -1539,6 +1576,41 @@ class AccountingWarehouseController extends Controller
         }
 
         return $documents;
+    }
+
+    private function looksLikeCorrectionDocument(array $document): bool
+    {
+        $invoiceType = $this->classifier->normalize((string) ($document['invoice_type'] ?? ''));
+        if ($invoiceType !== '' && ($invoiceType === 'kor' || strpos($invoiceType, 'kor') !== false || strpos($invoiceType, 'korekta') !== false || strpos($invoiceType, 'korygujaca') !== false)) {
+            return true;
+        }
+
+        $documentNumber = strtoupper(trim((string) ($document['document_number'] ?? '')));
+        if ($documentNumber !== '' && preg_match('/(?:^|[\/\-\s])K(?:$|[\/\-\s])/', $documentNumber) === 1) {
+            return true;
+        }
+
+        foreach (array('total_net', 'total_gross') as $field) {
+            if (isset($document[$field]) && $this->toDecimal($document[$field]) < 0) {
+                return true;
+            }
+        }
+
+        if (isset($document['lines']) && is_array($document['lines'])) {
+            foreach ($document['lines'] as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+
+                foreach (array('quantity', 'unit_net', 'unit_gross', 'line_net', 'line_gross') as $field) {
+                    if (isset($line[$field]) && $this->toDecimal($line[$field]) < 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private function validateSupplierHeader(array &$header): void

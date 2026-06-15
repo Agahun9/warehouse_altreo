@@ -40,7 +40,9 @@ class AccountingWarehouseXmlImporter
         $saleDate = $this->resolveHeaderValue($xml, array('//fa:Fa/fa:P_6'), array(array('Fa', 'P_6'), array('P_6')));
         $invoiceType = $this->resolveHeaderValue($xml, array('//fa:Fa/fa:RodzajFaktury'), array(array('Fa', 'RodzajFaktury'), array('RodzajFaktury')));
         $documentNumber = $this->resolveHeaderValue($xml, array('//fa:Fa/fa:P_2'), array(array('Fa', 'P_2'), array('P_2')));
-        $isCorrection = $this->isCorrectionDocument($invoiceType, $documentNumber);
+        $totalNet = $this->decimalValue($xml, '//fa:Fa/fa:P_13_1') ?: $this->toDecimal($this->firstValueByPath($xml, array('Fa', 'P_13_1')));
+        $totalGross = $this->decimalValue($xml, '//fa:Fa/fa:P_15') ?: $this->toDecimal($this->firstValueByPath($xml, array('Fa', 'P_15')));
+        $isCorrection = $this->isCorrectionDocument($invoiceType, $documentNumber) || $this->hasNegativeInvoiceValue($xml, $totalNet, $totalGross);
 
         $header = array(
             'source_type' => 'xml',
@@ -51,9 +53,9 @@ class AccountingWarehouseXmlImporter
             'issue_date' => $issueDate,
             'sale_date' => $saleDate !== '' ? $saleDate : $issueDate,
             'receipt_date' => $saleDate !== '' ? $saleDate : $issueDate,
-            'currency' => $this->resolveHeaderValue($xml, array('//fa:Fa/fa:KodWaluty'), array(array('Fa', 'KodWaluty'), array('KodWaluty'))) ?: 'PLN',
-            'total_net' => $this->decimalValue($xml, '//fa:Fa/fa:P_13_1') ?: $this->toDecimal($this->firstValueByPath($xml, array('Fa', 'P_13_1'))),
-            'total_gross' => $this->decimalValue($xml, '//fa:Fa/fa:P_15') ?: $this->toDecimal($this->firstValueByPath($xml, array('Fa', 'P_15'))),
+            'currency' => $this->resolveCurrency($xml, $documentNumber),
+            'total_net' => $totalNet,
+            'total_gross' => $totalGross,
             'notes' => '',
             'invoice_type' => $invoiceType,
             'xml_filename' => $filename,
@@ -66,7 +68,7 @@ class AccountingWarehouseXmlImporter
             $lineNodes = $xml->xpath('//*[local-name()="FaWiersz"]');
         }
         if (!is_array($lineNodes) || $lineNodes === array()) {
-            throw new RuntimeException('Faktura XML nie zawiera pozycji.');
+            throw new RuntimeException($this->formatInvoiceXmlError('Faktura XML nie zawiera pozycji.', $filename, $documentNumber));
         }
 
         $lines = array();
@@ -221,13 +223,78 @@ class AccountingWarehouseXmlImporter
 
     private function isCorrectionDocument(string $invoiceType, string $documentNumber): bool
     {
+        $rawDocumentNumber = strtoupper(trim($documentNumber));
         $invoiceType = $this->classifier->normalize($invoiceType);
         $documentNumber = $this->classifier->normalize($documentNumber);
 
-        if ($invoiceType !== '' && (strpos($invoiceType, 'korekta') !== false || strpos($invoiceType, 'korygujaca') !== false)) {
+        if ($invoiceType !== '' && ($invoiceType === 'kor' || strpos($invoiceType, 'kor') !== false || strpos($invoiceType, 'korekta') !== false || strpos($invoiceType, 'korygujaca') !== false)) {
+            return true;
+        }
+
+        if ($rawDocumentNumber !== '' && preg_match('/(?:^|[\/\-\s])K(?:$|[\/\-\s])/', $rawDocumentNumber) === 1) {
             return true;
         }
 
         return $documentNumber !== '' && (strpos($documentNumber, 'korekta') !== false || strpos($documentNumber, 'kor') !== false);
+    }
+
+    private function hasNegativeInvoiceValue(SimpleXMLElement $xml, float $totalNet, float $totalGross): bool
+    {
+        if ($totalNet < 0 || $totalGross < 0) {
+            return true;
+        }
+
+        $nodes = $xml->xpath('//*[not(*)]');
+        if (!is_array($nodes)) {
+            return false;
+        }
+
+        foreach ($nodes as $node) {
+            $value = trim((string) $node);
+            if ($value === '') {
+                continue;
+            }
+
+            $normalizedValue = str_replace(array(' ', "\xc2\xa0"), '', str_replace(array(',', '−'), array('.', '-'), $value));
+            if (preg_match('/^-?\d+(?:\.\d+)?$/', $normalizedValue) === 1 && (float) $normalizedValue < 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveCurrency(SimpleXMLElement $xml, string $documentNumber): string
+    {
+        $currency = strtoupper(trim($this->resolveHeaderValue($xml, array('//fa:Fa/fa:KodWaluty'), array(array('Fa', 'KodWaluty'), array('KodWaluty')))));
+        if ($currency !== '') {
+            return $currency;
+        }
+
+        if (preg_match('/(?:^|\/)([A-Z]{3})(?:\/|$)/', strtoupper($documentNumber), $matches) === 1) {
+            return $matches[1];
+        }
+
+        return 'PLN';
+    }
+
+    private function formatInvoiceXmlError(string $message, string $filename = '', string $documentNumber = ''): string
+    {
+        $details = array();
+        $filename = trim($filename);
+        $documentNumber = trim($documentNumber);
+
+        if ($filename !== '') {
+            $details[] = 'plik: ' . $filename;
+        }
+        if ($documentNumber !== '') {
+            $details[] = 'numer faktury: ' . $documentNumber;
+        }
+
+        if ($details === array()) {
+            return $message;
+        }
+
+        return $message . ' (' . implode(', ', $details) . ')';
     }
 }

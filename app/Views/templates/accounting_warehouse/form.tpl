@@ -21,6 +21,18 @@
     <div class="container-fluid">
       {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+      <style>
+        .xml-document-block.xml-skipped {
+          opacity: .55;
+          filter: grayscale(.35);
+        }
+
+        .xml-document-block.xml-skipped .aw-line-row,
+        .xml-document-block.xml-skipped .row.g-3 {
+          filter: blur(1px);
+          pointer-events: none;
+        }
+      </style>
 
       {capture assign=itemOptions}{foreach $itemSuggestions as $suggestion}<option value="{$suggestion|escape}">{$suggestion|escape}</option>{/foreach}{/capture}
       {capture assign=currencyOptionsHtml}{foreach $currencyOptions as $currencyOption}<option value="{$currencyOption|escape}">{$currencyOption|escape}</option>{/foreach}{/capture}
@@ -141,14 +153,19 @@
                             <div class="fw-semibold">Faktura {$documentIndex+1} z {$xmlPreview|@count}: {$document.header.document_number|default:'bez numeru'|escape}</div>
                             <div class="small text-secondary">{$document.header.supplier_name|default:'-'|escape} | sprzedaz: {$document.header.sale_date|default:'-'|escape}</div>
                           </div>
-                          <div class="d-flex flex-wrap gap-2">
+                          <div class="d-flex flex-wrap gap-2 align-items-start">
+                            <span class="badge text-bg-danger d-none xml-skipped-badge">NIE DO IMPORTU</span>
                             {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
                               <span class="badge text-bg-warning">KOREKTA XML - BEDZIE POMINIETA</span>
                             {else}
                               <span class="badge text-bg-success">PRZYJECIE DO IMPORTU</span>
                             {/if}
                             <span class="badge text-bg-info">plik: {$document.header.xml_filename|escape}</span>
+                            <button type="button" class="btn btn-sm btn-outline-danger xml-skip-toggle" title="Pomin te fakture w imporcie" aria-label="Pomin te fakture w imporcie">X</button>
                           </div>
+                        </div>
+                        <div class="alert alert-danger border-danger mb-3 d-none xml-skipped-alert">
+                          Oznaczono jako nie do importu. Ta faktura zostanie pominieta przy zapisie.
                         </div>
 
                         {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
@@ -188,7 +205,14 @@
                           <div class="col-md-1"><label class="form-label">Data sprzedazy</label><input type="date" class="form-control" name="xml_documents[{$documentIndex}][sale_date]" value="{$document.header.sale_date|escape}"></div>
                           <div class="col-md-2">
                             <label class="form-label">Waluta</label>
+                            {assign var=currencyOptionExists value=false}
+                            {foreach $currencyOptions as $currencyOption}
+                              {if $document.header.currency eq $currencyOption}{assign var=currencyOptionExists value=true}{/if}
+                            {/foreach}
                             <select class="form-select" name="xml_documents[{$documentIndex}][currency]">
+                              {if $document.header.currency && !$currencyOptionExists}
+                                <option value="{$document.header.currency|escape}" selected>{$document.header.currency|escape}</option>
+                              {/if}
                               {foreach $currencyOptions as $currencyOption}
                                 <option value="{$currencyOption|escape}"{if $document.header.currency eq $currencyOption} selected{/if}>{$currencyOption|escape}</option>
                               {/foreach}
@@ -200,6 +224,8 @@
                         <input type="hidden" name="xml_documents[{$documentIndex}][xml_filename]" value="{$document.header.xml_filename|escape}">
                         <input type="hidden" name="xml_documents[{$documentIndex}][xml_hash]" value="{$document.header.xml_hash|escape}">
                         <input type="hidden" name="xml_documents[{$documentIndex}][xml_payload_base64]" value="{$document.header.xml_payload_base64|escape}">
+                        <input type="hidden" name="xml_documents[{$documentIndex}][invoice_type]" value="{$document.header.invoice_type|default:''|escape}">
+                        <input type="hidden" class="xml-import-status-input" name="xml_documents[{$documentIndex}][import_status]" value="ready">
 
                         <div class="alert alert-light border small mb-3">
                           Kolumny pozycji: `Ilosc` to liczba sztuk lub jednostek, `Netto / szt.` i `Brutto / szt.` to cena jednostkowa, `VAT %` przelicza wartosci automatycznie. `Suma netto` i `Suma brutto` pokazuja wartosc calego wiersza.
@@ -373,6 +399,47 @@
         var factor = Math.pow(10, digits);
         return (Math.round(value * factor) / factor).toFixed(digits);
       }
+
+      function toggleXmlDocumentSkipped(skipButton) {
+        var documentBlock = skipButton ? skipButton.closest('.xml-document-block') : null;
+        if (!documentBlock) {
+          return;
+        }
+
+        var statusInput = documentBlock.querySelector('.xml-import-status-input');
+        var skippedBadge = documentBlock.querySelector('.xml-skipped-badge');
+        var skippedAlert = documentBlock.querySelector('.xml-skipped-alert');
+        var isSkipped = !documentBlock.classList.contains('xml-skipped');
+
+        documentBlock.classList.toggle('xml-skipped', isSkipped);
+        if (statusInput) {
+          statusInput.value = isSkipped ? 'skipped' : 'ready';
+        }
+        if (skippedBadge) {
+          skippedBadge.classList.toggle('d-none', !isSkipped);
+        }
+        if (skippedAlert) {
+          skippedAlert.classList.toggle('d-none', !isSkipped);
+        }
+
+        skipButton.classList.toggle('btn-outline-danger', !isSkipped);
+        skipButton.classList.toggle('btn-danger', isSkipped);
+        skipButton.textContent = isSkipped ? 'Cofnij' : 'X';
+        skipButton.setAttribute('aria-label', isSkipped ? 'Cofnij pominiecie tej faktury' : 'Pomin te fakture w imporcie');
+        skipButton.setAttribute('title', isSkipped ? 'Cofnij pominiecie tej faktury' : 'Pomin te fakture w imporcie');
+      }
+
+      function bindXmlSkipButtons() {
+        var skipButtons = document.querySelectorAll('.xml-skip-toggle');
+        for (var skipIndex = 0; skipIndex < skipButtons.length; skipIndex++) {
+          skipButtons[skipIndex].addEventListener('click', function (event) {
+            event.preventDefault();
+            toggleXmlDocumentSkipped(this);
+          });
+        }
+      }
+
+      bindXmlSkipButtons();
 
       function syncLineValues(row, changedField) {
         if (!row) {
@@ -992,6 +1059,30 @@
           uploadNextChunk();
         });
       })();
+
+      function updateAssignmentHighlight(row, confidenceOverride) {
+        if (!row) {
+          return;
+        }
+
+        var select = row.querySelector('.item-name-select');
+        if (!select) {
+          return;
+        }
+
+        var selectedValue = String(select.value || '').trim();
+        var hasMatchingOption = false;
+        for (var optionIndex = 0; optionIndex < select.options.length; optionIndex++) {
+          if (String(select.options[optionIndex].value || '').trim() === selectedValue && selectedValue !== '') {
+            hasMatchingOption = true;
+            break;
+          }
+        }
+
+        var confidence = String(confidenceOverride || row.getAttribute('data-classification-confidence') || 'low');
+        var shouldHighlight = selectedValue === '' || selectedValue === 'pozostale' || !hasMatchingOption || confidence === 'low';
+        row.classList.toggle('bg-warning-subtle', shouldHighlight);
+      }
 
       var allRows = document.querySelectorAll('.aw-line-row');
       for (var rowIndex = 0; rowIndex < allRows.length; rowIndex++) {
