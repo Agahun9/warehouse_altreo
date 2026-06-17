@@ -1444,7 +1444,7 @@
         var selectedValues = normalizeSelectedArray(value);
 
         var paramSearch = (pName + ' ' + pid + ' ' + pType).toLowerCase();
-        html += '<div class="col-md-6 js-param-card" data-param-search="' + escapeHtml(paramSearch) + '">';
+        html += '<div class="col-md-6 js-param-card" data-param-id="' + escapeHtml(pid) + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="' + escapeHtml(inputName) + '" data-param-search="' + escapeHtml(paramSearch) + '">';
         var labelClass = required ? 'form-label text-danger fw-bold' : 'form-label';
         html += '<label class="' + labelClass + '">' + escapeHtml(pName) + (required ? ' (wymagany)' : '') + '</label>';
 
@@ -1530,6 +1530,9 @@
         }
 
         html += '<div class="small text-secondary mt-1">ID: ' + escapeHtml(pid) + ' | typ: ' + escapeHtml(pType) + (multiple ? ' | multiple' : '') + '</div>';
+        if (inputName === 'allegro_parameters') {
+          html += '<div class="small text-secondary mt-1 js-param-import-current">CSV/import product.allegro_parameter.' + escapeHtml(pid) + ': <span class="text-muted">brak</span></div>';
+        }
         html += '</div>';
       }
 
@@ -1537,8 +1540,124 @@
       bindOptionFilters(containerNode);
       bindRemoteSelectMappings(containerNode);
       bindFitsToPickers(containerNode);
+      bindParameterImportValueRefresh(containerNode);
       if (infoNode) {
         infoNode.textContent = loadedLabel;
+      }
+    }
+
+    function readParameterCurrentValue(card) {
+      var inputName = String(card.getAttribute('data-input-name') || '');
+      var parameterId = String(card.getAttribute('data-param-id') || '');
+      var result = {
+        values: [],
+        labels: []
+      };
+
+      if (inputName === '' || parameterId === '') {
+        return result;
+      }
+
+      var multiControls = card.querySelectorAll('input[name="' + cssEscape(inputName + '[' + parameterId + '][]') + '"]:checked');
+      if (multiControls.length) {
+        for (var i = 0; i < multiControls.length; i++) {
+          result.values.push(String(multiControls[i].value || ''));
+          result.labels.push(controlLabelText(multiControls[i]));
+        }
+        return result;
+      }
+
+      var control = card.querySelector('[name="' + cssEscape(inputName + '[' + parameterId + ']') + '"]');
+      if (!control) {
+        return result;
+      }
+
+      if (control.tagName && control.tagName.toLowerCase() === 'select') {
+        var selectedOption = control.options && control.selectedIndex >= 0 ? control.options[control.selectedIndex] : null;
+        if (String(control.value || '') !== '') {
+          result.values.push(String(control.value || ''));
+          result.labels.push(selectedOption ? String(selectedOption.textContent || '').trim() : '');
+        }
+        return result;
+      }
+
+      var rawValue = String(control.value || '').trim();
+      if (rawValue !== '') {
+        result.values.push(rawValue);
+      }
+
+      return result;
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(value);
+      }
+
+      return String(value || '').replace(/["\\]/g, '\\$&');
+    }
+
+    function controlLabelText(control) {
+      if (!control || !control.id) {
+        return '';
+      }
+
+      var label = document.querySelector('label[for="' + cssEscape(control.id) + '"]');
+      return label ? String(label.textContent || '').trim() : '';
+    }
+
+    function refreshParameterImportValue(card) {
+      var target = card ? card.querySelector('.js-param-import-current') : null;
+      if (!target) {
+        return;
+      }
+
+      var current = readParameterCurrentValue(card);
+      var parameterId = String(card.getAttribute('data-param-id') || '');
+      target.innerHTML = '';
+      target.appendChild(document.createTextNode('CSV/import product.allegro_parameter.' + parameterId + ': '));
+
+      if (!current.values.length) {
+        var empty = document.createElement('span');
+        empty.className = 'text-muted';
+        empty.textContent = 'brak';
+        target.appendChild(empty);
+        return;
+      }
+
+      var code = document.createElement('code');
+      code.textContent = current.values.join('|');
+      target.appendChild(code);
+
+      var labels = current.labels.filter(function (label, index, list) {
+        return label !== '' && current.values.indexOf(label) === -1 && list.indexOf(label) === index;
+      });
+
+      if (labels.length) {
+        target.appendChild(document.createTextNode(' | wariant: ' + labels.join(', ')));
+      }
+    }
+
+    function bindParameterImportValueRefresh(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var cards = scopeNode.querySelectorAll('.js-param-card');
+      for (var i = 0; i < cards.length; i++) {
+        (function (card) {
+          refreshParameterImportValue(card);
+
+          var controls = card.querySelectorAll('select, input, textarea');
+          for (var c = 0; c < controls.length; c++) {
+            controls[c].addEventListener('change', function () {
+              refreshParameterImportValue(card);
+            });
+            controls[c].addEventListener('input', function () {
+              refreshParameterImportValue(card);
+            });
+          }
+        })(cards[i]);
       }
     }
 
