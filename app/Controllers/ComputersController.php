@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Models\AllegroStorageRepository;
+use App\Models\ErliStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\MoreleService;
@@ -63,7 +65,11 @@ class ComputersController extends Controller
         $components = $this->db()->fetchAll('SELECT * FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category, name');
         $componentsById = array();
         $grouped = array();
-        foreach ($components as $component) {
+        foreach ($components as $index => $component) {
+            if (is_array($component)) {
+                $component = $this->normalizeComponentTextFields($component);
+                $components[$index] = $component;
+            }
             $componentId = (int) ($component['id'] ?? 0);
             $componentsById[$componentId] = $component;
             $category = trim((string) ($component['category'] ?? ''));
@@ -78,12 +84,30 @@ class ComputersController extends Controller
 
         $filterComponents = array_values(array_filter(array_map('intval', (array) $this->input('filter_components', array()))));
         $filterName = trim((string) $this->input('filter_name', ''));
+        $filterMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('filter_market_accounts', array()));
         $filterOfferStatus = $this->input('filter_status_offer', '');
-        $filterOfferStatus = $filterOfferStatus === '' ? null : (int) $filterOfferStatus;
+        if ($filterMarketAccounts === array() && $filterOfferStatus !== '') {
+            $filterMarketAccounts[] = (string) ((int) $filterOfferStatus);
+        }
+        $allegroMarketAccounts = $this->activeComputerAllegroAccounts();
+        $erliMarketAccounts = $this->activeComputerErliAccounts();
+        $allegroMarketAccounts = $this->markSelectedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
+        $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
 
-        $products = $this->db()->fetchAll('SELECT * FROM ' . self::PRODUCTS_TABLE . ' ORDER BY id DESC');
+        $products = $this->attachActiveErliProducts(
+            $this->attachActiveAllegroOffers(
+                $this->db()->fetchAll('SELECT * FROM ' . self::PRODUCTS_TABLE . ' ORDER BY id DESC')
+            )
+        );
         $filteredProducts = array();
         foreach ($products as $product) {
+            $product = $this->normalizeProductImageFields($product);
+            if (!isset($product['allegro_accounts']) || !is_array($product['allegro_accounts'])) {
+                $product['allegro_accounts'] = array();
+            }
+            if (!isset($product['erli_accounts']) || !is_array($product['erli_accounts'])) {
+                $product['erli_accounts'] = array();
+            }
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
             $componentsMatch = true;
             foreach ($filterComponents as $filterComponentId) {
@@ -95,11 +119,19 @@ class ComputersController extends Controller
 
             $nameMatch = $filterName === '' || stripos((string) ($product['name'] ?? ''), $filterName) !== false;
             $offerMatch = true;
+            $activeAllegroOffers = isset($product['allegro_accounts']) && is_array($product['allegro_accounts'])
+                ? $product['allegro_accounts']
+                : array();
+            $activeErliOffers = isset($product['erli_accounts']) && is_array($product['erli_accounts'])
+                ? $product['erli_accounts']
+                : array();
             $offerId = trim((string) ($product['offerid'] ?? ''));
-            if ($filterOfferStatus === 1) {
-                $offerMatch = $offerId !== '' && $offerId !== '0';
-            } elseif ($filterOfferStatus === 0) {
-                $offerMatch = $offerId === '' || $offerId === '0';
+            if ($filterMarketAccounts !== array()) {
+                $offerMatch = $this->productMatchesMarketAccountFilters($product, $filterMarketAccounts);
+            } elseif ($filterOfferStatus === '1') {
+                $offerMatch = $activeAllegroOffers !== array() || $activeErliOffers !== array() || ($offerId !== '' && $offerId !== '0');
+            } elseif ($filterOfferStatus === '0') {
+                $offerMatch = $activeAllegroOffers === array() && $activeErliOffers === array() && ($offerId === '' || $offerId === '0');
             }
 
             if (!$componentsMatch || !$nameMatch || !$offerMatch) {
@@ -132,7 +164,7 @@ class ComputersController extends Controller
         $pagedProducts = array_slice($filteredProducts, $offset, $perPage);
 
         $queryParams = $_GET;
-        unset($queryParams['page'], $queryParams['per_page']);
+        unset($queryParams['controller'], $queryParams['action'], $queryParams['page'], $queryParams['per_page']);
         $baseQuery = http_build_query($queryParams);
         $paginationBaseQuery = './index.php?controller=computers&action=products';
         if ($baseQuery !== '') {
@@ -157,6 +189,9 @@ class ComputersController extends Controller
             'profit' => (float) $this->input('profit', 0),
             'filterComponents' => $filterComponents,
             'filterName' => $filterName,
+            'filterMarketAccounts' => $filterMarketAccounts,
+            'allegroMarketAccounts' => $allegroMarketAccounts,
+            'erliMarketAccounts' => $erliMarketAccounts,
             'current_page' => $currentPage,
             'per_page' => $perPage,
             'total_pages' => $totalPages,
@@ -193,7 +228,9 @@ class ComputersController extends Controller
         if ($editId > 0) {
             $editItem = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $editId));
             if (is_array($editItem)) {
+                $editItem = $this->normalizeComponentTextFields($editItem);
                 $editItem = $this->hydrateComponentParameterMaps($editItem);
+                $editItem = $this->normalizeComponentImageFields($editItem);
             }
         }
 
@@ -201,6 +238,12 @@ class ComputersController extends Controller
             'SELECT *, JSON_LENGTH(parameters_morele) AS parameters_morele_count, JSON_LENGTH(parameters_eu) AS parameters_eu_count, JSON_LENGTH(parameters_empik) AS parameters_empik_count
              FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category ASC, name ASC'
         );
+        foreach ($items as $index => $item) {
+            if (is_array($item)) {
+                $item = $this->normalizeComponentTextFields($item);
+                $items[$index] = $this->normalizeComponentImageFields($item);
+            }
+        }
         $templates = $this->db()->fetchAll('SELECT * FROM ' . self::TEMPLATES_TABLE . ' ORDER BY name ASC');
         $columns = $this->db()->fetchAll(
             'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :table_name AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION ASC',
@@ -371,6 +414,7 @@ class ComputersController extends Controller
         $componentsById = $this->componentsById();
         $successCount = 0;
         $errors = array();
+        $successMessage = '';
 
         if ($bulkAction === 'delete') {
             $placeholders = implode(',', array_fill(0, count($productIds), '?'));
@@ -445,11 +489,13 @@ class ComputersController extends Controller
             $this->importEanCsv();
             return;
         } elseif ($bulkAction === 'update_price') {
+            $allegroQueuedCount = 0;
             foreach ($productIds as $productId) {
                 $product = $this->productById($productId);
                 if ($product === null) {
                     continue;
                 }
+                $allegroQueuedCount += $this->queueAllegroPriceUpdatesForProduct($product);
                 $this->db()->insert(self::TASK_QUEUE_TABLE, array(
                     'offerId' => (string) ($product['offerid'] ?? ''),
                     'action' => 'PRICE',
@@ -464,6 +510,12 @@ class ComputersController extends Controller
                 ));
                 $successCount++;
             }
+            if ($allegroQueuedCount > 0) {
+                $successMessage = 'Dodano do kolejki aktualizacji cen: ' . $successCount . ' produktow, Allegro: ' . $allegroQueuedCount . ' ofert.';
+            } else {
+                $successCount = 0;
+                $errors[] = 'Nie znaleziono aktywnych ofert Allegro dla zaznaczonych produktow.';
+            }
         } elseif (in_array($bulkAction, array('remove_component', 'replace_component', 'add_component'), true)) {
             $successCount = $this->handleProductComponentBulkChange($bulkAction, $productIds, $componentsById, $errors);
         } elseif (in_array($bulkAction, array('export_easyuploader', 'export_morele', 'export_empik'), true)) {
@@ -473,7 +525,9 @@ class ComputersController extends Controller
             $errors[] = 'Nieznana akcja masowa.';
         }
 
-        if ($successCount > 0) {
+        if ($successMessage !== '') {
+            $this->setFlash('success', $successMessage);
+        } elseif ($successCount > 0) {
             $this->setFlash('success', 'Akcja masowa zakonczona sukcesem. Zaktualizowano ' . $successCount . ' produktow.');
         }
         if ($errors !== array()) {
@@ -615,6 +669,12 @@ class ComputersController extends Controller
             $this->redirect('./index.php?controller=computers&action=components' . ($id > 0 ? '&edit_id=' . $id : ''));
         }
 
+        $existingComponent = null;
+        if ($id > 0) {
+            $row = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $id));
+            $existingComponent = is_array($row) ? $this->normalizeComponentTextFields($row) : null;
+        }
+
         $oldImg = trim((string) $this->input('img_old', ''));
         $oldImgMorele = trim((string) $this->input('img_morele_old', ''));
         $oldImgEmpik = trim((string) $this->input('img_empik_old', ''));
@@ -629,9 +689,24 @@ class ComputersController extends Controller
             'description' => trim((string) $this->input('description', '')),
             'description_morele' => trim((string) $this->input('description_morele', '')),
             'description_empik' => trim((string) $this->input('description_empik', '')),
-            'parameters_eu' => json_encode($this->collectMarketParams((array) $this->input('param', array()), (array) $this->input('param_type', array())), JSON_UNESCAPED_UNICODE),
-            'parameters_morele' => json_encode($this->collectMarketParams((array) $this->input('morele_param', array()), (array) $this->input('morele_param_type', array())), JSON_UNESCAPED_UNICODE),
-            'parameters_empik' => json_encode($this->collectEmpikParams(), JSON_UNESCAPED_UNICODE),
+            'parameters_eu' => $this->postedComponentParamsJson(
+                'params_eu_loaded',
+                $this->collectMarketParams((array) $this->input('param', array()), (array) $this->input('param_type', array())),
+                $existingComponent,
+                'parameters_eu'
+            ),
+            'parameters_morele' => $this->postedComponentParamsJson(
+                'params_morele_loaded',
+                $this->collectMarketParams((array) $this->input('morele_param', array()), (array) $this->input('morele_param_type', array())),
+                $existingComponent,
+                'parameters_morele'
+            ),
+            'parameters_empik' => $this->postedComponentParamsJson(
+                'params_empik_loaded',
+                $this->collectEmpikParams(),
+                $existingComponent,
+                'parameters_empik'
+            ),
             'name_spec' => trim((string) $this->input('name_spec', '')),
             'img' => $img,
             'img_morele' => $imgMorele,
@@ -669,6 +744,7 @@ class ComputersController extends Controller
         if ($editId > 0) {
             $row = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $editId));
             if (is_array($row)) {
+                $row = $this->normalizeComponentTextFields($row);
                 $product = $this->hydrateComponentParameterMaps($row);
             }
         }
@@ -731,7 +807,517 @@ class ComputersController extends Controller
     private function productById(int $productId): ?array
     {
         $product = $this->db()->fetch('SELECT * FROM ' . self::PRODUCTS_TABLE . ' WHERE id = :id', array('id' => $productId));
-        return is_array($product) ? $product : null;
+        return is_array($product) ? $this->normalizeProductImageFields($product) : null;
+    }
+
+    private function queueAllegroPriceUpdatesForProduct(array $product): int
+    {
+        $attachedProducts = $this->attachActiveAllegroOffers(array($product));
+        $attachedProduct = isset($attachedProducts[0]) && is_array($attachedProducts[0]) ? $attachedProducts[0] : $product;
+        $offers = isset($attachedProduct['allegro_accounts']) && is_array($attachedProduct['allegro_accounts'])
+            ? $attachedProduct['allegro_accounts']
+            : array();
+
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $price = $this->normalizeQueuePrice($attachedProduct['price'] ?? null);
+        if ($price === null) {
+            return 0;
+        }
+
+        $targets = array();
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $offerRowId = (int) ($offer['offer_row_id'] ?? 0);
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            $offerId = trim((string) ($offer['offer_id'] ?? ''));
+            if ($offerRowId <= 0 || $accountId <= 0 || $offerId === '') {
+                continue;
+            }
+
+            $targets[] = array(
+                'id' => $offerRowId,
+                'account_id' => $accountId,
+                'offer_id' => $offerId,
+            );
+        }
+
+        if ($targets === array()) {
+            return 0;
+        }
+
+        $storage = new AllegroStorageRepository($this->db());
+        $storage->ensureSchema();
+        return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price), null, true);
+    }
+
+    private function normalizeQueuePrice($value): ?string
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return null;
+        }
+
+        $normalized = str_replace(',', '.', trim((string) $value));
+        if (!is_numeric($normalized)) {
+            return null;
+        }
+
+        return number_format((float) $normalized, 2, '.', '');
+    }
+
+    private function normalizeProductImageFields(array $product): array
+    {
+        foreach (array('img', 'img_morele', 'img_empik') as $field) {
+            if (array_key_exists($field, $product)) {
+                $product[$field] = trim((string) $product[$field]);
+            }
+        }
+
+        return $product;
+    }
+
+    private function selectedMarketAccountFilters(array $values): array
+    {
+        $selected = array();
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if ($value === '1' || $value === '0' || preg_match('/^(allegro|erli):\d+$/', $value) === 1) {
+                $selected[] = $value;
+            }
+        }
+
+        return array_values(array_unique($selected));
+    }
+
+    private function productMatchesMarketAccountFilters(array $product, array $filters): bool
+    {
+        $hasAnyOffer = in_array('1', $filters, true);
+        $hasNoOffer = in_array('0', $filters, true);
+        $hasActiveOffer = false;
+
+        foreach ((array) ($product['allegro_accounts'] ?? array()) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+            $hasActiveOffer = true;
+            if (in_array('allegro:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
+                return true;
+            }
+        }
+
+        foreach ((array) ($product['erli_accounts'] ?? array()) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+            $hasActiveOffer = true;
+            if (in_array('erli:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
+                return true;
+            }
+        }
+
+        if ($hasAnyOffer && $hasActiveOffer) {
+            return true;
+        }
+
+        return $hasNoOffer && !$hasActiveOffer;
+    }
+
+    private function markSelectedMarketAccounts(array $accounts, string $market, array $filters): array
+    {
+        foreach ($accounts as $index => $account) {
+            $value = $market . ':' . (int) ($account['id'] ?? 0);
+            $accounts[$index]['filter_value'] = $value;
+            $accounts[$index]['selected'] = in_array($value, $filters, true);
+        }
+
+        return $accounts;
+    }
+
+    private function activeComputerAllegroAccounts(): array
+    {
+        if (!$this->tableExists('allegro_accounts')) {
+            return array();
+        }
+
+        return $this->db()->fetchAll('SELECT id, name, slug FROM allegro_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
+    }
+
+    private function activeComputerErliAccounts(): array
+    {
+        if (!$this->tableExists('erli_accounts')) {
+            return array();
+        }
+
+        return $this->db()->fetchAll('SELECT id, name, slug FROM erli_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
+    }
+
+    private function attachActiveAllegroOffers(array $products): array
+    {
+        foreach ($products as $index => $product) {
+            if (is_array($product)) {
+                $products[$index]['offerid'] = '';
+                $products[$index]['price_allegro'] = null;
+                $products[$index]['allegro_accounts'] = array();
+            }
+        }
+
+        if ($products === array() || !$this->tableExists('allegro_offers') || !$this->tableExists('allegro_accounts')) {
+            return $products;
+        }
+
+        $skuMap = array();
+        foreach ($products as $index => $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            foreach ($this->allegroSkuCandidatesForComputerProduct($product) as $sku) {
+                if (!isset($skuMap[$sku])) {
+                    $skuMap[$sku] = array();
+                }
+                $skuMap[$sku][] = $index;
+            }
+        }
+
+        if ($skuMap === array()) {
+            return $products;
+        }
+
+        $attachedAccra = array();
+        $attachedOffers = array();
+        foreach (array_chunk(array_keys($skuMap), 500) as $skuChunk) {
+            $params = array();
+            $placeholders = array();
+            foreach ($skuChunk as $index => $sku) {
+                $key = 'sku_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $sku;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT offers.id AS offer_row_id, offers.account_id, offers.offer_id, offers.sku, offers.price_amount, offers.price_currency, offers.publication_status, offers.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
+                . ' FROM allegro_offers offers'
+                . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+                . ' WHERE offers.publication_status = :publication_status'
+                . ' AND accounts.is_active = 1'
+                . ' AND offers.sku IN (' . implode(',', $placeholders) . ')'
+                . ' ORDER BY accounts.name ASC, offers.updated_at DESC, offers.id DESC',
+                array_merge(array(
+                    'publication_status' => 'ACTIVE',
+                ), $params)
+            );
+
+            foreach ($rows as $row) {
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku === '' || empty($skuMap[$sku])) {
+                    continue;
+                }
+
+                foreach ($skuMap[$sku] as $productIndex) {
+                    $offerKey = $productIndex . ':' . (string) ($row['account_slug'] ?? '') . ':' . (string) ($row['offer_id'] ?? '');
+                    if (!isset($attachedOffers[$offerKey])) {
+                        $products[$productIndex]['allegro_accounts'][] = array(
+                            'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+                            'account_id' => (int) ($row['account_id'] ?? 0),
+                            'account_name' => (string) ($row['account_name'] ?? ''),
+                            'account_slug' => (string) ($row['account_slug'] ?? ''),
+                            'offer_id' => trim((string) ($row['offer_id'] ?? '')),
+                            'price_amount' => $row['price_amount'] !== null ? (float) $row['price_amount'] : null,
+                            'sku' => $sku,
+                            'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
+                        );
+                        $attachedOffers[$offerKey] = true;
+                    }
+
+                    if (!isset($attachedAccra[$productIndex]) && $this->isAccraAllegroAccount($row)) {
+                        $products[$productIndex]['offerid'] = trim((string) ($row['offer_id'] ?? ''));
+                        $products[$productIndex]['price_allegro'] = $row['price_amount'] !== null ? (float) $row['price_amount'] : null;
+                        $products[$productIndex]['allegro_sku'] = $sku;
+                        $products[$productIndex]['allegro_account_name'] = (string) ($row['account_name'] ?? '');
+                        $products[$productIndex]['allegro_publication_status'] = (string) ($row['publication_status'] ?? '');
+                        $products[$productIndex]['allegro_last_synced_at'] = (string) ($row['last_synced_at'] ?? '');
+                        $attachedAccra[$productIndex] = true;
+                    }
+                }
+            }
+        }
+
+        return $products;
+    }
+
+    private function isAccraAllegroAccount(array $row): bool
+    {
+        foreach (array($row['account_slug'] ?? '', $row['account_name'] ?? '') as $value) {
+            $normalized = strtolower(str_replace(array('-', ' '), '_', trim((string) $value)));
+            if ($normalized === 'accra_shop') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function attachActiveErliProducts(array $products): array
+    {
+        foreach ($products as $index => $product) {
+            if (is_array($product)) {
+                $products[$index]['erli_accounts'] = array();
+            }
+        }
+
+        if ($products === array() || !$this->tableExists('erli_products') || !$this->tableExists('erli_accounts')) {
+            return $products;
+        }
+
+        $storage = new ErliStorageRepository($this->db());
+        $storage->ensureSchema();
+
+        $skuMap = array();
+        foreach ($products as $index => $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            foreach ($this->allegroSkuCandidatesForComputerProduct($product) as $sku) {
+                if (!isset($skuMap[$sku])) {
+                    $skuMap[$sku] = array();
+                }
+                $skuMap[$sku][] = $index;
+            }
+        }
+
+        if ($skuMap === array()) {
+            return $products;
+        }
+
+        $attachedProducts = array();
+        foreach (array_chunk(array_keys($skuMap), 500) as $skuChunk) {
+            $params = array();
+            $placeholders = array();
+            foreach ($skuChunk as $index => $sku) {
+                $key = 'erli_sku_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $sku;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT products.id AS product_row_id, products.account_id, products.external_id, products.sku, products.marketplace_id, products.payload_json,'
+                . ' COALESCE(products.price_override, products.price) AS effective_price,'
+                . ' CASE'
+                . ' WHEN products.status_override IS NOT NULL AND products.status_override <> "" THEN LOWER(products.status_override)'
+                . ' WHEN products.remote_status IS NOT NULL AND products.remote_status <> "" THEN LOWER(products.remote_status)'
+                . ' WHEN COALESCE(products.stock_override, products.quantity, 0) > 0 THEN "active"'
+                . ' ELSE "inactive" END AS effective_status,'
+                . ' products.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
+                . ' FROM erli_products products'
+                . ' INNER JOIN erli_accounts accounts ON accounts.id = products.account_id'
+                . ' WHERE accounts.is_active = 1'
+                . ' AND products.sku IN (' . implode(',', $placeholders) . ')'
+                . " HAVING effective_status = 'active'"
+                . ' ORDER BY accounts.name ASC, products.updated_at DESC, products.id DESC',
+                $params
+            );
+
+            foreach ($rows as $row) {
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku === '' || empty($skuMap[$sku])) {
+                    continue;
+                }
+
+                foreach ($skuMap[$sku] as $productIndex) {
+                    $productKey = $productIndex . ':' . (string) ($row['account_slug'] ?? '') . ':' . (string) ($row['external_id'] ?? '');
+                    if (isset($attachedProducts[$productKey])) {
+                        continue;
+                    }
+
+                    $products[$productIndex]['erli_accounts'][] = array(
+                        'product_row_id' => (int) ($row['product_row_id'] ?? 0),
+                        'account_id' => (int) ($row['account_id'] ?? 0),
+                        'account_name' => (string) ($row['account_name'] ?? ''),
+                        'account_slug' => (string) ($row['account_slug'] ?? ''),
+                        'external_id' => trim((string) ($row['external_id'] ?? '')),
+                        'price_amount' => $this->normalizeErliDisplayPrice($row['effective_price'] ?? null),
+                        'sku' => $sku,
+                        'erli_url' => $this->erliPublicProductUrl($row),
+                        'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
+                    );
+                    $attachedProducts[$productKey] = true;
+                }
+            }
+        }
+
+        return $products;
+    }
+
+    private function normalizeErliDisplayPrice($value): ?float
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return null;
+        }
+
+        $price = (float) $value;
+        if ($price >= 100000) {
+            return round($price / 100, 2);
+        }
+
+        return $price;
+    }
+
+    private function erliPublicProductUrl(array $row): string
+    {
+        $payload = json_decode((string) ($row['payload_json'] ?? ''), true);
+        if (is_array($payload)) {
+            $url = $this->findUrlInArray($payload, array('productUrl', 'product_url', 'offerUrl', 'offer_url', 'marketplaceUrl', 'marketplace_url'));
+            if ($url !== '') {
+                return $url;
+            }
+        }
+
+        return './index.php?controller=erli&action=product&id=' . (int) ($row['product_row_id'] ?? 0);
+    }
+
+    private function findUrlInArray(array $data, array $preferredKeys): string
+    {
+        foreach ($preferredKeys as $key) {
+            if (!empty($data[$key]) && is_scalar($data[$key])) {
+                $url = trim((string) $data[$key]);
+                if (preg_match('#^https?://#i', $url) === 1) {
+                    return $url;
+                }
+            }
+        }
+
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $url = $this->findUrlInArray($value, $preferredKeys);
+                if ($url !== '') {
+                    return $url;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function allegroSkuCandidatesForComputerProduct(array $product): array
+    {
+        $raw = array(
+            $product['sku'] ?? '',
+            $product['offerid'] ?? '',
+            $product['id'] ?? '',
+        );
+
+        if (!empty($product['id'])) {
+            $raw[] = 'ALTREO_' . (string) $product['id'];
+        }
+        if (!empty($product['offerid'])) {
+            $raw[] = 'ALTREO_' . (string) $product['offerid'];
+        }
+
+        $values = array();
+        foreach ($raw as $value) {
+            $sku = trim((string) $value);
+            if ($sku !== '') {
+                $values[] = $sku;
+            }
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    private function tableExists(string $table): bool
+    {
+        return (int) $this->db()->fetchColumn(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name',
+            array('table_name' => $table)
+        ) > 0;
+    }
+
+    private function normalizeComponentImageFields(array $component): array
+    {
+        foreach (array('img', 'img_morele', 'img_empik') as $field) {
+            if (array_key_exists($field, $component)) {
+                $component[$field] = implode(',', $this->existingComponentImages((string) $component[$field]));
+            }
+        }
+
+        return $component;
+    }
+
+    private function normalizeComponentTextFields(array $component): array
+    {
+        foreach ($component as $field => $value) {
+            if (is_string($value)) {
+                $component[$field] = trim($value);
+            }
+        }
+
+        foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik') as $field) {
+            if (array_key_exists($field, $component)) {
+                $component[$field] = $this->normalizeJsonMapString((string) $component[$field]);
+            }
+        }
+
+        return $component;
+    }
+
+    private function normalizeJsonMapString(string $json): string
+    {
+        $json = trim($json);
+        if ($json === '') {
+            return '';
+        }
+
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return $json;
+        }
+
+        $encoded = json_encode($this->trimArrayRecursive($decoded), JSON_UNESCAPED_UNICODE);
+        return is_string($encoded) ? $encoded : $json;
+    }
+
+    private function postedComponentParamsJson(string $loadedMarker, array $params, ?array $existingComponent, string $column): string
+    {
+        if (!$this->hasPostedField($loadedMarker) && is_array($existingComponent)) {
+            return $this->normalizeJsonMapString((string) ($existingComponent[$column] ?? ''));
+        }
+
+        return $this->encodeJsonMap($params);
+    }
+
+    private function encodeJsonMap(array $params): string
+    {
+        $encoded = json_encode($this->trimArrayRecursive($params), JSON_UNESCAPED_UNICODE);
+        return is_string($encoded) ? $encoded : '{}';
+    }
+
+    private function hasPostedField(string $key): bool
+    {
+        return array_key_exists($key, $_POST);
+    }
+
+    private function existingComponentImages(string $csv): array
+    {
+        $dir = $this->componentUploadDir();
+        $files = array();
+
+        foreach (array_filter(array_map('trim', explode(',', $csv))) as $file) {
+            if ($file === '' || basename($file) !== $file) {
+                continue;
+            }
+
+            if (is_file($dir . DIRECTORY_SEPARATOR . $file)) {
+                $files[] = $file;
+            }
+        }
+
+        return array_values(array_unique($files));
     }
 
     private function cartesianProduct(array $input): array
@@ -750,11 +1336,25 @@ class ComputersController extends Controller
         return $result;
     }
 
-    private function csvIds(string $csv): array
+    private function csvIds($csv): array
     {
-        return array_values(array_filter(array_map('intval', array_filter(array_map('trim', explode(',', $csv))), static function (int $value): bool {
-            return $value > 0;
-        })));
+        if (is_array($csv)) {
+            $parts = $csv;
+        } elseif (is_object($csv)) {
+            $parts = array();
+        } else {
+            $parts = explode(',', (string) $csv);
+        }
+
+        $ids = array();
+        foreach ($parts as $part) {
+            $value = (int) trim((string) $part);
+            if ($value > 0) {
+                $ids[] = $value;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     private function pageLinks(int $currentPage, int $totalPages): array
@@ -932,8 +1532,19 @@ class ComputersController extends Controller
 
     private function runLegacyExport(string $bulkAction, array $productIds): void
     {
+        $legacyExports = dirname(__DIR__, 2) . '/temporary/altreo_exports.php';
+        if (!is_file($legacyExports)) {
+            if ($bulkAction === 'export_easyuploader') {
+                $this->exportEasyUploader($productIds);
+                return;
+            }
+
+            $this->setFlash('error', json_encode(array('Brakuje pliku legacy eksportu: temporary/altreo_exports.php. EasyUploader dziala juz natywnie, ale ten eksport wymaga przeniesienia do aplikacji.')));
+            $this->redirect('./index.php?controller=computers&action=products');
+        }
+
         require_once dirname(__DIR__) . '/Support/legacy_altreo_compat.php';
-        require_once dirname(__DIR__, 2) . '/temporary/altreo_exports.php';
+        require_once $legacyExports;
 
         if ($bulkAction === 'export_easyuploader') {
             exportToEasyUploader($productIds);
@@ -947,15 +1558,227 @@ class ComputersController extends Controller
         exit;
     }
 
+    private function exportEasyUploader(array $productIds): void
+    {
+        $headers = array(
+            'KOD',
+            'TYTUŁ',
+            'CENA_KT',
+            'PARAMETRY',
+            'KAT_ALLEGRO_ID',
+            'LICZBA',
+            'LICZBA_RODZAJ',
+            'STAW_VAT',
+            'ZDJĘCIA',
+            '[GPU]',
+            '[CPU]',
+            '[RAM]',
+            '[SSD]',
+            '[MONITOR]',
+            '[PSU]',
+            '[CASE]',
+            '[COOLING]',
+            '[GPU_SPEC]',
+            '[CPU_SPEC]',
+            '[RAM_SPEC]',
+            '[SSD_SPEC]',
+            '[MONITOR_SPEC]',
+            '[PSU_SPEC]',
+            '[CASE_SPEC]',
+            '[COOLING_SPEC]',
+        );
+
+        $rows = array();
+        $componentsById = $this->componentsById();
+        foreach ($productIds as $productId) {
+            $product = $this->productById((int) $productId);
+            if ($product === null) {
+                continue;
+            }
+
+            $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
+            $components = array();
+            foreach ($componentIds as $componentId) {
+                if (isset($componentsById[$componentId]) && is_array($componentsById[$componentId])) {
+                    $components[] = $this->normalizeComponentTextFields($componentsById[$componentId]);
+                }
+            }
+
+            $descriptions = $this->componentCategoryMap($components, 'description');
+            $specs = $this->componentCategoryMap($components, 'name_spec');
+            $parameters = $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? ''));
+            $images = $this->easyUploaderImages($product, $components);
+
+            $rows[] = array(
+                $product['id'] ?? '',
+                $product['name'] ?? '',
+                $product['price'] ?? '',
+                $parameters,
+                '486',
+                '1000',
+                '0',
+                '23',
+                implode("\n", $images),
+                $descriptions['GPU'],
+                $descriptions['CPU'],
+                $descriptions['RAM'],
+                $descriptions['SSD'],
+                $descriptions['MONITOR'],
+                $descriptions['PSU'],
+                $descriptions['CASE'],
+                $descriptions['COOLING'],
+                $specs['GPU'],
+                $specs['CPU'],
+                $specs['RAM'],
+                $specs['SSD'],
+                $specs['MONITOR'],
+                $specs['PSU'],
+                $specs['CASE'],
+                $specs['COOLING'],
+            );
+        }
+
+        $this->streamCsv('easyuploader_export_' . date('Ymd_His') . '.csv', $headers, $rows);
+    }
+
+    private function componentCategoryMap(array $components, string $field): array
+    {
+        $result = array(
+            'GPU' => '',
+            'CPU' => '',
+            'RAM' => '',
+            'SSD' => '',
+            'MONITOR' => '',
+            'PSU' => '',
+            'CASE' => '',
+            'COOLING' => '',
+        );
+
+        foreach ($components as $component) {
+            $category = strtoupper(trim((string) ($component['category'] ?? '')));
+            if (array_key_exists($category, $result)) {
+                $result[$category] = (string) ($component[$field] ?? '');
+            }
+        }
+
+        return $result;
+    }
+
+    private function easyUploaderParameters(array $components, string $productName, string $ean): string
+    {
+        $params = array();
+        foreach ($components as $component) {
+            $decoded = $this->decodeJsonMap((string) ($component['parameters_eu'] ?? ''));
+            foreach ($decoded as $key => $value) {
+                if (!array_key_exists($key, $params)) {
+                    $params[$key] = $value;
+                }
+            }
+        }
+
+        $lines = array();
+        foreach ($params as $paramId => $value) {
+            if (is_array($value)) {
+                foreach ($value as $item) {
+                    $item = trim((string) $item);
+                    if ($item !== '') {
+                        $lines[] = (string) $paramId . $item . '|';
+                    }
+                }
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value !== '') {
+                $lines[] = (string) $paramId . $value . '|';
+            }
+        }
+
+        $cleanName = trim(str_ireplace(array('komputer gamingowy z monitorem', 'komputer gamingowy'), '', $productName));
+        $lines[] = '237206|0|' . substr($cleanName, 0, 50) . '|';
+        $lines[] = '224017|0|' . substr($cleanName, 0, 45) . '|';
+        if (trim($ean) !== '') {
+            $lines[] = '225693|0|' . trim($ean) . '|';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function easyUploaderImages(array $product, array $components): array
+    {
+        $images = array();
+        $base = $this->publicAppBaseUrl();
+        $productImg = trim((string) ($product['img'] ?? ''));
+        if ($productImg !== '') {
+            $imageUrl = $this->publicImageUrl($base, 'img_computers_products', $productImg);
+            if ($imageUrl !== null) {
+                $images[] = $imageUrl;
+            }
+        }
+
+        foreach ($components as $component) {
+            $raw = (string) ($component['img'] ?? '');
+            foreach (preg_split('/\s*\|\s*|\s*,\s*|\n/', $raw) ?: array() as $image) {
+                $image = trim((string) $image);
+                if ($image !== '') {
+                    $imageUrl = $this->publicImageUrl($base, 'img_components', $image);
+                    if ($imageUrl !== null) {
+                        $images[] = $imageUrl;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($images));
+    }
+
+    private function publicImageUrl(string $base, string $folder, string $image): ?string
+    {
+        $image = trim($image);
+        if ($image === '') {
+            return null;
+        }
+        if (preg_match('#^https?://#i', $image) === 1) {
+            return $image;
+        }
+
+        $image = str_replace('\\', '/', $image);
+        $image = preg_replace('#^\./#', '', $image);
+        $image = ltrim($image, '/');
+        $folder = trim($folder, '/');
+        if (strpos($image, $folder . '/') === 0) {
+            $image = substr($image, strlen($folder) + 1);
+        }
+        $image = ltrim($image, '/');
+
+        return rtrim($base, '/') . '/' . $folder . '/' . rawurlencode($image);
+    }
+
+    private function publicAppBaseUrl(): string
+    {
+        $https = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+        $scheme = $https ? 'https' : 'http';
+        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? 'magazyn.altreo.pl'));
+        $script = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/crm/new_version/index.php')));
+        $script = rtrim($script, '/');
+
+        return $scheme . '://' . $host . ($script !== '' ? $script : '');
+    }
+
     private function collectMarketParams(array $values, array $types): array
     {
         $result = array();
         foreach ($values as $id => $value) {
             $type = (string) ($types[$id] ?? '');
             if (is_array($value)) {
-                $filtered = array_values(array_filter(array_map('strval', $value), static function (string $item): bool {
-                    return trim($item) !== '';
-                }));
+                $filtered = array();
+                foreach ($value as $item) {
+                    $item = trim((string) $item);
+                    if ($item !== '') {
+                        $filtered[] = $item;
+                    }
+                }
                 if ($filtered === array()) {
                     continue;
                 }
@@ -1094,7 +1917,23 @@ class ComputersController extends Controller
     private function decodeJsonMap(string $json): array
     {
         $decoded = json_decode($json, true);
-        return is_array($decoded) ? $decoded : array();
+        return is_array($decoded) ? $this->trimArrayRecursive($decoded) : array();
+    }
+
+    private function trimArrayRecursive(array $input): array
+    {
+        $result = array();
+        foreach ($input as $key => $value) {
+            $cleanKey = is_string($key) ? trim($key) : $key;
+            if (is_array($value)) {
+                $result[$cleanKey] = $this->trimArrayRecursive($value);
+                continue;
+            }
+
+            $result[$cleanKey] = is_string($value) ? trim($value) : $value;
+        }
+
+        return $result;
     }
 
     private function hydrateComponentParameterMaps(array $row): array
@@ -1396,11 +2235,14 @@ class ComputersController extends Controller
 
     private function mergeComponentImages(string $oldCsv, array $removeImages, string $field, string $prefix, int $componentId): string
     {
-        $oldImages = array_values(array_filter(array_map('trim', explode(',', $oldCsv))));
+        $oldImages = $this->existingComponentImages($oldCsv);
         $removeImages = array_values(array_filter(array_map('trim', $removeImages)));
         if ($removeImages !== array()) {
             $oldImages = array_values(array_diff($oldImages, $removeImages));
             foreach ($removeImages as $image) {
+                if ($image === '' || basename($image) !== $image) {
+                    continue;
+                }
                 $path = $this->componentUploadDir() . DIRECTORY_SEPARATOR . $image;
                 if (is_file($path)) {
                     unlink($path);
@@ -1431,9 +2273,16 @@ class ComputersController extends Controller
     private function refreshPricesForProductsUsingComponent(int $componentId): void
     {
         $componentsById = $this->componentsById();
-        $products = $this->db()->fetchAll('SELECT id, id_components, profit FROM ' . self::PRODUCTS_TABLE . ' WHERE FIND_IN_SET(:component_id, id_components)', array('component_id' => (string) $componentId));
+        $products = $this->db()->fetchAll(
+            'SELECT id, id_components, profit FROM ' . self::PRODUCTS_TABLE
+            . ' WHERE CONCAT(",", REPLACE(id_components, " ", ""), ",") LIKE :component_token',
+            array('component_token' => '%,' . (string) $componentId . ',%')
+        );
         foreach ($products as $product) {
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
+            if (!in_array($componentId, $componentIds, true)) {
+                continue;
+            }
             $priceSum = $this->priceSumForComponents($componentIds, $componentsById);
             $this->db()->update(self::PRODUCTS_TABLE, array(
                 'price' => $priceSum + (float) ($product['profit'] ?? 0),
@@ -1498,8 +2347,10 @@ class ComputersController extends Controller
             "CREATE TABLE IF NOT EXISTS " . self::PRODUCTS_TABLE . " (\n"
             . "id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
             . "id_components VARCHAR(255) NOT NULL DEFAULT '',\n"
+            . "sku VARCHAR(190) DEFAULT NULL,\n"
             . "name VARCHAR(255) NOT NULL,\n"
             . "price DECIMAL(12,2) NOT NULL DEFAULT 0.00,\n"
+            . "price_allegro DECIMAL(12,2) DEFAULT NULL,\n"
             . "profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,\n"
             . "EAN VARCHAR(64) DEFAULT NULL,\n"
             . "img VARCHAR(255) DEFAULT NULL,\n"
@@ -1509,6 +2360,7 @@ class ComputersController extends Controller
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
             . "PRIMARY KEY (id),\n"
+            . "KEY idx_products_altreo_sku (sku),\n"
             . "KEY idx_products_altreo_offerid (offerid),\n"
             . "KEY idx_products_altreo_name (name)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
@@ -1566,9 +2418,11 @@ class ComputersController extends Controller
         );
 
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'id_components', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN id_components VARCHAR(255) NOT NULL DEFAULT '' AFTER id");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'name', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN name VARCHAR(255) NOT NULL AFTER id_components");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'sku', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN sku VARCHAR(190) DEFAULT NULL AFTER id_components");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'name', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN name VARCHAR(255) NOT NULL AFTER sku");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'price', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN price DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER name");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'profit', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN profit DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER price");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'price_allegro', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN price_allegro DECIMAL(12,2) DEFAULT NULL AFTER price");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'profit', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN profit DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER price_allegro");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'EAN', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN EAN VARCHAR(64) DEFAULT NULL AFTER profit");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img VARCHAR(255) DEFAULT NULL AFTER EAN");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele VARCHAR(255) DEFAULT NULL AFTER img");

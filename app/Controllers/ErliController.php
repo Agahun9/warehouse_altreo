@@ -116,11 +116,21 @@ class ErliController extends Controller
 
     public function sync(): void
     {
-        $this->requireModuleWrite('erli');
+        if (!$this->wantsJson()) {
+            $this->requireModuleWrite('erli');
+        }
         $this->releaseSessionLock();
 
         try {
-            $result = $this->erli->syncAccount(trim((string) $this->input('account', '')));
+            $result = $this->erli->syncAccountBatch(trim((string) $this->input('account', '')), array(
+                'max_batches' => (int) $this->input('max_batches', 5),
+                'page_limit' => (int) $this->input('page_limit', 50),
+            ));
+            if ($this->wantsJson()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
             if (!empty($result['finished_cycle'])) {
                 $this->setFlash(
                     'success',
@@ -133,6 +143,85 @@ class ErliController extends Controller
                 );
             }
         } catch (Throwable $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=erli&action=index');
+    }
+
+    public function maintenance(): void
+    {
+        if (!$this->wantsJson()) {
+            $this->requireModuleWrite('erli');
+        }
+        $this->releaseSessionLock();
+
+        try {
+            $accountSelector = trim((string) $this->input('account', ''));
+            $result = array(
+                'queue' => null,
+                'sync' => array(),
+                'enqueue' => null,
+            );
+
+            if ($this->input('sync', '0') === '1') {
+                $syncOptions = array(
+                    'max_batches' => (int) $this->input('max_batches', 2),
+                    'page_limit' => (int) $this->input('page_limit', 50),
+                );
+
+                if ($accountSelector !== '') {
+                    $result['sync'][] = $this->erli->syncAccountBatch($accountSelector, $syncOptions);
+                } else {
+                    $maxAccounts = max(1, min(50, (int) $this->input('max_accounts', 50)));
+                    $processedAccounts = 0;
+                    foreach ($this->erli->listAccounts() as $account) {
+                        if ((int) ($account['is_active'] ?? 0) !== 1) {
+                            continue;
+                        }
+                        if ($processedAccounts >= $maxAccounts) {
+                            break;
+                        }
+
+                        $result['sync'][] = $this->erli->syncAccountBatch((string) ($account['slug'] ?? ''), $syncOptions);
+                        $processedAccounts++;
+                    }
+                }
+            }
+
+            $enqueueOperations = $this->input('enqueue', '');
+            if (trim((string) $enqueueOperations) !== '') {
+                $operations = array_values(array_filter(array_map('trim', explode(',', (string) $enqueueOperations))));
+                $result['enqueue'] = $this->erli->enqueueWarehouseUpdates(
+                    $accountSelector,
+                    $operations,
+                    (int) $this->input('enqueue_limit', 500)
+                );
+            }
+
+            $queueLimit = (int) $this->input('queue_limit', 50);
+            if ($queueLimit > 0) {
+                $result['queue'] = $this->erli->processQueue(array(
+                    'account' => $accountSelector,
+                    'limit' => $queueLimit,
+                ));
+            }
+
+            if ($this->wantsJson()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
+            $this->setFlash('success', 'Maintenance Erli zakonczone. Sync kont: ' . count($result['sync']) . '.');
+        } catch (Throwable $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -197,7 +286,9 @@ class ErliController extends Controller
 
     public function processqueue(): void
     {
-        $this->requireModuleWrite('erli');
+        if (!$this->wantsJson()) {
+            $this->requireModuleWrite('erli');
+        }
         $this->releaseSessionLock();
 
         try {
@@ -206,8 +297,17 @@ class ErliController extends Controller
                 'limit' => (int) $this->input('limit', 20),
             ));
 
+            if ($this->wantsJson()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
             $this->setFlash('success', 'Kolejka Erli przetworzona. OK: ' . (int) ($result['done'] ?? 0));
         } catch (Throwable $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -339,5 +439,17 @@ class ErliController extends Controller
         }
 
         return $items;
+    }
+
+    private function wantsJson(): bool
+    {
+        return strtolower(trim((string) $this->input('format', ''))) === 'json';
+    }
+
+    private function jsonResponse(array $payload, int $status = 200): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload);
     }
 }

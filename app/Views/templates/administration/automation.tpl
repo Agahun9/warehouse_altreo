@@ -187,9 +187,9 @@
         <div class="col-xl-3 col-md-6">
           <div class="card administration-summary-card h-100">
             <div class="card-body">
-              <div class="administration-summary-label">Kolejka Allegro</div>
-              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry}</div>
-              <div class="administration-summary-meta">w toku {$queueStats.processing} | bledy {$queueStats.error} | gotowe {$queueStats.done}</div>
+              <div class="administration-summary-label">Kolejki marketplace</div>
+              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry}</div>
+              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | bledy {$queueStats.error + $erliQueueStats.error}</div>
             </div>
           </div>
         </div>
@@ -206,8 +206,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Szybki plan</div>
-              <div class="administration-summary-value text-primary">2 crony</div>
-              <div class="administration-summary-meta">worker kolejki co minute i pelne maintenance co 5-15 minut</div>
+              <div class="administration-summary-value text-primary">Crony</div>
+              <div class="administration-summary-meta">Allegro i Erli: kolejki co minute, sync/maintenance co 5-15 minut</div>
             </div>
           </div>
         </div>
@@ -367,11 +367,11 @@
                                         <a href="{$baseUrl}?controller=allegro&action=connect&id={$account.id}" class="btn btn-sm btn-primary">Autoryzuj</a>
                                         <a href="{$account.trigger_url|escape}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noreferrer">Sync</a>
                                         <a href="{$baseUrl}?controller=allegro&action=refreshtoken&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-info">Refresh token</a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editAllegroAccount{$account.id|escape}" aria-expanded="false" aria-controls="editAllegroAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
                                           <input type="hidden" name="name" value="{$account.name|escape}">
                                           <input type="hidden" name="client_id" value="{$account.client_id|escape}">
-                                          <input type="hidden" name="client_secret" value="{$account.client_secret|escape}">
                                           <input type="hidden" name="redirect_uri" value="{$account.redirect_uri|escape}">
                                           <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
                                           <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
@@ -379,6 +379,38 @@
                                           </button>
                                         </form>
                                       </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="6" class="bg-light p-0">
+                                      <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="row g-3 collapse p-3" id="editAllegroAccount{$account.id|escape}">
+                                        <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Nazwa konta</label>
+                                          <input type="text" name="name" class="form-control form-control-sm" value="{$account.name|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Client ID</label>
+                                          <input type="text" name="client_id" class="form-control form-control-sm" value="{$account.client_id|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Client Secret</label>
+                                          <input type="text" name="client_secret" class="form-control form-control-sm" value="" placeholder="Zostaw puste, aby nie zmieniac">
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Redirect URI</label>
+                                          <input type="url" name="redirect_uri" class="form-control form-control-sm" value="{$account.redirect_uri|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <div class="form-check mt-lg-4">
+                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="allegroEditActive{$account.id|escape}" {if $account.is_active}checked{/if}>
+                                            <label class="form-check-label" for="allegroEditActive{$account.id|escape}">Konto aktywne</label>
+                                          </div>
+                                        </div>
+                                        <div class="col-lg-9 d-flex justify-content-end align-items-end">
+                                          <button type="submit" class="btn btn-sm btn-primary">Zapisz zmiany Allegro</button>
+                                        </div>
+                                      </form>
                                     </td>
                                   </tr>
                                 {foreachelse}
@@ -552,11 +584,11 @@
                                       <div class="d-grid gap-2">
                                         <a href="{$baseUrl}?controller=empik&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
                                         <a href="{$baseUrl}?controller=empik&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editEmpikAccount{$account.id|escape}" aria-expanded="false" aria-controls="editEmpikAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=administration&action=saveempik" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
                                           <input type="hidden" name="name" value="{$account.name|escape}">
                                           <input type="hidden" name="api_url" value="{$account.api_url|escape}">
-                                          <input type="hidden" name="api_key" value="{$account.api_key|escape}">
                                           <input type="hidden" name="shop_id" value="{$account.shop_id|default:''|escape}">
                                           <input type="hidden" name="locale" value="{$account.locale|default:'pl_PL'|escape}">
                                           <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
@@ -565,6 +597,42 @@
                                           </button>
                                         </form>
                                       </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="5" class="bg-light p-0">
+                                      <form method="post" action="{$baseUrl}?controller=administration&action=saveempik" class="row g-3 collapse p-3" id="editEmpikAccount{$account.id|escape}">
+                                        <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Nazwa konta</label>
+                                          <input type="text" name="name" class="form-control form-control-sm" value="{$account.name|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Instance URL</label>
+                                          <input type="url" name="api_url" class="form-control form-control-sm" value="{$account.api_url|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">API Key</label>
+                                          <input type="text" name="api_key" class="form-control form-control-sm" value="" placeholder="Zostaw puste, aby nie zmieniac">
+                                        </div>
+                                        <div class="col-lg-1">
+                                          <label class="form-label">shop_id</label>
+                                          <input type="number" min="1" step="1" name="shop_id" class="form-control form-control-sm" value="{$account.shop_id|default:''|escape}">
+                                        </div>
+                                        <div class="col-lg-2">
+                                          <label class="form-label">Locale</label>
+                                          <input type="text" name="locale" class="form-control form-control-sm" value="{$account.locale|default:'pl_PL'|escape}">
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <div class="form-check mt-lg-4">
+                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="empikEditActive{$account.id|escape}" {if $account.is_active}checked{/if}>
+                                            <label class="form-check-label" for="empikEditActive{$account.id|escape}">Konto aktywne</label>
+                                          </div>
+                                        </div>
+                                        <div class="col-lg-9 d-flex justify-content-end align-items-end">
+                                          <button type="submit" class="btn btn-sm btn-primary">Zapisz zmiany Empik</button>
+                                        </div>
+                                      </form>
                                     </td>
                                   </tr>
                                 {foreachelse}
@@ -671,16 +739,20 @@
                                     <td>
                                       <div>{$account.last_sync_at|default:'-'|escape}</div>
                                       <div class="small text-secondary">blad: {$account.last_error_at|default:'-'|escape}</div>
+                                      {if $account.sync_after_external_id|default:'' neq ''}
+                                        <div class="small text-primary">offset: {$account.sync_after_external_id|escape}</div>
+                                      {/if}
+                                      <input type="text" class="form-control form-control-sm mt-2" readonly value="{$baseUrl}?controller=erli&action=sync&format=json&account={$account.slug|escape:'url'}&amp;max_batches=2&amp;page_limit=50">
                                     </td>
                                     <td class="text-nowrap">
                                       <div class="d-grid gap-2">
                                         <a href="{$baseUrl}?controller=erli&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
                                         <a href="{$baseUrl}?controller=erli&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Produkty</a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editErliAccount{$account.id|escape}" aria-expanded="false" aria-controls="editErliAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=administration&action=saveerli" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
                                           <input type="hidden" name="name" value="{$account.name|escape}">
                                           <input type="hidden" name="api_url" value="{$account.api_url|escape}">
-                                          <input type="hidden" name="api_key" value="{$account.api_key|escape}">
                                           <input type="hidden" name="default_price_list_tag" value="{$account.default_price_list_tag|default:''|escape}">
                                           <input type="hidden" name="default_dispatch_days" value="{$account.default_dispatch_days|default:1|escape}">
                                           <input type="hidden" name="default_weight_g" value="{$account.default_weight_g|default:''|escape}">
@@ -690,6 +762,46 @@
                                           </button>
                                         </form>
                                       </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="5" class="bg-light p-0">
+                                      <form method="post" action="{$baseUrl}?controller=administration&action=saveerli" class="row g-3 collapse p-3" id="editErliAccount{$account.id|escape}">
+                                        <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Nazwa konta</label>
+                                          <input type="text" name="name" class="form-control form-control-sm" value="{$account.name|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">API URL</label>
+                                          <input type="url" name="api_url" class="form-control form-control-sm" value="{$account.api_url|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">API Key</label>
+                                          <input type="text" name="api_key" class="form-control form-control-sm" value="" placeholder="Zostaw puste, aby nie zmieniac">
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Cennik dostawy</label>
+                                          <input type="text" name="default_price_list_tag" class="form-control form-control-sm" value="{$account.default_price_list_tag|default:''|escape}">
+                                        </div>
+                                        <div class="col-lg-2">
+                                          <label class="form-label">Wysylka dni</label>
+                                          <input type="number" min="1" step="1" name="default_dispatch_days" class="form-control form-control-sm" value="{$account.default_dispatch_days|default:1|escape}">
+                                        </div>
+                                        <div class="col-lg-2">
+                                          <label class="form-label">Waga g</label>
+                                          <input type="number" min="1" step="1" name="default_weight_g" class="form-control form-control-sm" value="{$account.default_weight_g|default:''|escape}">
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <div class="form-check mt-lg-4">
+                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="erliEditActive{$account.id|escape}" {if $account.is_active}checked{/if}>
+                                            <label class="form-check-label" for="erliEditActive{$account.id|escape}">Konto aktywne</label>
+                                          </div>
+                                        </div>
+                                        <div class="col-lg-5 d-flex justify-content-end align-items-end">
+                                          <button type="submit" class="btn btn-sm btn-primary">Zapisz zmiany Erli</button>
+                                        </div>
+                                      </form>
                                     </td>
                                   </tr>
                                 {foreachelse}
@@ -892,9 +1004,9 @@
                   <div class="card administration-panel h-100">
                     <div class="card-body">
                       <div class="fw-semibold mb-2">Jak to ustawic</div>
-                      <div class="small text-secondary mb-2">Najlepiej dac dwa crony:</div>
-                      <div class="small text-secondary">1. Worker kolejki co 1 minute.</div>
-                      <div class="small text-secondary">2. Pelne maintenance z syncem co 5-15 minut.</div>
+                      <div class="small text-secondary mb-2">Najlepiej dac osobne crony dla Allegro i Erli:</div>
+                      <div class="small text-secondary">1. Workery kolejek co 1 minute.</div>
+                      <div class="small text-secondary">2. Sync/maintenance co 5-15 minut.</div>
                       <div class="small text-secondary mt-2">Jesli nie chcesz crona od razu, nizej zostawilem auto-worker w przegladarce. Odpala sie cyklicznie, gdy ten ekran jest otwarty.</div>
                     </div>
                   </div>
@@ -925,6 +1037,16 @@
                       <div class="administration-inline-code">
                         <label class="form-label">Same refresh tokenow</label>
                         <input type="text" class="form-control" readonly value="{$automation.refresh_tokens|escape}">
+                      </div>
+                      <hr>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Erli worker kolejki co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="{$erliAutomation.queue_worker|escape}">
+                      </div>
+                      <div class="administration-inline-code">
+                        <label class="form-label">Erli sync + aktualizacja z magazynu co 5-15 minut</label>
+                        <input type="text" class="form-control" readonly value="{$erliAutomation.maintenance|escape}">
+                        <div class="form-text">Kazde odpalenie pobiera maly batch, zapisuje offset, dodaje powiazane aktywne produkty do kolejki ceny/stanu i od razu przetwarza czesc kolejki.</div>
                       </div>
                     </div>
                   </div>
@@ -1006,6 +1128,47 @@
                   </div>
                 </div>
               </div>
+
+              <div class="card administration-panel">
+                <div class="card-header">
+                  <h3 class="card-title mb-0">Linki per konto Erli</h3>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-striped align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Konto</th>
+                        <th>Status</th>
+                        <th>Sync z offsetem</th>
+                        <th>Kolejka</th>
+                        <th>Maintenance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {foreach $erliAutomation.accounts as $item}
+                        <tr>
+                          <td>
+                            <div class="fw-semibold">{$item.name|escape}</div>
+                            <div class="small text-secondary">{$item.slug|escape}</div>
+                          </td>
+                          <td>
+                            {if $item.is_active}
+                              <span class="badge text-bg-success">Aktywne</span>
+                            {else}
+                              <span class="badge text-bg-secondary">Nieaktywne</span>
+                            {/if}
+                          </td>
+                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.sync|escape}"></td>
+                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.queue_only|escape}"></td>
+                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.maintenance|escape}"></td>
+                        </tr>
+                      {foreachelse}
+                        <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Erli do automatyzacji.</td></tr>
+                      {/foreach}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1062,6 +1225,41 @@
                         </label>
                       </div>
                       <button type="submit" class="btn btn-outline-danger">Wgraj kopie i odtworz produkty</button>
+                    </form>
+                  </div>
+                </div>
+                <div class="col-xl-12">
+                  <div class="administration-backup-box">
+                    <h3 class="h5 mb-2">Import SQL starego modulu ALTREO</h3>
+                    <p class="text-secondary small mb-3">Wgraj pliki <code>pr_products_altreo.sql</code>, <code>pr_components_altreo.sql</code> i <code>pr_altreo_template.sql</code>. Import obsluguje dumpy z phpMyAdmina i zapisuje tylko rekordy do tabel modulu komputerow.</p>
+                    <form method="post" action="{$baseUrl}?controller=administration&action=importaltreosql" enctype="multipart/form-data" class="row g-3" onsubmit="return confirm('Zaimportowac pliki SQL ALTREO do modulu komputerow?');">
+                      <div class="col-lg-4">
+                        <label class="form-label" for="altreo-products-sql">Produkty</label>
+                        <input type="file" id="altreo-products-sql" name="altreo_products_sql" accept=".sql,application/sql,text/sql,text/plain" class="form-control">
+                        <div class="form-text"><code>pr_products_altreo.sql</code></div>
+                      </div>
+                      <div class="col-lg-4">
+                        <label class="form-label" for="altreo-components-sql">Komponenty</label>
+                        <input type="file" id="altreo-components-sql" name="altreo_components_sql" accept=".sql,application/sql,text/sql,text/plain" class="form-control">
+                        <div class="form-text"><code>pr_components_altreo.sql</code></div>
+                      </div>
+                      <div class="col-lg-4">
+                        <label class="form-label" for="altreo-template-sql">Template</label>
+                        <input type="file" id="altreo-template-sql" name="altreo_template_sql" accept=".sql,application/sql,text/sql,text/plain" class="form-control">
+                        <div class="form-text"><code>pr_altreo_template.sql</code></div>
+                      </div>
+                      <div class="col-lg-4">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="clear_altreo_tables" value="1" id="clearAltreoTablesBeforeImport">
+                          <label class="form-check-label small" for="clearAltreoTablesBeforeImport">
+                            Najpierw wyczysc tabele komputerow, komponentow i szablonow ALTREO.
+                          </label>
+                        </div>
+                      </div>
+                      <div class="col-12 d-flex justify-content-between gap-2 align-items-center flex-wrap">
+                        <div class="small text-secondary">Kolumny ze starego dumpa, ktorych nie ma w aktualnym schemacie, sa pomijane zamiast przerywac import.</div>
+                        <button type="submit" class="btn btn-outline-primary">Wgraj SQL ALTREO</button>
+                      </div>
                     </form>
                   </div>
                 </div>

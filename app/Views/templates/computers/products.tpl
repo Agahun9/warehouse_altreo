@@ -1,4 +1,4 @@
-<div class="container-xl py-4">
+<div class="container-fluid py-4 computers-products-page">
   <ul class="nav nav-tabs mb-4">
     <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'products'} active{/if}" href="{$baseUrl}?controller=computers&action=products">Produkty</a>
@@ -82,7 +82,9 @@
       <div class="card shadow-sm mb-4">
         {* <div class="card-header bg-light fw-bold"><i class="bi bi-funnel me-2"></i>Filtruj produkty</div> <a href="https://magazyn.altreo.pl/crm/allegro_api_synchro.php?action=ACCRA_SHOP_COMPUTERS" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-arrow-clockwise"></i> Synchronizuj z ACCRA_SHOP</a> *}
         <div class="card-body pb-2">
-          <form method="get" class="row g-3 align-items-end">
+          <form method="get" action="{$baseUrl}" class="row g-3 align-items-end">
+            <input type="hidden" name="controller" value="computers" />
+            <input type="hidden" name="action" value="products" />
             <input type="hidden" name="per_page" id="filter_per_page_input" value="{$per_page}" />
             <input type="hidden" name="page" id="filter_page_input" value="{$current_page}" />
             <div class="col-md-4">
@@ -90,12 +92,28 @@
               <input type="text" id="filter_name" name="filter_name" value="{$filterName|escape:'html'}" class="form-control" placeholder="Wpisz nazwę..." />
             </div>
             <div class="col-md-2">
-              <label for="filter_active" class="form-label fw-bold">Pokaż tylko wystawione aukcje</label>
-              <select id="filter_active" name="filter_status_offer" class="form-control">
-              <option value="">-- Wybierz --</option>
-              <option value="1" {if $smarty.get.filter_status_offer == '1'}selected{/if}>Tak</option>
-              <option value="0" {if $smarty.get.filter_status_offer == '0'}selected{/if}>Nie</option>
-            </select>
+              <label for="filter_market_accounts" class="form-label fw-bold">Wystawione aukcje na kontach</label>
+              <select id="filter_market_accounts" name="filter_market_accounts[]" class="form-control" multiple size="7">
+                <optgroup label="Ogólne">
+                  <option value="1" {if in_array('1', $filterMarketAccounts)}selected{/if}>Wystawione gdziekolwiek</option>
+                  <option value="0" {if in_array('0', $filterMarketAccounts)}selected{/if}>Bez aktywnych aukcji</option>
+                </optgroup>
+                <optgroup label="Allegro">
+                  {foreach from=$allegroMarketAccounts item=marketAccount}
+                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                  {foreachelse}
+                    <option value="" disabled>Brak aktywnych kont Allegro</option>
+                  {/foreach}
+                </optgroup>
+                <optgroup label="Erli">
+                  {foreach from=$erliMarketAccounts item=marketAccount}
+                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                  {foreachelse}
+                    <option value="" disabled>Brak aktywnych kont Erli</option>
+                  {/foreach}
+                </optgroup>
+              </select>
+              <div class="form-text">Ctrl/Cmd pozwala wybrac kilka kont.</div>
             </div>
 <div class="col-md-6">
   <label class="form-label fw-bold">Komponenty (można wiele):</label>
@@ -340,12 +358,16 @@
                 {foreach from=$prod.components item=comp}
                   {assign var="component_price_sum" value=$component_price_sum + $comp.price}
                 {/foreach}
-                {assign var="allegro_price" value=$prod.price_allegro|default:$prod.price}
+                {assign var="allegro_price" value=$prod.price_allegro|default:''}
+                {assign var="calculation_price" value=$prod.price}
+                {if $allegro_price != ''}
+                  {assign var="calculation_price" value=$allegro_price}
+                {/if}
 
-{assign var="commission" value=$allegro_price*0.0246}
-{assign var="commission_highlight" value=$allegro_price*0.0431}
-{assign var="profit_net" value=$allegro_price - $component_price_sum - $commission}
-{assign var="profit_highlight_net" value=$allegro_price - $component_price_sum - $commission_highlight}
+{assign var="commission" value=$calculation_price*0.0246}
+{assign var="commission_highlight" value=$calculation_price*0.0431}
+{assign var="profit_net" value=$calculation_price - $component_price_sum - $commission}
+{assign var="profit_highlight_net" value=$calculation_price - $component_price_sum - $commission_highlight}
 
                 <div class="col-12">
                   <div class="card mb-2 border border-primary-subtle shadow-sm product-card">
@@ -359,6 +381,30 @@
               {else}
                 <strong class="product-title" data-prod-id="{$prod.id}">{$prod.name|escape:'html'}</strong>
               {/if}
+                          {if $prod.allegro_accounts|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.allegro_accounts item=allegroAccount}
+                                <a href="https://allegro.pl/oferta/{$allegroAccount.offer_id|escape:'url'}" target="_blank" rel="noreferrer" class="badge text-bg-warning text-decoration-none" title="SKU: {$allegroAccount.sku|escape:'html'}">
+                                  {$allegroAccount.account_name|escape:'html'}
+                                  {if $allegroAccount.price_amount != ''}
+                                    {$allegroAccount.price_amount|number_format:2:',':'.'} zl
+                                  {/if}
+                                </a>
+                              {/foreach}
+                            </span>
+                          {/if}
+                          {if $prod.erli_accounts|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.erli_accounts item=erliAccount}
+                                <a href="{$erliAccount.erli_url|escape:'html'}" target="_blank" rel="noreferrer" class="badge text-bg-success text-decoration-none" title="SKU: {$erliAccount.sku|escape:'html'} | External ID: {$erliAccount.external_id|escape:'html'}">
+                                  Erli {$erliAccount.account_name|escape:'html'}
+                                  {if $erliAccount.price_amount != ''}
+                                    {$erliAccount.price_amount|number_format:2:',':'.'} zl
+                                  {/if}
+                                </a>
+                              {/foreach}
+                            </span>
+                          {/if}
                           <span class="product-title-counter ms-2 small text-muted" data-prod-id="{$prod.id}"></span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
@@ -390,12 +436,16 @@
                               <tbody>
                            <tr>
     <th class="bg-light">Cena (zł)</th>
-    <td {if $prod.price != $prod.price_allegro}style="color:red;font-weight:bold;"{/if}>
+    <td {if $allegro_price != '' && $prod.price != $allegro_price}style="color:red;font-weight:bold;"{/if}>
         <img src="https://cdn-icons-png.flaticon.com/256/3361/3361571.png" alt="Magazyn" style="height:18px; vertical-align:middle; margin-right:4px;"> 
         {$prod.price|number_format:2:',':'.'}<br>
 
         <img src="https://allegro.pl/favicon.ico" alt="Allegro" style="height:18px; vertical-align:middle; margin-right:4px;"> 
-        {$prod.price_allegro|number_format:2:',':'.'}
+        {if $allegro_price != ''}
+          {$allegro_price|number_format:2:',':'.'}
+        {else}
+          <span class="text-muted">brak aktywnej oferty</span>
+        {/if}
     </td>
 
     <th class="bg-light">Cena podzespołów</th>
@@ -456,7 +506,7 @@
                         </div>
                         <div class="col-12 col-lg-4 mb-2 d-flex flex-column gap-2">
                           <button type="submit" name="save_product" value="{$prod.id}" class="btn btn-sm btn-success w-100"><i class="bi bi-save"></i> Zapisz</button>
-                          <a href="?delete_product={$prod.id}" onclick="return confirm('Czy na pewno chcesz usunąć produkt ID {$prod.id}?')" class="btn btn-sm btn-danger w-100"><i class="bi bi-trash"></i> Usuń</a>
+                          <a href="{$baseUrl}?controller=computers&action=products&delete_id={$prod.id}" onclick="return confirm('Czy na pewno chcesz usunąć produkt ID {$prod.id}?')" class="btn btn-sm btn-danger w-100"><i class="bi bi-trash"></i> Usuń</a>
                         </div>
                       </div>
                       <input type="hidden" name="products[{$prod.id}][img]" value="{$prod.img|escape:'html'}" />
@@ -898,6 +948,8 @@
         var val = this.value;
         // Zbuduj nowy URL zachowując inne parametry, ustaw page=1
         var params = new URLSearchParams(window.location.search);
+        params.set('controller', 'computers');
+        params.set('action', 'products');
         params.set('per_page', val);
         params.set('page', 1);
         window.location.search = params.toString();
@@ -915,6 +967,8 @@
       var max = {$total_pages};
       if (val > max) val = max;
       var params = new URLSearchParams(window.location.search);
+      params.set('controller', 'computers');
+      params.set('action', 'products');
       params.set('page', val);
       // keep existing per_page if any
       window.location.search = params.toString();

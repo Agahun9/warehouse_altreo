@@ -451,7 +451,7 @@ class ErliStorageRepository
         return $result;
     }
 
-    public function enqueueProductChanges(array $targets, string $operation, array $payload, ?string $availableAt = null): int
+    public function enqueueProductChanges(array $targets, string $operation, array $payload, ?string $availableAt = null, bool $skipExistingActive = false): int
     {
         if ($targets === array()) {
             return 0;
@@ -464,6 +464,9 @@ class ErliStorageRepository
             $productRowId = isset($target['id']) ? (int) $target['id'] : 0;
             $accountId = isset($target['account_id']) ? (int) $target['account_id'] : 0;
             if ($productRowId <= 0 || $accountId <= 0) {
+                continue;
+            }
+            if ($skipExistingActive && $this->hasActiveQueueEntry($productRowId, $operation)) {
                 continue;
             }
 
@@ -479,6 +482,20 @@ class ErliStorageRepository
         }
 
         return $queued;
+    }
+
+    private function hasActiveQueueEntry(int $productRowId, string $operation): bool
+    {
+        return (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM erli_product_change_queue'
+            . ' WHERE product_row_id = :product_row_id'
+            . ' AND operation = :operation'
+            . ' AND status IN ("pending", "retry", "processing")',
+            array(
+                'product_row_id' => $productRowId,
+                'operation' => $operation,
+            )
+        ) > 0;
     }
 
     public function fetchQueueBatch(int $limit = 100, ?int $accountId = null): array

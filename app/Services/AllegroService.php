@@ -43,11 +43,23 @@ class AllegroService
 
     public function saveAccount(array $input, ?int $accountId = null): array
     {
+        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
+        if ($accountId !== null && !$existing) {
+            throw new RuntimeException('Nie znaleziono konta Allegro do edycji.');
+        }
+
         $name = trim((string) ($input['name'] ?? ''));
         $clientId = trim((string) ($input['client_id'] ?? ''));
         $clientSecret = trim((string) ($input['client_secret'] ?? ''));
         $redirectUri = trim((string) ($input['redirect_uri'] ?? ''));
         $isActive = !empty($input['is_active']) ? 1 : 0;
+
+        if ($existing) {
+            $name = $name !== '' ? $name : (string) ($existing['name'] ?? '');
+            $clientId = $clientId !== '' ? $clientId : (string) ($existing['client_id'] ?? '');
+            $clientSecret = $clientSecret !== '' ? $clientSecret : (string) ($existing['client_secret'] ?? '');
+            $redirectUri = $redirectUri !== '' ? $redirectUri : (string) ($existing['redirect_uri'] ?? '');
+        }
 
         if ($name === '' || $clientId === '' || $clientSecret === '' || $redirectUri === '') {
             throw new RuntimeException('Uzupelnij nazwe konta, client_id, client_secret i redirect_uri.');
@@ -55,11 +67,6 @@ class AllegroService
 
         if (filter_var($redirectUri, FILTER_VALIDATE_URL) === false) {
             throw new RuntimeException('Redirect URI musi byc poprawnym adresem URL.');
-        }
-
-        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
-        if ($accountId !== null && !$existing) {
-            throw new RuntimeException('Nie znaleziono konta Allegro do edycji.');
         }
 
         $payload = array(

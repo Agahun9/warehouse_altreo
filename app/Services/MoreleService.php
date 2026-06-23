@@ -136,7 +136,7 @@ class MoreleService
         return $configured !== '' ? $configured : self::DEFAULT_API_BASE;
     }
 
-    private function requestJson(string $path, string $method, array $headers, ?array $postFields): array
+    private function requestJson(string $path, string $method, array $headers, ?array $postFields = null): array
     {
         if (!function_exists('curl_init')) {
             throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji Morele.');

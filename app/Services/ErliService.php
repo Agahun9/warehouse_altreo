@@ -39,6 +39,11 @@ class ErliService
 
     public function saveAccount(array $input, ?int $accountId = null): array
     {
+        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
+        if ($accountId !== null && !$existing) {
+            throw new RuntimeException('Nie znaleziono konta Erli do edycji.');
+        }
+
         $name = trim((string) ($input['name'] ?? ''));
         $apiUrl = rtrim(trim((string) ($input['api_url'] ?? '')), '/');
         $apiKey = trim((string) ($input['api_key'] ?? ''));
@@ -47,17 +52,18 @@ class ErliService
         $defaultWeight = trim((string) ($input['default_weight_g'] ?? ''));
         $isActive = !empty($input['is_active']) ? 1 : 0;
 
+        if ($existing) {
+            $name = $name !== '' ? $name : (string) ($existing['name'] ?? '');
+            $apiUrl = $apiUrl !== '' ? $apiUrl : rtrim((string) ($existing['api_url'] ?? ''), '/');
+            $apiKey = $apiKey !== '' ? $apiKey : (string) ($existing['api_key'] ?? '');
+        }
+
         if ($name === '' || $apiUrl === '' || $apiKey === '') {
             throw new RuntimeException('Uzupelnij nazwe konta, adres API i API key Erli.');
         }
 
         if (filter_var($apiUrl, FILTER_VALIDATE_URL) === false) {
             throw new RuntimeException('Adres API Erli musi byc poprawnym URL.');
-        }
-
-        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
-        if ($accountId !== null && !$existing) {
-            throw new RuntimeException('Nie znaleziono konta Erli do edycji.');
         }
 
         $payload = array(
@@ -152,6 +158,43 @@ class ErliService
         );
     }
 
+    public function enqueueWarehouseUpdates(string $accountSelector = '', array $operations = array(), int $limit = 500): array
+    {
+        $operations = $operations !== array() ? $operations : array('set_price_from_product', 'set_stock_from_product');
+        $filters = array(
+            'linked' => '1',
+            'status' => 'active',
+        );
+
+        if (trim($accountSelector) !== '') {
+            $account = $this->resolveAccount($accountSelector);
+            if (!$account) {
+                throw new RuntimeException('Brak aktywnego konta Erli do dodania aktualizacji.');
+            }
+            $filters['account_id'] = (string) ((int) $account['id']);
+        }
+
+        $targets = $this->storage->productTargetsForFilters($filters, max(1, min(5000, $limit)));
+        $result = array(
+            'products' => count($targets),
+            'operations' => array(),
+            'queued' => 0,
+        );
+
+        foreach ($operations as $operation) {
+            $operation = $this->normalizeQueueOperation((string) $operation);
+            if ($operation === '') {
+                continue;
+            }
+
+            $queued = $this->storage->enqueueProductChanges($targets, $operation, array(), null, true);
+            $result['operations'][$operation] = $queued;
+            $result['queued'] += $queued;
+        }
+
+        return $result;
+    }
+
     public function processQueue(array $options = array()): array
     {
         $limit = max(1, min(100, (int) ($options['limit'] ?? 20)));
@@ -220,7 +263,38 @@ class ErliService
         return $this->storage->clearQueueStatuses($keepPending);
     }
 
+    public function automationLinks(string $baseUrl): array
+    {
+        $base = rtrim($baseUrl, '?&');
+        $links = array(
+            'queue_worker' => $base . '?controller=erli&action=processqueue&format=json&limit=50',
+            'sync_worker' => $base . '?controller=erli&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
+            'maintenance' => $base . '?controller=erli&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
+            'accounts' => array(),
+        );
+
+        foreach ($this->listAccounts() as $account) {
+            $accountSlug = rawurlencode((string) ($account['slug'] ?? ''));
+            $links['accounts'][] = array(
+                'id' => (int) ($account['id'] ?? 0),
+                'name' => (string) ($account['name'] ?? ''),
+                'slug' => (string) ($account['slug'] ?? ''),
+                'is_active' => (int) ($account['is_active'] ?? 0) === 1,
+                'sync' => $base . '?controller=erli&action=sync&format=json&account=' . $accountSlug . '&max_batches=2&page_limit=50',
+                'queue_only' => $base . '?controller=erli&action=processqueue&format=json&account=' . $accountSlug . '&limit=50',
+                'maintenance' => $base . '?controller=erli&action=maintenance&format=json&account=' . $accountSlug . '&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
+            );
+        }
+
+        return $links;
+    }
+
     public function syncAccount(string $accountSelector = ''): array
+    {
+        return $this->syncAccountBatch($accountSelector);
+    }
+
+    public function syncAccountBatch(string $accountSelector = '', array $options = array()): array
     {
         $account = $this->resolveAccount($accountSelector);
         if (!$account) {
@@ -228,8 +302,10 @@ class ErliService
         }
 
         $accountId = (int) $account['id'];
-        $maxBatches = 5;
-        $pageLimit = 50;
+        $maxBatches = isset($options['max_batches']) ? (int) $options['max_batches'] : 5;
+        $pageLimit = isset($options['page_limit']) ? (int) $options['page_limit'] : 50;
+        $maxBatches = max(1, min(20, $maxBatches));
+        $pageLimit = max(1, min(200, $pageLimit));
         $synced = 0;
         $pagesProcessed = 0;
         $currentCycle = trim((string) ($account['current_cycle'] ?? ''));

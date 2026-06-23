@@ -16,6 +16,7 @@
   {/if}
 
   {if $moreleChars}
+    <input type="hidden" name="params_morele_loaded" value="1" />
     <div class="mb-3">
       <input type="text" class="form-control js-market-param-filter" data-target=".js-morele-param-card" placeholder="Szukaj po grupie, nazwie lub ID parametru Morele...">
     </div>

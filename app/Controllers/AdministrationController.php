@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Models\SettingRepository;
 use App\Models\UserRepository;
 use App\Services\AllegroService;
+use App\Services\AltreoSqlImportService;
 use App\Services\EmpikService;
 use App\Services\ErliService;
 use App\Services\TemuService;
@@ -165,6 +166,8 @@ class AdministrationController extends Controller
             'flashError' => $flashError,
             'automation' => $this->allegro->automationLinks($baseUrl),
             'queueStats' => $this->allegro->queueCounts(),
+            'erliAutomation' => $this->erli->automationLinks($baseUrl),
+            'erliQueueStats' => $this->erli->queueCounts(),
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
             'erliAccounts' => $erliAccounts,
@@ -376,6 +379,35 @@ class AdministrationController extends Controller
         $this->redirect('./index.php?controller=administration&action=automation');
     }
 
+    public function importaltreosql(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        try {
+            $paths = $this->uploadedAltreoSqlPaths();
+            $clearBeforeImport = (string) $this->input('clear_altreo_tables', '') === '1';
+            $importer = new AltreoSqlImportService($this->db());
+            $summary = $importer->importFiles($paths, $clearBeforeImport);
+
+            $this->setFlash(
+                'success',
+                'Import SQL ALTREO zakonczony. Produkty: ' . (int) ($summary['pr_products_altreo'] ?? 0)
+                . ', komponenty: ' . (int) ($summary['pr_components_altreo'] ?? 0)
+                . ', szablony: ' . (int) ($summary['pr_altreo_template'] ?? 0)
+                . ', pominiete niedopasowane kolumny: ' . (int) ($summary['ignored_columns'] ?? 0) . '.'
+            );
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
     public function savemorele(): void
     {
         $this->requireRole('admin');
@@ -422,6 +454,49 @@ class AdministrationController extends Controller
         }
 
         $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    private function uploadedAltreoSqlPaths(): array
+    {
+        $fields = array(
+            'altreo_products_sql' => 'produkty',
+            'altreo_components_sql' => 'komponenty',
+            'altreo_template_sql' => 'template',
+        );
+        $paths = array();
+
+        foreach ($fields as $field => $label) {
+            if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+                continue;
+            }
+
+            $file = $_FILES[$field];
+            $error = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+            if ($error === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+            if ($error !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Nie udalo sie wgrac pliku SQL: ' . $label . '.');
+            }
+
+            $name = isset($file['name']) ? (string) $file['name'] : '';
+            if (!preg_match('/\.sql$/i', $name)) {
+                throw new RuntimeException('Import ALTREO przyjmuje tylko pliki .sql. Problem z polem: ' . $label . '.');
+            }
+
+            $tmpName = isset($file['tmp_name']) ? (string) $file['tmp_name'] : '';
+            if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                throw new RuntimeException('Brak poprawnego pliku tymczasowego SQL: ' . $label . '.');
+            }
+
+            $paths[] = $tmpName;
+        }
+
+        if ($paths === array()) {
+            throw new RuntimeException('Wybierz przynajmniej jeden plik SQL ALTREO.');
+        }
+
+        return $paths;
     }
 
     public function deleteUser(): void

@@ -15,6 +15,7 @@
   {/if}
 
   {if $parameters}
+    <input type="hidden" name="params_eu_loaded" value="1" />
     <div class="mb-3">
       <input type="text" class="form-control js-market-param-filter" data-target=".js-eu-param-card" placeholder="Szukaj po nazwie lub ID parametru EU...">
     </div>

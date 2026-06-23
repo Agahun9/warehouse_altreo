@@ -35,6 +35,11 @@ class EmpikService
 
     public function saveAccount(array $input, ?int $accountId = null): array
     {
+        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
+        if ($accountId !== null && !$existing) {
+            throw new RuntimeException('Nie znaleziono konta Empik do edycji.');
+        }
+
         $name = trim((string) ($input['name'] ?? ''));
         $apiUrl = rtrim(trim((string) ($input['api_url'] ?? '')), '/');
         $apiKey = trim((string) ($input['api_key'] ?? ''));
@@ -42,17 +47,19 @@ class EmpikService
         $locale = trim((string) ($input['locale'] ?? $this->defaultLocale()));
         $isActive = !empty($input['is_active']) ? 1 : 0;
 
+        if ($existing) {
+            $name = $name !== '' ? $name : (string) ($existing['name'] ?? '');
+            $apiUrl = $apiUrl !== '' ? $apiUrl : rtrim((string) ($existing['api_url'] ?? ''), '/');
+            $apiKey = $apiKey !== '' ? $apiKey : (string) ($existing['api_key'] ?? '');
+            $locale = $locale !== '' ? $locale : (string) ($existing['locale'] ?? $this->defaultLocale());
+        }
+
         if ($name === '' || $apiUrl === '' || $apiKey === '') {
             throw new RuntimeException('Uzupelnij nazwe konta, adres API i API key Empik.');
         }
 
         if (filter_var($apiUrl, FILTER_VALIDATE_URL) === false) {
             throw new RuntimeException('Adres API Empik musi byc poprawnym URL.');
-        }
-
-        $existing = $accountId !== null ? $this->storage->findAccountById($accountId) : null;
-        if ($accountId !== null && !$existing) {
-            throw new RuntimeException('Nie znaleziono konta Empik do edycji.');
         }
 
         $payload = array(
