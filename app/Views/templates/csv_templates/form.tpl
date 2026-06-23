@@ -156,10 +156,62 @@
         }
 
         #csv-template-form .description-section-card {
-          border-radius: 18px !important;
+          overflow: hidden;
+          border-radius: 14px !important;
           border: 1px solid rgba(148, 163, 184, 0.28) !important;
-          background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.92)) !important;
-          padding: 1rem !important;
+          background: #ffffff !important;
+          padding: 0 !important;
+          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+        }
+
+        #csv-template-form .description-section-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.62rem 0.72rem;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+          background: #f8fafc;
+        }
+
+        #csv-template-form .description-section-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          min-width: 0;
+          color: var(--csv-title);
+          font-size: 0.8rem;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+
+        #csv-template-form .description-section-title .js-drag-handle {
+          cursor: move;
+          color: #475569 !important;
+        }
+
+        #csv-template-form .description-section-controls {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        #csv-template-form .description-section-controls .desc-layout {
+          min-width: 180px;
+        }
+
+        #csv-template-form .description-section-body {
+          padding: 0.72rem;
+        }
+
+        #csv-template-form .description-section-pane {
+          border: 1px solid rgba(148, 163, 184, 0.22) !important;
+          border-radius: 12px !important;
+          background: #ffffff;
+          padding: 0.62rem !important;
         }
 
         #csv-template-form .description-section-card > .row > div > .border,
@@ -263,7 +315,94 @@
         #csv-template-form .description-sections-list,
         #csv-template-form #columnsBuilder,
         #csv-template-form #descriptionTemplatesBuilder {
-          gap: 1rem !important;
+          gap: 0.72rem !important;
+        }
+
+        #csv-template-form .desc-editor-shell {
+          display: grid;
+          gap: 0.42rem;
+        }
+
+        #csv-template-form .desc-format-toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.28rem;
+          align-items: center;
+          padding: 0.35rem;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 12px;
+          background: rgba(248, 250, 252, 0.86);
+        }
+
+        #csv-template-form .desc-format-toolbar .btn {
+          min-width: 2.15rem;
+          padding: 0.2rem 0.42rem;
+          line-height: 1.1;
+        }
+
+        #csv-template-form .desc-token-tools {
+          padding: 0.55rem !important;
+        }
+
+        #csv-template-form .desc-text-input {
+          display: none;
+        }
+
+        #csv-template-form .desc-visual-editor {
+          border: 1px solid rgba(148, 163, 184, 0.4);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.98);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+          color: var(--csv-text);
+          padding: 0.65rem 0.75rem;
+          min-height: 96px;
+          outline: none;
+        }
+
+        #csv-template-form .desc-visual-editor:focus {
+          border-color: rgba(13, 110, 253, 0.5);
+          box-shadow: 0 0 0 0.22rem rgba(13, 110, 253, 0.12);
+        }
+
+        #csv-template-form .desc-visual-editor h1,
+        #csv-template-form .desc-visual-editor h2,
+        #csv-template-form .desc-visual-editor h3 {
+          color: var(--csv-title);
+          margin: 0.25rem 0 0.45rem;
+          line-height: 1.2;
+        }
+
+        #csv-template-form .desc-visual-editor h1 {
+          font-size: 1.7rem;
+        }
+
+        #csv-template-form .desc-visual-editor h2 {
+          font-size: 1.38rem;
+        }
+
+        #csv-template-form .desc-visual-editor h3 {
+          font-size: 1.12rem;
+        }
+
+        #csv-template-form .desc-format-button.is-active {
+          color: #ffffff;
+          background: var(--csv-accent);
+          border-color: var(--csv-accent);
+        }
+
+        #csv-template-form .desc-token-pill {
+          display: inline-flex;
+          align-items: center;
+          max-width: 100%;
+          margin: 0 0.14rem;
+          padding: 0.08rem 0.42rem;
+          border: 1px solid rgba(13, 110, 253, 0.22);
+          border-radius: 999px;
+          background: rgba(13, 110, 253, 0.08);
+          color: #0b5ed7;
+          font-size: 0.86em;
+          font-weight: 700;
+          white-space: nowrap;
         }
 
         #csv-template-form .btn {
@@ -390,6 +529,21 @@
           #csv-template-form .column-card .card-body,
           #csv-template-form .description-template-card .card-body {
             padding: 0.8rem !important;
+          }
+
+          #csv-template-form .description-section-card {
+            padding: 0 !important;
+          }
+
+          #csv-template-form .description-section-header,
+          #csv-template-form .description-section-controls {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          #csv-template-form .description-section-controls .desc-layout,
+          #csv-template-form .description-section-controls .btn {
+            width: 100%;
           }
         }
       </style>
@@ -768,11 +922,18 @@
     return node.closest('.desc-left-text, .desc-right-text, .desc-single-text');
   }
 
+  function descriptionActiveEditorFromNode(node) {
+    var scope = descriptionTextScopeFromNode(node);
+    return scope ? scope.querySelector('.desc-visual-editor') : null;
+  }
+
   function fieldOptions(selected) {
     var html = '<option value="">Wybierz pole</option>';
     Object.keys(availableFields).forEach(function (key) {
       var isSelected = String(selected || '') === key ? ' selected' : '';
-      html += '<option value="' + escapeHtml(key) + '"' + isSelected + '>' + escapeHtml(availableFields[key]) + '</option>';
+      var label = tokenSearchFieldLabel(key, availableFields[key]);
+      var title = fieldOptionTitle(key, availableFields[key]);
+      html += '<option value="' + escapeHtml(key) + '"' + isSelected + ' title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</option>';
     });
     return html;
   }
@@ -780,9 +941,52 @@
   function fieldInsertOptions() {
     var html = '<option value="">Wybierz pole do wstawienia</option>';
     Object.keys(availableFields).forEach(function (key) {
-      html += '<option value="' + escapeHtml(key) + '">' + escapeHtml(availableFields[key]) + '</option>';
+      var label = tokenSearchFieldLabel(key, availableFields[key]);
+      var title = fieldOptionTitle(key, availableFields[key]);
+      html += '<option value="' + escapeHtml(key) + '" title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</option>';
     });
     return html;
+  }
+
+  function compactFieldLabel(key, label) {
+    var fieldKey = String(key || '');
+    var fieldLabel = String(label || fieldKey);
+    var allegroMatch = fieldKey.match(/^product\.allegro_parameter\.([^.]+)$/);
+    var empikMatch = fieldKey.match(/^product\.empik_parameter\.([^.]+)$/);
+
+    if (allegroMatch || empikMatch) {
+      var marketplace = allegroMatch ? 'Allegro' : 'Empik';
+      var parameterId = allegroMatch ? allegroMatch[1] : empikMatch[1];
+      var name = fieldLabel
+        .replace(/^Allegro:\s*/i, '')
+        .replace(/^Empik:\s*/i, '')
+        .replace(/\s*\[[^\]]+\].*$/, '')
+        .replace(/\s*\|\s*Kategorie:.*$/, '')
+        .trim();
+
+      if (!name || name === parameterId) {
+        name = 'parametr';
+      }
+
+      return marketplace + ' ' + name + ' [' + parameterId + ']';
+    }
+
+    return fieldLabel;
+  }
+
+  function fieldOptionTitle(key, label) {
+    return String(label || key || '') + ' | {ldelim}{ldelim}field:' + String(key || '') + '{rdelim}{rdelim}';
+  }
+
+  function tokenSearchFieldLabel(key, label) {
+    var compactLabel = compactFieldLabel(key, label);
+    var fieldLabel = String(label || '');
+    var categoriesMatch = fieldLabel.match(/\|\s*Kategorie:\s*(.+)$/i);
+    if (categoriesMatch && categoriesMatch[1]) {
+      return compactLabel + ' | Kategorie: ' + categoriesMatch[1];
+    }
+
+    return compactLabel;
   }
 
   function functionOptions(selected) {
@@ -814,6 +1018,7 @@
 
   function descriptionSectionLayoutOptions(selected) {
     var options = {
+      image: 'Samo zdjecie',
       image_image: 'Zdjecie + zdjecie',
       image_text: 'Zdjecie + tekst',
       text_image: 'Tekst + zdjecie',
@@ -833,10 +1038,204 @@
     html += '<option value="{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}">Opcja: Kolekcja wpisana przy eksporcie</option>';
     html += '<option value="{ldelim}{ldelim}option:price_to_csv{rdelim}{rdelim}">Opcja: Cena wpisana przy eksporcie</option>';
     Object.keys(availableFields).forEach(function (key) {
-      html += '<option value="{ldelim}{ldelim}field:' + escapeHtml(key) + '{rdelim}{rdelim}">' + escapeHtml(availableFields[key]) + '</option>';
+      var token = '{ldelim}{ldelim}field:' + key + '{rdelim}{rdelim}';
+      var label = tokenSearchFieldLabel(key, availableFields[key]);
+      var title = fieldOptionTitle(key, availableFields[key]);
+      html += '<option value="' + escapeHtml(token) + '" title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</option>';
     });
     return html;
   }
+
+  function descriptionTokenRegex(flags) {
+    var open = String.fromCharCode(123) + String.fromCharCode(123);
+    var close = String.fromCharCode(125) + String.fromCharCode(125);
+    return new RegExp(open + '\\s*(field|option):\\s*([^' + String.fromCharCode(125) + ']+)' + close, flags || '');
+  }
+
+  function descriptionTokenLabel(token) {
+    var value = String(token || '');
+    var match = value.match(descriptionTokenRegex('i'));
+    if (!match) {
+      return value;
+    }
+
+    var kind = String(match[1] || '').toLowerCase();
+    var key = String(match[2] || '').trim();
+    if (kind === 'field') {
+      return compactFieldLabel(key, availableFields[key] || key);
+    }
+
+    var optionLabels = {
+      collection_name: 'Opcja Kolekcja',
+      price_to_csv: 'Opcja Cena'
+    };
+
+    return optionLabels[key] || ('Opcja ' + key);
+  }
+
+  function descriptionTokenPillHtml(token) {
+    return '<span class="desc-token-pill" contenteditable="false" data-token="' + escapeHtml(token) + '">' + escapeHtml(descriptionTokenLabel(token)) + '</span>';
+  }
+
+  function descriptionEditorHtmlFromValue(value) {
+    var html = escapeHtml(value || '');
+    html = html.replace(/&lt;\s*(\/?)\s*(h1|h2|h3|strong|b|em|i|u)\s*&gt;/gi, '<$1$2>');
+    html = html.replace(/&lt;\s*br\s*\/?\s*&gt;/gi, '<br>');
+    html = html.replace(/\r?\n/g, '<br>');
+    html = html.replace(descriptionTokenRegex('gi'), function (token) {
+      return descriptionTokenPillHtml(token);
+    });
+    return html || '<br>';
+  }
+
+  function descriptionEditorValue(editor) {
+    if (!editor) {
+      return '';
+    }
+
+    var clone = editor.cloneNode(true);
+    var pills = clone.querySelectorAll('.desc-token-pill');
+    for (var index = 0; index < pills.length; index++) {
+      pills[index].parentNode.replaceChild(document.createTextNode(pills[index].getAttribute('data-token') || pills[index].textContent || ''), pills[index]);
+    }
+
+    return String(clone.innerHTML || '')
+      .replace(/<div><br><\/div>/gi, '<br>')
+      .replace(/<div>/gi, '<br>')
+      .replace(/<\/div>/gi, '')
+      .replace(/&nbsp;/gi, ' ')
+      .trim();
+  }
+
+  function syncDescriptionEditor(scope) {
+    if (!scope) {
+      return;
+    }
+
+    var editor = scope.querySelector('.desc-visual-editor');
+    var textarea = scope.querySelector('.desc-text-input');
+    if (editor && textarea) {
+      textarea.value = descriptionEditorValue(editor);
+    }
+  }
+
+  function syncAllDescriptionEditors(root) {
+    var editors = (root || document).querySelectorAll('.desc-visual-editor');
+    for (var index = 0; index < editors.length; index++) {
+      syncDescriptionEditor(descriptionTextScopeFromNode(editors[index]));
+    }
+  }
+
+  function focusDescriptionEditor(editor) {
+    if (!editor) {
+      return;
+    }
+
+    editor.focus();
+  }
+
+  function insertHtmlIntoDescriptionEditor(editor, html) {
+    if (!editor) {
+      return;
+    }
+
+    focusDescriptionEditor(editor);
+    document.execCommand('insertHTML', false, html);
+    syncDescriptionEditor(descriptionTextScopeFromNode(editor));
+    refreshDescriptionFormatState(editor);
+  }
+
+  function closestEditorBlock(node, editor) {
+    var current = node && node.nodeType === 3 ? node.parentNode : node;
+    while (current && current !== editor) {
+      var tagName = current.tagName ? current.tagName.toLowerCase() : '';
+      if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
+        return tagName;
+      }
+      current = current.parentNode;
+    }
+
+    return '';
+  }
+
+  function currentDescriptionFormat(editor) {
+    if (!editor) {
+      return { block: '', bold: false, italic: false, underline: false };
+    }
+
+    var selection = window.getSelection ? window.getSelection() : null;
+    var node = selection && selection.rangeCount ? selection.anchorNode : null;
+
+    return {
+      block: closestEditorBlock(node, editor),
+      bold: document.queryCommandState ? document.queryCommandState('bold') : false,
+      italic: document.queryCommandState ? document.queryCommandState('italic') : false,
+      underline: document.queryCommandState ? document.queryCommandState('underline') : false
+    };
+  }
+
+  function refreshDescriptionFormatState(editor) {
+    var scope = descriptionTextScopeFromNode(editor);
+    if (!scope) {
+      return;
+    }
+
+    var state = currentDescriptionFormat(editor);
+    var buttons = scope.querySelectorAll('.desc-format-button');
+    for (var index = 0; index < buttons.length; index++) {
+      var format = String(buttons[index].getAttribute('data-format') || '');
+      var active = false;
+      if (format === 'bold') {
+        active = state.bold;
+      } else if (format === 'italic') {
+        active = state.italic;
+      } else if (format === 'underline') {
+        active = state.underline;
+      } else {
+        active = state.block === format;
+      }
+      buttons[index].classList.toggle('is-active', active);
+    }
+  }
+
+  function applyDescriptionFormat(button, editor) {
+    if (!button || !editor) {
+      return;
+    }
+
+    focusDescriptionEditor(editor);
+    var format = String(button.getAttribute('data-format') || '');
+    if (format === 'bold') {
+      document.execCommand('bold', false, null);
+    } else if (format === 'italic') {
+      document.execCommand('italic', false, null);
+    } else if (format === 'underline') {
+      document.execCommand('underline', false, null);
+    } else if (format === 'h1' || format === 'h2' || format === 'h3') {
+      var state = currentDescriptionFormat(editor);
+      document.execCommand('formatBlock', false, state.block === format ? 'div' : '<' + format + '>');
+    }
+
+    syncDescriptionEditor(descriptionTextScopeFromNode(editor));
+    refreshDescriptionFormatState(editor);
+  }
+
+  document.addEventListener('selectionchange', function () {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (!selection || !selection.rangeCount) {
+      return;
+    }
+
+    var node = selection.anchorNode;
+    var editor = node && node.nodeType === 3 ? node.parentNode : node;
+    if (editor && editor.closest) {
+      editor = editor.closest('.desc-visual-editor');
+    }
+
+    if (editor && descriptionBuilder && descriptionBuilder.contains(editor)) {
+      refreshDescriptionFormatState(editor);
+    }
+  });
 
   function mappingRowsHtml(mappings) {
     if (!Array.isArray(mappings) || mappings.length === 0) {
@@ -902,16 +1301,27 @@
 
   function descriptionTextEditorHtml(value, placeholder, label) {
     return '<div class="small fw-semibold mb-1">' + escapeHtml(label || 'Tekst') + '</div>'
-      + '<textarea class="form-control form-control-sm desc-text-input" rows="5" placeholder="' + escapeHtml(placeholder || 'Wpisz tekst lub tokeny {ldelim}{ldelim}field:...{rdelim}{rdelim}') + '">' + escapeHtml(value || '') + '</textarea>'
-      + '<div class="border rounded bg-light-subtle p-2 mt-2">'
-      + '<div class="small fw-semibold mb-2">Wstaw token</div>'
+      + '<div class="desc-editor-shell">'
+      + '<div class="desc-format-toolbar" aria-label="Formatowanie tekstu">'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button" data-format="h1">H1</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button" data-format="h2">H2</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button" data-format="h3">H3</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button fw-bold" data-format="bold">B</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button fst-italic" data-format="italic">I</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button text-decoration-underline" data-format="underline">U</button>'
+      + '</div>'
+      + '<div class="desc-visual-editor" contenteditable="true" data-placeholder="' + escapeHtml(placeholder || 'Wpisz tekst lub tokeny') + '">' + descriptionEditorHtmlFromValue(value || '') + '</div>'
+      + '<textarea class="form-control form-control-sm desc-text-input" rows="5">' + escapeHtml(value || '') + '</textarea>'
+      + '<div class="border rounded bg-light-subtle desc-token-tools">'
+      + '<div class="small fw-semibold mb-1">Wstaw token</div>'
       + '<div class="row g-2 align-items-end">'
       + '<div class="col-lg-4"><label class="form-label small mb-1">Wyszukiwarka</label><input type="text" class="form-control form-control-sm desc-token-search" placeholder="Szukaj np. sku, allegro, opis"></div>'
       + '<div class="col-lg-6"><label class="form-label small mb-1">Pole / opcja</label><select class="form-select form-select-sm desc-token-select">' + descriptionTokenOptions() + '</select></div>'
       + '<div class="col-lg-2 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary desc-insert-token">Wstaw</button></div>'
       + '</div>'
       + '</div>'
-      + '<div class="form-text">Tokeny: <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>.</div>';
+      + '</div>'
+      + '<div class="form-text">Formatowanie zapisuje bezpieczne tagi HTML. Tokeny: <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>.</div>';
   }
 
   function createDescriptionSectionCard(section) {
@@ -928,19 +1338,21 @@
     card.className = 'border rounded p-3 bg-light-subtle description-section-card';
     card.draggable = true;
     card.innerHTML = ''
-      + '<div class="d-flex justify-content-between align-items-center gap-2 mb-2">'
-      + '<span class="text-secondary small js-drag-handle" style="cursor:move;">:: przeciagnij sekcje</span>'
-      + '<div class="d-flex gap-2 align-items-center">'
-      + '<select class="form-select form-select-sm desc-layout" style="min-width:220px;">' + descriptionSectionLayoutOptions(data.layout || 'text') + '</select>'
+      + '<div class="description-section-header">'
+      + '<div class="description-section-title"><span class="text-secondary small js-drag-handle">Przeciagnij sekcje</span></div>'
+      + '<div class="description-section-controls">'
+      + '<select class="form-select form-select-sm desc-layout">' + descriptionSectionLayoutOptions(data.layout || 'text') + '</select>'
       + '<button type="button" class="btn btn-sm btn-outline-danger remove-description-section">Usun sekcje</button>'
       + '</div>'
       + '</div>'
-      + '<div class="row g-3">'
-      + '  <div class="col-12 col-lg-6 desc-left-image"><div class="border rounded p-2 h-100">' + descriptionImagePickerHtml(data.left_image || {}, 'Lewy obraz') + '</div></div>'
-      + '  <div class="col-12 col-lg-6 desc-right-image"><div class="border rounded p-2 h-100">' + descriptionImagePickerHtml(data.right_image || {}, 'Prawy obraz') + '</div></div>'
-      + '  <div class="col-12 col-lg-6 desc-left-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.left_text || '', 'Lewy tekst', 'Lewy tekst') + '</div></div>'
-      + '  <div class="col-12 col-lg-6 desc-right-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.right_text || '', 'Prawy tekst', 'Prawy tekst') + '</div></div>'
-      + '  <div class="col-12 desc-single-text"><div class="border rounded p-2 h-100">' + descriptionTextEditorHtml(data.text || '', 'Tresci sekcji', 'Tekst') + '</div></div>'
+      + '<div class="description-section-body">'
+      + '<div class="row g-2">'
+      + '  <div class="col-12 col-lg-6 desc-left-image"><div class="description-section-pane h-100">' + descriptionImagePickerHtml(data.left_image || {}, 'Lewy obraz') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-right-image"><div class="description-section-pane h-100">' + descriptionImagePickerHtml(data.right_image || {}, 'Prawy obraz') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-left-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.left_text || '', 'Lewy tekst', 'Lewy tekst') + '</div></div>'
+      + '  <div class="col-12 col-lg-6 desc-right-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.right_text || '', 'Prawy tekst', 'Prawy tekst') + '</div></div>'
+      + '  <div class="col-12 desc-single-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.text || '', 'Tresci sekcji', 'Tekst') + '</div></div>'
+      + '</div>'
       + '</div>';
 
     function updateVisibility() {
@@ -951,13 +1363,14 @@
       var rightText = card.querySelector('.desc-right-text');
       var singleText = card.querySelector('.desc-single-text');
 
-      leftImage.style.display = (layout === 'image_image' || layout === 'image_text') ? '' : 'none';
+      leftImage.style.display = (layout === 'image' || layout === 'image_image' || layout === 'image_text') ? '' : 'none';
       rightImage.style.display = (layout === 'image_image' || layout === 'text_image') ? '' : 'none';
       leftText.style.display = (layout === 'text_image' || layout === 'text_text') ? '' : 'none';
       rightText.style.display = (layout === 'image_text' || layout === 'text_text') ? '' : 'none';
       singleText.style.display = layout === 'text' ? '' : 'none';
 
       leftImage.style.order = '1';
+      leftImage.className = layout === 'image' ? 'col-12 desc-left-image' : 'col-12 col-lg-6 desc-left-image';
       leftText.style.order = '1';
       rightImage.style.order = '2';
       rightText.style.order = '2';
@@ -989,6 +1402,13 @@
       }
     });
     card.addEventListener('input', function (event) {
+      if (event.target.classList.contains('desc-visual-editor')) {
+        syncDescriptionEditor(descriptionTextScopeFromNode(event.target));
+        refreshDescriptionFormatState(event.target);
+        refreshAvailableFieldsFromDescriptions();
+        return;
+      }
+
       if (event.target.classList.contains('desc-token-search')) {
         return;
       }
@@ -1025,30 +1445,47 @@
         options[optionIndex].hidden = query !== '' && haystack.indexOf(query) === -1;
       }
     });
+    card.addEventListener('mousedown', function (event) {
+      if (event.target.classList.contains('desc-format-button')) {
+        event.preventDefault();
+      }
+    });
+    card.addEventListener('keyup', function (event) {
+      var editor = descriptionActiveEditorFromNode(event.target);
+      if (editor) {
+        syncDescriptionEditor(descriptionTextScopeFromNode(editor));
+        refreshDescriptionFormatState(editor);
+      }
+    });
+    card.addEventListener('mouseup', function (event) {
+      var editor = descriptionActiveEditorFromNode(event.target);
+      if (editor) {
+        refreshDescriptionFormatState(editor);
+      }
+    });
     card.addEventListener('click', function (event) {
-      if (!event.target.classList.contains('desc-insert-token')) {
-        return;
-      }
-
       var scope = descriptionTextScopeFromNode(event.target);
-      var textarea = scope ? scope.querySelector('.desc-text-input') : null;
-      var select = scope ? scope.querySelector('.desc-token-select') : null;
-      if (!textarea || !select || !select.value) {
+      var editor = scope ? scope.querySelector('.desc-visual-editor') : null;
+
+      if (event.target.classList.contains('desc-format-button')) {
+        if (!editor) {
+          return;
+        }
+
+        applyDescriptionFormat(event.target, editor);
+        refreshAvailableFieldsFromDescriptions();
         return;
       }
 
-      var token = String(select.value || '');
-      var start = typeof textarea.selectionStart === 'number' ? textarea.selectionStart : textarea.value.length;
-      var end = typeof textarea.selectionEnd === 'number' ? textarea.selectionEnd : textarea.value.length;
-      var currentValue = String(textarea.value || '');
-      textarea.value = currentValue.slice(0, start) + token + currentValue.slice(end);
-      textarea.focus();
-      var caretPosition = start + token.length;
-      if (typeof textarea.setSelectionRange === 'function') {
-        textarea.setSelectionRange(caretPosition, caretPosition);
-      }
+      if (event.target.classList.contains('desc-insert-token')) {
+        var select = scope ? scope.querySelector('.desc-token-select') : null;
+        if (!editor || !select || !select.value) {
+          return;
+        }
 
-      refreshAvailableFieldsFromDescriptions();
+        insertHtmlIntoDescriptionEditor(editor, descriptionTokenPillHtml(String(select.value || '')) + '&nbsp;');
+        refreshAvailableFieldsFromDescriptions();
+      }
     });
     var dragHandle = card.querySelector('.js-drag-handle');
     if (dragHandle) {
@@ -1150,6 +1587,7 @@
       + '  </div>'
       + '  <div class="small text-secondary mb-3">To pole bedzie dostepne jako <span class="desc-template-label-preview">Opis CSV: ' + escapeHtml(data.name || '...') + '</span>.</div>'
       + '  <div class="d-flex gap-2 flex-wrap mb-3">'
+      + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image">Samo zdjecie</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_image">Zdjecie + zdjecie</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_text">Zdjecie + tekst</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text_image">Tekst + zdjecie</button>'
@@ -1719,6 +2157,7 @@
   }
 
   function collectDescriptionTemplates() {
+    syncAllDescriptionEditors(descriptionBuilder);
     var cards = descriptionBuilder.querySelectorAll('.description-template-card');
     var templates = [];
 

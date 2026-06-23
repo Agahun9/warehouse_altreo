@@ -123,6 +123,34 @@
       box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .18);
     }
 
+    .csv-help-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1rem;
+      height: 1rem;
+      margin-left: .2rem;
+      border: 1px solid rgba(13, 110, 253, .28);
+      border-radius: 999px;
+      background: rgba(13, 110, 253, .08);
+      color: #0d6efd;
+      font-size: .68rem;
+      font-weight: 800;
+      line-height: 1;
+      cursor: help;
+      vertical-align: text-top;
+      transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+    }
+
+    .csv-help-icon:hover,
+    .csv-help-icon:focus {
+      background: #0d6efd;
+      border-color: #0d6efd;
+      color: #fff;
+      box-shadow: 0 0 0 .16rem rgba(13, 110, 253, .14);
+      outline: none;
+    }
+
     .products-table {
       table-layout: auto;
       width: 100%;
@@ -1076,19 +1104,19 @@
             <label class="form-label d-block">Opcje obrazow EasyUploader</label>
             <div class="row g-2">
               <div class="col-md-4">
-                <label class="form-label small">Kolekcja numeracja</label>
+                <label class="form-label small">Kolekcja numeracja <span class="csv-help-icon" tabindex="0" role="button" title="Start numeracji kolekcji. Token {ldelim}{ldelim}collection_code{rdelim}{rdelim} da wpisana wartosc, a {ldelim}{ldelim}collection_code_index{rdelim}{rdelim} zwiekszy numer wedlug indeksu grafiki." data-bs-toggle="tooltip">i</span></label>
                 <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A100">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Zakres kolejki</label>
+                <label class="form-label small">Zakres kolejki <span class="csv-help-icon" tabindex="0" role="button" title="Zakres do gridow i tokenow kolejki, np. A100-A250. Na tej podstawie auto wylicza grid." data-bs-toggle="tooltip">i</span></label>
                 <input type="text" name="image_queue_range" class="form-control form-control-sm" placeholder="np. A100-A250">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Wzory miniatur</label>
-                <input type="text" name="thumbnail_pattern_list" class="form-control form-control-sm" placeholder="np. A100 A200 A234">
+                <label class="form-label small">Wzory miniatur <span class="csv-help-icon" tabindex="0" role="button" title="Lista albo zakres wzorow dla tokenu {ldelim}{ldelim}queue_item{rdelim}{rdelim}, np. A100 A200 A234 albo AK020-AK040. Zakres AK020-AK040 da wszystkie wzory po kolei." data-bs-toggle="tooltip">i</span></label>
+                <input type="text" name="thumbnail_pattern_list" class="form-control form-control-sm" placeholder="np. AK020-AK040 lub A100 A200 A234">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Grid</label>
+                <label class="form-label small">Grid <span class="csv-help-icon" tabindex="0" role="button" title="Uklad grafik w gridzie, np. 3x2. Przycisk Auto dobiera grid do zakresu kolejki." data-bs-toggle="tooltip">i</span></label>
                 <div class="input-group input-group-sm">
                   <input type="text" name="grid_layout" class="form-control form-control-sm" placeholder="np. 3x2">
                   <button type="button" class="btn btn-outline-secondary" id="csvExportGridAutoBtn">Auto</button>
@@ -1098,28 +1126,28 @@
                 <div class="small text-secondary" id="csvExportGridHint">Wpisz zakres kolejki, aby wstepnie wyliczyc grid. Pole grid mozesz potem zmienic recznie.</div>
               </div>
               <div class="col-md-8">
-                <label class="form-label small">Cena</label>
+                <label class="form-label small">Cena <span class="csv-help-icon" tabindex="0" role="button" title="Wartosc dostepna w szablonach jako product.price_to_csv oraz {ldelim}{ldelim}price{rdelim}{rdelim} w makrach obrazow." data-bs-toggle="tooltip">i</span></label>
                 <input type="text" name="price_to_csv" class="form-control form-control-sm" placeholder="Cena">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Ilosc miniatur</label>
+                <label class="form-label small">Ilosc miniatur <span class="csv-help-icon" tabindex="0" role="button" title="Ile miniatur wygenerowac. Przy wpisaniu wzorow miniatur ustawia sie automatycznie." data-bs-toggle="tooltip">i</span></label>
                 <input type="number" min="0" name="thumbnail_count" class="form-control form-control-sm" value="0">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Ilosc mockupow / gridow</label>
+                <label class="form-label small">Ilosc mockupow / gridow <span class="csv-help-icon" tabindex="0" role="button" title="Ile pozycji wygenerowac z makra mockupow. Token {ldelim}{ldelim}index{rdelim}{rdelim} oznacza numer mockupu." data-bs-toggle="tooltip">i</span></label>
                 <input type="number" min="0" name="mockup_count" class="form-control form-control-sm" value="0">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Ilosc zdjec</label>
+                <label class="form-label small">Ilosc zdjec <span class="csv-help-icon" tabindex="0" role="button" title="Ile pozycji wygenerowac z makra zdjec. Token {ldelim}{ldelim}index{rdelim}{rdelim} oznacza numer zdjecia." data-bs-toggle="tooltip">i</span></label>
                 <input type="number" min="0" name="image_count" class="form-control form-control-sm" value="0">
               </div>
               <div class="col-12">
-                <label class="form-label small">Bazowy katalog</label>
+                <label class="form-label small">Bazowy katalog <span class="csv-help-icon" tabindex="0" role="button" title="Wartosc podstawiana pod token {ldelim}{ldelim}base_directory{rdelim}{rdelim} w makrach obrazow." data-bs-toggle="tooltip">i</span></label>
                 <input type="text" name="image_base_directory" class="form-control form-control-sm" value="T:\wygenrowane_do_EU\">
               </div>
             </div>
             <div class="form-text">
-              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV, a tutaj podajesz wartosci wykonawcze do eksportu. Zakres kolejki zostaje osobno dla gridow, a w polu wzorow miniatur mozesz wpisac np. <code>A100 A200 A234</code>. Liczba miniatur ustawi sie wtedy automatycznie, a biezacy wzor bedzie dostepny w makrze jako <code>{ldelim}{ldelim}queue_item{rdelim}{rdelim}</code>.
+              Makra i uklad sekcji dla pola <code>images</code> / <code>product.generated_images</code> ustawiasz w szablonie CSV. Wzory miniatur moga byc lista albo zakresem, np. <code>AK020-AK040</code>; liczba miniatur ustawi sie wtedy automatycznie, a biezacy wzor bedzie dostepny w makrze jako <code>{ldelim}{ldelim}queue_item{rdelim}{rdelim}</code>.
             </div>
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3">
@@ -1351,6 +1379,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var categoryFilterSearch = document.getElementById('filterCategorySearch');
   var categoryFilterUi = document.getElementById('filterCategoryIdsUi');
 
+  if (window.bootstrap && bootstrap.Tooltip) {
+    var tooltipTriggers = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    for (var tooltipIndex = 0; tooltipIndex < tooltipTriggers.length; tooltipIndex++) {
+      new bootstrap.Tooltip(tooltipTriggers[tooltipIndex]);
+    }
+  }
+
   // Bulk operations
   var bulkCopyBtn = document.getElementById('bulkCopyBtn');
   var bulkCopySharedBtn = document.getElementById('bulkCopySharedBtn');
@@ -1505,16 +1540,49 @@ document.addEventListener('DOMContentLoaded', function() {
       return [];
     }
 
-    var rawItems = normalized.split(/\s+/);
+    var rawItems = normalized.split(/[\s,;]+/);
     var uniqueItems = [];
     var seen = {};
+
+    function addItem(item) {
+      var normalizedItem = String(item || '').trim();
+      if (normalizedItem === '' || seen[normalizedItem]) {
+        return;
+      }
+
+      seen[normalizedItem] = true;
+      uniqueItems.push(normalizedItem);
+    }
+
+    function addRange(prefix, fromNumber, toNumber, padLength) {
+      for (var number = fromNumber; number <= toNumber; number++) {
+        var suffix = String(number);
+        while (suffix.length < padLength) {
+          suffix = '0' + suffix;
+        }
+        addItem(prefix + suffix);
+      }
+    }
+
     for (var itemIndex = 0; itemIndex < rawItems.length; itemIndex++) {
       var item = String(rawItems[itemIndex] || '').trim();
-      if (item === '' || seen[item]) {
+      if (item === '') {
         continue;
       }
-      seen[item] = true;
-      uniqueItems.push(item);
+
+      var rangeMatch = item.match(/^([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)$/);
+      if (rangeMatch) {
+        var prefixFrom = String(rangeMatch[1] || '');
+        var prefixTo = String(rangeMatch[3] || prefixFrom);
+        var numberFrom = Number(rangeMatch[2] || 0);
+        var numberTo = Number(rangeMatch[4] || 0);
+        if (prefixFrom === prefixTo && numberTo >= numberFrom) {
+          addRange(prefixFrom, numberFrom, numberTo, String(rangeMatch[2] || '').length);
+          continue;
+        }
+      }
+
+      addItem(item);
     }
 
     return uniqueItems;

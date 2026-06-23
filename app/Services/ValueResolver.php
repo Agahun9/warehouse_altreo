@@ -859,7 +859,16 @@ class ValueResolver
         }
 
         if ($thumbnailLines !== array()) {
-            foreach ($thumbnailLines as $thumbnailLine) {
+            foreach ($thumbnailLines as $thumbnailIndex => $thumbnailLine) {
+                $thumbnailQueueItem = $this->queueItemForIndex($exportOptions, $thumbnailIndex + 1);
+                $rowMockupLines = array();
+                for ($mockupIndex = 1; $mockupIndex <= $mockupCount; $mockupIndex++) {
+                    $path = $this->renderImageExportMacro($mockupMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $mockupIndex, $thumbnailQueueItem);
+                    if ($path !== '') {
+                        $rowMockupLines[] = $path;
+                    }
+                }
+
                 $rowLines = array();
                 foreach ($layout as $layoutItem) {
                     $type = trim((string) ($layoutItem['type'] ?? ''));
@@ -869,7 +878,7 @@ class ValueResolver
                     }
 
                     if ($type === 'mockup') {
-                        $rowLines = array_merge($rowLines, $mockupLines);
+                        $rowLines = array_merge($rowLines, $rowMockupLines);
                         continue;
                     }
 
@@ -1048,6 +1057,8 @@ class ValueResolver
         $rightText = $this->csvDescriptionTextHtml($product, (string) ($section['right_text'] ?? ''), $exportOptions);
 
         switch ($layout) {
+            case 'image':
+                return $this->csvDescriptionSingleColumnSection($leftImage);
             case 'image_image':
                 return $this->csvDescriptionTwoColumnSection($leftImage, $rightImage);
             case 'image_text':
@@ -1095,7 +1106,8 @@ class ValueResolver
             return '';
         }
 
-        $rendered = preg_replace_callback('/\{\{\s*(field|option):\s*([^}]+)\}\}/i', function (array $matches) use ($product, $exportOptions): string {
+        $tokenValues = array();
+        $rendered = preg_replace_callback('/\{\{\s*(field|option):\s*([^}]+)\}\}/i', function (array $matches) use ($product, $exportOptions, &$tokenValues): string {
             $kind = strtolower(trim((string) ($matches[1] ?? 'field')));
             $token = trim((string) ($matches[2] ?? ''));
             if ($token === '') {
@@ -1103,14 +1115,36 @@ class ValueResolver
             }
 
             if ($kind === 'option') {
-                return (string) $this->resolveField($product, $token, '|', $exportOptions);
+                $value = (string) $this->resolveField($product, $token, '|', $exportOptions);
+            } else {
+                $value = (string) $this->resolveField($product, $token, '|', $exportOptions);
             }
 
-            return (string) $this->resolveField($product, $token, '|', $exportOptions);
+            $placeholder = '%%CSV_DESC_TOKEN_' . count($tokenValues) . '%%';
+            $tokenValues[$placeholder] = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+
+            return $placeholder;
         }, $template);
 
-        $escaped = htmlspecialchars((string) $rendered, ENT_QUOTES, 'UTF-8');
-        return nl2br($escaped);
+        return $this->sanitizeCsvDescriptionTextHtml((string) $rendered, $tokenValues);
+    }
+
+    private function sanitizeCsvDescriptionTextHtml(string $html, array $tokenValues): string
+    {
+        $escaped = htmlspecialchars($html, ENT_QUOTES, 'UTF-8');
+
+        $escaped = preg_replace(
+            '/&lt;\s*(\/?)\s*(h1|h2|h3|strong|b|em|i|u)\s*&gt;/i',
+            '<$1$2>',
+            $escaped
+        );
+        $escaped = preg_replace('/&lt;\s*br\s*\/?\s*&gt;/i', '<br>', (string) $escaped);
+
+        foreach ($tokenValues as $placeholder => $value) {
+            $escaped = str_replace($placeholder, $value, (string) $escaped);
+        }
+
+        return nl2br((string) $escaped);
     }
 
     private function csvDescriptionImageHtml(array $product, $slot, array $exportOptions): string
@@ -1148,7 +1182,8 @@ class ValueResolver
         string $collectionCode,
         string $collectionName,
         string $productName,
-        int $index
+        int $index,
+        ?string $queueItemOverride = null
     ): string {
         $macro = trim($macro);
         if ($macro === '') {
@@ -1164,7 +1199,7 @@ class ValueResolver
         $queueRange = trim((string) ($exportOptions['image_queue_range'] ?? ''));
         $queueFrom = trim((string) ($exportOptions['image_queue_from'] ?? ''));
         $queueTo = trim((string) ($exportOptions['image_queue_to'] ?? ''));
-        $queueItem = $this->queueItemForIndex($exportOptions, $index);
+        $queueItem = $queueItemOverride !== null ? $queueItemOverride : $this->queueItemForIndex($exportOptions, $index);
         $gridLayout = trim((string) ($exportOptions['grid_layout'] ?? ''));
         $gridColumns = trim((string) ($exportOptions['grid_columns'] ?? ''));
         $gridRows = trim((string) ($exportOptions['grid_rows'] ?? ''));
@@ -1225,6 +1260,10 @@ class ValueResolver
         $position = max(0, $index - 1);
         if (isset($items[$position])) {
             return trim((string) $items[$position]);
+        }
+
+        if ($items !== array()) {
+            return trim((string) end($items));
         }
 
         return '';

@@ -890,7 +890,7 @@ class CsvTemplateController extends Controller
 
     private function normalizeDescriptionSections(array $sections, string $templateName): array
     {
-        $allowedLayouts = array('image_image', 'image_text', 'text_image', 'text', 'text_text');
+        $allowedLayouts = array('image', 'image_image', 'image_text', 'text_image', 'text', 'text_text');
         $normalized = array();
 
         foreach ($sections as $section) {
@@ -918,6 +918,10 @@ class CsvTemplateController extends Controller
             }
 
             if ($layout === 'image_image' && $leftImage['source'] === '' && $rightImage['source'] === '') {
+                continue;
+            }
+
+            if ($layout === 'image' && $leftImage['source'] === '') {
                 continue;
             }
 
@@ -2737,7 +2741,7 @@ class CsvTemplateController extends Controller
             return array();
         }
 
-        $parts = preg_split('/\s+/', $value);
+        $parts = preg_split('/[\s,;]+/', $value);
         $items = array();
 
         if (!is_array($parts)) {
@@ -2748,6 +2752,18 @@ class CsvTemplateController extends Controller
             $part = strtoupper(trim((string) $part));
             if ($part === '') {
                 continue;
+            }
+
+            if (preg_match('/^\s*([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)\s*$/', $part, $matches) === 1) {
+                $prefixFrom = (string) $matches[1];
+                $numberFrom = (int) $matches[2];
+                $prefixTo = (string) ($matches[3] !== '' ? $matches[3] : $prefixFrom);
+                $numberTo = (int) $matches[4];
+
+                if ($prefixFrom === $prefixTo && $numberTo >= $numberFrom) {
+                    $items = array_merge($items, $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2])));
+                    continue;
+                }
             }
 
             $items[] = $part;
