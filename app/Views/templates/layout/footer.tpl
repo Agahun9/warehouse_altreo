@@ -24,7 +24,7 @@
       var hideTimer = null;
       var showTimer = null;
       var loaderVisible = false;
-      var loaderDelayMs = 200;
+      var loaderDelayMs = 100;
       var loaderEnabled = {if !$currentUser || $currentUser.loader_enabled|default:1}true{else}false{/if};
 
       function setReadyState() {

@@ -12,6 +12,83 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <style>
+    /*
+     * Kompaktowy interfejs bez CSS zoom. Zmniejszenie bazowego rem skaluje
+     * typografie, formularze i odstepy, nie psujac obliczen szerokosci AdminLTE.
+     */
+    html {
+      font-size: 80%;
+    }
+
+    .app-wrapper {
+      --lte-sidebar-width: 170px;
+    }
+
+    .app-sidebar .sidebar-menu .nav-link {
+      padding-left: 0.65rem;
+      padding-right: 0.65rem;
+    }
+
+    .app-sidebar .sidebar-menu .nav-icon {
+      margin-right: 0.35rem;
+    }
+
+    .app-page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      background: rgba(248, 250, 252, 0.78);
+      backdrop-filter: blur(4px);
+      transition: opacity 0.16s ease, visibility 0.16s ease;
+    }
+
+    .app-page-loader.is-active {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .app-page-loader-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      min-width: 260px;
+      max-width: 440px;
+      padding: 1rem 1.25rem;
+      color: #1f2937;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 0.8rem;
+      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+    }
+
+    .app-page-loader-spinner {
+      width: 2rem;
+      height: 2rem;
+      flex: 0 0 auto;
+    }
+
+    .app-page-loader-title {
+      font-weight: 700;
+    }
+
+    .app-page-loader-text {
+      margin-top: 0.15rem;
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    body.page-is-loading {
+      cursor: wait;
+    }
+
     .table thead th {
       vertical-align: middle;
       white-space: nowrap;
@@ -134,6 +211,15 @@
   </style>
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
+  <div class="app-page-loader" id="appPageLoader" aria-hidden="true" aria-live="polite">
+    <div class="app-page-loader-card" role="status">
+      <div class="spinner-border text-primary app-page-loader-spinner" aria-hidden="true"></div>
+      <div>
+        <div class="app-page-loader-title">Ładowanie</div>
+        <div class="app-page-loader-text" id="appPageLoaderText">Trwa pobieranie danych.</div>
+      </div>
+    </div>
+  </div>
   <div class="app-wrapper">
     <nav class="app-header navbar navbar-expand bg-body">
       <div class="container-fluid">
@@ -141,37 +227,6 @@
           <li class="nav-item">
             <a class="nav-link" data-lte-toggle="sidebar" href="#" role="button"><i class="bi bi-list"></i></a>
           </li>
-          {if $currentUser}
-            <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=index" class="nav-link">Start</a></li>
-            {if $currentUser.role eq 'admin' or in_array('products', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=products&action=index" class="nav-link">Produkty</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=computers&action=products" class="nav-link">Komputery</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('accountingwarehouse', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=accountingwarehouse&action=index" class="nav-link">Magazyn ksiegowy</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('allegro', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=allegro&action=index" class="nav-link">Allegro</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=empik&action=index" class="nav-link">Empik</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=erli&action=index" class="nav-link">Erli</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link">Sellasist</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin' or in_array('printtemplates', $currentUser.modules)}
-              <li class="nav-item d-none d-md-block"><a href="http://192.168.1.149/tinyfilemanager.php?p=wzory&upload" class="nav-link" target="_blank" rel="noreferrer">Szablon druku</a></li>
-            {/if}
-            {if $currentUser.role eq 'admin'}
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=categories&action=index" class="nav-link">Kategorie</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link">Szablony CSV</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=administration&action=users" class="nav-link">Uzytkownicy</a></li>
-              <li class="nav-item d-none d-md-block"><a href="{$baseUrl}?controller=administration&action=automation" class="nav-link">Administracja</a></li>
-            {/if}
-          {/if}
         </ul>
 
         {if $currentUser && ($currentUser.role eq 'admin' or in_array('products', $currentUser.modules))}
