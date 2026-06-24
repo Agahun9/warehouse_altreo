@@ -45,6 +45,7 @@ class CsvExportPresetRepository
             . "image_queue_range VARCHAR(120) DEFAULT NULL,\n"
             . "image_queue_from VARCHAR(120) DEFAULT NULL,\n"
             . "image_queue_to VARCHAR(120) DEFAULT NULL,\n"
+            . "thumbnail_pattern_list TEXT DEFAULT NULL,\n"
             . "price_to_csv VARCHAR(120) DEFAULT NULL,\n"
             . "thumbnail_count INT UNSIGNED NOT NULL DEFAULT 0,\n"
             . "mockup_count INT UNSIGNED NOT NULL DEFAULT 0,\n"
@@ -65,6 +66,7 @@ class CsvExportPresetRepository
             $this->ensureColumnExists($databaseName, 'image_queue_range', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_range VARCHAR(120) DEFAULT NULL AFTER image_collection_code');
             $this->ensureColumnExists($databaseName, 'image_queue_from', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_from VARCHAR(120) DEFAULT NULL AFTER image_queue_range');
             $this->ensureColumnExists($databaseName, 'image_queue_to', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN image_queue_to VARCHAR(120) DEFAULT NULL AFTER image_queue_from');
+            $this->ensureColumnExists($databaseName, 'thumbnail_pattern_list', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN thumbnail_pattern_list TEXT DEFAULT NULL AFTER image_queue_to');
             $this->ensureColumnExists($databaseName, 'grid_layout', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_layout VARCHAR(32) DEFAULT NULL AFTER image_count');
             $this->ensureColumnExists($databaseName, 'grid_columns', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_columns INT UNSIGNED NOT NULL DEFAULT 0 AFTER grid_layout');
             $this->ensureColumnExists($databaseName, 'grid_rows', 'ALTER TABLE ' . self::TABLE . ' ADD COLUMN grid_rows INT UNSIGNED NOT NULL DEFAULT 0 AFTER grid_columns');

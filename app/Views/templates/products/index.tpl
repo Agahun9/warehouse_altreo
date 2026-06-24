@@ -1700,6 +1700,15 @@ document.addEventListener('DOMContentLoaded', function() {
     syncImageCountWithQueueAndGrid();
   }
 
+  function refreshGridStateWithoutChangingValues() {
+    var queue = parseQueueRange(imageQueueRangeInput ? imageQueueRangeInput.value : '');
+    var suggested = suggestedGridLayout(queue.count);
+    if (gridLayoutInput) {
+      gridLayoutInput.dataset.manualOverride = '1';
+    }
+    updateGridHint(queue.count, suggested, true);
+  }
+
   function fillSelectedProductsContainer(containerId, ids) {
     var container = document.getElementById(containerId);
     if (!container) {
@@ -1970,7 +1979,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (gridLayoutInput) {
       gridLayoutInput.value = String(item.grid_layout || '');
-      gridLayoutInput.dataset.manualOverride = '0';
+      gridLayoutInput.dataset.manualOverride = '1';
     }
     if (priceToCsvInput) {
       priceToCsvInput.value = String(item.price_to_csv || '');
@@ -1995,7 +2004,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateGeneratedTitlePreview();
-    recalculateGridSuggestion(false);
+    refreshGridStateWithoutChangingValues();
   }
 
   function applyPartialRecentExportPresetByIndex(index) {
@@ -2004,9 +2013,6 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    if (collectionNameInput) {
-      collectionNameInput.value = String(item.collection_name || '');
-    }
     if (imageCollectionCodeInput) {
       imageCollectionCodeInput.value = String(item.image_collection_code || '');
     }
@@ -2018,7 +2024,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (gridLayoutInput) {
       gridLayoutInput.value = String(item.grid_layout || '');
-      gridLayoutInput.dataset.manualOverride = '0';
+      gridLayoutInput.dataset.manualOverride = '1';
     }
     if (thumbnailCountInput) {
       thumbnailCountInput.value = String(item.thumbnail_count || 0);
@@ -2037,8 +2043,7 @@ document.addEventListener('DOMContentLoaded', function() {
       csvExportRecentPresetsStatus.textContent = 'Wczytano ustawienia makra obrazow.';
     }
 
-    updateGeneratedTitlePreview();
-    recalculateGridSuggestion(false);
+    refreshGridStateWithoutChangingValues();
   }
 
   function scheduleRecentExportPresetsReload() {
@@ -2075,6 +2080,7 @@ document.addEventListener('DOMContentLoaded', function() {
         + '<div class="col-lg-5">'
         + '<div class="small text-secondary text-truncate">Kol. tytul: ' + escapeHtml(item.collection_name || '-') + '</div>'
         + '<div class="small text-secondary text-truncate">Kol. nr: ' + escapeHtml(item.image_collection_code || '-') + ' | Kolejka: ' + escapeHtml(item.image_queue_range || '-') + ' | Grid: ' + escapeHtml(item.grid_layout || '-') + '</div>'
+        + '<div class="small text-secondary text-truncate">Wzory miniatur: ' + escapeHtml(item.thumbnail_pattern_list || '-') + '</div>'
         + '<div class="small text-secondary text-truncate">Min: ' + escapeHtml(item.thumbnail_count || 0) + ' | Mock: ' + escapeHtml(item.mockup_count || 0) + ' | Zdj: ' + escapeHtml(item.image_count || 0) + '</div>'
         + '</div>'
         + '<div class="col-lg-3">'
