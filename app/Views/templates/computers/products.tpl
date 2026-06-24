@@ -6,6 +6,9 @@
     <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'components'} active{/if}" href="{$baseUrl}?controller=computers&action=components">Komponenty</a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link{if $computerTab eq 'csvtemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a>
+    </li>
   </ul>
   <!-- Nagłówek strony -->
   <div class="d-flex align-items-center mb-4 justify-content-between">
@@ -220,18 +223,6 @@
     <i class="bi bi-file-earmark-arrow-up me-1"></i>Import CSV z EAN
 </a></li>
 
-<li><a class="dropdown-item" href="#" onclick="setBulkAction('export_easyuploader'); return false;">
-    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Eksportuj do CSV Easyuploader
-</a></li>
-
-<li><a class="dropdown-item" href="#" onclick="setBulkAction('export_morele'); return false;">
-    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Eksportuj do CSV Morele
-</a></li>
-
-<li><a class="dropdown-item" href="#" onclick="setBulkAction('export_empik'); return false;">
-    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Eksportuj do CSV Empik
-</a></li>
-
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('update_price'); return false;">
     <i class="bi bi-cash-stack me-1"></i>Aktualizuj ceny z magazynem
 </a></li>
@@ -252,6 +243,20 @@
                 </ul>
               </div>
               <button type="submit" class="btn btn-success"><i class="bi bi-play-circle me-1"></i>Wykonaj akcję</button>
+              <div class="d-inline-flex align-items-center gap-2 ms-2">
+                <select name="csv_template_id" class="form-select" style="width:220px" aria-label="Szablon eksportu CSV">
+                  <option value="">Szablon eksportu CSV...</option>
+                  {foreach from=$csvTemplates item=csvTemplate}
+                    <option value="{$csvTemplate.id}">{$csvTemplate.name|escape:'html'} ({$csvTemplate.columns_count})</option>
+                  {/foreach}
+                </select>
+                <button type="submit" formaction="{$baseUrl}?controller=computers&action=exportcsv" formmethod="post" class="btn btn-outline-primary">
+                  <i class="bi bi-file-earmark-spreadsheet me-1"></i>Eksportuj CSV
+                </button>
+                <a href="{$baseUrl}?controller=computers&action=csvtemplates" class="btn btn-outline-secondary" title="Szablony CSV">
+                  <i class="bi bi-gear"></i>
+                </a>
+              </div>
             </div>
             <input type="hidden" name="bulk_action" id="bulk_action" value="" />
             <div id="bulk_action_fields" style="display:none; margin-bottom:20px;">
@@ -277,12 +282,6 @@
                   <option value="img_empik">Empik (img_empik)</option>
                 </select>
                 <p class="mt-2 text-muted small">Wybrany obrazek zostanie ustawiony dla wszystkich zaznaczonych produktów (zastąpi obecny).</p>
-              </div>
-              <div id="export_easyuploader_field" style="display:none; max-width: 400px;">
-                <p class="mb-2">Zaznaczone produkty zostaną wyeksportowane do pliku CSV (Easyuploader).</p>
-              </div>
-              <div id="export_morele_field" style="display:none; max-width: 400px;">
-                <p class="mb-2">Zaznaczone produkty zostaną wyeksportowane do pliku CSV (morele).</p>
               </div>
               <div id="import_ean_field" style="display:none; max-width: 400px;">
                 <label for="CSV_ean" class="form-label">Wybierz plik CSV z EAN:</label>
@@ -897,8 +896,6 @@
     document.getElementById('profit_field').style.display = 'none';
     document.getElementById('replace_name_fields').style.display = 'none';
     document.getElementById('change_images_field').style.display = 'none';
-    document.getElementById('export_easyuploader_field').style.display = 'none';
-    document.getElementById('export_morele_field').style.display = 'none';
     document.getElementById('set_ean_field').style.display = 'none';
     document.getElementById('import_ean_field').style.display = 'none';
     document.getElementById('delete_field').style.display = 'none';
@@ -912,12 +909,6 @@
       document.getElementById('replace_name_fields').style.display = 'block';
     } else if (action === 'change_images') {
       document.getElementById('change_images_field').style.display = 'block';
-    } else if (action === 'export_easyuploader') {
-      document.getElementById('export_easyuploader_field').style.display = 'block';
-    } else if (action === 'export_morele') {
-      document.getElementById('export_morele_field').style.display = 'block';
-    } else if (action === 'export_empik') {
-      // export_empik nie wymagana dodatkowego pola - bezpośredni export
     } else if (action === 'delete') {
       document.getElementById('delete_field').style.display = 'block';
     } else if (action === 'set_ean') {

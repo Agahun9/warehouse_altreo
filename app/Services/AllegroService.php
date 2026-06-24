@@ -783,7 +783,6 @@ class AllegroService
                             '/sale/product-offers/' . rawurlencode($normalized['offer_id'])
                         );
                         $this->storage->upsertOffer($this->buildOfferPayload($accountId, $cycle, $normalized, $details, null, null));
-                        $this->syncLinkedWarehouseProductFromOffer($accountId, $normalized['offer_id']);
                         $summary['details_refreshed']++;
                     } else {
                         $this->storage->touchOffer($accountId, $normalized['offer_id'], $cycle);
@@ -810,7 +809,9 @@ class AllegroService
 
             $this->storage->markSyncSuccess($accountId);
             $summary['auto_linked'] = $this->autoLinkOffersToWarehouse($accountId, 1000);
-            $summary['warehouse_products_refreshed'] = $this->syncWarehouseProductsFromCycle($accountId, $cycle);
+            // Dane magazynowe sa zrodlem prawdy, wiec synchronizacja Allegro
+            // nie pobiera ponownie i nie dekoduje wszystkich ofert z cyklu.
+            $summary['warehouse_products_refreshed'] = 0;
             $summary['state'] = $this->storage->syncState($accountId);
         } catch (RuntimeException $exception) {
             $this->storage->markAccountError($accountId, $exception->getMessage());
@@ -2057,7 +2058,6 @@ class AllegroService
                 $details = $this->requestApiWithAccount($account, 'GET', '/sale/product-offers/' . rawurlencode($offerId));
                 $summary = $this->normalizeOfferSummary($details);
                 $this->storage->upsertOffer($this->buildOfferPayload((int) $account['id'], $cycle, $summary, $details, $eventId, $occurredAt));
-                $this->syncLinkedWarehouseProductFromOffer((int) $account['id'], $offerId);
             } catch (RuntimeException $exception) {
                 $this->storage->touchOffer((int) $account['id'], $offerId, $cycle, $eventId, $occurredAt);
             }
@@ -3421,30 +3421,6 @@ class AllegroService
         return isset($offer['warehouse_price_gross']) && $offer['warehouse_price_gross'] !== null
             ? $this->normalizeDecimal($offer['warehouse_price_gross'])
             : null;
-    }
-
-    private function syncLinkedWarehouseProductFromOffer(int $accountId, string $offerId): bool
-    {
-        $offer = $this->storage->findOfferByAccountAndOfferId($accountId, $offerId);
-        if (!$offer || empty($offer['warehouse_product_id'])) {
-            return false;
-        }
-
-        // Allegro moze byc powiazane z produktem, ale nie nadpisuje danych magazynowych.
-        // Lista produktow w magazynie pozostaje zrodlem prawdy.
-        return false;
-    }
-
-    private function syncWarehouseProductsFromCycle(int $accountId, string $cycle): int
-    {
-        $count = 0;
-        foreach ($this->storage->offersForWarehouseSyncCycle($accountId, $cycle) as $offer) {
-            if ($this->syncLinkedWarehouseProductFromOffer($accountId, (string) ($offer['offer_id'] ?? ''))) {
-                $count++;
-            }
-        }
-
-        return $count;
     }
 
     private function extractProductParametersFromOfferDetails(array $details): array

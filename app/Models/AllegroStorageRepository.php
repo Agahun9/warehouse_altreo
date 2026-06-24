@@ -1582,42 +1582,6 @@ class AllegroStorageRepository
         );
     }
 
-    public function offersForWarehouseSyncCycle(int $accountId, string $cycle): array
-    {
-        if ($accountId <= 0 || trim($cycle) === '') {
-            return array();
-        }
-
-        $rows = $this->database->fetchAll(
-            'SELECT offers.*, warehouse.id AS warehouse_product_live_id,'
-            . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross,'
-            . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name, warehouse_categories.allegro_category_id AS warehouse_category_allegro_id,'
-            . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
-            . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
-            . ' FROM allegro_offers offers'
-            . $this->liveWarehouseJoinSql()
-            . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
-            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
-            . ' WHERE offers.account_id = :account_id AND offers.last_seen_cycle = :cycle AND warehouse.id IS NOT NULL'
-            . ' ORDER BY offers.id ASC',
-            array(
-                'account_id' => $accountId,
-                'cycle' => trim($cycle),
-            )
-        );
-
-        foreach ($rows as $index => $row) {
-            $rows[$index]['images'] = $this->decodeJsonList($row['images_json'] ?? null);
-            $rows[$index]['parameters'] = $this->decodeJsonList($row['parameters_json'] ?? null);
-            $rows[$index]['marketplaces'] = $this->decodeJsonList($row['marketplaces_json'] ?? null);
-            $rows[$index]['product_set'] = $this->decodeJsonList($row['product_set_json'] ?? null);
-            $rows[$index]['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
-            $rows[$index] = $this->normalizeOfferViewData($rows[$index]);
-        }
-
-        return $rows;
-    }
-
     public function queueCounts(): array
     {
         $rows = $this->database->fetchAll(

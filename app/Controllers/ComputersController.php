@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\AllegroStorageRepository;
+use App\Models\ComputerCsvTemplateRepository;
 use App\Models\ErliStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
@@ -36,11 +37,18 @@ class ComputersController extends Controller
     /** @var \App\Models\SettingRepository|null */
     private $settings = null;
 
+    /** @var ComputerCsvTemplateRepository */
+    private $computerCsvTemplates;
+
     public function __construct()
     {
         $this->ensureSchema();
         $this->settings = new \App\Models\SettingRepository($this->db());
         $this->settings->ensureSchema();
+        $this->computerCsvTemplates = new ComputerCsvTemplateRepository($this->db());
+        $this->computerCsvTemplates->ensureSchema();
+        $this->computerCsvTemplates->seed($this->defaultComputerCsvTemplates());
+        $this->computerCsvTemplates->fillEmptyDescriptionTemplates($this->defaultComputerDescriptionTemplate());
     }
 
     public function index(): void
@@ -201,7 +209,199 @@ class ComputersController extends Controller
             'pagination_base_query' => $paginationBaseQuery,
             'productsImageBase' => './img_computers_products',
             'computerTab' => 'products',
+            'csvTemplates' => $this->computerCsvTemplates->all(),
         ));
+    }
+
+    public function csvtemplates(): void
+    {
+        $currentUser = $this->requireModule('products');
+
+        $this->render('computers/csv_templates', array(
+            'pageTitle' => 'Szablony CSV komputerow',
+            'contentTitle' => 'Szablony CSV komputerow',
+            'pageDescription' => 'Osobne konfiguracje eksportu dla produktow komputerowych.',
+            'breadcrumbCurrent' => 'Szablony CSV',
+            'currentUser' => $currentUser,
+            'success' => $this->getFlash('success') ?? '',
+            'errors' => $this->normalizeErrors($this->getFlash('error')),
+            'templates' => $this->computerCsvTemplates->all(),
+            'computerTab' => 'csvtemplates',
+        ));
+    }
+
+    public function editcsvtemplate(): void
+    {
+        $this->requireModuleWrite('products');
+        $id = (int) $this->input('id', 0);
+        $template = $this->computerCsvTemplates->find($id);
+        if (!$template) {
+            $this->setFlash('error', json_encode(array('Nie znaleziono szablonu CSV.')));
+            $this->redirect('./index.php?controller=computers&action=csvtemplates');
+        }
+
+        $this->render('computers/csv_template_form', array(
+            'pageTitle' => 'Edycja szablonu CSV',
+            'contentTitle' => 'Edytuj szablon CSV komputerow',
+            'pageDescription' => 'Ustal kolejnosc, nazwy i zrodla kolumn eksportu.',
+            'breadcrumbCurrent' => 'Edycja szablonu CSV',
+            'template' => $template,
+            'columnsJson' => json_encode($template['columns'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'sourceOptions' => $this->computerCsvSourceOptions(),
+            'sourceOptionsJson' => json_encode($this->computerCsvSourceOptions(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'descriptionTokensJson' => json_encode($this->computerDescriptionTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'computerTab' => 'csvtemplates',
+        ));
+    }
+
+    public function savecsvtemplate(): void
+    {
+        $this->requireModuleWrite('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=csvtemplates');
+        }
+
+        $id = (int) $this->input('id', 0);
+        try {
+            $columns = $this->validatedComputerCsvColumns();
+            $name = trim((string) $this->input('name', ''));
+            if ($name === '') {
+                throw new RuntimeException('Nazwa szablonu jest wymagana.');
+            }
+            $delimiter = (string) $this->input('delimiter', ';');
+            if (!in_array($delimiter, array(';', ',', "\t", '|'), true)) {
+                $delimiter = ';';
+            }
+            $this->computerCsvTemplates->save($id, array(
+                'name' => $name,
+                'description' => trim((string) $this->input('description', '')),
+                'filename_prefix' => $this->safeCsvFilenamePrefix((string) $this->input('filename_prefix', 'computers_export')),
+                'delimiter' => $delimiter,
+                'encoding' => strtoupper(trim((string) $this->input('encoding', 'UTF-8'))) === 'WINDOWS-1250' ? 'WINDOWS-1250' : 'UTF-8',
+                'add_bom' => $this->input('add_bom', '0') === '1',
+                'description_template' => (string) $this->input('description_template', ''),
+            ), $columns);
+            $this->setFlash('success', 'Szablon CSV zostal zapisany.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', json_encode(array($exception->getMessage())));
+        }
+
+        $this->redirect('./index.php?controller=computers&action=csvtemplates');
+    }
+
+    public function duplicatecsvtemplate(): void
+    {
+        $this->requireModuleWrite('products');
+        if ($this->isPost()) {
+            try {
+                $this->computerCsvTemplates->duplicate((int) $this->input('id', 0));
+                $this->setFlash('success', 'Szablon CSV zostal zduplikowany.');
+            } catch (Throwable $exception) {
+                $this->setFlash('error', json_encode(array($exception->getMessage())));
+            }
+        }
+        $this->redirect('./index.php?controller=computers&action=csvtemplates');
+    }
+
+    public function deletecsvtemplate(): void
+    {
+        $this->requireModuleWrite('products');
+        if ($this->isPost()) {
+            try {
+                $this->computerCsvTemplates->delete((int) $this->input('id', 0));
+                $this->setFlash('success', 'Szablon CSV zostal usuniety.');
+            } catch (Throwable $exception) {
+                $this->setFlash('error', json_encode(array($exception->getMessage())));
+            }
+        }
+        $this->redirect('./index.php?controller=computers&action=csvtemplates');
+    }
+
+    public function exportcsv(): void
+    {
+        $this->requireModule('products');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=products');
+        }
+
+        $template = $this->computerCsvTemplates->find((int) $this->input('csv_template_id', 0));
+        $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
+        if (!$template || $productIds === array()) {
+            $this->setFlash('error', json_encode(array('Wybierz szablon CSV i co najmniej jeden produkt.')));
+            $this->redirect('./index.php?controller=computers&action=products');
+        }
+
+        $this->streamComputerTemplateCsv($template, $productIds);
+    }
+
+    public function searchcsvpreviewproducts(): void
+    {
+        $this->requireModule('products');
+        $query = trim((string) $this->input('q', ''));
+        $rows = array();
+
+        if ($query !== '') {
+            $like = '%' . $query . '%';
+            $rows = $this->db()->fetchAll(
+                'SELECT id, sku, name, EAN, price, img, img_morele, img_empik'
+                . ' FROM ' . self::PRODUCTS_TABLE
+                . ' WHERE CAST(id AS CHAR) LIKE :id_query'
+                . ' OR name LIKE :name_query'
+                . ' OR sku LIKE :sku_query'
+                . ' OR CAST(EAN AS CHAR) LIKE :ean_query'
+                . ' ORDER BY CASE WHEN CAST(id AS CHAR) = :exact_query THEN 0 ELSE 1 END, id DESC'
+                . ' LIMIT 20',
+                array(
+                    'id_query' => $like,
+                    'name_query' => $like,
+                    'sku_query' => $like,
+                    'ean_query' => $like,
+                    'exact_query' => $query,
+                )
+            );
+        }
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array('products' => $rows), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    public function previewcsvdescription(): void
+    {
+        $this->requireModule('products');
+        if (!$this->isPost()) {
+            http_response_code(405);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(array('error' => 'Podglad wymaga zapytania POST.'));
+            exit;
+        }
+
+        $product = $this->productById((int) $this->input('product_id', 0));
+        if (!$product) {
+            http_response_code(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(array('error' => 'Nie znaleziono produktu.'));
+            exit;
+        }
+
+        $components = $this->computerComponentsForProduct($product);
+        $html = $this->renderComputerDescription(
+            $product,
+            $components,
+            (string) $this->input('description_template', '')
+        );
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array(
+            'html' => $html,
+            'product' => array(
+                'id' => (int) ($product['id'] ?? 0),
+                'name' => (string) ($product['name'] ?? ''),
+                'sku' => (string) ($product['sku'] ?? ''),
+                'ean' => (string) ($product['EAN'] ?? ''),
+            ),
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     public function components(): void
@@ -518,9 +718,6 @@ class ComputersController extends Controller
             }
         } elseif (in_array($bulkAction, array('remove_component', 'replace_component', 'add_component'), true)) {
             $successCount = $this->handleProductComponentBulkChange($bulkAction, $productIds, $componentsById, $errors);
-        } elseif (in_array($bulkAction, array('export_easyuploader', 'export_morele', 'export_empik'), true)) {
-            $this->runLegacyExport($bulkAction, $productIds);
-            return;
         } else {
             $errors[] = 'Nieznana akcja masowa.';
         }
@@ -1489,6 +1686,341 @@ class ComputersController extends Controller
         exit;
     }
 
+    private function streamComputerTemplateCsv(array $template, array $productIds): void
+    {
+        $headers = array();
+        foreach ($template['columns'] as $column) {
+            $headers[] = (string) ($column['header'] ?? '');
+        }
+
+        $componentsById = $this->componentsById();
+        $rows = array();
+        foreach ($productIds as $productId) {
+            $product = $this->productById($productId);
+            if (!$product) {
+                continue;
+            }
+
+            $components = array();
+            foreach ($this->csvIds((string) ($product['id_components'] ?? '')) as $componentId) {
+                if (isset($componentsById[$componentId]) && is_array($componentsById[$componentId])) {
+                    $components[] = $this->normalizeComponentTextFields($componentsById[$componentId]);
+                }
+            }
+            usort($components, static function (array $left, array $right): int {
+                return strcmp((string) ($left['category'] ?? ''), (string) ($right['category'] ?? ''));
+            });
+
+            $context = $this->computerCsvContext($product, $components, (string) ($template['description_template'] ?? ''));
+            $row = array();
+            foreach ($template['columns'] as $column) {
+                $row[] = $this->resolveComputerCsvColumn($column, $context);
+            }
+            $rows[] = $row;
+        }
+
+        $delimiter = (string) ($template['delimiter'] ?? ';');
+        $encoding = strtoupper((string) ($template['encoding'] ?? 'UTF-8'));
+        $stream = fopen('php://temp', 'w+b');
+        fputcsv($stream, $headers, $delimiter);
+        foreach ($rows as $row) {
+            fputcsv($stream, $row, $delimiter);
+        }
+        rewind($stream);
+        $csv = (string) stream_get_contents($stream);
+        fclose($stream);
+
+        if ($encoding === 'WINDOWS-1250') {
+            $converted = @iconv('UTF-8', 'Windows-1250//TRANSLIT', $csv);
+            if ($converted !== false) {
+                $csv = $converted;
+            }
+        } elseif (!empty($template['add_bom'])) {
+            $csv = "\xEF\xBB\xBF" . $csv;
+        }
+
+        $filename = $this->safeCsvFilenamePrefix((string) ($template['filename_prefix'] ?? 'computers_export'))
+            . '_' . date('Ymd_His') . '.csv';
+        header('Content-Type: text/csv; charset=' . ($encoding === 'WINDOWS-1250' ? 'windows-1250' : 'utf-8'));
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        echo $csv;
+        exit;
+    }
+
+    private function computerCsvContext(array $product, array $components, string $descriptionTemplate = ''): array
+    {
+        $imagesEasy = $this->computerExportImages($product, $components, 'easy');
+        $imagesMorele = $this->computerExportImages($product, $components, 'morele');
+        $imagesEmpik = $this->computerExportImages($product, $components, 'empik');
+        $mainEmpikImage = '';
+        $productEmpikImage = trim((string) ($product['img_empik'] ?? ''));
+        if ($productEmpikImage !== '') {
+            $mainEmpikImage = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImage);
+        } elseif ($imagesEmpik !== array()) {
+            $mainEmpikImage = (string) $imagesEmpik[0];
+        }
+        $empikParams = array();
+        $moreleParams = array();
+        foreach ($components as $component) {
+            foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $key => $value) {
+                $empikParams[(string) $key] = is_array($value) ? implode(' | ', $value) : (string) $value;
+            }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_morele'] ?? '')) as $key => $value) {
+                if (!array_key_exists($key, $moreleParams)) {
+                    $moreleParams[$key] = is_array($value) ? implode('|', $value) : (string) $value;
+                }
+            }
+        }
+
+        $componentValues = array();
+        $componentImages = array();
+        foreach ($components as $component) {
+            $category = strtoupper(trim((string) ($component['category'] ?? '')));
+            if ($category === '') {
+                continue;
+            }
+            foreach (array('name', 'name_title', 'name_spec', 'description', 'description_morele', 'description_empik') as $field) {
+                $componentValues[$category . '.' . $field] = (string) ($component[$field] ?? '');
+            }
+            foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik') as $channel => $imageField) {
+                $images = array();
+                foreach (preg_split('/\s*\|\s*|\s*,\s*|\r\n|\r|\n/', (string) ($component[$imageField] ?? '')) ?: array() as $image) {
+                    $url = $this->publicImageUrl($this->publicAppBaseUrl(), 'img_components', trim((string) $image));
+                    if ($url !== null) {
+                        $images[] = $url;
+                    }
+                }
+                $componentImages[$channel . '.' . $category] = array_values(array_unique($images));
+            }
+        }
+
+        return array(
+            'product' => $product,
+            'components' => $components,
+            'component_values' => $componentValues,
+            'component_images' => $componentImages,
+            'images.easy' => $imagesEasy,
+            'images.morele' => $imagesMorele,
+            'images.empik' => $imagesEmpik,
+            'main_image.empik' => $mainEmpikImage,
+            'empik_params' => $empikParams,
+            'parameters.easy' => $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? '')),
+            'parameters.morele' => implode("|\n", array_values($moreleParams)),
+            'description' => $this->renderComputerDescription($product, $components, $descriptionTemplate),
+        );
+    }
+
+    private function computerComponentsForProduct(array $product): array
+    {
+        $componentsById = $this->componentsById();
+        $components = array();
+        foreach ($this->csvIds((string) ($product['id_components'] ?? '')) as $componentId) {
+            if (isset($componentsById[$componentId]) && is_array($componentsById[$componentId])) {
+                $components[] = $this->normalizeComponentTextFields($componentsById[$componentId]);
+            }
+        }
+        usort($components, static function (array $left, array $right): int {
+            return strcmp((string) ($left['category'] ?? ''), (string) ($right['category'] ?? ''));
+        });
+        return $components;
+    }
+
+    private function computerExportImages(array $product, array $components, string $channel): array
+    {
+        $productField = $channel === 'morele' ? 'img_morele' : ($channel === 'empik' ? 'img_empik' : 'img');
+        $componentField = $productField;
+        $images = array();
+        $base = $this->publicAppBaseUrl();
+        $main = trim((string) ($product[$productField] ?? ''));
+        if ($channel !== 'empik' && $main !== '') {
+            $url = $this->publicImageUrl($base, 'img_computers_products', $main);
+            if ($url !== null) {
+                $images[] = $url;
+            }
+        }
+        foreach ($components as $component) {
+            foreach (preg_split('/\s*\|\s*|\s*,\s*|\r\n|\r|\n/', (string) ($component[$componentField] ?? '')) ?: array() as $image) {
+                $url = $this->publicImageUrl($base, 'img_components', trim((string) $image));
+                if ($url !== null) {
+                    $images[] = $url;
+                }
+            }
+        }
+
+        return array_values(array_unique($images));
+    }
+
+    private function resolveComputerCsvColumn(array $column, array $context): string
+    {
+        $type = (string) ($column['type'] ?? 'source');
+        if ($type === 'static') {
+            return (string) ($column['value'] ?? '');
+        }
+        if ($type === 'template') {
+            return (string) preg_replace_callback(
+                '/\{\{\s*([^{}]+?)\s*\}\}/',
+                function (array $matches) use ($context): string {
+                    return $this->resolveComputerCsvSource(trim((string) $matches[1]), $context);
+                },
+                (string) ($column['value'] ?? '')
+            );
+        }
+
+        $source = (string) ($column['value'] ?? '');
+        return $this->resolveComputerCsvSource($source, $context);
+    }
+
+    private function resolveComputerCsvSource(string $source, array $context): string
+    {
+        $product = $context['product'];
+        if (strpos($source, 'product.') === 0) {
+            $field = substr($source, 8);
+            if ($field === 'code') {
+                return 'ALTREO_' . (string) ($product['id'] ?? '');
+            }
+            if ($field === 'producer_code') {
+                return substr((string) ($product['name'] ?? ''), 0, 45);
+            }
+            return (string) ($product[$field] ?? '');
+        }
+        if (strpos($source, 'component.') === 0) {
+            return (string) ($context['component_values'][substr($source, 10)] ?? '');
+        }
+        if (preg_match('/^component_image\.(easy|morele|empik)\.([A-Z0-9_-]+)\.(\d+)$/', $source, $matches) === 1) {
+            $images = $context['component_images'][$matches[1] . '.' . $matches[2]] ?? array();
+            return (string) ($images[max(0, (int) $matches[3] - 1)] ?? '');
+        }
+        if (preg_match('/^product_image\.(easy|morele|empik)\.1$/', $source, $matches) === 1) {
+            $field = $matches[1] === 'morele' ? 'img_morele' : ($matches[1] === 'empik' ? 'img_empik' : 'img');
+            return (string) ($this->publicImageUrl(
+                $this->publicAppBaseUrl(),
+                'img_computers_products',
+                (string) ($product[$field] ?? '')
+            ) ?? '');
+        }
+        if (strpos($source, 'empik_param:') === 0) {
+            return (string) ($context['empik_params'][substr($source, 12)] ?? '');
+        }
+        if ($source === 'description') {
+            return (string) $context['description'];
+        }
+        if ($source === 'parameters.easy' || $source === 'parameters.morele') {
+            return (string) $context[$source];
+        }
+        if ($source === 'main_image.empik') {
+            return (string) $context['main_image.empik'];
+        }
+        if (preg_match('/^image\\.(easy|morele|empik)\\.(\\d+)$/', $source, $matches) === 1) {
+            $images = $context['images.' . $matches[1]];
+            return (string) ($images[max(0, (int) $matches[2] - 1)] ?? '');
+        }
+        if (preg_match('/^images\\.(easy|morele|empik)$/', $source, $matches) === 1) {
+            $separator = $matches[1] === 'easy' ? "\n" : ($matches[1] === 'morele' ? ',' : '|');
+            return implode($separator, $context[$source]);
+        }
+        if ($source === 'date.today') {
+            return date('Y-m-d');
+        }
+
+        return '';
+    }
+
+    private function renderComputerDescription(array $product, array $components, string $template = ''): string
+    {
+        if (trim($template) === '') {
+            $template = $this->defaultComputerDescriptionTemplate();
+        }
+        if ($template === '') {
+            return (string) ($product['name'] ?? '');
+        }
+
+        $vars = array(
+            'title' => (string) ($product['name'] ?? ''),
+            'main_img_allegro' => (string) ($this->computerExportImages($product, array(), 'easy')[0] ?? ''),
+            'main_img_morele' => (string) ($this->computerExportImages($product, array(), 'morele')[0] ?? ''),
+            'main_img_empik' => trim((string) ($product['img_empik'] ?? '')) !== ''
+                ? (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', (string) $product['img_empik'])
+                : '',
+            'product.id' => (string) ($product['id'] ?? ''),
+            'product.code' => 'ALTREO_' . (string) ($product['id'] ?? ''),
+            'product.name' => (string) ($product['name'] ?? ''),
+            'product.price' => (string) ($product['price'] ?? ''),
+            'product.EAN' => (string) ($product['EAN'] ?? ''),
+        );
+        foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik') as $channel => $imageField) {
+            $vars['product_image.' . $channel . '.1'] = (string) ($this->publicImageUrl(
+                $this->publicAppBaseUrl(),
+                'img_computers_products',
+                (string) ($product[$imageField] ?? '')
+            ) ?? '');
+        }
+        foreach (array('easy', 'morele', 'empik') as $channel) {
+            $descriptionImages = $this->computerExportImages($product, $components, $channel);
+            foreach ($descriptionImages as $index => $imageUrl) {
+                $vars['image.' . $channel . '.' . ($index + 1)] = $imageUrl;
+            }
+        }
+        foreach ($components as $component) {
+            $category = trim((string) ($component['category'] ?? ''));
+            if ($category === '') {
+                continue;
+            }
+            foreach ($component as $field => $value) {
+                $vars[$category . '_' . $field] = $value;
+                $vars['component.' . strtoupper($category) . '.' . $field] = $value;
+            }
+            foreach (array('img', 'img_morele', 'img_empik') as $imageField) {
+                $images = array_values(array_filter(array_map('trim', preg_split('/,|\\r\\n|\\r|\\n/', (string) ($component[$imageField] ?? '')) ?: array())));
+                foreach ($images as $index => $image) {
+                    $imageUrl = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_components', $image);
+                    $vars[$category . '_' . $imageField . '[' . $index . ']'] = $imageUrl;
+                    $channel = $imageField === 'img_morele' ? 'morele' : ($imageField === 'img_empik' ? 'empik' : 'easy');
+                    $vars['component_image.' . $channel . '.' . strtoupper($category) . '.' . ($index + 1)] = $imageUrl;
+                }
+            }
+        }
+
+        $template = preg_replace_callback('/\\{%\\s*if\\s+([a-zA-Z0-9_.\\[\\]]+)\\s*%\\}(.*?)\\{%\\s*endif\\s*%\\}/s', static function (array $matches) use ($vars): string {
+            $parts = preg_split('/\\{%\\s*else\\s*%\\}/', $matches[2]);
+            $value = $vars[$matches[1]] ?? '';
+            return trim((string) $value) !== '' ? (string) ($parts[0] ?? '') : (string) ($parts[1] ?? '');
+        }, $template);
+
+        return (string) preg_replace_callback('/\\{\\{\\s*([a-zA-Z0-9_.\\[\\]]+)\\s*\\}\\}/', static function (array $matches) use ($vars): string {
+            return is_scalar($vars[$matches[1]] ?? '') ? (string) ($vars[$matches[1]] ?? '') : '';
+        }, $template);
+    }
+
+    private function validatedComputerCsvColumns(): array
+    {
+        $headers = (array) $this->input('column_header', array());
+        $types = (array) $this->input('column_type', array());
+        $values = (array) $this->input('column_value', array());
+        $columns = array();
+        foreach ($headers as $index => $header) {
+            $header = trim((string) $header);
+            if ($header === '') {
+                continue;
+            }
+            $type = (string) ($types[$index] ?? 'source');
+            $columns[] = array(
+                'header' => $header,
+                'type' => in_array($type, array('source', 'static', 'template'), true) ? $type : 'source',
+                'value' => (string) ($values[$index] ?? ''),
+            );
+        }
+        if ($columns === array()) {
+            throw new RuntimeException('Szablon musi zawierac co najmniej jedna kolumne.');
+        }
+        return $columns;
+    }
+
+    private function safeCsvFilenamePrefix(string $value): string
+    {
+        $value = preg_replace('/[^a-zA-Z0-9_-]+/', '_', trim($value));
+        return trim((string) $value, '_') !== '' ? trim((string) $value, '_') : 'computers_export';
+    }
+
     private function importEanCsv(): void
     {
         if (!isset($_FILES['csv_file']) || (int) ($_FILES['csv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -1530,140 +2062,6 @@ class ComputersController extends Controller
         $this->redirect('./index.php?controller=computers&action=products');
     }
 
-    private function runLegacyExport(string $bulkAction, array $productIds): void
-    {
-        $legacyExports = dirname(__DIR__, 2) . '/temporary/altreo_exports.php';
-        if (!is_file($legacyExports)) {
-            if ($bulkAction === 'export_easyuploader') {
-                $this->exportEasyUploader($productIds);
-                return;
-            }
-
-            $this->setFlash('error', json_encode(array('Brakuje pliku legacy eksportu: temporary/altreo_exports.php. EasyUploader dziala juz natywnie, ale ten eksport wymaga przeniesienia do aplikacji.')));
-            $this->redirect('./index.php?controller=computers&action=products');
-        }
-
-        require_once dirname(__DIR__) . '/Support/legacy_altreo_compat.php';
-        require_once $legacyExports;
-
-        if ($bulkAction === 'export_easyuploader') {
-            exportToEasyUploader($productIds);
-            exit;
-        }
-        if ($bulkAction === 'export_morele') {
-            exportToMorele($productIds);
-            exit;
-        }
-        exportToEmpik($productIds);
-        exit;
-    }
-
-    private function exportEasyUploader(array $productIds): void
-    {
-        $headers = array(
-            'KOD',
-            'TYTUŁ',
-            'CENA_KT',
-            'PARAMETRY',
-            'KAT_ALLEGRO_ID',
-            'LICZBA',
-            'LICZBA_RODZAJ',
-            'STAW_VAT',
-            'ZDJĘCIA',
-            '[GPU]',
-            '[CPU]',
-            '[RAM]',
-            '[SSD]',
-            '[MONITOR]',
-            '[PSU]',
-            '[CASE]',
-            '[COOLING]',
-            '[GPU_SPEC]',
-            '[CPU_SPEC]',
-            '[RAM_SPEC]',
-            '[SSD_SPEC]',
-            '[MONITOR_SPEC]',
-            '[PSU_SPEC]',
-            '[CASE_SPEC]',
-            '[COOLING_SPEC]',
-        );
-
-        $rows = array();
-        $componentsById = $this->componentsById();
-        foreach ($productIds as $productId) {
-            $product = $this->productById((int) $productId);
-            if ($product === null) {
-                continue;
-            }
-
-            $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
-            $components = array();
-            foreach ($componentIds as $componentId) {
-                if (isset($componentsById[$componentId]) && is_array($componentsById[$componentId])) {
-                    $components[] = $this->normalizeComponentTextFields($componentsById[$componentId]);
-                }
-            }
-
-            $descriptions = $this->componentCategoryMap($components, 'description');
-            $specs = $this->componentCategoryMap($components, 'name_spec');
-            $parameters = $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? ''));
-            $images = $this->easyUploaderImages($product, $components);
-
-            $rows[] = array(
-                $product['id'] ?? '',
-                $product['name'] ?? '',
-                $product['price'] ?? '',
-                $parameters,
-                '486',
-                '1000',
-                '0',
-                '23',
-                implode("\n", $images),
-                $descriptions['GPU'],
-                $descriptions['CPU'],
-                $descriptions['RAM'],
-                $descriptions['SSD'],
-                $descriptions['MONITOR'],
-                $descriptions['PSU'],
-                $descriptions['CASE'],
-                $descriptions['COOLING'],
-                $specs['GPU'],
-                $specs['CPU'],
-                $specs['RAM'],
-                $specs['SSD'],
-                $specs['MONITOR'],
-                $specs['PSU'],
-                $specs['CASE'],
-                $specs['COOLING'],
-            );
-        }
-
-        $this->streamCsv('easyuploader_export_' . date('Ymd_His') . '.csv', $headers, $rows);
-    }
-
-    private function componentCategoryMap(array $components, string $field): array
-    {
-        $result = array(
-            'GPU' => '',
-            'CPU' => '',
-            'RAM' => '',
-            'SSD' => '',
-            'MONITOR' => '',
-            'PSU' => '',
-            'CASE' => '',
-            'COOLING' => '',
-        );
-
-        foreach ($components as $component) {
-            $category = strtoupper(trim((string) ($component['category'] ?? '')));
-            if (array_key_exists($category, $result)) {
-                $result[$category] = (string) ($component[$field] ?? '');
-            }
-        }
-
-        return $result;
-    }
-
     private function easyUploaderParameters(array $components, string $productName, string $ean): string
     {
         $params = array();
@@ -1702,34 +2100,6 @@ class ComputersController extends Controller
         }
 
         return implode("\n", $lines);
-    }
-
-    private function easyUploaderImages(array $product, array $components): array
-    {
-        $images = array();
-        $base = $this->publicAppBaseUrl();
-        $productImg = trim((string) ($product['img'] ?? ''));
-        if ($productImg !== '') {
-            $imageUrl = $this->publicImageUrl($base, 'img_computers_products', $productImg);
-            if ($imageUrl !== null) {
-                $images[] = $imageUrl;
-            }
-        }
-
-        foreach ($components as $component) {
-            $raw = (string) ($component['img'] ?? '');
-            foreach (preg_split('/\s*\|\s*|\s*,\s*|\n/', $raw) ?: array() as $image) {
-                $image = trim((string) $image);
-                if ($image !== '') {
-                    $imageUrl = $this->publicImageUrl($base, 'img_components', $image);
-                    if ($imageUrl !== null) {
-                        $images[] = $imageUrl;
-                    }
-                }
-            }
-        }
-
-        return array_values(array_unique($images));
     }
 
     private function publicImageUrl(string $base, string $folder, string $image): ?string
@@ -2320,6 +2690,319 @@ class ComputersController extends Controller
             }
         }
         return $priceSum;
+    }
+
+    private function computerCsvSourceOptions(): array
+    {
+        $options = array(
+            'product.id' => 'Produkt: ID',
+            'product.code' => 'Produkt: kod ALTREO_ID',
+            'product.sku' => 'Produkt: SKU',
+            'product.name' => 'Produkt: nazwa',
+            'product.price' => 'Produkt: cena',
+            'product.profit' => 'Produkt: marza',
+            'product.EAN' => 'Produkt: EAN',
+            'product.producer_code' => 'Produkt: kod producenta (45 znakow nazwy)',
+            'product.offerid' => 'Produkt: ID oferty',
+            'description' => 'Opis z szablonu komputera',
+            'parameters.easy' => 'Parametry EasyUploader',
+            'parameters.morele' => 'Parametry Morele',
+            'product_image.easy.1' => 'EasyUploader — zdjecie produktu 1',
+            'product_image.morele.1' => 'Morele — zdjecie produktu 1',
+            'product_image.empik.1' => 'Empik — zdjecie produktu 1',
+            'main_image.empik' => 'Empik — zdjecie produktu 1 (zgodnosc ze starym szablonem)',
+            'date.today' => 'Dzisiejsza data',
+        );
+        $componentImageLimits = $this->computerComponentImageLimits();
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+            foreach (($componentImageLimits[$channel] ?? array()) as $category => $maxImages) {
+                for ($index = 1; $index <= $maxImages; $index++) {
+                    $options['component_image.' . $channel . '.' . $category . '.' . $index]
+                        = $category . ' — ' . $channelLabel . ' — zdjecie ' . $index;
+                }
+            }
+        }
+        foreach (array('GPU', 'CPU', 'RAM', 'SSD', 'MONITOR', 'PSU', 'CASE', 'COOLING', 'MB') as $category) {
+            foreach (array(
+                'name' => 'nazwa',
+                'name_title' => 'nazwa tytulowa',
+                'name_spec' => 'specyfikacja',
+                'description' => 'opis EasyUploader',
+                'description_morele' => 'opis Morele',
+                'description_empik' => 'opis Empik',
+            ) as $field => $label) {
+                $options['component.' . $category . '.' . $field] = $category . ': ' . $label;
+            }
+        }
+        foreach ($this->empikComputerParameterNames() as $name) {
+            $options['empik_param:' . $name] = 'Empik parametr: ' . $name;
+        }
+        return $options;
+    }
+
+    private function computerComponentImageLimits(): array
+    {
+        $limits = array(
+            'easy' => array(),
+            'morele' => array(),
+            'empik' => array(),
+        );
+        $fields = array(
+            'easy' => 'img',
+            'morele' => 'img_morele',
+            'empik' => 'img_empik',
+        );
+        $rows = $this->db()->fetchAll(
+            'SELECT category, img, img_morele, img_empik FROM ' . self::COMPONENTS_TABLE
+            . ' WHERE category IS NOT NULL AND category <> ""'
+        );
+
+        foreach ($rows as $row) {
+            $category = strtoupper(trim((string) ($row['category'] ?? '')));
+            if ($category === '') {
+                continue;
+            }
+            foreach ($fields as $channel => $field) {
+                $count = count(array_values(array_filter(array_map('trim', preg_split(
+                    '/\s*\|\s*|\s*,\s*|\r\n|\r|\n/',
+                    (string) ($row[$field] ?? '')
+                ) ?: array()))));
+                if ($count > (int) ($limits[$channel][$category] ?? 0)) {
+                    $limits[$channel][$category] = min(16, $count);
+                }
+            }
+        }
+
+        foreach ($limits as $channel => $categories) {
+            ksort($categories, SORT_NATURAL);
+            $limits[$channel] = $categories;
+        }
+
+        return $limits;
+    }
+
+    private function computerDescriptionTokens(): array
+    {
+        $tokens = array(
+            'product.name' => 'Produkt: nazwa',
+            'product.code' => 'Produkt: kod ALTREO_ID',
+            'product.id' => 'Produkt: ID',
+            'product.price' => 'Produkt: cena',
+            'product.EAN' => 'Produkt: EAN',
+            'main_img_allegro' => 'EasyUploader: glowne zdjecie produktu',
+            'main_img_morele' => 'Morele: glowne zdjecie produktu',
+            'main_img_empik' => 'Empik: glowne zdjecie produktu (img_empik produktu)',
+            'product_image.easy.1' => 'EasyUploader — zdjecie produktu 1',
+            'product_image.morele.1' => 'Morele — zdjecie produktu 1',
+            'product_image.empik.1' => 'Empik — zdjecie produktu 1',
+        );
+        foreach (array('GPU', 'CPU', 'RAM', 'SSD', 'MONITOR', 'PSU', 'CASE', 'COOLING', 'MB') as $category) {
+            foreach (array(
+                'name' => 'nazwa',
+                'name_title' => 'nazwa tytulowa',
+                'name_spec' => 'specyfikacja',
+                'description' => 'opis',
+                'description_morele' => 'opis Morele',
+                'description_empik' => 'opis Empik',
+            ) as $field => $label) {
+                $tokens['component.' . $category . '.' . $field] = $category . ': ' . $label;
+            }
+        }
+        $componentImageLimits = $this->computerComponentImageLimits();
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $label) {
+            foreach (($componentImageLimits[$channel] ?? array()) as $category => $maxImages) {
+                for ($index = 1; $index <= $maxImages; $index++) {
+                    $tokens['component_image.' . $channel . '.' . $category . '.' . $index]
+                        = $category . ' — ' . $label . ' — zdjecie ' . $index;
+                }
+            }
+        }
+        return $tokens;
+    }
+
+    private function defaultComputerDescriptionTemplate(): string
+    {
+        return (string) $this->db()->fetchColumn(
+            'SELECT template FROM ' . self::TEMPLATES_TABLE . ' WHERE id_template = 1 LIMIT 1'
+        );
+    }
+
+    private function defaultComputerCsvTemplates(): array
+    {
+        return array(
+            array(
+                'slug' => 'easyuploader',
+                'name' => 'EasyUploader',
+                'description' => 'Eksport komputerow zgodny z dotychczasowym exportToEasyUploader.',
+                'filename_prefix' => 'easyuploader_export',
+                'delimiter' => ';',
+                'encoding' => 'UTF-8',
+                'add_bom' => 1,
+                'description_template' => $this->defaultComputerDescriptionTemplate(),
+                'columns' => $this->easyUploaderTemplateColumns(),
+            ),
+            array(
+                'slug' => 'empik',
+                'name' => 'Empik',
+                'description' => 'Eksport komputerow zgodny z dotychczasowym exportToEmpik.',
+                'filename_prefix' => 'empik_export',
+                'delimiter' => ';',
+                'encoding' => 'UTF-8',
+                'add_bom' => 1,
+                'description_template' => $this->defaultComputerDescriptionTemplate(),
+                'columns' => $this->empikTemplateColumns(),
+            ),
+            array(
+                'slug' => 'morele',
+                'name' => 'Morele',
+                'description' => 'Eksport komputerow zgodny z dotychczasowym exportToMorele.',
+                'filename_prefix' => 'morele_export',
+                'delimiter' => ';',
+                'encoding' => 'UTF-8',
+                'add_bom' => 1,
+                'description_template' => $this->defaultComputerDescriptionTemplate(),
+                'columns' => $this->moreleTemplateColumns(),
+            ),
+        );
+    }
+
+    private function easyUploaderTemplateColumns(): array
+    {
+        $columns = array(
+            $this->csvSourceColumn('KOD', 'product.id'),
+            $this->csvSourceColumn('TYTUŁ', 'product.name'),
+            $this->csvSourceColumn('CENA_KT', 'product.price'),
+            $this->csvSourceColumn('PARAMETRY', 'parameters.easy'),
+            $this->csvStaticColumn('KAT_ALLEGRO_ID', '486'),
+            $this->csvStaticColumn('LICZBA', '1000'),
+            $this->csvStaticColumn('LICZBA_RODZAJ', '0'),
+            $this->csvStaticColumn('STAW_VAT', '23'),
+            $this->csvSourceColumn('ZDJĘCIA', 'images.easy'),
+        );
+        foreach (array('GPU', 'CPU', 'RAM', 'SSD', 'MONITOR', 'PSU', 'CASE', 'COOLING') as $category) {
+            $columns[] = $this->csvSourceColumn('[' . $category . ']', 'component.' . $category . '.description');
+        }
+        foreach (array('GPU', 'CPU', 'RAM', 'SSD', 'MONITOR', 'PSU', 'CASE', 'COOLING') as $category) {
+            $columns[] = $this->csvSourceColumn('[' . $category . '_SPEC]', 'component.' . $category . '.name_spec');
+        }
+        return $columns;
+    }
+
+    private function moreleTemplateColumns(): array
+    {
+        return array(
+            $this->csvSourceColumn('vendorPartNumber', 'product.id'),
+            $this->csvSourceColumn('salePriceBrutto', 'product.price'),
+            $this->csvStaticColumn('quantity', '1000'),
+            $this->csvSourceColumn('vendorProductName', 'product.name'),
+            $this->csvSourceColumn('brandCode', 'product.EAN'),
+            $this->csvStaticColumn('currency', 'PLN'),
+            $this->csvSourceColumn('barcodes', 'product.EAN'),
+            $this->csvStaticColumn('availability', '1'),
+            $this->csvStaticColumn('vat', '23'),
+            $this->csvSourceColumn('images', 'images.morele'),
+            $this->csvSourceColumn('vendorDescription', 'description'),
+            $this->csvStaticColumn('warranty', '24'),
+            $this->csvStaticColumn('vendorCategoryName', 'Komputery stacjonarne'),
+            $this->csvSourceColumn('vendorCharacteristic', 'parameters.morele'),
+            $this->csvStaticColumn('vendorBrandName', 'ALTREO'),
+        );
+    }
+
+    private function empikTemplateColumns(): array
+    {
+        $headers = array(
+            'Certyfikaty i Instrukcje GPSR', 'description', 'ean', 'EAN', 'EAN13', 'img', 'Kategoria', 'KOD', 'name',
+            'Numer katalogowy', 'Opis', 'Opis oferty', 'Stawka VAT', 'STAW_VAT', 'Sygnatura', 'Tytul', 'TYTUŁ',
+            'Tytuł .com (pełny)', 'VAT', 'ZDJĘCIA', 'zdjecie_1', 'Zdjęcie okładki/produktu', 'Data premiery',
+            'Dla graczy', 'Dodatkowe zdjęcia (1)', 'Dodatkowe zdjęcia (10)', 'Dodatkowe zdjęcia (2)',
+            'Dodatkowe zdjęcia (3)', 'Dodatkowe zdjęcia (4)', 'Dodatkowe zdjęcia (5)', 'Dodatkowe zdjęcia (6)',
+            'Dodatkowe zdjęcia (7)', 'Dodatkowe zdjęcia (8)', 'Dodatkowe zdjęcia (9)', 'Dysk', 'Ekran dotykowy',
+            'Głębokość produktu (mm)', 'Głębokość w opak. (mm)', 'Gniazdo procesora (Socket)', 'Gwarancja',
+            'Karta dźwiękowa', 'Karta graficzna', 'Kod modelu', 'Kod producenta', 'Kolor główny',
+            'Kolor - szczegóły', 'Komunikacja urządzenia', 'Liczba rdzeni procesora Elektro', 'Liczba złączy HDMI',
+            'Liczba złączy USB', 'Marka', 'Marka procesora', 'Model procesora', 'Napędy/czytniki(2130_dict)',
+            'Pamięć karty graficznej', 'Pamięć RAM', 'Pamięć wewnętrzna', 'Producent(2100)', 'Przeznaczenie',
+            'Rodzaj obudowy', 'Rodzaj ogniw', 'Rozdzielczość(284)', 'Seria do konceptu', 'Seria procesorów',
+            'System operacyjny', 'Szerokość produktu (mm)', 'Szerokość w opak. (mm)', 'Taktowanie', 'Typ chipsetu',
+            'Typ dysku (SSD/HDD)', 'Typ pamięci', 'Waga produktu (g)', 'Waga produktu w opak. (g)',
+            'Wejścia/wyjścia(2161_dict)', 'Wielkość ekranu(2177)', 'Wymiary(665)', 'Wyposażenie urządzenia',
+            'Wysokość produktu (mm)', 'Zestaw', 'Zestaw bez kodu ean', 'Złącza połączeniowe', 'sku', 'product-id',
+            'product-id-type', 'offer-description', 'internal-description', 'price', 'price-additional-info',
+            'quantity', 'min-quantity-alert', 'state', 'available-start-date', 'available-end-date',
+            'logistic-class', 'favorite-rank', 'discount-price', 'discount-start-date', 'discount-end-date',
+            'leadtime-to-ship', 'update-delete', 'vatmargin', 'price-calibration-enabled', 'gpsr-entity-name',
+            'gpsr-address', 'gpsr-country', 'gpsr-city', 'gpsr-zip-code', 'gpsr-email', 'gpsr-phone',
+        );
+        $sources = array(
+            'description' => 'description', 'ean' => 'product.EAN', 'EAN' => 'product.EAN', 'EAN13' => 'product.EAN',
+            'img' => 'main_image.empik', 'KOD' => 'product.code', 'name' => 'product.name',
+            'Numer katalogowy' => 'product.code', 'Opis' => 'description', 'Opis oferty' => 'description',
+            'Sygnatura' => 'product.code', 'Tytul' => 'product.name', 'TYTUŁ' => 'product.name',
+            'Tytuł .com (pełny)' => 'product.name', 'ZDJĘCIA' => 'images.empik', 'zdjecie_1' => 'main_image.empik',
+            'Zdjęcie okładki/produktu' => 'main_image.empik', 'Kod producenta' => 'product.producer_code',
+            'sku' => 'product.code', 'product-id' => 'product.EAN', 'offer-description' => 'description',
+            'internal-description' => 'description', 'price' => 'product.price', 'available-start-date' => 'date.today',
+        );
+        $statics = array(
+            'Kategoria' => 'Komputery PC', 'Stawka VAT' => '23', 'STAW_VAT' => '23', 'VAT' => '23',
+            'product-id-type' => 'EAN', 'quantity' => '1000', 'state' => '11', 'logistic-class' => '3',
+            'leadtime-to-ship' => '1', 'update-delete' => 'aktualizuj', 'vatmargin' => 'true',
+            'gpsr-entity-name' => 'ACCRA Sp. z o.o.', 'gpsr-address' => 'LIPOWA 3D', 'gpsr-country' => 'Polska',
+            'gpsr-city' => 'Kraków', 'gpsr-zip-code' => '30-702', 'gpsr-email' => 'kontakt@altreo.pl',
+            'gpsr-phone' => '+48 660858061',
+        );
+        $paramAliases = array(
+            'Producent(2100)' => 'Marka', 'Rozdzielczość(284)' => 'Rozdzielczość',
+            'Wielkość ekranu(2177)' => 'Wielkość ekranu',
+        );
+        $imageNumbers = array(
+            'Dodatkowe zdjęcia (1)' => 1, 'Dodatkowe zdjęcia (2)' => 2, 'Dodatkowe zdjęcia (3)' => 3,
+            'Dodatkowe zdjęcia (4)' => 4, 'Dodatkowe zdjęcia (5)' => 5, 'Dodatkowe zdjęcia (6)' => 6,
+            'Dodatkowe zdjęcia (7)' => 7, 'Dodatkowe zdjęcia (8)' => 8, 'Dodatkowe zdjęcia (9)' => 9,
+            'Dodatkowe zdjęcia (10)' => 10,
+        );
+        $parameterNames = array_flip($this->empikComputerParameterNames());
+        $columns = array();
+        foreach ($headers as $header) {
+            if (isset($sources[$header])) {
+                $columns[] = $this->csvSourceColumn($header, $sources[$header]);
+            } elseif (isset($statics[$header])) {
+                $columns[] = $this->csvStaticColumn($header, $statics[$header]);
+            } elseif (isset($imageNumbers[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'image.empik.' . $imageNumbers[$header]);
+            } elseif (isset($paramAliases[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'empik_param:' . $paramAliases[$header]);
+            } elseif (isset($parameterNames[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'empik_param:' . $header);
+            } else {
+                $columns[] = $this->csvStaticColumn($header, '');
+            }
+        }
+        return $columns;
+    }
+
+    private function empikComputerParameterNames(): array
+    {
+        return array(
+            'Dla graczy', 'Dysk', 'Gniazdo procesora (Socket)', 'Gwarancja', 'Karta dźwiękowa',
+            'Karta graficzna', 'Kod modelu', 'Kolor główny', 'Kolor - szczegóły', 'Komunikacja urządzenia',
+            'Liczba rdzeni procesora Elektro', 'Liczba złączy HDMI', 'Marka', 'Marka procesora',
+            'Model procesora', 'Pamięć karty graficznej', 'Pamięć RAM', 'Pamięć wewnętrzna',
+            'Przeznaczenie', 'Rodzaj obudowy', 'Rozdzielczość', 'Seria procesorów', 'System operacyjny',
+            'Taktowanie', 'Typ chipsetu', 'Typ dysku (SSD/HDD)', 'Typ pamięci', 'Wielkość ekranu',
+            'Wyposażenie urządzenia', 'Zestaw', 'Złącza połączeniowe',
+        );
+    }
+
+    private function csvSourceColumn(string $header, string $source): array
+    {
+        return array('header' => $header, 'type' => 'source', 'value' => $source);
+    }
+
+    private function csvStaticColumn(string $header, string $value): array
+    {
+        return array('header' => $header, 'type' => 'static', 'value' => $value);
     }
 
     private function normalizeErrors($value): array

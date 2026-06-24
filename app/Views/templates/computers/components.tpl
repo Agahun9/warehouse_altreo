@@ -10,6 +10,9 @@
     <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'components'} active{/if}" href="{$baseUrl}?controller=computers&action=components">Komponenty</a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link{if $computerTab eq 'csvtemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a>
+    </li>
   </ul>
   <!-- Nagłówek strony -->
   <div class="d-flex align-items-center mb-4">
