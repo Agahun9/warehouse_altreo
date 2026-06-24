@@ -1,0 +1,98 @@
+.free-rte {
+  overflow: hidden;
+  border: 1px solid #ced4da;
+  border-radius: .375rem;
+  background: #fff;
+}
+
+.free-rte:focus-within {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 .25rem rgba(13, 110, 253, .25);
+}
+
+.free-rte-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  padding: .5rem;
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+.free-rte-toolbar-group {
+  display: inline-flex;
+  gap: .15rem;
+  padding-right: .25rem;
+  border-right: 1px solid #dee2e6;
+}
+
+.free-rte-toolbar-group:last-child {
+  border-right: 0;
+}
+
+.free-rte-button,
+.free-rte-select {
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: .25rem;
+  background: transparent;
+  color: #212529;
+  font-size: .875rem;
+}
+
+.free-rte-button {
+  min-width: 32px;
+  padding: .25rem .45rem;
+  font-weight: 600;
+}
+
+.free-rte-button:hover,
+.free-rte-button:focus,
+.free-rte-button.is-active {
+  border-color: #adb5bd;
+  background: #e9ecef;
+}
+
+.free-rte-select {
+  padding: .25rem .5rem;
+}
+
+.free-rte-editor,
+.free-rte-source {
+  width: 100%;
+  min-height: 260px;
+  padding: .75rem;
+  border: 0;
+  outline: 0;
+  background: #fff;
+  color: #212529;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  overflow: auto;
+  resize: vertical;
+}
+
+.free-rte-editor:empty::before {
+  color: #6c757d;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.free-rte-source {
+  display: none;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+}
+
+.free-rte.is-source .free-rte-editor {
+  display: none;
+}
+
+.free-rte.is-source .free-rte-source {
+  display: block;
+}
+
+.free-rte-original {
+  display: none !important;
+}
+

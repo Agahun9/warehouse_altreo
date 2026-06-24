@@ -161,7 +161,8 @@
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
           <span class="fw-bold"><i class="bi bi-table me-2"></i>Lista produktów</span>
           <div>
-            <button type="button" id="select_all_btn" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-check2-square"></i> Zaznacz wszystkie</button>
+            <button type="button" id="select_all_btn" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-check2-square"></i> Zaznacz tę stronę</button>
+            <button type="button" id="select_all_filtered_btn" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-check2-all"></i> Zaznacz na wszystkich stronach</button>
             <button type="button" id="deselect_all_btn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-square"></i> Odznacz wszystkie</button>
           </div>
         </div>
@@ -191,7 +192,20 @@
               Wyświetlono {$shown_count} z {$total_products} produktów
             </div>
           </div>
-          <form method="post" action="" enctype="multipart/form-data">
+          <form method="post" action="" enctype="multipart/form-data" id="productsBulkForm">
+            <input type="hidden" name="selection_scope" id="selection_scope" value="page" />
+            <input type="hidden" name="selection_filter_name" value="{$filterName|escape:'html'}" />
+            {foreach from=$filterComponents item=filterComponentId}
+              <input type="hidden" name="selection_filter_components[]" value="{$filterComponentId}" />
+            {/foreach}
+            {foreach from=$filterMarketAccounts item=filterMarketAccount}
+              <input type="hidden" name="selection_filter_market_accounts[]" value="{$filterMarketAccount|escape:'html'}" />
+            {/foreach}
+            <div id="excluded_product_ids"></div>
+            <div id="all_filtered_selection_notice" class="alert alert-primary py-2 px-3 mb-3 d-none" role="status">
+              Zaznaczono wszystkie produkty zgodne z bieżącymi filtrami: <strong>{$total_products}</strong>.
+              Odznaczone ręcznie pozycje zostaną pominięte.
+            </div>
             <div class="mb-3">
               <div class="dropdown d-inline-block me-2">
                 <button class="btn btn-primary dropdown-toggle" type="button" id="bulkActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -489,15 +503,9 @@
                           <label class="form-label mb-0">Komponenty:</label>
                           <div style="max-height:120px; overflow-y:auto; border:1px solid #ddd; padding:5px; border-radius:4px; background:#f8f9fa;">
                             {foreach from=$components item=comp}
-                              {assign var="componentChecked" value=false}
-                              {foreach from=$prod.components item=selectedComp}
-                                {if $selectedComp.id == $comp.id}
-                                  {assign var="componentChecked" value=true}
-                                {/if}
-                              {/foreach}
                               <label style="display:block; margin-bottom:4px; font-size:0.9em;">
                                 <input type="checkbox" name="products[{$prod.id}][components][]" value="{$comp.id}"
-                                  {if $componentChecked}checked{/if} />
+                                  {if in_array($comp.id, $prod.component_ids)}checked{/if} />
                                 {$comp.name|escape:'html'}
                               </label>
                             {/foreach}
@@ -729,7 +737,19 @@
     var selectAllBtn = document.getElementById('select_all_btn');
     if (selectAllBtn) {
       selectAllBtn.addEventListener('click', function() {
+        setFilteredSelectionMode(false);
         document.querySelectorAll('input.product_checkbox').forEach(chk => {
+          chk.checked = true;
+          updateProductCardSelection(chk);
+        });
+        if (checkAll) checkAll.checked = true;
+      });
+    }
+    var selectAllFilteredBtn = document.getElementById('select_all_filtered_btn');
+    if (selectAllFilteredBtn) {
+      selectAllFilteredBtn.addEventListener('click', function() {
+        setFilteredSelectionMode(true);
+        document.querySelectorAll('input.product_checkbox').forEach(function(chk) {
           chk.checked = true;
           updateProductCardSelection(chk);
         });
@@ -740,12 +760,40 @@
     var deselectAllBtn = document.getElementById('deselect_all_btn');
     if (deselectAllBtn) {
       deselectAllBtn.addEventListener('click', function() {
+        setFilteredSelectionMode(false);
         document.querySelectorAll('input.product_checkbox').forEach(chk => {
           chk.checked = false;
           updateProductCardSelection(chk);
         });
         if (checkAll) checkAll.checked = false;
       });
+    }
+
+    function setFilteredSelectionMode(enabled) {
+      var scope = document.getElementById('selection_scope');
+      var notice = document.getElementById('all_filtered_selection_notice');
+      var excluded = document.getElementById('excluded_product_ids');
+      if (scope) scope.value = enabled ? 'filtered' : 'page';
+      if (notice) notice.classList.toggle('d-none', !enabled);
+      if (excluded) excluded.innerHTML = '';
+    }
+
+    function syncFilteredSelectionExclusion(checkbox) {
+      var scope = document.getElementById('selection_scope');
+      var excluded = document.getElementById('excluded_product_ids');
+      if (!scope || scope.value !== 'filtered' || !excluded) return;
+      var selector = 'input[data-excluded-product-id="' + checkbox.value + '"]';
+      var existing = excluded.querySelector(selector);
+      if (!checkbox.checked && !existing) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'excluded_product_ids[]';
+        input.value = checkbox.value;
+        input.setAttribute('data-excluded-product-id', checkbox.value);
+        excluded.appendChild(input);
+      } else if (checkbox.checked && existing) {
+        existing.remove();
+      }
     }
 
     // Funkcja pomocnicza: zaktualizuj klasę .selected dla karty produktu
@@ -764,6 +812,7 @@
       updateProductCardSelection(chk);
       chk.addEventListener('change', function() {
         updateProductCardSelection(chk);
+        syncFilteredSelectionExclusion(chk);
       });
     });
 
@@ -780,9 +829,11 @@
           for (let i = start; i <= end; i++) {
             productCheckboxes[i].checked = checkedState;
             updateProductCardSelection(productCheckboxes[i]);
+            syncFilteredSelectionExclusion(productCheckboxes[i]);
           }
         }
         updateProductCardSelection(chk);
+        syncFilteredSelectionExclusion(chk);
         lastChecked = this;
       });
     });

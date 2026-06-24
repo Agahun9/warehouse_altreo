@@ -81,7 +81,7 @@
   <div style="margin-bottom:20px;">
     <label style="font-weight:600; margin-bottom:6px; display:block; color:#333;">{$t.name}:</label>
 
-    <textarea id="template_{$t.id_template}" name="template_info">
+    <textarea id="template_{$t.id_template}" name="template_info" class="free-rich-text-editor" data-editor-height="350">
       {$t.template nofilter}
     </textarea>
   </div>
@@ -132,17 +132,17 @@
               </div>
               <div class="mb-3">
                 <label for="description" class="form-label">Opis Allegro:</label>
-                <textarea id="description" name="description" class="form-control"
+                <textarea id="description" name="description" class="form-control free-rich-text-editor"
                   rows="3">{$editItem.description|escape:'html'}</textarea>
               </div>
               <div class="mb-3">
                 <label for="description_morele" class="form-label">Opis Morele:</label>
-                <textarea id="description_morele" name="description_morele" class="form-control"
+                <textarea id="description_morele" name="description_morele" class="form-control free-rich-text-editor"
                   rows="3">{$editItem.description_morele|escape:'html'}</textarea>
               </div>
               <div class="mb-3">
                 <label for="description_empik" class="form-label">Opis Empik:</label>
-                <textarea id="description_empik" name="description_empik" class="form-control"
+                <textarea id="description_empik" name="description_empik" class="form-control free-rich-text-editor"
                   rows="3">{$editItem.description_empik|escape:'html'}</textarea>
               </div>
               <div class="mb-4">
@@ -887,11 +887,17 @@
 
       document.querySelectorAll('.ajax-params-placeholder').forEach(function(placeholder) {
         const rel = placeholder.dataset.url;
-        const url = new URL(rel, window.location.href).toString();
         const collapse = placeholder.closest('.collapse');
         if (!collapse) return;
         collapse.addEventListener('show.bs.collapse', function() {
           if (placeholder.dataset.loaded) return;
+          const urlObject = new URL(rel, window.location.href);
+          const categoryInput = document.getElementById('category');
+          const componentCategory = categoryInput ? String(categoryInput.value || '').trim() : '';
+          if (componentCategory !== '') {
+            urlObject.searchParams.set('component_category', componentCategory);
+          }
+          const url = urlObject.toString();
           fetch(url, { credentials: 'same-origin' })
             .then(resp => resp.text().then(text => ({ status: resp.status, ok: resp.ok, text })))
             .then(({ status, ok, text }) => {
@@ -910,33 +916,25 @@
             });
         });
       });
+
+      var categoryInput = document.getElementById('category');
+      if (categoryInput) {
+        categoryInput.addEventListener('change', function() {
+          document.querySelectorAll('.ajax-params-placeholder').forEach(function(placeholder) {
+            if (!placeholder.dataset.loaded) return;
+            placeholder.removeAttribute('data-loaded');
+            placeholder.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Otwórz panel ponownie, aby wczytać parametry dla kategorii „'
+              + String(categoryInput.value || '').replace(/[&<>"']/g, '')
+              + '”.</div>';
+            var collapse = placeholder.closest('.collapse');
+            if (collapse && collapse.classList.contains('show')) {
+              var instance = bootstrap.Collapse.getOrCreateInstance(collapse, { toggle: false });
+              instance.hide();
+            }
+          });
+        });
+      }
     });
   </script>
-  <!-- TinyMCE -->
-<script src="https://cdn.tiny.cloud/1/eatvqy3fy8bse5nkpz765jj1jdjri3rikfn25dal7v7epjjy/tinymce/8/tinymce.min.js" referrerpolicy="origin" crossorigin="anonymous"></script>
-<script>
-tinymce.init({
-  selector: 'textarea',
-  height: 350,
-  plugins: 'anchor autolink charmap codesample emoticons image link lists media searchreplace table visualblocks wordcount code',
-  toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | align lineheight | numlist bullist indent outdent | link image media table | styles | code removeformat',
-  
-  menubar: false,
-  branding: false,
-  content_style: "body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; }",
-
-  // 🔥 POZWÓL NA WSZYSTKIE STYLE INLINE
-  valid_elements: '*[*]',
-  extended_valid_elements: '*[*]',
-  valid_styles: {
-    '*': 'color,font-size,font-weight,font-style,text-decoration,background-color,border,border-radius,margin,margin-top,margin-bottom,margin-left,margin-right,padding,padding-top,padding-bottom,padding-left,padding-right,width,height,max-width,min-width,max-height,min-height,display,float,position,top,bottom,left,right'
-  },
-
-  // 🔧 Pozwala edytować style przez GUI (okno)
-  style_formats_merge: true,
-  style_formats: [
-    { title: 'Obrazek 500px szerokości', selector: 'img', styles: { maxWidth: '500px' } },
-
-  ]
-});
-</script>
+<link rel="stylesheet" href="{$assetBase}/css/free-rich-text-editor.css">
+<script src="{$assetBase}/js/free-rich-text-editor.js"></script>

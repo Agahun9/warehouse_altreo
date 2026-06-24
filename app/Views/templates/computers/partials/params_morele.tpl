@@ -6,6 +6,7 @@
       <div class="small text-muted">
         {if !empty($morele_parameters_meta.category_id)}Kategoria API: <code>{$morele_parameters_meta.category_id|escape:'html'}</code>{/if}
         {if !empty($morele_parameters_meta.source)}{if !empty($morele_parameters_meta.category_id)} | {/if}Źródło: {$morele_parameters_meta.source|escape:'html'}{/if}
+        {if !empty($morele_parameters_meta.component_category)} | Komponenty: <strong>{$morele_parameters_meta.component_category|escape:'html'}</strong>{/if}
       </div>
     </div>
     <div class="small text-muted">{if $moreleChars}{count($moreleChars)}{else}0{/if} cech</div>
@@ -20,10 +21,20 @@
     <div class="mb-3">
       <input type="text" class="form-control js-market-param-filter" data-target=".js-morele-param-card" placeholder="Szukaj po grupie, nazwie lub ID parametru Morele...">
     </div>
+    {if $morele_parameters_meta.used_count|default:0 > 0 && $morele_parameters_meta.unused_count|default:0 > 0}
+      <div class="alert alert-light border d-flex justify-content-between align-items-center gap-2 py-2">
+        <span>Widoczne: <strong>{$morele_parameters_meta.used_count}</strong> cech używanych w istniejących komponentach.</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary js-toggle-unused-params" data-hidden-count="{$morele_parameters_meta.unused_count}">
+          Pokaż pozostałe ({$morele_parameters_meta.unused_count})
+        </button>
+      </div>
+    {/if}
 
     <div class="row g-3">
       {foreach from=$moreleChars item=char}
-        <div class="col-12 col-xl-6 js-morele-param-card" data-filter-text="{$char.characteristics_group_name|escape:'html'} {$char.characteristics_name|escape:'html'} {$char.characteristics_id|escape:'html'}">
+        <div class="col-12 col-xl-6 js-morele-param-card{if !$char.is_used && $morele_parameters_meta.used_count|default:0 > 0} d-none{/if}"
+             data-unused="{if $char.is_used}0{else}1{/if}"
+             data-filter-text="{$char.characteristics_group_name|escape:'html'} {$char.characteristics_name|escape:'html'} {$char.characteristics_id|escape:'html'}">
           <div class="border rounded-3 p-3 h-100 bg-white">
             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
               <label class="form-label fw-semibold mb-0" for="char_{$char.characteristics_id}">
@@ -91,8 +102,23 @@
         }
         root.querySelectorAll(selector).forEach(function (card) {
           var text = String(card.getAttribute('data-filter-text') || '').toLowerCase();
-          card.style.display = phrase === '' || text.indexOf(phrase) !== -1 ? '' : 'none';
+          var isUnused = card.getAttribute('data-unused') === '1';
+          var showUnused = root.classList.contains('show-unused-params');
+          var matches = phrase === '' || text.indexOf(phrase) !== -1;
+          card.classList.toggle('d-none', !matches || (phrase === '' && isUnused && !showUnused));
         });
+      });
+    });
+    document.querySelectorAll('.js-toggle-unused-params').forEach(function (button) {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', function () {
+        var root = this.closest('.market-params');
+        var show = root.classList.toggle('show-unused-params');
+        root.querySelectorAll('[data-unused="1"]').forEach(function (card) {
+          card.classList.toggle('d-none', !show);
+        });
+        this.textContent = show ? 'Ukryj pozostałe' : 'Pokaż pozostałe (' + this.dataset.hiddenCount + ')';
       });
     });
   })();

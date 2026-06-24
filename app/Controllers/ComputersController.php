@@ -40,6 +40,9 @@ class ComputersController extends Controller
     /** @var ComputerCsvTemplateRepository */
     private $computerCsvTemplates;
 
+    /** @var array<string, bool> */
+    private $tableExistsCache = array();
+
     public function __construct()
     {
         $this->ensureSchema();
@@ -102,12 +105,36 @@ class ComputersController extends Controller
         $allegroMarketAccounts = $this->markSelectedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
         $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
 
-        $products = $this->attachActiveErliProducts(
-            $this->attachActiveAllegroOffers(
-                $this->db()->fetchAll('SELECT * FROM ' . self::PRODUCTS_TABLE . ' ORDER BY id DESC')
-            )
+        $allowedPerPage = array(10, 20, 50, 100, 1000, 10000);
+        $perPage = (int) $this->input('per_page', 10);
+        if (!in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 10;
+        }
+
+        $filters = array(
+            'components' => $filterComponents,
+            'name' => $filterName,
+            'market_accounts' => $filterMarketAccounts,
         );
-        $filteredProducts = array();
+        list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
+        $totalProducts = (int) $this->db()->fetchColumn(
+            'SELECT COUNT(*) FROM ' . self::PRODUCTS_TABLE . ' products' . $filterSql,
+            $filterParams
+        );
+        $currentPage = max(1, (int) $this->input('page', 1));
+        $totalPages = max(1, (int) ceil($totalProducts / $perPage));
+        if ($currentPage > $totalPages) {
+            $currentPage = $totalPages;
+        }
+        $offset = ($currentPage - 1) * $perPage;
+        $products = $this->db()->fetchAll(
+            'SELECT products.* FROM ' . self::PRODUCTS_TABLE . ' products'
+            . $filterSql
+            . ' ORDER BY products.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset,
+            $filterParams
+        );
+        $products = $this->attachActiveErliProducts($this->attachActiveAllegroOffers($products));
+        $pagedProducts = array();
         foreach ($products as $product) {
             $product = $this->normalizeProductImageFields($product);
             if (!isset($product['allegro_accounts']) || !is_array($product['allegro_accounts'])) {
@@ -117,35 +144,7 @@ class ComputersController extends Controller
                 $product['erli_accounts'] = array();
             }
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
-            $componentsMatch = true;
-            foreach ($filterComponents as $filterComponentId) {
-                if (!in_array($filterComponentId, $componentIds, true)) {
-                    $componentsMatch = false;
-                    break;
-                }
-            }
-
-            $nameMatch = $filterName === '' || stripos((string) ($product['name'] ?? ''), $filterName) !== false;
-            $offerMatch = true;
-            $activeAllegroOffers = isset($product['allegro_accounts']) && is_array($product['allegro_accounts'])
-                ? $product['allegro_accounts']
-                : array();
-            $activeErliOffers = isset($product['erli_accounts']) && is_array($product['erli_accounts'])
-                ? $product['erli_accounts']
-                : array();
-            $offerId = trim((string) ($product['offerid'] ?? ''));
-            if ($filterMarketAccounts !== array()) {
-                $offerMatch = $this->productMatchesMarketAccountFilters($product, $filterMarketAccounts);
-            } elseif ($filterOfferStatus === '1') {
-                $offerMatch = $activeAllegroOffers !== array() || $activeErliOffers !== array() || ($offerId !== '' && $offerId !== '0');
-            } elseif ($filterOfferStatus === '0') {
-                $offerMatch = $activeAllegroOffers === array() && $activeErliOffers === array() && ($offerId === '' || $offerId === '0');
-            }
-
-            if (!$componentsMatch || !$nameMatch || !$offerMatch) {
-                continue;
-            }
-
+            $product['component_ids'] = $componentIds;
             $product['components'] = array();
             foreach ($componentIds as $componentId) {
                 if (isset($componentsById[$componentId])) {
@@ -153,23 +152,8 @@ class ComputersController extends Controller
                 }
             }
 
-            $filteredProducts[] = $product;
+            $pagedProducts[] = $product;
         }
-
-        $allowedPerPage = array(10, 20, 50, 100, 1000, 10000);
-        $perPage = (int) $this->input('per_page', 10);
-        if (!in_array($perPage, $allowedPerPage, true)) {
-            $perPage = 10;
-        }
-
-        $currentPage = max(1, (int) $this->input('page', 1));
-        $totalProducts = count($filteredProducts);
-        $totalPages = max(1, (int) ceil($totalProducts / $perPage));
-        if ($currentPage > $totalPages) {
-            $currentPage = $totalPages;
-        }
-        $offset = ($currentPage - 1) * $perPage;
-        $pagedProducts = array_slice($filteredProducts, $offset, $perPage);
 
         $queryParams = $_GET;
         unset($queryParams['controller'], $queryParams['action'], $queryParams['page'], $queryParams['per_page']);
@@ -211,6 +195,36 @@ class ComputersController extends Controller
             'computerTab' => 'products',
             'csvTemplates' => $this->computerCsvTemplates->all(),
         ));
+    }
+
+    public function empikparameteroptions(): void
+    {
+        $this->requireModule('products');
+        $attributeId = trim((string) $this->input('attribute_id', ''));
+        $query = trim((string) $this->input('q', ''));
+        $limit = max(1, min(100, (int) $this->input('limit', 40)));
+        $payload = $this->loadEmpikParameterPayload();
+        $categoryId = trim((string) ($payload['meta']['category_id'] ?? ''));
+
+        header('Content-Type: application/json; charset=utf-8');
+        if ($categoryId === '' || $attributeId === '') {
+            echo json_encode(array('items' => array()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        try {
+            $service = new EmpikService();
+            echo json_encode(array(
+                'items' => $service->searchAttributeOptions($categoryId, $attributeId, $query, $limit),
+            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $exception) {
+            http_response_code(500);
+            echo json_encode(array(
+                'items' => array(),
+                'error' => $exception->getMessage(),
+            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        exit;
     }
 
     public function csvtemplates(): void
@@ -325,7 +339,7 @@ class ComputersController extends Controller
         }
 
         $template = $this->computerCsvTemplates->find((int) $this->input('csv_template_id', 0));
-        $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
+        $productIds = $this->selectedComputerProductIdsFromRequest();
         if (!$template || $productIds === array()) {
             $this->setFlash('error', json_encode(array('Wybierz szablon CSV i co najmniej jeden produkt.')));
             $this->redirect('./index.php?controller=computers&action=products');
@@ -482,10 +496,44 @@ class ComputersController extends Controller
         }
 
         $bulkAction = trim((string) $this->input('bulk_action', ''));
-        $productIds = array_values(array_filter(array_map('intval', (array) $this->input('product_ids', array()))));
+        $productIds = $this->selectedComputerProductIdsFromRequest();
         if ($bulkAction !== '' && $productIds !== array()) {
             $this->handleProductsBulkAction($bulkAction, $productIds);
         }
+    }
+
+    private function selectedComputerProductIdsFromRequest(): array
+    {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
+        if ((string) $this->input('selection_scope', '') !== 'filtered') {
+            return $productIds;
+        }
+
+        $filters = array(
+            'components' => array_values(array_filter(array_map('intval', (array) $this->input('selection_filter_components', array())))),
+            'name' => trim((string) $this->input('selection_filter_name', '')),
+            'market_accounts' => $this->selectedMarketAccountFilters(
+                (array) $this->input('selection_filter_market_accounts', array())
+            ),
+        );
+        list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
+        $rows = $this->db()->fetchAll(
+            'SELECT products.id FROM ' . self::PRODUCTS_TABLE . ' products' . $filterSql . ' ORDER BY products.id DESC',
+            $filterParams
+        );
+        $productIds = array_values(array_map(static function (array $row): int {
+            return (int) ($row['id'] ?? 0);
+        }, $rows));
+
+        $excludedIds = array_values(array_unique(array_filter(array_map(
+            'intval',
+            (array) $this->input('excluded_product_ids', array())
+        ))));
+        if ($excludedIds !== array()) {
+            $productIds = array_values(array_diff($productIds, $excludedIds));
+        }
+
+        return array_values(array_filter($productIds));
     }
 
     private function createVariants(): void
@@ -937,17 +985,21 @@ class ComputersController extends Controller
     {
         $this->requireModule('products');
         $editId = (int) $this->input('edit_id', 0);
+        $componentCategory = trim((string) $this->input('component_category', ''));
         $product = array();
         if ($editId > 0) {
             $row = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $editId));
             if (is_array($row)) {
                 $row = $this->normalizeComponentTextFields($row);
                 $product = $this->hydrateComponentParameterMaps($row);
+                if ($componentCategory === '') {
+                    $componentCategory = trim((string) ($row['category'] ?? ''));
+                }
             }
         }
 
         if ($which === 'empik') {
-            $payload = $this->loadEmpikParameterPayload();
+            $payload = $this->loadEmpikParameterPayload($componentCategory);
             $this->partial('computers/partials/params_empik', array(
                 'product' => $product,
                 'empik_parameters' => $payload['items'],
@@ -957,7 +1009,7 @@ class ComputersController extends Controller
             return;
         }
         if ($which === 'eu') {
-            $payload = $this->loadEuParameterPayload();
+            $payload = $this->loadEuParameterPayload($componentCategory);
             $this->partial('computers/partials/params_eu', array(
                 'product' => $product,
                 'parameters' => $payload['items'],
@@ -967,7 +1019,7 @@ class ComputersController extends Controller
             return;
         }
         if ($which === 'morele') {
-            $payload = $this->loadMoreleParameterPayload();
+            $payload = $this->loadMoreleParameterPayload($componentCategory);
             $this->partial('computers/partials/params_morele', array(
                 'product' => $product,
                 'morele_parameters' => $payload['items'],
@@ -1089,6 +1141,89 @@ class ComputersController extends Controller
         }
 
         return array_values(array_unique($selected));
+    }
+
+    private function computerProductFilterSql(array $filters): array
+    {
+        $where = array();
+        $params = array();
+        $name = trim((string) ($filters['name'] ?? ''));
+        if ($name !== '') {
+            $where[] = 'products.name LIKE :computer_filter_name';
+            $params['computer_filter_name'] = '%' . $name . '%';
+        }
+
+        $componentIds = array_values(array_unique(array_filter(array_map(
+            'intval',
+            (array) ($filters['components'] ?? array())
+        ))));
+        foreach ($componentIds as $index => $componentId) {
+            $key = 'computer_filter_component_' . $index;
+            $where[] = 'FIND_IN_SET(:' . $key . ', products.id_components) > 0';
+            $params[$key] = (string) $componentId;
+        }
+
+        $marketFilters = $this->selectedMarketAccountFilters((array) ($filters['market_accounts'] ?? array()));
+        if ($marketFilters !== array()) {
+            $hasAllegroTables = $this->tableExists('allegro_offers') && $this->tableExists('allegro_accounts');
+            $hasErliTables = $this->tableExists('erli_products') && $this->tableExists('erli_accounts');
+            $skuMatch = '(market_items.sku = products.sku'
+                . ' OR market_items.sku = CAST(products.offerid AS CHAR)'
+                . ' OR market_items.sku = CAST(products.id AS CHAR)'
+                . " OR market_items.sku = CONCAT('ALTREO_', products.id)"
+                . " OR market_items.sku = CONCAT('ALTREO_', products.offerid))";
+            $allegroExists = $hasAllegroTables
+                ? 'EXISTS (SELECT 1 FROM allegro_offers market_items'
+                    . ' INNER JOIN allegro_accounts market_accounts ON market_accounts.id = market_items.account_id'
+                    . " WHERE market_items.publication_status = 'ACTIVE' AND market_accounts.is_active = 1"
+                    . ' AND ' . $skuMatch . ')'
+                : '0 = 1';
+            $erliExists = $hasErliTables
+                ? 'EXISTS (SELECT 1 FROM erli_products market_items'
+                    . ' INNER JOIN erli_accounts market_accounts ON market_accounts.id = market_items.account_id'
+                    . ' WHERE market_accounts.is_active = 1'
+                    . " AND (CASE"
+                    . " WHEN market_items.status_override IS NOT NULL AND market_items.status_override <> '' THEN LOWER(market_items.status_override)"
+                    . " WHEN market_items.remote_status IS NOT NULL AND market_items.remote_status <> '' THEN LOWER(market_items.remote_status)"
+                    . " WHEN COALESCE(market_items.stock_override, market_items.quantity, 0) > 0 THEN 'active'"
+                    . " ELSE 'inactive' END) = 'active'"
+                    . ' AND ' . $skuMatch . ')'
+                : '0 = 1';
+
+            $marketConditions = array();
+            foreach ($marketFilters as $index => $marketFilter) {
+                if ($marketFilter === '1') {
+                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $erliExists . ')';
+                    continue;
+                }
+                if ($marketFilter === '0') {
+                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $erliExists . '))';
+                    continue;
+                }
+
+                list($market, $accountId) = explode(':', $marketFilter, 2);
+                $key = 'computer_filter_market_account_' . $index;
+                $params[$key] = (int) $accountId;
+                if ($market === 'allegro' && $hasAllegroTables) {
+                    $marketConditions[] = substr($allegroExists, 0, -1)
+                        . ' AND market_items.account_id = :' . $key . ')';
+                } elseif ($market === 'erli' && $hasErliTables) {
+                    $marketConditions[] = substr($erliExists, 0, -1)
+                        . ' AND market_items.account_id = :' . $key . ')';
+                } else {
+                    $marketConditions[] = '0 = 1';
+                }
+            }
+
+            if ($marketConditions !== array()) {
+                $where[] = '(' . implode(' OR ', $marketConditions) . ')';
+            }
+        }
+
+        return array(
+            $where === array() ? '' : ' WHERE ' . implode(' AND ', $where),
+            $params,
+        );
     }
 
     private function productMatchesMarketAccountFilters(array $product, array $filters): bool
@@ -1429,10 +1564,16 @@ class ComputersController extends Controller
 
     private function tableExists(string $table): bool
     {
-        return (int) $this->db()->fetchColumn(
+        if (array_key_exists($table, $this->tableExistsCache)) {
+            return $this->tableExistsCache[$table];
+        }
+
+        $this->tableExistsCache[$table] = (int) $this->db()->fetchColumn(
             'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name',
             array('table_name' => $table)
         ) > 0;
+
+        return $this->tableExistsCache[$table];
     }
 
     private function normalizeComponentImageFields(array $component): array
@@ -2388,7 +2529,7 @@ class ComputersController extends Controller
         return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
     }
 
-    private function loadEuParameterPayload(): array
+    private function loadEuParameterPayload(string $componentCategory = ''): array
     {
         $meta = array(
             'label' => 'Allegro EU',
@@ -2408,11 +2549,17 @@ class ComputersController extends Controller
 
             $meta['category_id'] = $categoryId;
             $service = new AllegroService();
+            $items = $this->markUsedComputerParameters(
+                $service->categoryParameters($categoryId),
+                $this->computerParameterUsage('parameters_eu', $componentCategory),
+                'id'
+            );
+            $meta['component_category'] = $componentCategory;
 
             return array(
-                'items' => $service->categoryParameters($categoryId),
+                'items' => $items,
                 'error' => '',
-                'meta' => $meta,
+                'meta' => $this->parameterUsageMeta($meta, $items),
             );
         } catch (Throwable $exception) {
             return array(
@@ -2423,7 +2570,7 @@ class ComputersController extends Controller
         }
     }
 
-    private function loadEmpikParameterPayload(): array
+    private function loadEmpikParameterPayload(string $componentCategory = ''): array
     {
         $meta = array(
             'label' => 'Empik',
@@ -2444,10 +2591,28 @@ class ComputersController extends Controller
             $meta['category_id'] = $categoryId;
             $service = new EmpikService();
 
+            $items = $service->categoryAttributes($categoryId);
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                if ($this->empikAttributeRequiresManualInput($item)) {
+                    $items[$index]['option_lookup'] = false;
+                    $items[$index]['dictionary'] = array();
+                    $items[$index]['type'] = !empty($item['multiple']) ? 'textarea' : 'text';
+                }
+            }
+            $items = $this->markUsedComputerParameters(
+                $items,
+                $this->computerParameterUsage('parameters_empik', $componentCategory),
+                'name'
+            );
+            $meta['component_category'] = $componentCategory;
+
             return array(
-                'items' => $service->categoryAttributes($categoryId),
+                'items' => $items,
                 'error' => '',
-                'meta' => $meta,
+                'meta' => $this->parameterUsageMeta($meta, $items),
             );
         } catch (Throwable $exception) {
             return array(
@@ -2458,7 +2623,176 @@ class ComputersController extends Controller
         }
     }
 
-    private function loadMoreleParameterPayload(): array
+    private function empikAttributeRequiresManualInput(array $attribute): bool
+    {
+        $value = $this->normalizeLookupText(
+            (string) ($attribute['name'] ?? '') . ' ' . (string) ($attribute['id'] ?? '')
+        );
+        if ($value === '') {
+            return false;
+        }
+
+        foreach (array(
+            'dodatkowe zdjecia',
+            'dodatkowe zdjęcia',
+            'zdjecia dodatkowe',
+            'zdjęcia dodatkowe',
+            'additional images',
+            'additional image',
+            'extra images',
+            'extra image',
+            'image url',
+            'image urls',
+            'adres zdjecia',
+            'adres zdjęcia',
+            'url zdjecia',
+            'url zdjęcia',
+        ) as $phrase) {
+            if (strpos($value, $this->normalizeLookupText($phrase)) !== false) {
+                return true;
+            }
+        }
+
+        $hasImageWord = strpos($value, 'zdjec') !== false
+            || strpos($value, 'zdję') !== false
+            || strpos($value, 'image') !== false;
+        $hasManualWord = strpos($value, 'dodatk') !== false
+            || strpos($value, 'additional') !== false
+            || strpos($value, 'extra') !== false
+            || strpos($value, 'url') !== false;
+
+        return $hasImageWord && $hasManualWord;
+    }
+
+    private function computerParameterUsage(string $column, string $componentCategory = ''): array
+    {
+        if (!in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik'), true)) {
+            return array();
+        }
+
+        $componentCategory = trim($componentCategory);
+        if ($componentCategory === '') {
+            return array();
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT ' . $column . ' AS parameters_json FROM ' . self::COMPONENTS_TABLE
+            . ' WHERE category = :component_category'
+            . ' AND ' . $column . ' IS NOT NULL AND ' . $column . " <> '' AND " . $column . " <> '{}'",
+            array('component_category' => $componentCategory)
+        );
+        $usage = array();
+        foreach ($rows as $row) {
+            $parameters = $this->decodeJsonMap((string) ($row['parameters_json'] ?? ''));
+            foreach ($parameters as $key => $value) {
+                if (!$this->hasMarketParameterValue($value)) {
+                    continue;
+                }
+                $identifier = trim((string) $key);
+                if ($column !== 'parameters_empik') {
+                    $identifier = trim((string) (explode('|', $identifier)[0] ?? ''));
+                }
+                $identifier = $this->normalizeLookupText($identifier);
+                if ($identifier !== '') {
+                    $usage[$identifier] = (int) ($usage[$identifier] ?? 0) + 1;
+                }
+            }
+        }
+
+        return $usage;
+    }
+
+    private function hasMarketParameterValue($value): bool
+    {
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if ($this->hasMarketParameterValue($item)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return trim((string) $value) !== '';
+    }
+
+    private function markUsedComputerParameters(array $items, array $usage, string $identifierField): array
+    {
+        foreach ($items as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $identifier = $this->normalizeLookupText((string) ($item[$identifierField] ?? ''));
+            $items[$index]['usage_count'] = (int) ($usage[$identifier] ?? 0);
+            $items[$index]['is_used'] = $items[$index]['usage_count'] > 0;
+        }
+
+        usort($items, static function (array $left, array $right): int {
+            $used = ((int) ($right['usage_count'] ?? 0)) <=> ((int) ($left['usage_count'] ?? 0));
+            if ($used !== 0) {
+                return $used;
+            }
+            $required = ((int) !empty($right['required'])) <=> ((int) !empty($left['required']));
+            if ($required !== 0) {
+                return $required;
+            }
+            return strcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        return $items;
+    }
+
+    private function parameterUsageMeta(array $meta, array $items): array
+    {
+        $usedCount = 0;
+        foreach ($items as $item) {
+            if (is_array($item) && !empty($item['is_used'])) {
+                $usedCount++;
+            }
+        }
+        $meta['used_count'] = $usedCount;
+        $meta['unused_count'] = max(0, count($items) - $usedCount);
+        return $meta;
+    }
+
+    private function markUsedMoreleParameters(array $payload, string $componentCategory = ''): array
+    {
+        $items = isset($payload['category_characteristics']) && is_array($payload['category_characteristics'])
+            ? $payload['category_characteristics']
+            : array();
+        $usage = $this->computerParameterUsage('parameters_morele', $componentCategory);
+
+        foreach ($items as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $identifier = $this->normalizeLookupText((string) ($item['characteristics_id'] ?? ''));
+            $items[$index]['usage_count'] = (int) ($usage[$identifier] ?? 0);
+            $items[$index]['is_used'] = $items[$index]['usage_count'] > 0;
+        }
+        usort($items, static function (array $left, array $right): int {
+            $used = ((int) ($right['usage_count'] ?? 0)) <=> ((int) ($left['usage_count'] ?? 0));
+            if ($used !== 0) {
+                return $used;
+            }
+            return strcasecmp(
+                (string) ($left['characteristics_name'] ?? ''),
+                (string) ($right['characteristics_name'] ?? '')
+            );
+        });
+        $payload['category_characteristics'] = $items;
+        return $payload;
+    }
+
+    private function moreleParameterUsageMeta(array $meta, array $payload): array
+    {
+        $items = isset($payload['category_characteristics']) && is_array($payload['category_characteristics'])
+            ? $payload['category_characteristics']
+            : array();
+        return $this->parameterUsageMeta($meta, $items);
+    }
+
+    private function loadMoreleParameterPayload(string $componentCategory = ''): array
     {
         $meta = array(
             'label' => 'Morele',
@@ -2475,10 +2809,12 @@ class ComputersController extends Controller
             if ($this->hasConfiguredMoreleApiCredentials()) {
                 $service = new MoreleService();
                 $items = $service->categoryCharacteristics($categoryId);
+                $items = $this->markUsedMoreleParameters($items, $componentCategory);
+                $meta['component_category'] = $componentCategory;
                 return array(
                     'items' => $items,
                     'error' => '',
-                    'meta' => $meta,
+                    'meta' => $this->moreleParameterUsageMeta($meta, $items),
                 );
             }
 
@@ -2493,11 +2829,13 @@ class ComputersController extends Controller
             if (!isset($items['category_characteristics']) || !is_array($items['category_characteristics'])) {
                 $items['category_characteristics'] = array();
             }
+            $items = $this->markUsedMoreleParameters($items, $componentCategory);
+            $meta['component_category'] = $componentCategory;
 
             return array(
                 'items' => $items,
                 'error' => '',
-                'meta' => $meta,
+                'meta' => $this->moreleParameterUsageMeta($meta, $items),
             );
         } catch (Throwable $exception) {
             if (strpos($exception->getMessage(), 'Brak konfiguracji Morele API') !== false) {

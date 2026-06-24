@@ -5,6 +5,7 @@
       <div class="small text-muted">
         {if !empty($parameters_meta.category_id)}Kategoria API: <code>{$parameters_meta.category_id|escape:'html'}</code>{/if}
         {if !empty($parameters_meta.source)}{if !empty($parameters_meta.category_id)} | {/if}Źródło: {$parameters_meta.source|escape:'html'}{/if}
+        {if !empty($parameters_meta.component_category)} | Komponenty: <strong>{$parameters_meta.component_category|escape:'html'}</strong>{/if}
       </div>
     </div>
     <div class="small text-muted">{count($parameters)} parametrów</div>
