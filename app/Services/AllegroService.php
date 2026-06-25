@@ -1116,7 +1116,7 @@ class AllegroService
             return array();
         }
 
-        $cacheKey = 'allegro_category_params_v5_' . md5($categoryId);
+        $cacheKey = 'allegro_category_params_v6_' . md5($categoryId);
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached)) {
             return $cached;
@@ -1146,7 +1146,21 @@ class AllegroService
                 $id = is_array($option) ? (string) ($option['id'] ?? $option['value'] ?? '') : (string) $option;
                 $label = is_array($option) ? (string) ($option['value'] ?? $option['name'] ?? $id) : (string) $option;
                 if ($id !== '') {
-                    $dictionary[] = array('id' => $id, 'value' => $label);
+                    $dependsOnValueIds = array();
+                    if (is_array($option) && isset($option['dependsOnValueIds']) && is_array($option['dependsOnValueIds'])) {
+                        foreach ($option['dependsOnValueIds'] as $dependsOnValueId) {
+                            $dependsOnValueId = trim((string) $dependsOnValueId);
+                            if ($dependsOnValueId !== '') {
+                                $dependsOnValueIds[] = $dependsOnValueId;
+                            }
+                        }
+                    }
+
+                    $dictionary[] = array(
+                        'id' => $id,
+                        'value' => $label,
+                        'depends_on_value_ids' => array_values(array_unique($dependsOnValueIds)),
+                    );
                 }
             }
 
@@ -1166,12 +1180,15 @@ class AllegroService
                 'unit' => (string) ($parameter['unit'] ?? ''),
                 'multiple' => $multipleChoices,
                 'options' => isset($parameter['options']) && is_array($parameter['options']) ? $parameter['options'] : array(),
+                'depends_on_parameter_id' => isset($parameter['options']['dependsOnParameterId'])
+                    ? trim((string) $parameter['options']['dependsOnParameterId'])
+                    : '',
                 'restrictions' => isset($parameter['restrictions']) && is_array($parameter['restrictions']) ? $parameter['restrictions'] : array(),
                 'dictionary' => $dictionary,
             );
         }
 
-        $this->storage->putCache($cacheKey, $result, $this->cacheTtl());
+        $this->storage->putCache($cacheKey, $result, min(3600, $this->cacheTtl()));
         return $result;
     }
 

@@ -1438,13 +1438,14 @@
         var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
         var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
         var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
+        var dependsOnParameterId = String(item.depends_on_parameter_id || (item.options && item.options.dependsOnParameterId) || '');
         var optionLookup = !!item.option_lookup;
         var fitsToMode = multiple && dict.length && isFitsToParameter(item);
         var value = values && typeof values === 'object' ? values[pid] : '';
         var selectedValues = normalizeSelectedArray(value);
 
         var paramSearch = (pName + ' ' + pid + ' ' + pType).toLowerCase();
-        html += '<div class="col-md-6 js-param-card" data-param-id="' + escapeHtml(pid) + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="' + escapeHtml(inputName) + '" data-param-search="' + escapeHtml(paramSearch) + '">';
+        html += '<div class="col-md-6 js-param-card" data-param-id="' + escapeHtml(pid) + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="' + escapeHtml(inputName) + '" data-param-search="' + escapeHtml(paramSearch) + '" data-depends-on-parameter-id="' + escapeHtml(dependsOnParameterId) + '">';
         var labelClass = required ? 'form-label text-danger fw-bold' : 'form-label';
         html += '<label class="' + labelClass + '">' + escapeHtml(pName) + (required ? ' (wymagany)' : '') + '</label>';
 
@@ -1470,7 +1471,8 @@
               var checked = isValueSelected(optId, selectedValues) ? ' checked' : '';
               var inputId = 'allegro_' + escapeHtml(pid) + '_' + d;
               var optionLabel = String(option.value || optId);
-              html += '<div class="form-check js-param-option" data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '">';
+              var dependsOnValueIds = Array.isArray(option.depends_on_value_ids) ? option.depends_on_value_ids : [];
+              html += '<div class="form-check js-param-option" data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '" data-depends-on-value-ids="' + escapeHtml(JSON.stringify(dependsOnValueIds)) + '">';
               html += '<input class="form-check-input" type="checkbox" id="' + inputId + '" name="' + inputName + '[' + escapeHtml(pid) + '][]" value="' + escapeHtml(optId) + '"' + checked + '>';
               html += '<label class="form-check-label" for="' + inputId + '">' + escapeHtml(optionLabel) + '</label>';
               html += '</div>';
@@ -1500,7 +1502,8 @@
                 var singleId = String(singleOption.id || '');
                 var selected = singleValue === singleId ? ' selected' : '';
                 var optionLabel = String(singleOption.value || singleId);
-                html += '<option data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '" value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(optionLabel) + '</option>';
+                var singleDependsOnValueIds = Array.isArray(singleOption.depends_on_value_ids) ? singleOption.depends_on_value_ids : [];
+                html += '<option data-option-label="' + escapeHtml(optionLabel.toLowerCase()) + '" data-depends-on-value-ids="' + escapeHtml(JSON.stringify(singleDependsOnValueIds)) + '" value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(optionLabel) + '</option>';
               }
               html += '</select>';
             }
@@ -1530,6 +1533,9 @@
         }
 
         html += '<div class="small text-secondary mt-1">ID: ' + escapeHtml(pid) + ' | typ: ' + escapeHtml(pType) + (multiple ? ' | multiple' : '') + '</div>';
+        if (dependsOnParameterId !== '') {
+          html += '<div class="small text-primary mt-1 js-param-dependency-status">Lista zależna od parametru ID: ' + escapeHtml(dependsOnParameterId) + '</div>';
+        }
         if (inputName === 'allegro_parameters') {
           html += '<div class="small text-secondary mt-1 js-param-import-current">CSV/import product.allegro_parameter.' + escapeHtml(pid) + ': <span class="text-muted">brak</span></div>';
         }
@@ -1538,6 +1544,7 @@
 
       containerNode.innerHTML = html;
       bindOptionFilters(containerNode);
+      bindDependentParameterFields(containerNode);
       bindRemoteSelectMappings(containerNode);
       bindFitsToPickers(containerNode);
       bindParameterImportValueRefresh(containerNode);
@@ -1547,6 +1554,13 @@
     }
 
     function readParameterCurrentValue(card) {
+      if (!card) {
+        return {
+          values: [],
+          labels: []
+        };
+      }
+
       var inputName = String(card.getAttribute('data-input-name') || '');
       var parameterId = String(card.getAttribute('data-param-id') || '');
       var result = {
@@ -1694,26 +1708,135 @@
           var checkboxOptions = card.querySelectorAll('.js-param-option');
           for (var c = 0; c < checkboxOptions.length; c++) {
             var option = checkboxOptions[c];
-            var label = String(option.getAttribute('data-option-label') || '');
-            option.style.display = (phrase === '' || label.indexOf(phrase) !== -1) ? '' : 'none';
+            option.setAttribute('data-text-filter-match', phrase === '' || String(option.getAttribute('data-option-label') || '').indexOf(phrase) !== -1 ? '1' : '0');
           }
-
-          refreshFitsToCard(card);
 
           var select = card.querySelector('.js-param-select');
           if (select) {
             for (var o = 0; o < select.options.length; o++) {
               var opt = select.options[o];
               if (o === 0) {
-                opt.hidden = false;
                 continue;
               }
               var optLabel = String(opt.getAttribute('data-option-label') || '').toLowerCase();
-              opt.hidden = !(phrase === '' || optLabel.indexOf(phrase) !== -1);
+              opt.setAttribute('data-text-filter-match', phrase === '' || optLabel.indexOf(phrase) !== -1 ? '1' : '0');
             }
           }
+
+          refreshDependentParameterCard(card, false);
         });
       }
+    }
+
+    function parseDependsOnValueIds(node) {
+      if (!node) {
+        return [];
+      }
+
+      try {
+        var parsed = JSON.parse(String(node.getAttribute('data-depends-on-value-ids') || '[]'));
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function valuesIntersect(first, second) {
+      for (var i = 0; i < first.length; i++) {
+        if (second.indexOf(String(first[i])) !== -1) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function refreshDependentParameterCard(card, clearInvalidValues) {
+      if (!card) {
+        return;
+      }
+
+      var scopeNode = card.parentNode;
+      var inputName = String(card.getAttribute('data-input-name') || '');
+      var dependsOnParameterId = String(card.getAttribute('data-depends-on-parameter-id') || '');
+      var selectedDependencyValues = [];
+
+      if (dependsOnParameterId !== '' && scopeNode) {
+        var controllerCard = scopeNode.querySelector('.js-param-card[data-input-name="' + cssEscape(inputName) + '"][data-param-id="' + cssEscape(dependsOnParameterId) + '"]');
+        selectedDependencyValues = readParameterCurrentValue(controllerCard).values;
+      }
+
+      var visibleCount = 0;
+      var checkboxOptions = card.querySelectorAll('.js-param-option');
+      for (var i = 0; i < checkboxOptions.length; i++) {
+        var optionRow = checkboxOptions[i];
+        var requiredValues = parseDependsOnValueIds(optionRow);
+        var dependencyMatch = dependsOnParameterId === '' || requiredValues.length === 0 || valuesIntersect(requiredValues, selectedDependencyValues);
+        var textMatch = optionRow.getAttribute('data-text-filter-match') !== '0';
+        var visible = dependencyMatch && textMatch;
+        optionRow.style.display = visible ? '' : 'none';
+
+        var checkbox = optionRow.querySelector('input[type="checkbox"]');
+        if (!dependencyMatch && clearInvalidValues && checkbox && checkbox.checked) {
+          checkbox.checked = false;
+        }
+        if (visible) {
+          visibleCount++;
+        }
+      }
+
+      var select = card.querySelector('.js-param-select');
+      if (select) {
+        for (var o = 0; o < select.options.length; o++) {
+          var selectOption = select.options[o];
+          if (o === 0) {
+            selectOption.hidden = false;
+            continue;
+          }
+
+          var selectRequiredValues = parseDependsOnValueIds(selectOption);
+          var selectDependencyMatch = dependsOnParameterId === '' || selectRequiredValues.length === 0 || valuesIntersect(selectRequiredValues, selectedDependencyValues);
+          var selectTextMatch = selectOption.getAttribute('data-text-filter-match') !== '0';
+          selectOption.hidden = !(selectDependencyMatch && selectTextMatch);
+          if (!selectDependencyMatch && clearInvalidValues && selectOption.selected) {
+            select.value = '';
+          }
+          if (selectDependencyMatch && selectTextMatch) {
+            visibleCount++;
+          }
+        }
+      }
+
+      var statusNode = card.querySelector('.js-param-dependency-status');
+      if (statusNode && dependsOnParameterId !== '') {
+        statusNode.textContent = selectedDependencyValues.length
+          ? 'Modele zgodne z wybraną marką: ' + visibleCount
+          : 'Najpierw wybierz markę w parametrze ID: ' + dependsOnParameterId;
+      }
+
+      refreshFitsToCard(card);
+      refreshParameterImportValue(card);
+    }
+
+    function refreshAllDependentParameterCards(scopeNode, clearInvalidValues) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var cards = scopeNode.querySelectorAll('.js-param-card');
+      for (var i = 0; i < cards.length; i++) {
+        refreshDependentParameterCard(cards[i], clearInvalidValues);
+      }
+    }
+
+    function bindDependentParameterFields(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      scopeNode.addEventListener('change', function () {
+        refreshAllDependentParameterCards(scopeNode, true);
+      });
+      refreshAllDependentParameterCards(scopeNode, true);
     }
 
     function bindRemoteSelectMappings(scopeNode) {
