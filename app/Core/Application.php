@@ -14,6 +14,7 @@ use App\Controllers\CsvTemplateController;
 use App\Controllers\EmpikController;
 use App\Controllers\ErliController;
 use App\Controllers\IndexController;
+use App\Controllers\MoreleController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
@@ -55,6 +56,9 @@ class Application
                 break;
             case 'erli':
                 $controller = new ErliController();
+                break;
+            case 'morele':
+                $controller = new MoreleController();
                 break;
             case 'auth':
                 $controller = new AuthController();

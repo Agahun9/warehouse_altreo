@@ -122,6 +122,13 @@
                     <option value="" disabled>Brak aktywnych kont Erli</option>
                   {/foreach}
                 </optgroup>
+                <optgroup label="Morele">
+                  {foreach from=$moreleMarketAccounts item=marketAccount}
+                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                  {foreachelse}
+                    <option value="" disabled>Brak aktywnych ofert Morele</option>
+                  {/foreach}
+                </optgroup>
               </select>
               <div class="form-text">Ctrl/Cmd pozwala wybrac kilka kont.</div>
             </div>
@@ -280,6 +287,7 @@
               </div>
             </div>
             <input type="hidden" name="bulk_action" id="bulk_action" value="" />
+            <div id="price_marketplace_selected_inputs"></div>
             <div id="bulk_action_fields" style="display:none; margin-bottom:20px;">
               <div id="profit_field" style="display:none; max-width: 300px;">
                 <label for="bulk_profit" class="form-label">Nowa marża (profit) w zł:</label>
@@ -394,7 +402,7 @@
                     <div class="card-body p-3">
                       <div class="d-flex flex-wrap align-items-center justify-content-between">
                         <div class="d-flex align-items-center mb-2 mb-md-0">
-                          <input type="checkbox" name="product_ids[]" value="{$prod.id}" class="product_checkbox me-2" />
+                          <input type="checkbox" name="product_ids[]" value="{$prod.id}" class="product_checkbox me-2" data-price-market-accounts="{foreach from=$prod.allegro_accounts item=allegroAccount}allegro:{$allegroAccount.account_id|escape:'html'}|Allegro {$allegroAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.empik_accounts item=empikAccount}empik:{$empikAccount.account_id|escape:'html'}|Empik {$empikAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.erli_accounts item=erliAccount}erli:{$erliAccount.account_id|escape:'html'}|Erli {$erliAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.morele_accounts item=moreleAccount}morele:{$moreleAccount.account_id|escape:'html'}|Morele {$moreleAccount.account_name|escape:'html'}||{/foreach}" />
                           <span class="text-muted small me-3">ID: {$prod.id}</span>
                         
               {if $prod.offerid != '' && $prod.offerid != 0}<a href="https://allegro.pl/oferta/{$prod.offerid}"><strong class="product-title" data-prod-id="{$prod.id}">{$prod.name|escape:'html'}</strong> -- {$prod.offerid}</a>
@@ -437,6 +445,18 @@
                               {/foreach}
                             </span>
                           {/if}
+                          {if $prod.morele_accounts|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.morele_accounts item=moreleAccount}
+                                <a href="{$moreleAccount.morele_url|escape:'html'}" target="_blank" rel="noreferrer" class="badge text-bg-primary text-decoration-none" title="SKU: {$moreleAccount.sku|escape:'html'} | Oferta: {$moreleAccount.external_id|escape:'html'}">
+                                  Morele {$moreleAccount.account_name|escape:'html'}
+                                  {if $moreleAccount.price_amount != ''}
+                                    {$moreleAccount.price_amount|number_format:2:',':'.'} zl
+                                  {/if}
+                                </a>
+                              {/foreach}
+                            </span>
+                          {/if}
                           <span class="product-title-counter ms-2 small text-muted" data-prod-id="{$prod.id}"></span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
@@ -468,16 +488,90 @@
                               <tbody>
                            <tr>
     <th class="bg-light">Cena (zł)</th>
-    <td {if $allegro_price != '' && $prod.price != $allegro_price}style="color:red;font-weight:bold;"{/if}>
-        <img src="https://cdn-icons-png.flaticon.com/256/3361/3361571.png" alt="Magazyn" style="height:18px; vertical-align:middle; margin-right:4px;"> 
-        {$prod.price|number_format:2:',':'.'}<br>
+    <td class="product-price-cell{if $allegro_price != '' && $prod.price != $allegro_price} product-price-cell--mismatch{/if}">
+        <div class="market-price-list">
+          <div class="market-price-row market-price-row--warehouse">
+            <span class="market-price-logo market-price-logo--warehouse">
+              <img src="https://cdn-icons-png.flaticon.com/256/3361/3361571.png" alt="Magazyn">
+            </span>
+            <span class="market-price-name">Magazyn</span>
+            <span class="market-price-value">{$prod.price|number_format:2:',':'.'} zl</span>
+          </div>
 
-        <img src="https://allegro.pl/favicon.ico" alt="Allegro" style="height:18px; vertical-align:middle; margin-right:4px;"> 
-        {if $allegro_price != ''}
-          {$allegro_price|number_format:2:',':'.'}
-        {else}
-          <span class="text-muted">brak aktywnej oferty</span>
-        {/if}
+          {if $prod.allegro_accounts|@count > 0}
+            {foreach from=$prod.allegro_accounts item=allegroAccount}
+              <a href="https://allegro.pl/oferta/{$allegroAccount.offer_id|escape:'url'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--allegro">
+                <span class="market-price-logo">
+                  <img src="https://allegro.pl/favicon.ico" alt="Allegro">
+                </span>
+                <span class="market-price-name">Allegro <strong>{$allegroAccount.account_name|escape:'html'}</strong></span>
+                <span class="market-price-value">
+                  {if $allegroAccount.price_amount != ''}
+                    {$allegroAccount.price_amount|number_format:2:',':'.'} zl
+                  {else}
+                    cena ?
+                  {/if}
+                </span>
+              </a>
+            {/foreach}
+          {else}
+            <div class="market-price-row market-price-row--muted">
+              <span class="market-price-logo">
+                <img src="https://allegro.pl/favicon.ico" alt="Allegro">
+              </span>
+              <span class="market-price-name">Allegro</span>
+              <span class="market-price-value">brak aktywnej oferty</span>
+            </div>
+          {/if}
+
+          {foreach from=$prod.empik_accounts item=empikAccount}
+            <a href="{$empikAccount.empik_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--empik">
+              <span class="market-price-logo">
+                <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAADyklEQVRYhbWXTWhcVRTHf+e+l5ikwXSmmCqCTJxKqSW6aHUl4lbEoI2ikkBtl9qFuOlKjCBqBS0odCsFo1jsQkQQqaREXYiI1GBTS6e2MR/TpOl0SGqaTOYdFzPvzXtv3sdMac/mHea+c/6/e95594R6pbf/Xgf8ArIAUQGgW4QEKH2pPYM+G3ZGjAFfAZ8WTgzWfay5B/eez/IEUReAO4KCMPthABYB74GDhfOTM5Jfteeu0GOIYw0hOvJ7xwEwDjwmg06AgyjAqKgrpjr10VUa777Hn7/liCGgV9slP2IdgUSRkA4jqKqKavi/iwYY9IAuoD9Nuhg5KxCEA/tGOC+e7fXIMJb5cHUxBeKixT+udzKKgzaoD0B4QgIVYfRl4cZeWkfm5ubEXkas7dti/ET3zD2/lFEUremx66JhPc0BAHYloUxhs7OztRp2baV+o5rprbESk3JFQz5qi0nbNeMN8U0CO4MhGkIp0G0Yepf1TSAgPBthAjEJwFoWDgBoh3xpvg4AH+RJUK0bhsbFdRpDcJ4xGkQbdjKyiqqTkwxhwG8TywNonVburpc75hxX1TD7Ea/9/d+3+GDgEK5XGZxcYlqteriYlsW27ZlsaxG49moVJidn0fcCaUcYJLfsas+EnUUu2BCZutWtvT2euNVx+HRR3bz4Xvv0NPT7QEUrywyevB1Ll6awRgrkCPqKLcbMyVxJa6VSixfK3mBjiovDg8FxAGmz51nfqGIcfOkHOWmeZ+ia0IEjBEvcX4gx9AzTwfEHcfh1MQka2trvvhQLYVqwkQPxBemqtLZ0cHBV0fJ5R4IAJw7f4GJ0z/XIf3x8RAmbiAJYvj5IfY992xAvFKp8PkXJygWi/VdDMdHQzQfRgkQjuPw1JNP8OYbh+ju7goA/HBqgm+/+752B1Ai46O0og+jJAh1vE/RtbPTf3P0k2PcWF2tfzzaMoSVzWTHgOC9zvX9FxoRRITLl2aY+XeWx/buobd3C3PzC7z19rv8OfVXvR/443y+/3bk07KymcxYk3AiBFwoXGRudp6BgRwfffwppyd/wjImWjgRAiSfe/AGIj1NN12/H2gg7uXT0N9/D4tLy77bsj8+5j9EsNn9Z4Cp2N6fUBOqDsXiFVSrjbFAfMw5EKyJKQN6HLh5KxBes4uLSYa4CXrcoIyDnoxPkgwR1SdahDgJjFul8vX1bF/mV4TtIDsBO7IY/X6oMJv8pphA3DrIVwiHC2d/u2oBlMrXV7J9mR8R5kD6gSxCRzJEhHAkhCe8BvIHwgfAkcL070sA/wN0iXcmBKdKwAAAAABJRU5ErkJggg==" alt="Empik">
+              </span>
+              <span class="market-price-name">Empik <strong>{$empikAccount.account_name|escape:'html'}</strong></span>
+              <span class="market-price-value">
+                {if $empikAccount.price_amount != ''}
+                  {$empikAccount.price_amount|number_format:2:',':'.'} zl
+                {else}
+                  cena ?
+                {/if}
+              </span>
+            </a>
+          {/foreach}
+
+          {foreach from=$prod.erli_accounts item=erliAccount}
+            <a href="{$erliAccount.erli_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--erli">
+              <span class="market-price-logo">
+                <img src="https://erli.pl/favicon.ico" alt="Erli">
+              </span>
+              <span class="market-price-name">Erli <strong>{$erliAccount.account_name|escape:'html'}</strong></span>
+              <span class="market-price-value">
+                {if $erliAccount.price_amount != ''}
+                  {$erliAccount.price_amount|number_format:2:',':'.'} zl
+                {else}
+                  cena ?
+                {/if}
+              </span>
+            </a>
+          {/foreach}
+
+          {foreach from=$prod.morele_accounts item=moreleAccount}
+            <a href="{$moreleAccount.morele_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--morele">
+              <span class="market-price-logo">
+                <img src="https://www.morele.net/favicon.ico" alt="Morele">
+              </span>
+              <span class="market-price-name">Morele <strong>{$moreleAccount.account_name|escape:'html'}</strong></span>
+              <span class="market-price-value">
+                {if $moreleAccount.price_amount != ''}
+                  {$moreleAccount.price_amount|number_format:2:',':'.'} zl
+                {else}
+                  cena ?
+                {/if}
+              </span>
+            </a>
+          {/foreach}
+        </div>
     </td>
 
     <th class="bg-light">Cena podzespołów</th>
@@ -593,6 +687,28 @@
   </div>
 </div>
 
+<div class="modal fade" id="priceMarketplaceModal" tabindex="-1" aria-labelledby="priceMarketplaceModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="priceMarketplaceModalLabel">Aktualizacja cen marketplace</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Wybierz konta, na ktorych zaktualizowac cene z magazynu.</p>
+        <div id="priceMarketplaceAccounts" class="d-flex flex-column gap-2"></div>
+        <div id="priceMarketplaceEmpty" class="alert alert-warning mb-0 d-none">
+          Zaznaczone produkty nie maja aktywnych ofert na kontach marketplace.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+        <button type="button" class="btn btn-primary" id="confirmPriceMarketplaceUpdate">Aktualizuj ceny</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
   .product-img-thumb:hover {
     cursor: pointer;
@@ -604,6 +720,89 @@
   }
   .table td, .table th {
     vertical-align: middle;
+  }
+  .product-price-cell {
+    min-width: 250px;
+  }
+  .product-price-cell--mismatch .market-price-row--warehouse .market-price-value,
+  .product-price-cell--mismatch .market-price-row--allegro .market-price-value {
+    color: #dc3545;
+    font-weight: 700;
+  }
+  .market-price-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .market-price-row {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 30px;
+    padding: 0.28rem 0.45rem;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 0.45rem;
+    background: #fff;
+    color: #1f2937;
+  }
+  .market-price-row--link {
+    text-decoration: none;
+    transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+  }
+  .market-price-row--link:hover {
+    border-color: rgba(13, 110, 253, 0.35);
+    background: #f8fbff;
+    color: #0b63d6;
+    transform: translateY(-1px);
+  }
+  .market-price-row--warehouse {
+    background: #f8fafc;
+  }
+  .market-price-row--allegro {
+    background: #fffaf0;
+  }
+  .market-price-row--empik {
+    background: #f3fbff;
+  }
+  .market-price-row--erli {
+    background: #f3fff7;
+  }
+  .market-price-row--muted {
+    background: #f8f9fa;
+    color: #6c757d;
+  }
+  .market-price-logo {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+  }
+  .market-price-logo img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+  .market-price-logo--warehouse img {
+    width: 15px;
+    height: 15px;
+  }
+  .market-price-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .market-price-value {
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+    text-align: right;
   }
   .card-header {
     font-size: 1.1rem;
@@ -960,8 +1159,176 @@
     }
   });
 
+  function selectedProductCheckboxes() {
+    return Array.from(document.querySelectorAll('input.product_checkbox:checked'));
+  }
+
+  function marketplaceAccountsForSelectedProducts() {
+    var accounts = new Map();
+    selectedProductCheckboxes().forEach(function (checkbox) {
+      var raw = checkbox.getAttribute('data-price-market-accounts') || '';
+      raw.split('||').forEach(function (entry) {
+        entry = entry.trim();
+        if (!entry) return;
+        var parts = entry.split('|');
+        var value = (parts[0] || '').trim();
+        var label = (parts[1] || value).trim();
+        if (value && !accounts.has(value)) {
+          accounts.set(value, label);
+        }
+      });
+    });
+    return accounts;
+  }
+
+  function renderPriceMarketplaceAccounts(accounts) {
+    var container = document.getElementById('priceMarketplaceAccounts');
+    var empty = document.getElementById('priceMarketplaceEmpty');
+    var confirmBtn = document.getElementById('confirmPriceMarketplaceUpdate');
+    if (!container || !empty || !confirmBtn) return false;
+
+    container.innerHTML = '';
+    accounts.forEach(function (label, value) {
+      var id = 'price_market_account_' + value.replace(/[^a-zA-Z0-9_-]+/g, '_');
+      var wrapper = document.createElement('div');
+      wrapper.className = 'form-check';
+      wrapper.innerHTML = '<input class="form-check-input js-price-market-account" type="checkbox" checked value="'
+        + escapeHtml(value) + '" id="' + escapeHtml(id) + '">'
+        + '<label class="form-check-label" for="' + escapeHtml(id) + '">' + escapeHtml(label) + '</label>';
+      container.appendChild(wrapper);
+    });
+
+    var hasAccounts = accounts.size > 0;
+    empty.classList.toggle('d-none', hasAccounts);
+    confirmBtn.disabled = !hasAccounts;
+    return hasAccounts;
+  }
+
+  function accountsMapFromList(list) {
+    var accounts = new Map();
+    (list || []).forEach(function (item) {
+      var value = String(item.value || '').trim();
+      var label = String(item.label || value).trim();
+      if (value && !accounts.has(value)) {
+        accounts.set(value, label);
+      }
+    });
+    return accounts;
+  }
+
+  function populatePriceMarketplaceModal() {
+    return renderPriceMarketplaceAccounts(marketplaceAccountsForSelectedProducts());
+  }
+
+  function currentSelectionFormData() {
+    var form = document.getElementById('productsBulkForm');
+    var data = new FormData();
+    if (!form) return data;
+
+    ['selection_scope', 'selection_filter_name'].forEach(function (name) {
+      var input = form.querySelector('[name="' + name + '"]');
+      if (input) data.append(name, input.value || '');
+    });
+    form.querySelectorAll('[name="selection_filter_components[]"], [name="selection_filter_market_accounts[]"], [name="excluded_product_ids[]"], input.product_checkbox:checked').forEach(function (input) {
+      data.append(input.name, input.value || '');
+    });
+    data.append('price_market_accounts', '1');
+    return data;
+  }
+
+  function writeSelectedPriceMarketplaceInputs() {
+    var target = document.getElementById('price_marketplace_selected_inputs');
+    if (!target) return 0;
+    target.innerHTML = '';
+    var selected = Array.from(document.querySelectorAll('.js-price-market-account:checked'));
+    selected.forEach(function (checkbox) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'bulk_price_market_accounts[]';
+      input.value = checkbox.value;
+      target.appendChild(input);
+    });
+    return selected.length;
+  }
+
+  function showPriceMarketplaceModal() {
+    var scope = document.getElementById('selection_scope');
+    var modalNode = document.getElementById('priceMarketplaceModal');
+    var showModal = function () {
+      if (modalNode && window.bootstrap && bootstrap.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalNode).show();
+      }
+    };
+
+    if (scope && scope.value === 'filtered') {
+      var container = document.getElementById('priceMarketplaceAccounts');
+      var empty = document.getElementById('priceMarketplaceEmpty');
+      var confirmBtn = document.getElementById('confirmPriceMarketplaceUpdate');
+      if (container) container.innerHTML = '<div class="text-secondary small">Sprawdzam konta dla wszystkich zaznaczonych produktow...</div>';
+      if (empty) empty.classList.add('d-none');
+      if (confirmBtn) confirmBtn.disabled = true;
+      showModal();
+
+      fetch('{$baseUrl}?controller=computers&action=products&price_market_accounts=1', {
+        method: 'POST',
+        body: currentSelectionFormData(),
+        credentials: 'same-origin'
+      })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          renderPriceMarketplaceAccounts(accountsMapFromList(payload.accounts || []));
+        })
+        .catch(function () {
+          if (container) container.innerHTML = '';
+          if (empty) {
+            empty.textContent = 'Nie udalo sie pobrac kont dla zaznaczonych produktow.';
+            empty.classList.remove('d-none');
+          }
+        });
+      return;
+    }
+
+    populatePriceMarketplaceModal();
+    showModal();
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, function (char) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+    });
+  }
+
+  var confirmPriceMarketplaceUpdate = document.getElementById('confirmPriceMarketplaceUpdate');
+  if (confirmPriceMarketplaceUpdate) {
+    confirmPriceMarketplaceUpdate.addEventListener('click', function () {
+      if (writeSelectedPriceMarketplaceInputs() <= 0) {
+        return;
+      }
+      var form = document.getElementById('productsBulkForm');
+      if (form) {
+        form.submit();
+      }
+    });
+  }
+
+  var productsBulkForm = document.getElementById('productsBulkForm');
+  if (productsBulkForm) {
+    productsBulkForm.addEventListener('submit', function (event) {
+      var actionInput = document.getElementById('bulk_action');
+      var selectedInputs = document.querySelectorAll('#price_marketplace_selected_inputs input[name="bulk_price_market_accounts[]"]');
+      if (actionInput && actionInput.value === 'update_price' && selectedInputs.length === 0) {
+        event.preventDefault();
+        showPriceMarketplaceModal();
+      }
+    });
+  }
+
   function setBulkAction(action) {
     document.getElementById('bulk_action').value = action;
+    var selectedPriceMarkets = document.getElementById('price_marketplace_selected_inputs');
+    if (selectedPriceMarkets) {
+      selectedPriceMarkets.innerHTML = '';
+    }
     document.getElementById('bulk_action_fields').style.display = 'block';
     document.getElementById('profit_field').style.display = 'none';
     document.getElementById('replace_name_fields').style.display = 'none';
@@ -989,6 +1356,7 @@
     }
     else if (action === 'update_price') {
       document.getElementById('update_price_field').style.display = 'block';
+      showPriceMarketplaceModal();
     }
     else if (action === 'add_component') {
       document.getElementById('add_component_field').style.display = 'block';

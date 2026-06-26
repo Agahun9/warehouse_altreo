@@ -7,7 +7,9 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Models\AllegroStorageRepository;
 use App\Models\ComputerCsvTemplateRepository;
+use App\Models\EmpikStorageRepository;
 use App\Models\ErliStorageRepository;
+use App\Models\MoreleStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\MoreleService;
@@ -64,6 +66,11 @@ class ComputersController extends Controller
     {
         $currentUser = $this->requireModule('products');
 
+        if (trim((string) $this->input('price_market_accounts', '')) === '1') {
+            $this->priceMarketAccountsForSelection();
+            return;
+        }
+
         if ($this->isPost()) {
             $this->handleProductsPost();
         }
@@ -103,9 +110,11 @@ class ComputersController extends Controller
         $allegroMarketAccounts = $this->activeComputerAllegroAccounts();
         $empikMarketAccounts = $this->activeComputerEmpikAccounts();
         $erliMarketAccounts = $this->activeComputerErliAccounts();
+        $moreleMarketAccounts = $this->activeComputerMoreleAccounts();
         $allegroMarketAccounts = $this->markSelectedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
         $empikMarketAccounts = $this->markSelectedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
         $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
+        $moreleMarketAccounts = $this->markSelectedMarketAccounts($moreleMarketAccounts, 'morele', $filterMarketAccounts);
 
         $allowedPerPage = array(10, 20, 50, 100, 1000, 10000);
         $perPage = (int) $this->input('per_page', 10);
@@ -135,7 +144,7 @@ class ComputersController extends Controller
             . ' ORDER BY products.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset,
             $filterParams
         );
-        $products = $this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products)));
+        $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products))));
         $pagedProducts = array();
         foreach ($products as $product) {
             $product = $this->normalizeProductImageFields($product);
@@ -147,6 +156,9 @@ class ComputersController extends Controller
             }
             if (!isset($product['empik_accounts']) || !is_array($product['empik_accounts'])) {
                 $product['empik_accounts'] = array();
+            }
+            if (!isset($product['morele_accounts']) || !is_array($product['morele_accounts'])) {
+                $product['morele_accounts'] = array();
             }
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
             $product['component_ids'] = $componentIds;
@@ -190,6 +202,7 @@ class ComputersController extends Controller
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
+            'moreleMarketAccounts' => $moreleMarketAccounts,
             'current_page' => $currentPage,
             'per_page' => $perPage,
             'total_pages' => $totalPages,
@@ -384,6 +397,73 @@ class ComputersController extends Controller
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(array('products' => $rows), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
+    }
+
+    private function priceMarketAccountsForSelection(): void
+    {
+        $productIds = $this->selectedComputerProductIdsFromRequest();
+        $accounts = array();
+
+        foreach (array_chunk($productIds, 500) as $chunk) {
+            if ($chunk === array()) {
+                continue;
+            }
+
+            $params = array();
+            $placeholders = array();
+            foreach ($chunk as $index => $productId) {
+                $key = 'product_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = (int) $productId;
+            }
+
+            $products = $this->db()->fetchAll(
+                'SELECT * FROM ' . self::PRODUCTS_TABLE . ' WHERE id IN (' . implode(',', $placeholders) . ')',
+                $params
+            );
+            $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products))));
+
+            foreach ($products as $product) {
+                if (!is_array($product)) {
+                    continue;
+                }
+
+                $this->collectPriceMarketAccounts($accounts, (array) ($product['allegro_accounts'] ?? array()), 'allegro', 'Allegro');
+                $this->collectPriceMarketAccounts($accounts, (array) ($product['empik_accounts'] ?? array()), 'empik', 'Empik');
+                $this->collectPriceMarketAccounts($accounts, (array) ($product['erli_accounts'] ?? array()), 'erli', 'Erli');
+                $this->collectPriceMarketAccounts($accounts, (array) ($product['morele_accounts'] ?? array()), 'morele', 'Morele');
+            }
+        }
+
+        uasort($accounts, static function (array $left, array $right): int {
+            return strcmp((string) $left['label'], (string) $right['label']);
+        });
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array('accounts' => array_values($accounts)), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    private function collectPriceMarketAccounts(array &$accounts, array $offers, string $market, string $labelPrefix): void
+    {
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            if ($accountId <= 0) {
+                continue;
+            }
+
+            $value = $market . ':' . $accountId;
+            if (!isset($accounts[$value])) {
+                $accounts[$value] = array(
+                    'value' => $value,
+                    'label' => $labelPrefix . ' ' . (string) ($offer['account_name'] ?? ''),
+                );
+            }
+        }
     }
 
     public function previewcsvdescription(): void
@@ -743,32 +823,40 @@ class ComputersController extends Controller
             $this->importEanCsv();
             return;
         } elseif ($bulkAction === 'update_price') {
-            $allegroQueuedCount = 0;
+            $selectedMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('bulk_price_market_accounts', array()));
+            if ($selectedMarketAccounts === array()) {
+                $errors[] = 'Wybierz przynajmniej jedno konto marketplace do aktualizacji ceny.';
+            }
+
+            $marketQueuedCounts = array(
+                'allegro' => 0,
+                'empik' => 0,
+                'erli' => 0,
+                'morele' => 0,
+            );
             foreach ($productIds as $productId) {
+                if ($selectedMarketAccounts === array()) {
+                    break;
+                }
                 $product = $this->productById($productId);
                 if ($product === null) {
                     continue;
                 }
-                $allegroQueuedCount += $this->queueAllegroPriceUpdatesForProduct($product);
-                $this->db()->insert(self::TASK_QUEUE_TABLE, array(
-                    'offerId' => (string) ($product['offerid'] ?? ''),
-                    'action' => 'PRICE',
-                    'new_varriable' => (string) ($product['price'] ?? ''),
-                    'date_add' => date('Y-m-d H:i:s'),
-                ));
-                $this->db()->insert(self::TASK_QUEUE_TABLE, array(
-                    'offerId' => (string) $productId,
-                    'action' => 'PRICE_ERLI',
-                    'new_varriable' => (string) ($product['price'] ?? ''),
-                    'date_add' => date('Y-m-d H:i:s'),
-                ));
-                $successCount++;
+                $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts);
+                $queuedTotal = array_sum($queuedCounts);
+                if ($queuedTotal > 0) {
+                    $successCount++;
+                    foreach ($marketQueuedCounts as $market => $count) {
+                        $marketQueuedCounts[$market] += (int) ($queuedCounts[$market] ?? 0);
+                    }
+                }
             }
-            if ($allegroQueuedCount > 0) {
-                $successMessage = 'Dodano do kolejki aktualizacji cen: ' . $successCount . ' produktow, Allegro: ' . $allegroQueuedCount . ' ofert.';
-            } else {
+            $totalQueued = array_sum($marketQueuedCounts);
+            if ($totalQueued > 0) {
+                $successMessage = 'Dodano do kolejki aktualizacji cen: ' . $successCount . ' produktow, Allegro: ' . $marketQueuedCounts['allegro'] . ', Empik: ' . $marketQueuedCounts['empik'] . ', Erli: ' . $marketQueuedCounts['erli'] . ', Morele: ' . $marketQueuedCounts['morele'] . ' ofert.';
+            } elseif ($selectedMarketAccounts !== array()) {
                 $successCount = 0;
-                $errors[] = 'Nie znaleziono aktywnych ofert Allegro dla zaznaczonych produktow.';
+                $errors[] = 'Nie znaleziono aktywnych ofert na wybranych kontach dla zaznaczonych produktow.';
             }
         } elseif (in_array($bulkAction, array('remove_component', 'replace_component', 'add_component'), true)) {
             $successCount = $this->handleProductComponentBulkChange($bulkAction, $productIds, $componentsById, $errors);
@@ -968,13 +1056,17 @@ class ComputersController extends Controller
         if ($id > 0) {
             $this->db()->update(self::COMPONENTS_TABLE, $payload, 'id = :id', array('id' => $id));
             $componentId = $id;
-            $this->setFlash('success', 'Rekord zostal zaktualizowany.');
+            $message = 'Rekord zostal zaktualizowany.';
         } else {
             $componentId = (int) $this->db()->insert(self::COMPONENTS_TABLE, $payload);
-            $this->setFlash('success', 'Nowy rekord zostal dodany.');
+            $message = 'Nowy rekord zostal dodany.';
         }
 
-        $this->refreshPricesForProductsUsingComponent($componentId);
+        $updatedProducts = $this->refreshPricesForProductsUsingComponent($componentId);
+        if ($updatedProducts > 0) {
+            $message .= ' Przeliczono ceny magazynu dla produktow: ' . $updatedProducts . '.';
+        }
+        $this->setFlash('success', $message);
         $this->redirect('./index.php?controller=computers&action=components');
     }
 
@@ -1065,19 +1157,30 @@ class ComputersController extends Controller
         return is_array($product) ? $this->normalizeProductImageFields($product) : null;
     }
 
-    private function queueAllegroPriceUpdatesForProduct(array $product): int
+    private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts): array
     {
-        $attachedProducts = $this->attachActiveAllegroOffers(array($product));
+        $attachedProducts = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers(array($product)))));
         $attachedProduct = isset($attachedProducts[0]) && is_array($attachedProducts[0]) ? $attachedProducts[0] : $product;
-        $offers = isset($attachedProduct['allegro_accounts']) && is_array($attachedProduct['allegro_accounts'])
-            ? $attachedProduct['allegro_accounts']
+
+        return array(
+            'allegro' => $this->queueAllegroPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
+            'empik' => $this->queueEmpikPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
+            'erli' => $this->queueErliPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
+            'morele' => $this->queueMorelePriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
+        );
+    }
+
+    private function queueAllegroPriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int
+    {
+        $offers = isset($product['allegro_accounts']) && is_array($product['allegro_accounts'])
+            ? $product['allegro_accounts']
             : array();
 
         if ($offers === array()) {
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($attachedProduct['price'] ?? null);
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
         if ($price === null) {
             return 0;
         }
@@ -1094,6 +1197,9 @@ class ComputersController extends Controller
             if ($offerRowId <= 0 || $accountId <= 0 || $offerId === '') {
                 continue;
             }
+            if ($selectedMarketAccounts !== array() && !in_array('allegro:' . $accountId, $selectedMarketAccounts, true)) {
+                continue;
+            }
 
             $targets[] = array(
                 'id' => $offerRowId,
@@ -1107,6 +1213,138 @@ class ComputersController extends Controller
         }
 
         $storage = new AllegroStorageRepository($this->db());
+        $storage->ensureSchema();
+        return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price), null, true);
+    }
+
+    private function queueEmpikPriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int
+    {
+        $offers = isset($product['empik_accounts']) && is_array($product['empik_accounts'])
+            ? $product['empik_accounts']
+            : array();
+
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        if ($price === null) {
+            return 0;
+        }
+
+        $targets = array();
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $offerRowId = (int) ($offer['offer_row_id'] ?? 0);
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            if ($offerRowId <= 0 || $accountId <= 0) {
+                continue;
+            }
+            if ($selectedMarketAccounts !== array() && !in_array('empik:' . $accountId, $selectedMarketAccounts, true)) {
+                continue;
+            }
+
+            $targets[] = array(
+                'id' => $offerRowId,
+                'account_id' => $accountId,
+            );
+        }
+
+        if ($targets === array()) {
+            return 0;
+        }
+
+        $storage = new EmpikStorageRepository($this->db());
+        $storage->ensureSchema();
+        return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price));
+    }
+
+    private function queueErliPriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int
+    {
+        $offers = isset($product['erli_accounts']) && is_array($product['erli_accounts'])
+            ? $product['erli_accounts']
+            : array();
+
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        if ($price === null) {
+            return 0;
+        }
+
+        $targets = array();
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $productRowId = (int) ($offer['product_row_id'] ?? 0);
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            if ($productRowId <= 0 || $accountId <= 0) {
+                continue;
+            }
+            if ($selectedMarketAccounts !== array() && !in_array('erli:' . $accountId, $selectedMarketAccounts, true)) {
+                continue;
+            }
+
+            $targets[] = array(
+                'id' => $productRowId,
+                'account_id' => $accountId,
+            );
+        }
+
+        if ($targets === array()) {
+            return 0;
+        }
+
+        $storage = new ErliStorageRepository($this->db());
+        $storage->ensureSchema();
+        return $storage->enqueueProductChanges($targets, 'set_price', array('value' => $price), null, true);
+    }
+
+    private function queueMorelePriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int
+    {
+        $offers = isset($product['morele_accounts']) && is_array($product['morele_accounts'])
+            ? $product['morele_accounts']
+            : array();
+
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        if ($price === null) {
+            return 0;
+        }
+
+        $targets = array();
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $offerRowId = (int) ($offer['offer_row_id'] ?? 0);
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            if ($offerRowId <= 0 || $accountId <= 0) {
+                continue;
+            }
+            if ($selectedMarketAccounts !== array() && !in_array('morele:' . $accountId, $selectedMarketAccounts, true)) {
+                continue;
+            }
+
+            $targets[] = array('id' => $offerRowId, 'account_id' => $accountId);
+        }
+
+        if ($targets === array()) {
+            return 0;
+        }
+
+        $storage = new MoreleStorageRepository($this->db());
         $storage->ensureSchema();
         return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price), null, true);
     }
@@ -1141,7 +1379,7 @@ class ComputersController extends Controller
         $selected = array();
         foreach ($values as $value) {
             $value = trim((string) $value);
-            if ($value === '1' || $value === '0' || preg_match('/^(allegro|empik|erli):\d+$/', $value) === 1) {
+            if ($value === '1' || $value === '0' || preg_match('/^(allegro|empik|erli|morele):\d+$/', $value) === 1) {
                 $selected[] = $value;
             }
         }
@@ -1174,11 +1412,17 @@ class ComputersController extends Controller
             $hasAllegroTables = $this->tableExists('allegro_offers') && $this->tableExists('allegro_accounts');
             $hasEmpikTables = $this->tableExists('empik_offers') && $this->tableExists('empik_accounts');
             $hasErliTables = $this->tableExists('erli_products') && $this->tableExists('erli_accounts');
+            $hasMoreleTables = $this->tableExists('morele_offers');
             $skuMatch = '(market_items.sku = products.sku'
                 . ' OR market_items.sku = CAST(products.offerid AS CHAR)'
                 . ' OR market_items.sku = CAST(products.id AS CHAR)'
                 . " OR market_items.sku = CONCAT('ALTREO_', products.id)"
                 . " OR market_items.sku = CONCAT('ALTREO_', products.offerid))";
+            $moreleSkuMatch = '(market_items.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci'
+                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.offerid AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.id AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.id) COLLATE utf8mb4_unicode_ci"
+                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.offerid) COLLATE utf8mb4_unicode_ci)";
             $empikSkuMatch = "(market_items.shop_sku = CONCAT('ALTREO_', products.id)"
                 . " OR market_items.product_sku = CONCAT('ALTREO_', products.id))";
             $allegroExists = $hasAllegroTables
@@ -1204,15 +1448,20 @@ class ComputersController extends Controller
                     . " ELSE 'inactive' END) = 'active'"
                     . ' AND ' . $skuMatch . ')'
                 : '0 = 1';
+            $moreleExists = $hasMoreleTables
+                ? 'EXISTS (SELECT 1 FROM morele_offers market_items'
+                    . ' WHERE market_items.active = 1'
+                    . ' AND ' . $moreleSkuMatch . ')'
+                : '0 = 1';
 
             $marketConditions = array();
             foreach ($marketFilters as $index => $marketFilter) {
                 if ($marketFilter === '1') {
-                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $empikExists . ' OR ' . $erliExists . ')';
+                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $empikExists . ' OR ' . $erliExists . ' OR ' . $moreleExists . ')';
                     continue;
                 }
                 if ($marketFilter === '0') {
-                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $empikExists . ') AND NOT (' . $erliExists . '))';
+                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $empikExists . ') AND NOT (' . $erliExists . ') AND NOT (' . $moreleExists . '))';
                     continue;
                 }
 
@@ -1227,6 +1476,9 @@ class ComputersController extends Controller
                         . ' AND market_items.account_id = :' . $key . ')';
                 } elseif ($market === 'erli' && $hasErliTables) {
                     $marketConditions[] = substr($erliExists, 0, -1)
+                        . ' AND market_items.account_id = :' . $key . ')';
+                } elseif ($market === 'morele' && $hasMoreleTables) {
+                    $marketConditions[] = substr($moreleExists, 0, -1)
                         . ' AND market_items.account_id = :' . $key . ')';
                 } else {
                     $marketConditions[] = '0 = 1';
@@ -1280,6 +1532,16 @@ class ComputersController extends Controller
             }
         }
 
+        foreach ((array) ($product['morele_accounts'] ?? array()) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+            $hasActiveOffer = true;
+            if (in_array('morele:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
+                return true;
+            }
+        }
+
         if ($hasAnyOffer && $hasActiveOffer) {
             return true;
         }
@@ -1323,6 +1585,22 @@ class ComputersController extends Controller
         }
 
         return $this->db()->fetchAll('SELECT id, name, slug FROM empik_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
+    }
+
+    private function activeComputerMoreleAccounts(): array
+    {
+        $storage = new MoreleStorageRepository($this->db());
+        $storage->ensureSchema();
+        if (!$this->tableExists('morele_offers')) {
+            return array();
+        }
+
+        $accountName = $this->settings ? trim((string) $this->settings->get('morele_account', '')) : '';
+        return array(array(
+            'id' => 1,
+            'name' => $accountName !== '' ? $accountName : 'ALTREO',
+            'slug' => 'morele',
+        ));
     }
 
     private function attachActiveAllegroOffers(array $products): array
@@ -1516,6 +1794,91 @@ class ComputersController extends Controller
                         'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
                     );
                     $attachedProducts[$productKey] = true;
+                }
+            }
+        }
+
+        return $products;
+    }
+
+    private function attachActiveMoreleOffers(array $products): array
+    {
+        foreach ($products as $index => $product) {
+            if (is_array($product)) {
+                $products[$index]['morele_accounts'] = array();
+            }
+        }
+
+        $storage = new MoreleStorageRepository($this->db());
+        $storage->ensureSchema();
+        if ($products === array() || !$this->tableExists('morele_offers')) {
+            return $products;
+        }
+
+        $skuMap = array();
+        foreach ($products as $index => $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            foreach ($this->allegroSkuCandidatesForComputerProduct($product) as $sku) {
+                if (!isset($skuMap[$sku])) {
+                    $skuMap[$sku] = array();
+                }
+                $skuMap[$sku][] = $index;
+            }
+        }
+
+        if ($skuMap === array()) {
+            return $products;
+        }
+
+        $attachedOffers = array();
+        foreach (array_chunk(array_keys($skuMap), 500) as $skuChunk) {
+            $params = array();
+            $placeholders = array();
+            foreach ($skuChunk as $index => $sku) {
+                $key = 'morele_sku_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $sku;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT id AS offer_row_id, account_id, account_name, external_id, sku,'
+                . ' COALESCE(price_override, price) AS effective_price,'
+                . ' COALESCE(stock_override, quantity) AS effective_quantity,'
+                . ' last_synced_at'
+                . ' FROM morele_offers'
+                . ' WHERE active = 1 AND sku IN (' . implode(',', $placeholders) . ')'
+                . ' ORDER BY account_name ASC, updated_at DESC, id DESC',
+                $params
+            );
+
+            foreach ($rows as $row) {
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku === '' || empty($skuMap[$sku])) {
+                    continue;
+                }
+
+                foreach ($skuMap[$sku] as $productIndex) {
+                    $offerKey = $productIndex . ':morele:' . (string) ($row['external_id'] ?? '');
+                    if (isset($attachedOffers[$offerKey])) {
+                        continue;
+                    }
+
+                    $products[$productIndex]['morele_accounts'][] = array(
+                        'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+                        'account_id' => (int) ($row['account_id'] ?? 1),
+                        'account_name' => (string) ($row['account_name'] ?? 'ALTREO'),
+                        'account_slug' => 'morele',
+                        'external_id' => trim((string) ($row['external_id'] ?? '')),
+                        'price_amount' => $row['effective_price'] !== null ? (float) $row['effective_price'] : null,
+                        'quantity' => $row['effective_quantity'] !== null ? (int) $row['effective_quantity'] : null,
+                        'sku' => $sku,
+                        'morele_url' => './index.php?controller=morele&action=offer&id=' . (int) ($row['offer_row_id'] ?? 0),
+                        'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
+                    );
+                    $attachedOffers[$offerKey] = true;
                 }
             }
         }
@@ -3130,7 +3493,7 @@ class ComputersController extends Controller
         return implode(',', array_slice(array_merge($oldImages, $newImages), 0, 16));
     }
 
-    private function refreshPricesForProductsUsingComponent(int $componentId): void
+    private function refreshPricesForProductsUsingComponent(int $componentId): int
     {
         $componentsById = $this->componentsById();
         $products = $this->db()->fetchAll(
@@ -3138,6 +3501,7 @@ class ComputersController extends Controller
             . ' WHERE CONCAT(",", REPLACE(id_components, " ", ""), ",") LIKE :component_token',
             array('component_token' => '%,' . (string) $componentId . ',%')
         );
+        $updated = 0;
         foreach ($products as $product) {
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
             if (!in_array($componentId, $componentIds, true)) {
@@ -3147,7 +3511,10 @@ class ComputersController extends Controller
             $this->db()->update(self::PRODUCTS_TABLE, array(
                 'price' => $priceSum + (float) ($product['profit'] ?? 0),
             ), 'id = :id', array('id' => (int) $product['id']));
+            $updated++;
         }
+
+        return $updated;
     }
 
     private function deleteComponentFiles(int $componentId): void

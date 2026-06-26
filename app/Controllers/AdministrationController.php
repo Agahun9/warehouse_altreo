@@ -11,6 +11,7 @@ use App\Services\AllegroService;
 use App\Services\AltreoSqlImportService;
 use App\Services\EmpikService;
 use App\Services\ErliService;
+use App\Services\MoreleService;
 use App\Services\TemuService;
 use RuntimeException;
 use Throwable;
@@ -32,6 +33,9 @@ class AdministrationController extends Controller
     /** @var ErliService */
     private $erli;
 
+    /** @var MoreleService */
+    private $morele;
+
     /** @var TemuService */
     private $temu;
 
@@ -42,6 +46,7 @@ class AdministrationController extends Controller
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
         $this->erli = new ErliService();
+        $this->morele = new MoreleService();
         $this->temu = new TemuService();
         $this->settings = new SettingRepository($this->db());
         $this->settings->ensureSchema();
@@ -170,6 +175,8 @@ class AdministrationController extends Controller
             'empikQueueStats' => $this->empik->queueCounts(),
             'erliAutomation' => $this->erli->automationLinks($baseUrl),
             'erliQueueStats' => $this->erli->queueCounts(),
+            'moreleAutomation' => $this->morele->automationLinks($baseUrl),
+            'moreleQueueStats' => $this->morele->queueCounts(),
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
             'erliAccounts' => $erliAccounts,

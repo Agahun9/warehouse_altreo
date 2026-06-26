@@ -179,8 +179,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Wszystkie konta</div>
-              <div class="administration-summary-value">{$accounts|@count + $empikAccounts|@count + $erliAccounts|@count}</div>
-              <div class="administration-summary-meta">Allegro {$accounts|@count} | Empik {$empikAccounts|@count} | Erli {$erliAccounts|@count}</div>
+              <div class="administration-summary-value">{$accounts|@count + $empikAccounts|@count + $erliAccounts|@count + 1}</div>
+              <div class="administration-summary-meta">Allegro {$accounts|@count} | Empik {$empikAccounts|@count} | Erli {$erliAccounts|@count} | Morele 1</div>
             </div>
           </div>
         </div>
@@ -188,8 +188,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Kolejki marketplace</div>
-              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $empikQueueStats.pending + $empikQueueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry}</div>
-              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Empik {$empikQueueStats.pending + $empikQueueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | bledy {$queueStats.error + $empikQueueStats.error + $erliQueueStats.error}</div>
+              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $empikQueueStats.pending + $empikQueueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry + $moreleQueueStats.pending + $moreleQueueStats.retry}</div>
+              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Empik {$empikQueueStats.pending + $empikQueueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | Morele {$moreleQueueStats.pending + $moreleQueueStats.retry} | bledy {$queueStats.error + $empikQueueStats.error + $erliQueueStats.error + $moreleQueueStats.error}</div>
             </div>
           </div>
         </div>
@@ -1043,6 +1043,10 @@
                       <div class="mb-3 administration-inline-code">
                         <label class="form-label">Erli maintenance - co 10 minut</label>
                         <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Morele pobieranie aukcji - co 10 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$moreleAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="administration-inline-code">
                         <label class="form-label">Opcjonalnie: konczenie ofert Allegro - co 30 minut</label>

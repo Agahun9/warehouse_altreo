@@ -337,6 +337,14 @@
                   </a>
                 </li>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('morele', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=morele&action=index" class="nav-link{if $currentController eq 'morele'} active{/if}">
+                    <i class="nav-icon bi bi-basket"></i>
+                    <p>Morele</p>
+                  </a>
+                </li>
+              {/if}
               {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link{if $currentController eq 'sellasist'} active{/if}">
