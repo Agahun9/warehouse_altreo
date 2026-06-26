@@ -328,7 +328,10 @@
                     można cofnąć!</p>
                 </div>
                 <div id="copy_field" style="display:none; max-width: 400px;">
-                  <p class="mb-2 text-success">Zaznaczone komponenty zostaną skopiowane. W nazwie dodana będzie "-kopia".</p>
+                  <label for="copy_count" class="form-label">Ile razy skopiować:</label>
+                  <input type="number" id="copy_count" name="copy_count" value="1" min="1" max="50" step="1"
+                    class="form-control" />
+                  <p class="mt-2 mb-0 text-success">Zaznaczone komponenty zostaną skopiowane. W nazwie dodana będzie "-kopia".</p>
                 </div>
               </div>
               <div class="table-responsive">
@@ -665,6 +668,15 @@
             if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
               e.preventDefault();
               alert('Wybierz pliki do przypisania w polu akcji masowej.');
+              return;
+            }
+          }
+          if (action === 'copy') {
+            const copyInput = document.getElementById('copy_count');
+            const copyCount = copyInput ? parseInt(copyInput.value, 10) : 1;
+            if (!copyCount || copyCount < 1 || copyCount > 50) {
+              e.preventDefault();
+              alert('Podaj liczbę kopii od 1 do 50.');
               return;
             }
           }

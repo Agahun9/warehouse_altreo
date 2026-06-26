@@ -966,6 +966,36 @@ class ComputersController extends Controller
             $this->redirect('./index.php?controller=computers&action=components');
         }
 
+        if ($bulkAction === 'copy') {
+            $copyCount = max(1, min(50, (int) $this->input('copy_count', 1)));
+            foreach ($componentIds as $componentId) {
+                $row = $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $componentId));
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                for ($copyIndex = 1; $copyIndex <= $copyCount; $copyIndex++) {
+                    $copy = $row;
+                    unset($copy['id'], $copy['created_at'], $copy['updated_at']);
+                    $suffix = $copyIndex === 1 ? ' -kopia' : ' -kopia ' . $copyIndex;
+                    $copy['name'] = trim((string) ($copy['name'] ?? '')) . $suffix;
+                    $nameTitle = trim((string) ($copy['name_title'] ?? ''));
+                    if ($nameTitle !== '') {
+                        $copy['name_title'] = $nameTitle . $suffix;
+                    }
+                    $copy['img'] = $this->copyComponentImageList((string) ($copy['img'] ?? ''), 'comp_copy_');
+                    $copy['img_morele'] = $this->copyComponentImageList((string) ($copy['img_morele'] ?? ''), 'comp_morele_copy_');
+                    $copy['img_empik'] = $this->copyComponentImageList((string) ($copy['img_empik'] ?? ''), 'comp_empik_copy_');
+
+                    $this->db()->insert(self::COMPONENTS_TABLE, $copy);
+                    $updated++;
+                }
+            }
+
+            $this->setFlash('success', 'Skopiowano ' . $updated . ' komponentow.');
+            $this->redirect('./index.php?controller=computers&action=components');
+        }
+
         $fieldMap = array(
             'assign_image' => array('file' => 'bulk_img', 'column' => 'img', 'prefix' => 'comp_bulk_'),
             'assign_image_morele' => array('file' => 'bulk_img_morele', 'column' => 'img_morele', 'prefix' => 'comp_morele_bulk_'),
@@ -2171,6 +2201,28 @@ class ComputersController extends Controller
         }
 
         return array_values(array_unique($files));
+    }
+
+    private function copyComponentImageList(string $csv, string $prefix): string
+    {
+        $dir = $this->componentUploadDir();
+        $copies = array();
+
+        foreach ($this->existingComponentImages($csv) as $file) {
+            $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (!in_array($extension, array('jpg', 'jpeg', 'png', 'gif', 'webp'), true)) {
+                continue;
+            }
+
+            $source = $dir . DIRECTORY_SEPARATOR . $file;
+            $targetName = uniqid($prefix, true) . '.' . $extension;
+            $target = $dir . DIRECTORY_SEPARATOR . $targetName;
+            if (is_file($source) && copy($source, $target)) {
+                $copies[] = $targetName;
+            }
+        }
+
+        return implode(',', array_slice($copies, 0, 16));
     }
 
     private function cartesianProduct(array $input): array
