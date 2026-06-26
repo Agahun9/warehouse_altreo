@@ -112,15 +112,27 @@ class EmpikController extends Controller
 
     public function sync(): void
     {
-        $this->requireModuleWrite('empik');
+        if (!$this->wantsJson()) {
+            $this->requireModuleWrite('empik');
+        }
+        $this->releaseSessionLock();
 
         try {
             $result = $this->empik->syncAccount(trim((string) $this->input('account', '')));
+            if ($this->wantsJson()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
             $this->setFlash(
                 'success',
                 'Synchronizacja Empik zakonczona dla konta "' . (string) $result['account']['name'] . '". Pobrano ' . (int) $result['synced_offers'] . ' ofert.'
             );
         } catch (Throwable $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -182,7 +194,9 @@ class EmpikController extends Controller
 
     public function processqueue(): void
     {
-        $this->requireModuleWrite('empik');
+        if (!$this->wantsQueueCron()) {
+            $this->requireModuleWrite('empik');
+        }
         $this->releaseSessionLock();
 
         try {
@@ -191,8 +205,87 @@ class EmpikController extends Controller
                 'limit' => (int) $this->input('limit', 20),
             ));
 
+            if ($this->wantsQueueCron()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
             $this->setFlash('success', 'Kolejka Empik przetworzona. OK: ' . (int) ($result['done'] ?? 0));
         } catch (Throwable $exception) {
+            if ($this->wantsQueueCron()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=empik&action=index');
+    }
+
+    public function maintenance(): void
+    {
+        if (!$this->wantsJson()) {
+            $this->requireModuleWrite('empik');
+        }
+        $this->releaseSessionLock();
+
+        try {
+            $accountSelector = trim((string) $this->input('account', ''));
+            $result = array(
+                'queue' => null,
+                'sync' => array(),
+                'enqueue' => null,
+            );
+
+            if ($this->input('sync', '0') === '1') {
+                if ($accountSelector !== '') {
+                    $result['sync'][] = $this->empik->syncAccount($accountSelector);
+                } else {
+                    $maxAccounts = max(1, min(50, (int) $this->input('max_accounts', 50)));
+                    $processedAccounts = 0;
+                    foreach ($this->empik->listAccounts() as $account) {
+                        if ((int) ($account['is_active'] ?? 0) !== 1) {
+                            continue;
+                        }
+                        if ($processedAccounts >= $maxAccounts) {
+                            break;
+                        }
+
+                        $result['sync'][] = $this->empik->syncAccount((string) ($account['slug'] ?? ''));
+                        $processedAccounts++;
+                    }
+                }
+            }
+
+            $enqueueOperations = $this->input('enqueue', '');
+            if (trim((string) $enqueueOperations) !== '') {
+                $operations = array_values(array_filter(array_map('trim', explode(',', (string) $enqueueOperations))));
+                $result['enqueue'] = $this->empik->enqueueWarehouseUpdates(
+                    $accountSelector,
+                    $operations,
+                    (int) $this->input('enqueue_limit', 500)
+                );
+            }
+
+            $queueLimit = (int) $this->input('queue_limit', 50);
+            if ($queueLimit > 0) {
+                $result['queue'] = $this->empik->processQueue(array(
+                    'account' => $accountSelector,
+                    'limit' => $queueLimit,
+                ));
+            }
+
+            if ($this->wantsJson()) {
+                $this->jsonResponse($result);
+                return;
+            }
+
+            $this->setFlash('success', 'Maintenance Empik zakonczone. Sync kont: ' . count($result['sync']) . '.');
+        } catch (Throwable $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                return;
+            }
             $this->setFlash('error', $exception->getMessage());
         }
 
@@ -334,6 +427,16 @@ class EmpikController extends Controller
         }
 
         return $items;
+    }
+
+    private function wantsJson(): bool
+    {
+        return strtolower(trim((string) $this->input('format', ''))) === 'json';
+    }
+
+    private function wantsQueueCron(): bool
+    {
+        return $this->wantsJson() || strtolower(trim((string) $this->input('action', ''))) === 'processqueue';
     }
 
     private function jsonResponse(array $payload, int $status = 200): void

@@ -166,6 +166,8 @@ class AdministrationController extends Controller
             'flashError' => $flashError,
             'automation' => $this->allegro->automationLinks($baseUrl),
             'queueStats' => $this->allegro->queueCounts(),
+            'empikAutomation' => $this->empik->automationLinks($baseUrl),
+            'empikQueueStats' => $this->empik->queueCounts(),
             'erliAutomation' => $this->erli->automationLinks($baseUrl),
             'erliQueueStats' => $this->erli->queueCounts(),
             'accounts' => $accounts,

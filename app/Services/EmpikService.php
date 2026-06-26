@@ -218,6 +218,84 @@ class EmpikService
         return $this->storage->clearQueueStatuses($keepPending);
     }
 
+    public function automationLinks(string $baseUrl): array
+    {
+        $base = rtrim($baseUrl, '?&');
+        $links = array(
+            'queue_worker' => $base . '?controller=empik&action=processqueue&format=json&limit=50',
+            'sync_worker' => $base . '?controller=empik&action=maintenance&format=json&sync=1&queue_limit=50',
+            'maintenance' => $base . '?controller=empik&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50',
+            'accounts' => array(),
+        );
+
+        foreach ($this->listAccounts() as $account) {
+            $accountSlug = rawurlencode((string) ($account['slug'] ?? ''));
+            $links['accounts'][] = array(
+                'id' => (int) ($account['id'] ?? 0),
+                'name' => (string) ($account['name'] ?? ''),
+                'slug' => (string) ($account['slug'] ?? ''),
+                'is_active' => (int) ($account['is_active'] ?? 0) === 1,
+                'sync' => $base . '?controller=empik&action=sync&format=json&account=' . $accountSlug,
+                'queue_only' => $base . '?controller=empik&action=processqueue&format=json&account=' . $accountSlug . '&limit=50',
+                'maintenance' => $base . '?controller=empik&action=maintenance&format=json&account=' . $accountSlug . '&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50',
+            );
+        }
+
+        return $links;
+    }
+
+    public function enqueueWarehouseUpdates(string $accountSelector, array $operations, int $limit = 500): array
+    {
+        $allowed = array('set_price_from_product', 'set_stock_from_product');
+        $operations = array_values(array_unique(array_filter(array_map(static function ($operation): string {
+            return trim((string) $operation);
+        }, $operations))));
+
+        $operations = array_values(array_filter($operations, static function (string $operation) use ($allowed): bool {
+            return in_array($operation, $allowed, true);
+        }));
+
+        if ($operations === array()) {
+            throw new RuntimeException('Wybierz poprawna operacje aktualizacji Empik z magazynu.');
+        }
+
+        $filters = array(
+            'active' => '1',
+            'linked' => '1',
+        );
+
+        $accountSelector = trim($accountSelector);
+        if ($accountSelector !== '') {
+            $account = $this->resolveAccount($accountSelector);
+            if (!$account) {
+                throw new RuntimeException('Nie znaleziono konta Empik do aktualizacji z magazynu.');
+            }
+            $filters['account_id'] = (string) ((int) $account['id']);
+        }
+
+        $targets = $this->storage->offerTargetsForFilters($filters, max(1, min(5000, $limit)));
+        if ($targets === array()) {
+            return array(
+                'operations' => $operations,
+                'offers' => 0,
+                'queued' => 0,
+                'counts' => $this->storage->queueCounts(),
+            );
+        }
+
+        $queued = 0;
+        foreach ($operations as $operation) {
+            $queued += $this->storage->enqueueOfferChanges($targets, $operation, array());
+        }
+
+        return array(
+            'operations' => $operations,
+            'offers' => count($targets),
+            'queued' => $queued,
+            'counts' => $this->storage->queueCounts(),
+        );
+    }
+
     public function syncAccount(string $accountSelector = ''): array
     {
         $account = $this->resolveAccount($accountSelector);

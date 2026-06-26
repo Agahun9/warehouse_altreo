@@ -101,8 +101,10 @@ class ComputersController extends Controller
             $filterMarketAccounts[] = (string) ((int) $filterOfferStatus);
         }
         $allegroMarketAccounts = $this->activeComputerAllegroAccounts();
+        $empikMarketAccounts = $this->activeComputerEmpikAccounts();
         $erliMarketAccounts = $this->activeComputerErliAccounts();
         $allegroMarketAccounts = $this->markSelectedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
+        $empikMarketAccounts = $this->markSelectedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
         $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
 
         $allowedPerPage = array(10, 20, 50, 100, 1000, 10000);
@@ -133,7 +135,7 @@ class ComputersController extends Controller
             . ' ORDER BY products.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset,
             $filterParams
         );
-        $products = $this->attachActiveErliProducts($this->attachActiveAllegroOffers($products));
+        $products = $this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products)));
         $pagedProducts = array();
         foreach ($products as $product) {
             $product = $this->normalizeProductImageFields($product);
@@ -142,6 +144,9 @@ class ComputersController extends Controller
             }
             if (!isset($product['erli_accounts']) || !is_array($product['erli_accounts'])) {
                 $product['erli_accounts'] = array();
+            }
+            if (!isset($product['empik_accounts']) || !is_array($product['empik_accounts'])) {
+                $product['empik_accounts'] = array();
             }
             $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
             $product['component_ids'] = $componentIds;
@@ -183,6 +188,7 @@ class ComputersController extends Controller
             'filterName' => $filterName,
             'filterMarketAccounts' => $filterMarketAccounts,
             'allegroMarketAccounts' => $allegroMarketAccounts,
+            'empikMarketAccounts' => $empikMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
             'current_page' => $currentPage,
             'per_page' => $perPage,
@@ -1135,7 +1141,7 @@ class ComputersController extends Controller
         $selected = array();
         foreach ($values as $value) {
             $value = trim((string) $value);
-            if ($value === '1' || $value === '0' || preg_match('/^(allegro|erli):\d+$/', $value) === 1) {
+            if ($value === '1' || $value === '0' || preg_match('/^(allegro|empik|erli):\d+$/', $value) === 1) {
                 $selected[] = $value;
             }
         }
@@ -1166,17 +1172,26 @@ class ComputersController extends Controller
         $marketFilters = $this->selectedMarketAccountFilters((array) ($filters['market_accounts'] ?? array()));
         if ($marketFilters !== array()) {
             $hasAllegroTables = $this->tableExists('allegro_offers') && $this->tableExists('allegro_accounts');
+            $hasEmpikTables = $this->tableExists('empik_offers') && $this->tableExists('empik_accounts');
             $hasErliTables = $this->tableExists('erli_products') && $this->tableExists('erli_accounts');
             $skuMatch = '(market_items.sku = products.sku'
                 . ' OR market_items.sku = CAST(products.offerid AS CHAR)'
                 . ' OR market_items.sku = CAST(products.id AS CHAR)'
                 . " OR market_items.sku = CONCAT('ALTREO_', products.id)"
                 . " OR market_items.sku = CONCAT('ALTREO_', products.offerid))";
+            $empikSkuMatch = "(market_items.shop_sku = CONCAT('ALTREO_', products.id)"
+                . " OR market_items.product_sku = CONCAT('ALTREO_', products.id))";
             $allegroExists = $hasAllegroTables
                 ? 'EXISTS (SELECT 1 FROM allegro_offers market_items'
                     . ' INNER JOIN allegro_accounts market_accounts ON market_accounts.id = market_items.account_id'
                     . " WHERE market_items.publication_status = 'ACTIVE' AND market_accounts.is_active = 1"
                     . ' AND ' . $skuMatch . ')'
+                : '0 = 1';
+            $empikExists = $hasEmpikTables
+                ? 'EXISTS (SELECT 1 FROM empik_offers market_items'
+                    . ' INNER JOIN empik_accounts market_accounts ON market_accounts.id = market_items.account_id'
+                    . ' WHERE market_items.active = 1 AND market_accounts.is_active = 1'
+                    . ' AND ' . $empikSkuMatch . ')'
                 : '0 = 1';
             $erliExists = $hasErliTables
                 ? 'EXISTS (SELECT 1 FROM erli_products market_items'
@@ -1193,11 +1208,11 @@ class ComputersController extends Controller
             $marketConditions = array();
             foreach ($marketFilters as $index => $marketFilter) {
                 if ($marketFilter === '1') {
-                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $erliExists . ')';
+                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $empikExists . ' OR ' . $erliExists . ')';
                     continue;
                 }
                 if ($marketFilter === '0') {
-                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $erliExists . '))';
+                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $empikExists . ') AND NOT (' . $erliExists . '))';
                     continue;
                 }
 
@@ -1206,6 +1221,9 @@ class ComputersController extends Controller
                 $params[$key] = (int) $accountId;
                 if ($market === 'allegro' && $hasAllegroTables) {
                     $marketConditions[] = substr($allegroExists, 0, -1)
+                        . ' AND market_items.account_id = :' . $key . ')';
+                } elseif ($market === 'empik' && $hasEmpikTables) {
+                    $marketConditions[] = substr($empikExists, 0, -1)
                         . ' AND market_items.account_id = :' . $key . ')';
                 } elseif ($market === 'erli' && $hasErliTables) {
                     $marketConditions[] = substr($erliExists, 0, -1)
@@ -1252,6 +1270,16 @@ class ComputersController extends Controller
             }
         }
 
+        foreach ((array) ($product['empik_accounts'] ?? array()) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+            $hasActiveOffer = true;
+            if (in_array('empik:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
+                return true;
+            }
+        }
+
         if ($hasAnyOffer && $hasActiveOffer) {
             return true;
         }
@@ -1286,6 +1314,15 @@ class ComputersController extends Controller
         }
 
         return $this->db()->fetchAll('SELECT id, name, slug FROM erli_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
+    }
+
+    private function activeComputerEmpikAccounts(): array
+    {
+        if (!$this->tableExists('empik_accounts')) {
+            return array();
+        }
+
+        return $this->db()->fetchAll('SELECT id, name, slug FROM empik_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
     }
 
     private function attachActiveAllegroOffers(array $products): array
@@ -1486,6 +1523,103 @@ class ComputersController extends Controller
         return $products;
     }
 
+    private function attachActiveEmpikOffers(array $products): array
+    {
+        foreach ($products as $index => $product) {
+            if (is_array($product)) {
+                $products[$index]['empik_accounts'] = array();
+            }
+        }
+
+        if ($products === array() || !$this->tableExists('empik_offers') || !$this->tableExists('empik_accounts')) {
+            return $products;
+        }
+
+        $skuMap = array();
+        foreach ($products as $index => $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            foreach ($this->empikSkuCandidatesForComputerProduct($product) as $sku) {
+                if (!isset($skuMap[$sku])) {
+                    $skuMap[$sku] = array();
+                }
+                $skuMap[$sku][] = $index;
+            }
+        }
+
+        if ($skuMap === array()) {
+            return $products;
+        }
+
+        $attachedOffers = array();
+        foreach (array_chunk(array_keys($skuMap), 500) as $skuChunk) {
+            $params = array();
+            $shopSkuPlaceholders = array();
+            $productSkuPlaceholders = array();
+            foreach ($skuChunk as $index => $sku) {
+                $shopKey = 'empik_shop_sku_' . $index;
+                $productKey = 'empik_product_sku_' . $index;
+                $shopSkuPlaceholders[] = ':' . $shopKey;
+                $productSkuPlaceholders[] = ':' . $productKey;
+                $params[$shopKey] = $sku;
+                $params[$productKey] = $sku;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT offers.id AS offer_row_id, offers.account_id, offers.offer_id, offers.shop_sku, offers.product_sku, offers.product_title,'
+                . ' offers.price, offers.total_price, offers.currency_iso_code, offers.quantity, offers.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
+                . ' FROM empik_offers offers'
+                . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id'
+                . ' WHERE offers.active = 1'
+                . ' AND accounts.is_active = 1'
+                . ' AND (offers.shop_sku IN (' . implode(',', $shopSkuPlaceholders) . ') OR offers.product_sku IN (' . implode(',', $productSkuPlaceholders) . '))'
+                . ' ORDER BY accounts.name ASC, offers.updated_at DESC, offers.id DESC',
+                $params
+            );
+
+            foreach ($rows as $row) {
+                $matchedSkus = array_unique(array_filter(array(
+                    trim((string) ($row['shop_sku'] ?? '')),
+                    trim((string) ($row['product_sku'] ?? '')),
+                )));
+
+                foreach ($matchedSkus as $sku) {
+                    if ($sku === '' || empty($skuMap[$sku])) {
+                        continue;
+                    }
+
+                    foreach ($skuMap[$sku] as $productIndex) {
+                        $offerKey = $productIndex . ':' . (string) ($row['account_slug'] ?? '') . ':' . (string) ($row['offer_id'] ?? '');
+                        if (isset($attachedOffers[$offerKey])) {
+                            continue;
+                        }
+
+                        $products[$productIndex]['empik_accounts'][] = array(
+                            'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+                            'account_id' => (int) ($row['account_id'] ?? 0),
+                            'account_name' => (string) ($row['account_name'] ?? ''),
+                            'account_slug' => (string) ($row['account_slug'] ?? ''),
+                            'offer_id' => trim((string) ($row['offer_id'] ?? '')),
+                            'price_amount' => $row['price'] !== null ? (float) $row['price'] : ($row['total_price'] !== null ? (float) $row['total_price'] : null),
+                            'currency' => (string) ($row['currency_iso_code'] ?? ''),
+                            'quantity' => $row['quantity'] !== null ? (int) $row['quantity'] : null,
+                            'sku' => $sku,
+                            'shop_sku' => trim((string) ($row['shop_sku'] ?? '')),
+                            'product_sku' => trim((string) ($row['product_sku'] ?? '')),
+                            'empik_url' => './index.php?controller=empik&action=offer&id=' . (int) ($row['offer_row_id'] ?? 0),
+                            'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
+                        );
+                        $attachedOffers[$offerKey] = true;
+                    }
+                }
+            }
+        }
+
+        return $products;
+    }
+
     private function normalizeErliDisplayPrice($value): ?float
     {
         if ($value === null || trim((string) $value) === '') {
@@ -1549,6 +1683,24 @@ class ComputersController extends Controller
         }
         if (!empty($product['offerid'])) {
             $raw[] = 'ALTREO_' . (string) $product['offerid'];
+        }
+
+        $values = array();
+        foreach ($raw as $value) {
+            $sku = trim((string) $value);
+            if ($sku !== '') {
+                $values[] = $sku;
+            }
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    private function empikSkuCandidatesForComputerProduct(array $product): array
+    {
+        $raw = array();
+        if (!empty($product['id'])) {
+            $raw[] = 'ALTREO_' . (string) $product['id'];
         }
 
         $values = array();

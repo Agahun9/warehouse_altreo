@@ -108,6 +108,13 @@
                     <option value="" disabled>Brak aktywnych kont Allegro</option>
                   {/foreach}
                 </optgroup>
+                <optgroup label="Empik">
+                  {foreach from=$empikMarketAccounts item=marketAccount}
+                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                  {foreachelse}
+                    <option value="" disabled>Brak aktywnych kont Empik</option>
+                  {/foreach}
+                </optgroup>
                 <optgroup label="Erli">
                   {foreach from=$erliMarketAccounts item=marketAccount}
                     <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
@@ -413,6 +420,18 @@
                                   Erli {$erliAccount.account_name|escape:'html'}
                                   {if $erliAccount.price_amount != ''}
                                     {$erliAccount.price_amount|number_format:2:',':'.'} zl
+                                  {/if}
+                                </a>
+                              {/foreach}
+                            </span>
+                          {/if}
+                          {if $prod.empik_accounts|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.empik_accounts item=empikAccount}
+                                <a href="{$empikAccount.empik_url|escape:'html'}" target="_blank" rel="noreferrer" class="badge text-bg-info text-decoration-none" title="SKU: {$empikAccount.sku|escape:'html'} | Oferta: {$empikAccount.offer_id|escape:'html'}">
+                                  Empik {$empikAccount.account_name|escape:'html'}
+                                  {if $empikAccount.price_amount != ''}
+                                    {$empikAccount.price_amount|number_format:2:',':'.'} zl
                                   {/if}
                                 </a>
                               {/foreach}

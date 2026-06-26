@@ -188,8 +188,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Kolejki marketplace</div>
-              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry}</div>
-              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | bledy {$queueStats.error + $erliQueueStats.error}</div>
+              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $empikQueueStats.pending + $empikQueueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry}</div>
+              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Empik {$empikQueueStats.pending + $empikQueueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | bledy {$queueStats.error + $empikQueueStats.error + $erliQueueStats.error}</div>
             </div>
           </div>
         </div>
@@ -1004,169 +1004,53 @@
                   <div class="card administration-panel h-100">
                     <div class="card-body">
                       <div class="fw-semibold mb-2">Jak to ustawic</div>
-                      <div class="small text-secondary mb-2">Najlepiej dac osobne crony dla Allegro i Erli:</div>
-                      <div class="small text-secondary">1. Workery kolejek co 1 minute.</div>
-                      <div class="small text-secondary">2. Sync/maintenance co 5-15 minut.</div>
-                      <div class="small text-secondary mt-2">Jesli nie chcesz crona od razu, nizej zostawilem auto-worker w przegladarce. Odpala sie cyklicznie, gdy ten ekran jest otwarty.</div>
+                      <div class="small text-secondary mb-2">Ustaw osobno szybkie workery kolejek i wolniejsze maintenance. Workery przepychaja juz dodane zadania, a maintenance robi sync i dorzuca nowe aktualizacje.</div>
+                      <div class="small text-secondary">Kolejki Allegro, Empik, Erli: co 1 minute.</div>
+                      <div class="small text-secondary">Allegro: co 5 minut.</div>
+                      <div class="small text-secondary">Empik: co 10 minut.</div>
+                      <div class="small text-secondary">Erli: co 10 minut.</div>
+                      <div class="small text-secondary mt-2">Automatyczne konczenie ofert Allegro ustaw osobno tylko wtedy, gdy ma dzialac prog konczenia ofert po stanie magazynowym.</div>
                     </div>
                   </div>
                 </div>
                 <div class="col-xl-8">
                   <div class="card administration-panel h-100">
                     <div class="card-header">
-                      <h3 class="card-title mb-0">Globalne linki cron</h3>
+                      <h3 class="card-title mb-0">Gotowe komendy cron</h3>
                     </div>
                     <div class="card-body">
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Worker kolejki co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="{$automation.queue_worker|escape}" id="globalQueueWorkerUrl">
+                        <label class="form-label">Allegro kolejka - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$automation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Pelne maintenance co 5-15 minut</label>
-                        <input type="text" class="form-control" readonly value="{$automation.full_maintenance|escape}" id="globalMaintenanceUrl">
+                        <label class="form-label">Empik kolejka - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Cron konczenia ofert Allegro</label>
-                        <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}">
-                        <div class="form-text">Dodaje do kolejki tylko oferty kwalifikujace sie do zakonczenia i nie dubluje aktywnych zadan <code>end_offer</code>.</div>
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Cron konczenia + wysylka maila</label>
-                        <input type="text" class="form-control" readonly value="{$automation.auto_end_offers|escape}&amp;mail_to=twoj%40adres.pl">
-                      </div>
-                      <div class="administration-inline-code">
-                        <label class="form-label">Same refresh tokenow</label>
-                        <input type="text" class="form-control" readonly value="{$automation.refresh_tokens|escape}">
+                        <label class="form-label">Erli kolejka - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <hr>
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Erli worker kolejki co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="{$erliAutomation.queue_worker|escape}">
+                        <label class="form-label">Allegro maintenance - co 5 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$automation.full_maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1" id="globalMaintenanceUrl">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Empik maintenance - co 10 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Erli maintenance - co 10 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="administration-inline-code">
-                        <label class="form-label">Erli sync + aktualizacja z magazynu co 5-15 minut</label>
-                        <input type="text" class="form-control" readonly value="{$erliAutomation.maintenance|escape}">
-                        <div class="form-text">Kazde odpalenie pobiera maly batch, zapisuje offset, dodaje powiazane aktywne produkty do kolejki ceny/stanu i od razu przetwarza czesc kolejki.</div>
+                        <label class="form-label">Opcjonalnie: konczenie ofert Allegro - co 30 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$automation.auto_end_offers|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                        <div class="form-text">Ustaw tylko jesli ma automatycznie dodawac do kolejki oferty Allegro do zakonczenia.</div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div class="row g-4 mb-4">
-                <div class="col-xl-4">
-                  <div class="card administration-panel h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                      <h3 class="card-title mb-0">Auto-worker w panelu</h3>
-                      <span class="badge text-bg-info">Opcjonalny</span>
-                    </div>
-                    <div class="card-body">
-                      <div class="row g-3 align-items-end">
-                        <div class="col-12">
-                          <label class="form-label">Tryb</label>
-                          <select id="browserWorkerMode" class="form-select">
-                            <option value="queue">Tylko kolejka</option>
-                            <option value="maintenance">Maintenance + sync</option>
-                          </select>
-                        </div>
-                        <div class="col-12">
-                          <label class="form-label">Interwal sekund</label>
-                          <input type="number" min="30" step="30" id="browserWorkerInterval" class="form-control" value="60">
-                        </div>
-                        <div class="col-12 d-flex gap-2">
-                          <button type="button" class="btn btn-primary" id="browserWorkerStart">Start</button>
-                          <button type="button" class="btn btn-outline-secondary" id="browserWorkerStop">Stop</button>
-                        </div>
-                        <div class="col-12">
-                          <div class="small text-secondary" id="browserWorkerStatus">Auto-worker zatrzymany.</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="col-xl-8">
-                  <div class="card administration-panel h-100">
-                    <div class="card-header">
-                      <h3 class="card-title mb-0">Linki per konto Allegro</h3>
-                    </div>
-                    <div class="table-responsive">
-                      <table class="table table-sm table-striped align-middle mb-0">
-                        <thead class="table-light">
-                          <tr>
-                            <th>Konto</th>
-                            <th>Status</th>
-                            <th>Sync</th>
-                            <th>Kolejka</th>
-                            <th>Maintenance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {foreach $automation.accounts as $item}
-                            <tr>
-                              <td>
-                                <div class="fw-semibold">{$item.name|escape}</div>
-                                <div class="small text-secondary">{$item.slug|escape}</div>
-                              </td>
-                              <td>
-                                {if $item.is_active}
-                                  <span class="badge text-bg-success">Aktywne</span>
-                                {else}
-                                  <span class="badge text-bg-secondary">Nieaktywne</span>
-                                {/if}
-                              </td>
-                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.sync|escape}"></td>
-                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.queue_only|escape}"></td>
-                              <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.maintenance|escape}"></td>
-                            </tr>
-                          {foreachelse}
-                            <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Allegro do automatyzacji.</td></tr>
-                          {/foreach}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="card administration-panel">
-                <div class="card-header">
-                  <h3 class="card-title mb-0">Linki per konto Erli</h3>
-                </div>
-                <div class="table-responsive">
-                  <table class="table table-sm table-striped align-middle mb-0">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Konto</th>
-                        <th>Status</th>
-                        <th>Sync z offsetem</th>
-                        <th>Kolejka</th>
-                        <th>Maintenance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {foreach $erliAutomation.accounts as $item}
-                        <tr>
-                          <td>
-                            <div class="fw-semibold">{$item.name|escape}</div>
-                            <div class="small text-secondary">{$item.slug|escape}</div>
-                          </td>
-                          <td>
-                            {if $item.is_active}
-                              <span class="badge text-bg-success">Aktywne</span>
-                            {else}
-                              <span class="badge text-bg-secondary">Nieaktywne</span>
-                            {/if}
-                          </td>
-                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.sync|escape}"></td>
-                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.queue_only|escape}"></td>
-                          <td class="administration-inline-code"><input type="text" class="form-control form-control-sm" readonly value="{$item.maintenance|escape}"></td>
-                        </tr>
-                      {foreachelse}
-                        <tr><td colspan="5" class="text-center text-secondary py-4">Brak kont Erli do automatyzacji.</td></tr>
-                      {/foreach}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             </div>
@@ -1311,70 +1195,6 @@
 </main>
 <script>
   (function () {
-    var queueUrlInput = document.getElementById('globalQueueWorkerUrl');
-    var maintenanceUrlInput = document.getElementById('globalMaintenanceUrl');
-    var startBtn = document.getElementById('browserWorkerStart');
-    var stopBtn = document.getElementById('browserWorkerStop');
-    var modeInput = document.getElementById('browserWorkerMode');
-    var intervalInput = document.getElementById('browserWorkerInterval');
-    var statusNode = document.getElementById('browserWorkerStatus');
-    var timer = null;
-
-    function setStatus(text) {
-      if (statusNode) {
-        statusNode.textContent = text;
-      }
-    }
-
-    function currentUrl() {
-      if (modeInput && modeInput.value === 'maintenance' && maintenanceUrlInput) {
-        return maintenanceUrlInput.value || '';
-      }
-      return queueUrlInput ? (queueUrlInput.value || '') : '';
-    }
-
-    function runOnce() {
-      var url = currentUrl();
-      if (!url) {
-        setStatus('Brak URL do uruchomienia auto-workera.');
-        return;
-      }
-
-      setStatus('Auto-worker uruchamia: ' + url);
-      fetch(url, { credentials: 'same-origin' })
-        .then(function (response) { return response.text().then(function (body) { return { ok: response.ok, body: body }; }); })
-        .then(function (result) {
-          var stamp = new Date().toLocaleTimeString();
-          setStatus('Ostatnie odpalenie ' + stamp + ': ' + (result.ok ? 'OK' : 'blad') + ' | ' + result.body.substring(0, 220));
-        })
-        .catch(function (error) {
-          setStatus('Blad auto-workera: ' + error);
-        });
-    }
-
-    function startWorker() {
-      stopWorker();
-      var every = Math.max(30, parseInt(intervalInput && intervalInput.value ? intervalInput.value : '60', 10) || 60) * 1000;
-      runOnce();
-      timer = window.setInterval(runOnce, every);
-      setStatus('Auto-worker wlaczony. Interwal: ' + (every / 1000) + ' s.');
-    }
-
-    function stopWorker() {
-      if (timer) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-      setStatus('Auto-worker zatrzymany.');
-    }
-
-    if (startBtn) {
-      startBtn.addEventListener('click', startWorker);
-    }
-    if (stopBtn) {
-      stopBtn.addEventListener('click', stopWorker);
-    }
-
     var apiTokenInput = document.getElementById('api-bearer-token');
     var generateApiTokenBtn = document.getElementById('generateApiToken');
     var copyApiTokenBtn = document.getElementById('copyApiToken');
