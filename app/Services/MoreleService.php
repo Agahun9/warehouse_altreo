@@ -82,8 +82,8 @@ class MoreleService
             throw new RuntimeException('Wybierz poprawna operacje dla Morele.');
         }
 
-        if ($operation !== 'clear_queue') {
-            throw new RuntimeException('Zmiany ofert Morele sa teraz wylaczone. Ten modul na razie tylko pobiera aukcje do bazy.');
+        if (!in_array($operation, array('set_price', 'set_price_from_product', 'clear_queue'), true)) {
+            throw new RuntimeException('Dla Morele wlaczone sa teraz tylko akcje zmiany ceny.');
         }
 
         if ($operation === 'clear_queue') {
@@ -114,7 +114,7 @@ class MoreleService
 
     public function enqueueWarehouseUpdates(array $operations = array(), int $limit = 500): array
     {
-        $operations = $operations !== array() ? $operations : array('set_price_from_product', 'set_stock_from_product');
+        $operations = $operations !== array() ? $operations : array('set_price_from_product');
         $targets = $this->storage->offerTargetsForFilters(array('status' => 'active'), max(1, min(5000, $limit)));
         $result = array('offers' => count($targets), 'operations' => array(), 'queued' => 0);
 
@@ -421,16 +421,20 @@ class MoreleService
                 $this->storage->updateOfferOverrides((int) $offer['id'], array('price_override' => round((float) ($warehouse['price_gross'] ?? 0), 2)));
                 break;
             case 'set_stock_from_product':
+                throw new RuntimeException('Zmiana stanu Morele jest jeszcze wylaczona.');
                 $warehouse = $this->fetchWarehouseRowForOffer($offer);
                 $this->storage->updateOfferOverrides((int) $offer['id'], array('stock_override' => max(0, (int) ($warehouse['quantity'] ?? 0))));
                 break;
             case 'end_offer':
+                throw new RuntimeException('Zakanczanie ofert Morele jest jeszcze wylaczone.');
                 $this->storage->updateOfferOverrides((int) $offer['id'], array('status_override' => 'inactive'));
                 break;
             case 'activate_offer':
+                throw new RuntimeException('Aktywowanie ofert Morele jest jeszcze wylaczone.');
                 $this->storage->updateOfferOverrides((int) $offer['id'], array('status_override' => 'active'));
                 break;
             case 'sync_offer':
+                throw new RuntimeException('Pelna synchronizacja ofert Morele jest jeszcze wylaczona.');
                 break;
             default:
                 throw new RuntimeException('Nieobslugiwana operacja Morele.');
@@ -472,18 +476,26 @@ class MoreleService
         }
 
         try {
-            $response = $this->authenticatedJson('/offer/' . rawurlencode($externalId), 'PATCH', $payload);
+            $response = $this->authenticatedJson('/offer', 'PUT', $payload);
             $active = strtolower((string) ($offer['effective_status'] ?? '')) === 'active';
             if ($operation === 'end_offer') {
                 $active = false;
             } elseif ($operation === 'activate_offer') {
                 $active = true;
             }
-            $this->storage->markOfferSyncSuccess((int) $offer['id'], $response !== array() ? $response : $payload, $active);
+            $this->storage->markOfferSyncSuccess((int) $offer['id'], $this->localPayloadAfterRemoteSync($offer, $payload, $response), $active);
         } catch (RuntimeException $exception) {
             $this->storage->markOfferSyncError((int) $offer['id'], $exception->getMessage());
             throw $exception;
         }
+    }
+
+    private function localPayloadAfterRemoteSync(array $offer, array $requestPayload, array $responsePayload): array
+    {
+        $currentPayload = json_decode((string) ($offer['payload_json'] ?? ''), true);
+        $currentPayload = is_array($currentPayload) ? $currentPayload : array();
+
+        return array_merge($currentPayload, $requestPayload, $responsePayload);
     }
 
     private function buildRemoteOfferPayload(array $offer, string $operation): array
@@ -495,7 +507,7 @@ class MoreleService
         switch ($operation) {
             case 'set_price':
             case 'set_price_from_product':
-                return array('price' => $price);
+                return $this->buildRemotePricePayload($offer, $price);
             case 'set_stock_from_product':
                 return array('quantity' => $stock, 'stock' => $stock);
             case 'end_offer':
@@ -513,6 +525,21 @@ class MoreleService
         }
 
         return array();
+    }
+
+    private function buildRemotePricePayload(array $offer, float $price): array
+    {
+        $sku = trim((string) ($offer['sku'] ?? ''));
+        if ($sku === '') {
+            throw new RuntimeException('Brak SKU/vendor_part_number Morele do zmiany ceny.');
+        }
+
+        return array(
+            'vendor_part_number' => $sku,
+            'sale_price_brutto' => $price,
+            'price' => $price,
+            'salePriceBrutto' => $price,
+        );
     }
 
     private function fetchRemoteOfferPage(int $page, int $limit): array

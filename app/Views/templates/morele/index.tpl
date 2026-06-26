@@ -133,10 +133,6 @@
                 <select name="operation" class="form-select form-select-sm" id="moreleOperation">
                   <option value="set_price">Ustaw cene</option>
                   <option value="set_price_from_product">Cena z magazynu</option>
-                  <option value="set_stock_from_product">Stan z magazynu</option>
-                  <option value="end_offer">Zakoncz oferty</option>
-                  <option value="activate_offer">Aktywuj oferty</option>
-                  <option value="sync_offer">Synchronizuj oferty</option>
                 </select>
               </div>
               <div>

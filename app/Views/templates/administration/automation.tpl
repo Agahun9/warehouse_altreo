@@ -1031,6 +1031,10 @@
                         <label class="form-label">Erli kolejka - co 1 minute</label>
                         <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">Morele kolejka cen - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$moreleAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                      </div>
                       <hr>
                       <div class="mb-3 administration-inline-code">
                         <label class="form-label">Allegro maintenance - co 5 minut</label>
