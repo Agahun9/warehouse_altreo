@@ -23,7 +23,6 @@
     <div>
       <div class="d-flex align-items-center gap-3">
         <h1 class="h3 mb-0" id="mainComponentTitle">Panel komponentów</h1>
-        <span id="mainComponentTitleCounter" class="small text-muted"></span>
       </div>
       <small class="text-muted">Zarządzaj komponentami, zdjęciami i kategoriami</small>
     </div>
@@ -48,63 +47,16 @@
     </div>
   {/if}
 
-  <div class="accordion" id="accordionExample">
-    <!-- Sekcja 1 -->
-    <div class="accordion-item">
-      <h2 class="accordion-header" id="headingOne">
-        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne"
-          aria-expanded="false" aria-controls="collapseOne">
-          🔹 Szablony
-        </button>
-      </h2>
-      <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne"
-        data-bs-parent="#accordionExample">
-        <div class="accordion-body" style="background:#f9fafb; border-radius:8px; padding:15px 20px;">
-        {ldelim}% if GPU_description%{rdelim} Opis
-        {ldelim}% else %{rdelim} opis
-        {ldelim}% endif %{rdelim}<br>
-        {ldelim}{ldelim}main_img_morele{rdelim}{rdelim}
-        <br>
-        {ldelim}{ldelim}main_img_allegro{rdelim}{rdelim}
-        <br>
-        {ldelim}{ldelim}CASE_img[0]{rdelim}{rdelim}
-        {ldelim}{ldelim}CASE_img_morele[0]{rdelim}{rdelim}
-        <br>
-        {foreach $columns as $col}
-           
-
-          {ldelim}{ldelim}CATEGORY_{$col.COLUMN_NAME}{rdelim}{rdelim}<br>
-          
-        {/foreach}
-{foreach $templates as $t}
-<form method="post">
-  <div style="margin-bottom:20px;">
-    <label style="font-weight:600; margin-bottom:6px; display:block; color:#333;">{$t.name}:</label>
-
-    <textarea id="template_{$t.id_template}" name="template_info" class="free-rich-text-editor" data-editor-height="350">
-      {$t.template nofilter}
-    </textarea>
-  </div>
-  <input type="hidden" name="id_template" value="{$t.id_template}">
-  <input type="submit" name="save_template" class="btn btn-primary mb-3" value="Zapisz zmiany">
-</form>
-{/foreach}
-
-
-
+  <div class="modal fade" id="componentEditorModal" tabindex="-1" aria-labelledby="componentEditorModalLabel" aria-hidden="true"{if $editItem} data-bs-backdrop="static"{/if}>
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h2 class="modal-title fs-5" id="componentEditorModalLabel">
+            <i class="bi bi-{if $editItem}pencil-square{else}plus-circle{/if} me-2"></i>{if $editItem}Edytuj komponent{else}Dodaj nowy komponent{/if}
+          </h2>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zamknij"></button>
         </div>
-      </div>
-
-    </div>
-    <div class="row g-4">
-
-      <!-- Panel dodawania/edycji komponentu -->
-      <div class="col-12 col-xl-5 col-xxl-4">
-        <div class="card shadow-sm components-editor-card">
-          <div class="card-header bg-primary text-white">
-            <i class="bi bi-plus-circle me-2"></i>{if $editItem}Edytuj komponent{else}Dodaj nowy komponent{/if}
-          </div>
-          <div class="card-body">
+        <div class="modal-body">
             <form method="post" action="" enctype="multipart/form-data">
               <input type="hidden" name="id" value="{$editItem.id|default:''}" />
               <input type="hidden" name="img_old" value="{$editItem.img|escape:'html'}" />
@@ -257,25 +209,38 @@
                 <a href="{$baseUrl}?controller=computers&action=components" class="btn btn-secondary w-100 mt-2">Anuluj edycje</a>
               {/if}
             </form>
-          </div>
         </div>
       </div>
+    </div>
+  </div>
 
-      <!-- Panel lista komponentów -->
-      <div class="col-12 col-xl-7 col-xxl-8">
+  {if $editItem}
+    <button type="button" id="restoreComponentEditor" class="btn btn-primary component-editor-restore d-none"
+      aria-label="Przywróć okno edycji komponentu">
+      <i class="bi bi-pencil-square"></i><span>Przywróć edycję</span>
+    </button>
+  {/if}
+
+  <div class="row g-3">
+      <div class="col-12">
         <div class="card shadow-sm">
-          <div class="card-header bg-light fw-bold d-flex align-items-center justify-content-between">
+          <div class="card-header bg-light fw-bold d-flex flex-wrap align-items-center justify-content-between gap-2">
             <span><i class="bi bi-table me-2"></i>Lista komponentów</span>
-            <div>
+            <div class="d-flex flex-wrap gap-1">
+              {if $editItem}
+                <a href="{$baseUrl}?controller=computers&action=components&open_editor=1" class="btn btn-sm btn-success"><i class="bi bi-plus-circle me-1"></i>Nowy komponent</a>
+              {else}
+                <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#componentEditorModal"><i class="bi bi-plus-circle me-1"></i>Nowy komponent</button>
+              {/if}
               <button type="button" id="select_all_btn" class="btn btn-sm btn-outline-secondary me-1"><i
-                  class="bi bi-check2-square"></i> Zaznacz wszystkie</button>
+                  class="bi bi-check2-square"></i> Zaznacz widoczne</button>
               <button type="button" id="deselect_all_btn" class="btn btn-sm btn-outline-secondary"><i
                   class="bi bi-square"></i> Odznacz wszystkie</button>
             </div>
           </div>
           <div class="card-body pb-0">
             <form method="post" action="" enctype="multipart/form-data" id="bulkActionForm">
-              <div class="mb-3">
+              <div class="d-flex flex-wrap gap-2 mb-2">
                 <div class="dropdown d-inline-block me-2">
                   <button class="btn btn-primary dropdown-toggle" type="button" id="bulkActionsDropdown"
                     data-bs-toggle="dropdown" aria-expanded="false">
@@ -299,6 +264,42 @@
                 </div>
                 <button type="submit" class="btn btn-success"><i class="bi bi-play-circle me-1"></i>Wykonaj
                   akcję</button>
+              </div>
+              <div class="component-filters mb-2" aria-label="Filtry komponentów">
+                <div class="row g-2 align-items-center">
+                  <div class="col-12 col-lg-5">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text"><i class="bi bi-search"></i></span>
+                      <input type="search" id="componentFilterName" class="form-control" aria-label="Szukaj po nazwie"
+                        placeholder="Szukaj po nazwie lub specyfikacji..." autocomplete="off" />
+                    </div>
+                  </div>
+                  <div class="col-6 col-lg-2">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text">Od</span>
+                      <input type="number" id="componentFilterPriceMin" class="form-control" min="0" step="0.01" inputmode="decimal" aria-label="Cena od" />
+                      <span class="input-group-text">zł</span>
+                    </div>
+                  </div>
+                  <div class="col-6 col-lg-2">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text">Do</span>
+                      <input type="number" id="componentFilterPriceMax" class="form-control" min="0" step="0.01" inputmode="decimal" aria-label="Cena do" />
+                      <span class="input-group-text">zł</span>
+                    </div>
+                  </div>
+                  <div class="col-12 col-lg-3 d-flex justify-content-lg-end align-items-center gap-2">
+                    <span class="small text-muted text-nowrap"><strong id="componentFilterCount">{$items|count}</strong>/{$items|count}</span>
+                    <button type="button" id="componentFiltersClear" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg me-1"></i>Wyczyść</button>
+                  </div>
+                </div>
+                <div class="component-category-filters d-flex flex-wrap gap-1 mt-2">
+                  <button type="button" class="btn btn-sm btn-primary component-category-filter active" data-category="" aria-pressed="true">Wszystkie</button>
+                  {foreach from=$componentCategories item=filterCategory}
+                    <button type="button" class="btn btn-sm btn-outline-primary component-category-filter" data-category="{$filterCategory|escape:'html'}" aria-pressed="false">{$filterCategory|escape:'html'}</button>
+                  {/foreach}
+                  <span id="componentFilterEmpty" class="small text-danger fw-semibold d-none align-self-center ms-2">Brak wyników</span>
+                </div>
               </div>
               <input type="hidden" name="bulk_action" id="bulk_action" value="" />
               <div id="bulk_action_fields" style="display:none; margin-bottom:20px;">
@@ -351,12 +352,14 @@
 
                       {if $currentCategory != $item.category}
                         {assign var="currentCategory" value=$item.category}
-                        <tr class="table-secondary">
+                        <tr class="table-secondary component-category-row" data-category="{$currentCategory|escape:'html'}">
                           <td colspan="5" class="fw-bold">Kategoria: {$currentCategory|escape:'html'}</td>
                         </tr>
                       {/if}
 
-                      <tr class="clickable-row" data-comp-id="{$item.id}">
+                      <tr class="clickable-row component-data-row" data-comp-id="{$item.id}"
+                        data-name="{$item.name|escape:'html'} {$item.name_title|escape:'html'} {$item.name_spec|escape:'html'}"
+                        data-category="{$item.category|escape:'html'}" data-price="{$item.price}">
                         <td><input type="checkbox" class="component_checkbox" name="component_ids[]" value="{$item.id}"
                             data-price="{$item.price}" /></td>
                         <td>
@@ -365,7 +368,6 @@
                           </span>
                           <br>
                           <span style="font-size: 11px;">{$item.name_spec|escape:'html'}</span>
-                          <span class="component-title-counter ms-2 small text-muted" data-comp-id="{$item.id}"></span>
                         </td>
                         <td><strong>{$item.price} ZŁ</strong></td>
                         <td>
@@ -486,6 +488,47 @@
       padding: 1.5rem;
     }
 
+    .component-filters {
+      padding: .65rem;
+      background: #f8fafc;
+      border: 1px solid #dbe4f0;
+      border-radius: 10px;
+    }
+
+    .component-category-filter {
+      transition: color .15s ease, background-color .15s ease, border-color .15s ease;
+    }
+
+    #componentEditorModal .modal-body {
+      padding: 1rem 1.25rem;
+    }
+
+    #componentEditorModal .modal-body > form > .mb-3 {
+      margin-bottom: .75rem !important;
+    }
+
+    .component-editor-restore {
+      position: fixed;
+      top: 50%;
+      right: 0;
+      z-index: 1035;
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      padding: .65rem .8rem;
+      border-radius: 10px 0 0 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+      transform: translateY(-50%);
+    }
+
+    .component-editor-restore.d-none {
+      display: none !important;
+    }
+
+    .computers-components-page .table > :not(caption) > * > * {
+      padding: .45rem .55rem;
+    }
+
     .market-params {
       background: #f8fafc;
       border: 1px solid #dbe4f0;
@@ -541,6 +584,118 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      const nameInput = document.getElementById('componentFilterName');
+      const priceMinInput = document.getElementById('componentFilterPriceMin');
+      const priceMaxInput = document.getElementById('componentFilterPriceMax');
+      const clearButton = document.getElementById('componentFiltersClear');
+      const countNode = document.getElementById('componentFilterCount');
+      const emptyNode = document.getElementById('componentFilterEmpty');
+      const categoryButtons = Array.from(document.querySelectorAll('.component-category-filter'));
+      const componentRows = Array.from(document.querySelectorAll('.component-data-row'));
+      const categoryRows = Array.from(document.querySelectorAll('.component-category-row'));
+      const activeCategories = new Set();
+
+      function normalizeText(value) {
+        return String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }
+
+      function numberOrNull(input) {
+        if (!input || input.value.trim() === '') return null;
+        const value = Number(input.value.replace(',', '.'));
+        return Number.isFinite(value) ? value : null;
+      }
+
+      function applyComponentFilters() {
+        const query = normalizeText(nameInput ? nameInput.value.trim() : '');
+        const minPrice = numberOrNull(priceMinInput);
+        const maxPrice = numberOrNull(priceMaxInput);
+        const visibleCategories = new Set();
+        let visibleCount = 0;
+
+        componentRows.forEach(function(row) {
+          const price = Number(String(row.dataset.price || '0').replace(',', '.')) || 0;
+          const category = row.dataset.category || '';
+          const matches = (!query || normalizeText(row.dataset.name).includes(query))
+            && (minPrice === null || price >= minPrice)
+            && (maxPrice === null || price <= maxPrice)
+            && (activeCategories.size === 0 || activeCategories.has(category));
+
+          row.classList.toggle('d-none', !matches);
+          if (matches) {
+            visibleCount += 1;
+            visibleCategories.add(category);
+          }
+        });
+
+        categoryRows.forEach(function(row) {
+          row.classList.toggle('d-none', !visibleCategories.has(row.dataset.category || ''));
+        });
+
+        if (countNode) countNode.textContent = String(visibleCount);
+        if (emptyNode) emptyNode.classList.toggle('d-none', visibleCount !== 0);
+      }
+
+      [nameInput, priceMinInput, priceMaxInput].forEach(function(input) {
+        if (input) input.addEventListener('input', applyComponentFilters);
+      });
+
+      categoryButtons.forEach(function(button) {
+        button.addEventListener('click', function() {
+          const category = button.dataset.category || '';
+          if (category === '') {
+            activeCategories.clear();
+          } else if (activeCategories.has(category)) {
+            activeCategories.delete(category);
+          } else {
+            activeCategories.add(category);
+          }
+
+          categoryButtons.forEach(function(item) {
+            const itemCategory = item.dataset.category || '';
+            const selected = itemCategory === '' ? activeCategories.size === 0 : activeCategories.has(itemCategory);
+            item.classList.toggle('btn-primary', selected);
+            item.classList.toggle('btn-outline-primary', !selected);
+            item.classList.toggle('active', selected);
+            item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          });
+          applyComponentFilters();
+        });
+      });
+
+      if (clearButton) {
+        clearButton.addEventListener('click', function() {
+          if (nameInput) nameInput.value = '';
+          if (priceMinInput) priceMinInput.value = '';
+          if (priceMaxInput) priceMaxInput.value = '';
+          activeCategories.clear();
+          if (categoryButtons.length) categoryButtons[0].click();
+          if (nameInput) nameInput.focus();
+        });
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+      {if $openComponentEditor}
+        const editorModalElement = document.getElementById('componentEditorModal');
+        if (editorModalElement) bootstrap.Modal.getOrCreateInstance(editorModalElement).show();
+      {/if}
+
+      {if $editItem}
+        const editorModalElementForRestore = document.getElementById('componentEditorModal');
+        const restoreEditorButton = document.getElementById('restoreComponentEditor');
+        if (editorModalElementForRestore && restoreEditorButton) {
+          editorModalElementForRestore.addEventListener('hidden.bs.modal', function() {
+            restoreEditorButton.classList.remove('d-none');
+          });
+          editorModalElementForRestore.addEventListener('show.bs.modal', function() {
+            restoreEditorButton.classList.add('d-none');
+          });
+          restoreEditorButton.addEventListener('click', function() {
+            bootstrap.Modal.getOrCreateInstance(editorModalElementForRestore).show();
+          });
+        }
+      {/if}
+
       // Automatycznie chowaj alert po 5 sek
       setTimeout(() => {
         const alert = document.getElementById("successAlert");
@@ -550,41 +705,6 @@
           setTimeout(() => alert.remove(), 1000);
         }
       }, 5000);
-
-      // Licznik znaków w tytule głównym
-      function updateMainComponentTitleCounter() {
-        var title = document.getElementById('mainComponentTitle');
-        var counter = document.getElementById('mainComponentTitleCounter');
-        var len = title.textContent.length;
-        counter.textContent = len + ' / 75';
-        if (len > 75) {
-          title.classList.add('text-danger', 'fw-bold');
-          counter.classList.add('text-danger', 'fw-bold');
-        } else {
-          title.classList.remove('text-danger', 'fw-bold');
-          counter.classList.remove('text-danger', 'fw-bold');
-        }
-      }
-      updateMainComponentTitleCounter();
-
-      // Liczniki znaków dla tytułów komponentów (podgląd)
-      document.querySelectorAll('.component-title').forEach(function(titleEl) {
-        var compId = titleEl.getAttribute('data-comp-id');
-        var counter = document.querySelector('.component-title-counter[data-comp-id="' + compId + '"]');
-
-        function updateTitleCounter() {
-          var len = titleEl.textContent.length;
-          counter.textContent = len + ' / 75';
-          if (len > 75) {
-            titleEl.classList.add('text-danger', 'fw-bold');
-            counter.classList.add('text-danger', 'fw-bold');
-          } else {
-            titleEl.classList.remove('text-danger', 'fw-bold');
-            counter.classList.remove('text-danger', 'fw-bold');
-          }
-        }
-        updateTitleCounter();
-      });
 
       // Dodaj powiększanie obrazka w modalu
       document.querySelectorAll('.component-img-thumb').forEach(function(img) {
@@ -609,17 +729,23 @@
       var selectAllBtn = document.getElementById('select_all_btn');
       if (selectAllBtn) {
         selectAllBtn.addEventListener('click', function() {
-          document.querySelectorAll('input.component_checkbox').forEach(chk => {
-            chk.checked = true;
+          document.querySelectorAll('.component-data-row:not(.d-none) input.component_checkbox').forEach(chk => {
+            if (!chk.checked) {
+              chk.checked = true;
+              chk.dispatchEvent(new Event('change', { bubbles: true }));
+            }
           });
-          if (checkAll) checkAll.checked = true;
+          if (checkAll) checkAll.checked = false;
         });
       }
       var deselectAllBtn = document.getElementById('deselect_all_btn');
       if (deselectAllBtn) {
         deselectAllBtn.addEventListener('click', function() {
           document.querySelectorAll('input.component_checkbox').forEach(chk => {
-            chk.checked = false;
+            if (chk.checked) {
+              chk.checked = false;
+              chk.dispatchEvent(new Event('change', { bubbles: true }));
+            }
           });
           if (checkAll) checkAll.checked = false;
         });
@@ -725,7 +851,7 @@
       // Kliknięcie w wiersz zaznacza checkbox
       document.querySelectorAll('.clickable-row').forEach(row => {
         row.addEventListener('click', function(e) {
-          if (e.target.type !== 'checkbox') {
+          if (!e.target.closest('a, button, input, details, summary')) {
             const cb = row.querySelector('.component_checkbox');
             cb.checked = !cb.checked;
             updateTotal();

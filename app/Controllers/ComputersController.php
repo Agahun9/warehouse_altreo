@@ -544,12 +544,11 @@ class ComputersController extends Controller
                 $items[$index] = $this->normalizeComponentImageFields($item);
             }
         }
-        $templates = $this->db()->fetchAll('SELECT * FROM ' . self::TEMPLATES_TABLE . ' ORDER BY name ASC');
-        $columns = $this->db()->fetchAll(
-            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :table_name AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION ASC',
-            array('table_name' => self::COMPONENTS_TABLE)
-        );
-
+        $componentCategories = array_values(array_unique(array_map(
+            static fn(array $item): string => trim((string) ($item['category'] ?? '')),
+            $items
+        )));
+        $componentCategories = array_values(array_filter($componentCategories, static fn(string $category): bool => $category !== ''));
         $this->render('computers/components', array(
             'pageTitle' => 'Komponenty',
             'contentTitle' => 'Panel komponentow',
@@ -559,12 +558,12 @@ class ComputersController extends Controller
             'success' => $this->getFlash('success') ?? '',
             'errors' => $this->normalizeErrors($this->getFlash('error')),
             'items' => $items,
+            'componentCategories' => $componentCategories,
+            'openComponentEditor' => $editItem !== null || (int) $this->input('open_editor', 0) === 1,
             'editItem' => $editItem,
             'product' => $editItem ?? array(),
             'parameters' => array(),
             'morele_parameters' => array('category_characteristics' => array()),
-            'templates' => $templates,
-            'columns' => $columns,
             'imgFolder' => './img_components',
             'computerTab' => 'components',
         ));
