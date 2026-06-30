@@ -39,6 +39,7 @@ class TemplateParser
     private function normalizeSettings(array $settings): array
     {
         $condition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : array();
+        $conditions = isset($settings['conditions']) && is_array($settings['conditions']) ? $settings['conditions'] : array();
         $args = isset($settings['args']) && is_array($settings['args']) ? $settings['args'] : array();
         $imageLayout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
         $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
@@ -57,6 +58,10 @@ class TemplateParser
                 'then' => array_key_exists('then', $condition) ? $condition['then'] : '',
                 'else' => array_key_exists('else', $condition) ? $condition['else'] : '',
             ),
+            'conditions' => $conditions,
+            'condition_else' => array_key_exists('condition_else', $settings)
+                ? (string) $settings['condition_else']
+                : (array_key_exists('else', $condition) ? (string) $condition['else'] : ''),
         );
     }
 

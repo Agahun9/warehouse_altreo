@@ -15,6 +15,9 @@ class ComputedFunctions
                 return $this->upper($args, $context);
             case 'lower':
                 return $this->lower($args, $context);
+            case 'ucfirst':
+            case 'capitalize':
+                return $this->ucfirst($args, $context);
             case 'substring':
                 return $this->substring($args, $context);
             case 'replace':
@@ -53,6 +56,19 @@ class ComputedFunctions
     {
         $value = $this->resolveToken(isset($args['value']) ? $args['value'] : '', $context);
         return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    }
+
+    private function ucfirst(array $args, array $context): string
+    {
+        $value = $this->resolveToken(isset($args['value']) ? $args['value'] : '', $context);
+        if ($value === '') {
+            return '';
+        }
+        if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
+            return mb_strtoupper(mb_substr($value, 0, 1, 'UTF-8'), 'UTF-8')
+                . mb_substr($value, 1, null, 'UTF-8');
+        }
+        return ucfirst($value);
     }
 
     private function substring(array $args, array $context): string

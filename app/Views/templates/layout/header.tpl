@@ -414,6 +414,14 @@
                   </ul>
                 </li>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('media', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=media&action=index" class="nav-link{if $currentController eq 'media'} active{/if}">
+                    <i class="nav-icon bi bi-images"></i>
+                    <p>Media</p>
+                  </a>
+                </li>
+              {/if}
               {if $currentUser.role eq 'admin'}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=categories&action=index" class="nav-link{if $currentController eq 'categories'} active{/if}">

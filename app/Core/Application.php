@@ -15,6 +15,7 @@ use App\Controllers\EmpikController;
 use App\Controllers\ErliController;
 use App\Controllers\IndexController;
 use App\Controllers\MoreleController;
+use App\Controllers\MediaController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
@@ -59,6 +60,9 @@ class Application
                 break;
             case 'morele':
                 $controller = new MoreleController();
+                break;
+            case 'media':
+                $controller = new MediaController();
                 break;
             case 'auth':
                 $controller = new AuthController();

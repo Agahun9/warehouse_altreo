@@ -122,7 +122,7 @@ class CsvExportService
         $sourceValue = (string) ($column['source_value'] ?? '');
         $settings = isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
 
-        if ($sourceType !== 'computed' && in_array($sourceType, array('concat', 'upper', 'lower', 'trim'), true)) {
+        if ($sourceType !== 'computed' && in_array($sourceType, array('concat', 'upper', 'lower', 'trim', 'ucfirst'), true)) {
             if (!isset($settings['function']) || trim((string) $settings['function']) === '') {
                 $settings['function'] = $sourceType;
             }
@@ -147,7 +147,7 @@ class CsvExportService
                 break;
         }
 
-        $value = $this->applyConditions($product, $settings, $value, $arraySeparator, $exportOptions);
+        $value = $this->applyConditions($product, $settings, $value, $arraySeparator, $exportOptions, $sourceType === 'field' ? $sourceValue : '');
         $value = $this->applyMapping($column, $value);
         $value = $this->applyFormat($settings, $value);
 
@@ -166,63 +166,66 @@ class CsvExportService
         return $value;
     }
 
-    private function applyConditions(array $product, array $settings, $value, string $arraySeparator, array $exportOptions = array())
+    private function applyConditions(array $product, array $settings, $value, string $arraySeparator, array $exportOptions = array(), string $sourceFieldPath = '')
     {
-        $condition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : null;
-        if (!$condition) {
+        $legacyCondition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : array();
+        $conditions = isset($settings['conditions']) && is_array($settings['conditions'])
+            ? array_values($settings['conditions'])
+            : array();
+        if ($conditions === array() && $legacyCondition !== array()) {
+            $conditions[] = $legacyCondition;
+        }
+        if ($conditions === array()) {
             return $value;
         }
 
-        $fieldPath = isset($condition['field']) ? (string) $condition['field'] : '';
-        if (trim($fieldPath) === '') {
-            return $value;
-        }
-
-        $operator = isset($condition['operator']) ? (string) $condition['operator'] : 'eq';
-        $expected = isset($condition['value']) ? (string) $condition['value'] : '';
-
-        $actualRaw = $this->resolver->resolveFieldValue($product, $fieldPath, $exportOptions);
-        $actual = is_array($actualRaw)
-            ? $this->resolver->resolveField($product, $fieldPath, $arraySeparator, $exportOptions)
-            : $actualRaw;
-        $actualString = is_scalar($actual) || $actual === null ? (string) $actual : '';
-        $pass = false;
-
-        switch ($operator) {
-            case 'gt':
-                $pass = (float) $actual > (float) $expected;
-                break;
-            case 'gte':
-                $pass = (float) $actual >= (float) $expected;
-                break;
-            case 'lt':
-                $pass = (float) $actual < (float) $expected;
-                break;
-            case 'lte':
-                $pass = (float) $actual <= (float) $expected;
-                break;
-            case 'contains':
-                $pass = stripos($actualString, $expected) !== false;
-                break;
-            case 'neq':
-                $pass = $actual !== $expected;
-                break;
-            case 'eq':
-            default:
-                $pass = $actual === $expected;
-                break;
-        }
-
-        if ($pass) {
-            if (array_key_exists('then', $condition) && (string) $condition['then'] !== '') {
-                return (string) $condition['then'];
+        foreach ($conditions as $condition) {
+            if (!is_array($condition)) {
+                continue;
+            }
+            $fieldPath = trim($sourceFieldPath) !== ''
+                ? $sourceFieldPath
+                : (isset($condition['field']) ? (string) $condition['field'] : '');
+            if (trim($fieldPath) === '') {
+                continue;
             }
 
-            return $value;
+            $operator = isset($condition['operator']) ? (string) $condition['operator'] : 'eq';
+            $expected = isset($condition['value']) ? (string) $condition['value'] : '';
+
+            $actualRaw = $this->resolver->resolveFieldValue($product, $fieldPath, $exportOptions);
+            $actual = is_array($actualRaw)
+                ? $this->resolver->resolveField($product, $fieldPath, $arraySeparator, $exportOptions)
+                : $actualRaw;
+            $actualString = is_scalar($actual) || $actual === null ? (string) $actual : '';
+            $pass = false;
+
+            switch ($operator) {
+                case 'gt': $pass = (float) $actual > (float) $expected; break;
+                case 'gte': $pass = (float) $actual >= (float) $expected; break;
+                case 'lt': $pass = (float) $actual < (float) $expected; break;
+                case 'lte': $pass = (float) $actual <= (float) $expected; break;
+                case 'contains':
+                    $pass = function_exists('mb_stripos')
+                        ? mb_stripos($actualString, $expected, 0, 'UTF-8') !== false
+                        : stripos($actualString, $expected) !== false;
+                    break;
+                case 'neq': $pass = $actual !== $expected; break;
+                case 'eq':
+                default: $pass = $actual === $expected; break;
+            }
+
+            if ($pass) {
+                if (array_key_exists('then', $condition) && (string) $condition['then'] !== '') {
+                    return (string) $condition['then'];
+                }
+                return $value;
+            }
         }
 
-        if (array_key_exists('else', $condition) && (string) $condition['else'] !== '') {
-            return (string) $condition['else'];
+        $fallback = (string) ($settings['condition_else'] ?? ($legacyCondition['else'] ?? ''));
+        if ($fallback !== '') {
+            return $fallback;
         }
 
         return $value;
@@ -241,6 +244,18 @@ class CsvExportService
 
         if ($format === 'lower') {
             return function_exists('mb_strtolower') ? mb_strtolower((string) $value, 'UTF-8') : strtolower((string) $value);
+        }
+
+        if (in_array($format, array('ucfirst', 'capitalize'), true)) {
+            $value = (string) $value;
+            if ($value === '') {
+                return '';
+            }
+            if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
+                return mb_strtoupper(mb_substr($value, 0, 1, 'UTF-8'), 'UTF-8')
+                    . mb_substr($value, 1, null, 'UTF-8');
+            }
+            return ucfirst($value);
         }
 
         if ($format === 'trim') {

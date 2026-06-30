@@ -635,6 +635,7 @@
                   <li><code>product.empik_parameters</code> - wszystkie parametry Empik w jednej komorce, kazdy w nowej linii</li>
                   <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
                   <li><code>images</code> lub <code>product.generated_images</code> - generowana lista sciezek obrazow EasyUploader</li>
+                  <li><code>queue_item</code> - miniatura wpisywana podczas eksportu CSV</li>
                 </ul>
                 </div>
               </div>
@@ -670,14 +671,13 @@
                 <div class="csv-tutorial-block">
                 <h4 class="h6">6. Warunki</h4>
                 <div class="small">
-                  <p class="mb-2">Warunek nadpisuje wynik kolumny, gdy wskazane pole spelni porownanie.</p>
-                  <p class="mb-1">Przyklad:</p>
+                  <p class="mb-2">Możesz dodać wiele warunków. Są sprawdzane od góry i wygrywa pierwszy pasujący.</p>
+                  <p class="mb-1">Przykład normalizacji koloru:</p>
                   <ul class="mb-0">
-                    <li><code>field</code>: <code>product.price_gross</code></li>
-                    <li><code>operator</code>: <code>gt</code></li>
-                    <li><code>value</code>: <code>1000</code></li>
-                    <li><code>then</code>: <code>Premium</code></li>
-                    <li><code>else</code>: <code>Standard</code></li>
+                    <li><code>zawiera czarny</code> → <code>Czarna</code></li>
+                    <li><code>zawiera biały</code> → <code>Biała</code></li>
+                    <li><code>zawiera czerwony</code> → <code>Czerwona</code></li>
+                    <li>„Gdy nic nie pasuje” zostaw puste, aby zachować oryginalną wartość.</li>
                   </ul>
                 </div>
                 </div>
@@ -688,6 +688,7 @@
                 <ul class="small mb-0">
                   <li><code>upper</code> - zamiana na wielkie litery</li>
                   <li><code>lower</code> - zamiana na male litery</li>
+                  <li><code>ucfirst</code> - pierwsza litera tekstu jako wielka</li>
                   <li><code>trim</code> - usuniecie spacji z poczatku i konca</li>
                   <li><code>date:Y-m-d</code> - format daty</li>
                   <li><code>number:2:,: </code> - format liczbowy: 2 miejsca, przecinek dziesietny, spacja tysieczna</li>
@@ -1324,6 +1325,28 @@
       + '<div class="form-text">Formatowanie zapisuje bezpieczne tagi HTML. Tokeny: <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>.</div>';
   }
 
+  function conditionRowsHtml(conditions) {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      conditions = [{ field: '', operator: 'contains', value: '', then: '' }];
+    }
+    var operators = [
+      ['contains', 'zawiera'], ['eq', 'równa się'], ['neq', 'nie równa się'],
+      ['gt', '>'], ['gte', '>='], ['lt', '<'], ['lte', '<=']
+    ];
+    return conditions.map(function (condition) {
+      var selectedOperator = condition.operator || 'contains';
+      var operatorHtml = operators.map(function (operator) {
+        return '<option value="' + operator[0] + '"' + (operator[0] === selectedOperator ? ' selected' : '') + '>' + operator[1] + '</option>';
+      }).join('');
+      return '<div class="row g-2 condition-row mb-2">'
+        + '<div class="col-md-3"><select class="form-select form-select-sm cond-op">' + operatorHtml + '</select></div>'
+        + '<div class="col-md-4"><input type="text" class="form-control form-control-sm cond-value" placeholder="szukana wartość, np. czarny" value="' + escapeHtml(condition.value || '') + '"></div>'
+        + '<div class="col-md-4"><input type="text" class="form-control form-control-sm cond-then" placeholder="wynik, np. Czarna" value="' + escapeHtml(condition.then || '') + '"></div>'
+        + '<div class="col-md-1 d-grid"><button type="button" class="btn btn-sm btn-outline-danger remove-condition" title="Usuń warunek">×</button></div>'
+        + '</div>';
+    }).join('');
+  }
+
   function createDescriptionSectionCard(section) {
     var data = section || {
       layout: 'text',
@@ -1723,6 +1746,16 @@
 
     var condition = data.settings && data.settings.condition ? data.settings.condition : {};
     var conditionElse = (condition && Object.prototype.hasOwnProperty.call(condition, 'else')) ? condition['else'] : '';
+    var conditions = data.settings && Array.isArray(data.settings.conditions) ? data.settings.conditions.slice() : [];
+    if (!conditions.length && condition && condition.field) {
+      conditions.push(condition);
+    }
+    if (!conditions.length && data.source_type === 'field' && data.source_value) {
+      conditions.push({ field: data.source_value, operator: 'contains', value: '', then: '' });
+    }
+    if (data.settings && Object.prototype.hasOwnProperty.call(data.settings, 'condition_else')) {
+      conditionElse = data.settings.condition_else;
+    }
     var imageOptions = data.settings && data.settings.image_options ? data.settings.image_options : {};
 
     var card = document.createElement('div');
@@ -1743,19 +1776,14 @@
       + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><input type="text" class="form-control form-control-sm col-field-search mb-1" placeholder="Szukaj pola"><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
       + '    <div class="col-md-3 static-wrap"><label class="form-label small">Wartosc stala</label><input type="text" class="form-control form-control-sm col-static" value="' + escapeHtml(data.source_value) + '"></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Funkcja</label><select class="form-select form-select-sm col-fn">' + functionOptions(data.settings.function) + '</select></div>'
-      + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. date:Y-m-d lub number:2:,: " value="' + escapeHtml(data.settings.format || '') + '"></div>'
+      + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. ucfirst, date:Y-m-d lub number:2:,: " value="' + escapeHtml(data.settings.format || '') + '"></div>'
       + '    <div class="col-md-2"><label class="form-label small">Array sep.</label><input type="text" class="form-control form-control-sm col-array-sep" value="' + escapeHtml(data.settings.array_separator || '') + '"></div>'
       + '    <div class="col-12 computed-wrap computed-json-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="3">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea><div class="border rounded bg-light-subtle p-2 mt-2"><div class="small fw-semibold mb-2">Wstaw parametr do JSON</div><div class="row g-2 align-items-end"><div class="col-lg-4"><label class="form-label small mb-1">Wyszukiwarka</label><input type="text" class="form-control form-control-sm col-fn-field-search" placeholder="Szukaj np. allegro_parameter, empik, sku"></div><div class="col-lg-6"><label class="form-label small mb-1">Pole / parametr</label><select class="form-select form-select-sm col-fn-field-insert">' + fieldInsertOptions() + '</select></div><div class="col-lg-2 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary insert-field-token">Wstaw do JSON</button></div></div><div class="form-text mb-0">Wstawia token w formacie <code>field:product.sku</code> albo <code>field:product.allegro_parameter.11748</code> w miejscu kursora.</div></div></div>'
       + '  </div>'
       + '  <div class="border rounded p-2 mt-2">'
-      + '    <div class="small fw-semibold mb-2">Warunek</div>'
-      + '    <div class="row g-2">'
-      + '      <div class="col-md-3"><input type="text" class="form-control form-control-sm cond-field" placeholder="field path" value="' + escapeHtml(condition.field || '') + '"></div>'
-      + '      <div class="col-md-2"><select class="form-select form-select-sm cond-op"><option value="eq">==</option><option value="neq">!=</option><option value="gt">></option><option value="gte">>=</option><option value="lt"><</option><option value="lte"><=</option><option value="contains">contains</option></select></div>'
-      + '      <div class="col-md-2"><input type="text" class="form-control form-control-sm cond-value" placeholder="wartosc" value="' + escapeHtml(condition.value || '') + '"></div>'
-      + '      <div class="col-md-2"><input type="text" class="form-control form-control-sm cond-then" placeholder="then" value="' + escapeHtml(condition.then || '') + '"></div>'
-      + '      <div class="col-md-3"><input type="text" class="form-control form-control-sm cond-else" placeholder="else" value="' + escapeHtml(conditionElse) + '"></div>'
-      + '    </div>'
+      + '    <div class="d-flex justify-content-between align-items-center gap-2 mb-2"><div><div class="small fw-semibold">Warunki dla wybranego pola</div><div class="form-text mt-0">Reguły sprawdzają pole wybrane u góry tej kolumny. Są wykonywane od góry i wygrywa pierwsza pasująca.</div></div><button type="button" class="btn btn-sm btn-outline-secondary add-condition">Dodaj warunek</button></div>'
+      + '    <div class="condition-list">' + conditionRowsHtml(conditions) + '</div>'
+      + '    <div class="row g-2 mt-1"><div class="col-md-9"></div><div class="col-md-3"><label class="form-label small mb-1">Gdy nic nie pasuje</label><input type="text" class="form-control form-control-sm cond-else" placeholder="pozostaw puste = oryginalna wartość" value="' + escapeHtml(conditionElse) + '"></div></div>'
       + '  </div>'
       + '  <div class="border rounded p-2 mt-2">'
       + '    <div class="d-flex justify-content-between align-items-center mb-2">'
@@ -1812,9 +1840,6 @@
 
     var typeSelect = card.querySelector('.col-type');
     typeSelect.value = data.source_type || 'field';
-
-    var condOp = card.querySelector('.cond-op');
-    condOp.value = condition.operator || 'eq';
 
     function updateVisibility() {
       var type = typeSelect.value;
@@ -1890,11 +1915,29 @@
       list.appendChild(row);
     });
 
+    card.querySelector('.add-condition').addEventListener('click', function () {
+      var list = card.querySelector('.condition-list');
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = conditionRowsHtml([{
+        operator: 'contains',
+        value: '',
+        then: ''
+      }]);
+      list.appendChild(wrapper.firstChild);
+    });
+
     card.addEventListener('click', function (event) {
       if (event.target.classList.contains('remove-mapping')) {
         var row = event.target.closest('.mapping-row');
         if (row) {
           row.remove();
+        }
+      }
+
+      if (event.target.classList.contains('remove-condition')) {
+        var conditionRow = event.target.closest('.condition-row');
+        if (conditionRow) {
+          conditionRow.remove();
         }
       }
 
@@ -2097,17 +2140,21 @@
       }
     }
 
-    var conditionField = card.querySelector('.cond-field').value.trim();
-    var condition = {};
-    if (conditionField !== '') {
-      condition = {
-        field: conditionField,
-        operator: card.querySelector('.cond-op').value,
-        value: card.querySelector('.cond-value').value,
-        then: card.querySelector('.cond-then').value,
-        else: card.querySelector('.cond-else').value
-      };
+    var conditions = [];
+    var conditionRows = card.querySelectorAll('.condition-row');
+    for (var c = 0; c < conditionRows.length; c++) {
+      var conditionValue = conditionRows[c].querySelector('.cond-value').value;
+      var conditionThen = conditionRows[c].querySelector('.cond-then').value;
+      if (conditionValue !== '' || conditionThen !== '') {
+        conditions.push({
+          operator: conditionRows[c].querySelector('.cond-op').value,
+          value: conditionValue,
+          then: conditionThen
+        });
+      }
     }
+    var conditionElse = card.querySelector('.cond-else').value;
+    var condition = conditions.length ? Object.assign({}, conditions[0], { else: conditionElse }) : {};
 
     var mappings = [];
     var mappingRows = card.querySelectorAll('.mapping-row');
@@ -2150,7 +2197,9 @@
         array_separator: card.querySelector('.col-array-sep').value,
         image_layout: imageLayout,
         image_options: imageOptions,
-        condition: condition
+        condition: condition,
+        conditions: conditions,
+        condition_else: conditionElse
       },
       mappings: mappings
     };

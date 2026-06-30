@@ -363,6 +363,9 @@ class UserRepository
     {
         $appConfig = Config::get('app');
         $modules = isset($appConfig['modules']) && is_array($appConfig['modules']) ? $appConfig['modules'] : array();
+        // Media is part of the application itself. Keep it available even when
+        // the environment-specific app/Config directory is not deployed from Git.
+        $modules[] = array('code' => 'media', 'name' => 'Media');
         $normalized = array();
 
         foreach ($modules as $module) {

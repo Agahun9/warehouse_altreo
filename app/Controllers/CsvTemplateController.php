@@ -2205,6 +2205,7 @@ class CsvTemplateController extends Controller
             'product.image_queue_range' => 'Zakres kolejki wpisany przy eksporcie CSV',
             'product.image_queue_from' => 'Poczatek zakresu kolejki wpisany przy eksporcie CSV',
             'product.image_queue_to' => 'Koniec zakresu kolejki wpisany przy eksporcie CSV',
+            'queue_item' => 'Miniatura wpisywana podczas eksportu CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
             'product.price_net' => 'Cena netto',
             'product.price_gross' => 'Cena brutto',
@@ -2280,6 +2281,7 @@ class CsvTemplateController extends Controller
             'concat' => 'concat (laczenie wartosci)',
             'upper' => 'upper',
             'lower' => 'lower',
+            'ucfirst' => 'ucfirst (pierwsza litera wielka)',
             'substring' => 'substring',
             'replace' => 'replace',
             'number_format' => 'number_format',
@@ -2314,6 +2316,27 @@ class CsvTemplateController extends Controller
     {
         $args = isset($settings['args']) && is_array($settings['args']) ? $settings['args'] : array();
         $condition = isset($settings['condition']) && is_array($settings['condition']) ? $settings['condition'] : array();
+        $conditionsInput = isset($settings['conditions']) && is_array($settings['conditions']) ? $settings['conditions'] : array();
+        $normalizedConditions = array();
+        foreach ($conditionsInput as $conditionItem) {
+            if (!is_array($conditionItem)) {
+                continue;
+            }
+            $conditionValue = (string) ($conditionItem['value'] ?? '');
+            $conditionThen = (string) ($conditionItem['then'] ?? '');
+            if ($conditionValue === '' && $conditionThen === '') {
+                continue;
+            }
+            $operator = trim((string) ($conditionItem['operator'] ?? 'contains'));
+            if (!in_array($operator, array('eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'contains'), true)) {
+                $operator = 'contains';
+            }
+            $normalizedConditions[] = array(
+                'operator' => $operator,
+                'value' => $conditionValue,
+                'then' => $conditionThen,
+            );
+        }
         $imageLayout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
         $normalizedImageLayout = array();
 
@@ -2367,6 +2390,8 @@ class CsvTemplateController extends Controller
                 'then' => (string) ($condition['then'] ?? ''),
                 'else' => (string) ($condition['else'] ?? ''),
             ),
+            'conditions' => $normalizedConditions,
+            'condition_else' => (string) ($settings['condition_else'] ?? ($condition['else'] ?? '')),
         );
     }
 

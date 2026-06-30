@@ -719,6 +719,17 @@ class ValueResolver
             return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
         }
 
+        if (in_array($format, array('ucfirst', 'capitalize'), true)) {
+            if ($value === '') {
+                return '';
+            }
+            if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
+                return mb_strtoupper(mb_substr($value, 0, 1, 'UTF-8'), 'UTF-8')
+                    . mb_substr($value, 1, null, 'UTF-8');
+            }
+            return ucfirst($value);
+        }
+
         if ($format === 'trim') {
             return trim($value);
         }
