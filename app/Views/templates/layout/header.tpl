@@ -299,7 +299,7 @@
                   </a>
                 </li>
                 <li class="nav-item">
-                  <a href="{$baseUrl}?controller=computers&action=products" class="nav-link{if $currentController eq 'computers'} active{/if}">
+                  <a href="{$baseUrl}?controller=computers&action=components" class="nav-link{if $currentController eq 'computers'} active{/if}">
                     <i class="nav-icon bi bi-pc-display"></i>
                     <p>Komputery</p>
                   </a>

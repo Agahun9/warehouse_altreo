@@ -52,15 +52,59 @@
         <div class="row g-3">
           <div class="col-12">
             <div class="d-flex flex-wrap gap-2 mb-2">
-              <select class="form-select form-select-sm" id="descriptionTokenSelect" style="max-width:360px">
-                <option value="">Wstaw pole produktu lub komponentu...</option>
-              </select>
               <button type="button" class="btn btn-sm btn-outline-primary description-command" data-command="bold"><strong>B</strong></button>
               <button type="button" class="btn btn-sm btn-outline-primary description-block" data-block="h2">H2</button>
               <button type="button" class="btn btn-sm btn-outline-primary description-block" data-block="h3">H3</button>
               <button type="button" class="btn btn-sm btn-outline-primary description-block" data-block="p">Akapit</button>
               <button type="button" class="btn btn-sm btn-outline-primary description-command" data-command="insertUnorderedList">Lista</button>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="showDescriptionSource">HTML</button>
+            </div>
+            <div class="border rounded bg-light p-2 mb-2">
+              <div class="small fw-semibold mb-2">Parametry Allegro, Empik i Morele</div>
+              <div class="d-flex flex-wrap gap-2">
+                <input type="search" class="form-control form-control-sm" id="descriptionParameterSearch" style="max-width:300px" placeholder="Szukaj parametru, kategorii lub ID...">
+                <select class="form-select form-select-sm" id="descriptionParameterSelect" style="max-width:440px">
+                  <option value="">Wybierz parametr...</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="insertDescriptionParameter">Wstaw parametr</button>
+              </div>
+              <div class="form-text">Lista zawiera parametry zapisane w komponentach. W opisie zostanie użyta wartość parametru komponentu przypisanego do produktu.</div>
+            </div>
+            <div class="border rounded bg-light p-2 mb-2">
+              <div class="small fw-semibold mb-2">Pola produktu i komponentów</div>
+              <div class="d-flex flex-wrap gap-2">
+                <input type="search" class="form-control form-control-sm" id="descriptionTokenSearch" style="max-width:300px" placeholder="Szukaj pola produktu lub komponentu...">
+                <select class="form-select form-select-sm" id="descriptionTokenSelect" style="max-width:440px">
+                  <option value="">Wybierz pole...</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="insertDescriptionToken">Wstaw pole</button>
+              </div>
+              <div class="row g-2 mt-1 d-none" id="descriptionImageOptions">
+                <div class="col-sm-3 col-lg-2">
+                  <label class="form-label small mb-1" for="descriptionImageWidth">Szerokość</label>
+                  <input type="text" class="form-control form-control-sm" id="descriptionImageWidth" value="100%" placeholder="np. 100%, 600px, auto">
+                </div>
+                <div class="col-sm-3 col-lg-2">
+                  <label class="form-label small mb-1" for="descriptionImageHeight">Wysokość</label>
+                  <input type="text" class="form-control form-control-sm" id="descriptionImageHeight" value="auto" placeholder="np. auto, 400px">
+                </div>
+                <div class="col-sm-3 col-lg-2">
+                  <label class="form-label small mb-1" for="descriptionImageFit">Dopasowanie</label>
+                  <select class="form-select form-select-sm" id="descriptionImageFit">
+                    <option value="contain">contain</option>
+                    <option value="cover">cover</option>
+                    <option value="fill">fill</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                  <label class="form-label small mb-1" for="descriptionImageAlt">Tekst ALT</label>
+                  <input type="text" class="form-control form-control-sm" id="descriptionImageAlt" placeholder="Opis zdjęcia (opcjonalnie)">
+                </div>
+                <div class="col-12">
+                  <div class="form-text">Dla pola zdjęcia zostanie wstawiony znacznik <code>&lt;img src=&quot;{ldelim}{ldelim}pole_zdjecia{rdelim}{rdelim}&quot;&gt;</code>. Wymiary mogą mieć wartości np. <code>100%</code>, <code>600px</code> lub <code>auto</code>.</div>
+                </div>
+              </div>
             </div>
             <input type="hidden" name="description_template" id="descriptionTemplateInput" value="{$template.description_template|default:''|escape:'html'}">
             <div class="form-control bg-white" id="descriptionVisualEditor" contenteditable="true" style="min-height:460px;max-height:720px;overflow:auto"></div>
@@ -107,6 +151,7 @@
   const initialColumns = {$columnsJson nofilter};
   const sourceOptions = {$sourceOptionsJson nofilter};
   const descriptionTokens = {$descriptionTokensJson nofilter};
+  const descriptionParameterTokens = {$descriptionParameterTokensJson nofilter};
   const descriptionProductSearchUrl = '{$baseUrl|escape:"javascript"}?controller=computers&action=searchcsvpreviewproducts';
   const descriptionPreviewUrl = '{$baseUrl|escape:"javascript"}?controller=computers&action=previewcsvdescription';
 {literal}
@@ -115,12 +160,21 @@
   const descriptionVisualEditor = document.getElementById('descriptionVisualEditor');
   const descriptionSourceEditor = document.getElementById('descriptionSourceEditor');
   const descriptionPreview = document.getElementById('descriptionTemplatePreview');
+  const descriptionTokenSearch = document.getElementById('descriptionTokenSearch');
   const descriptionTokenSelect = document.getElementById('descriptionTokenSelect');
+  const descriptionImageOptions = document.getElementById('descriptionImageOptions');
+  const descriptionImageWidth = document.getElementById('descriptionImageWidth');
+  const descriptionImageHeight = document.getElementById('descriptionImageHeight');
+  const descriptionImageFit = document.getElementById('descriptionImageFit');
+  const descriptionImageAlt = document.getElementById('descriptionImageAlt');
+  const descriptionParameterSearch = document.getElementById('descriptionParameterSearch');
+  const descriptionParameterSelect = document.getElementById('descriptionParameterSelect');
   const descriptionProductSearch = document.getElementById('descriptionProductSearch');
   const descriptionProductResults = document.getElementById('descriptionProductResults');
   const descriptionPreviewProductId = document.getElementById('descriptionPreviewProductId');
   const selectedDescriptionProduct = document.getElementById('selectedDescriptionProduct');
   let descriptionSearchTimer = null;
+  let descriptionEditorRange = null;
 
   function sourceSelect(value) {
     const select = document.createElement('select');
@@ -287,16 +341,117 @@
     option.textContent = label;
     descriptionTokenSelect.appendChild(option);
   });
+  function filterDescriptionSelect(search, select) {
+    const query = search.value.trim().toLocaleLowerCase('pl');
+    let firstMatch = null;
+    Array.from(select.options).forEach(function (option, index) {
+      const matches = index === 0 || query === ''
+        || option.textContent.toLocaleLowerCase('pl').includes(query)
+        || option.value.toLocaleLowerCase('pl').includes(query);
+      option.hidden = !matches;
+      option.disabled = !matches;
+      if (index > 0 && matches && firstMatch === null) firstMatch = option;
+    });
+    if (firstMatch && (!select.value || select.selectedOptions[0].hidden)) {
+      firstMatch.selected = true;
+    }
+  }
+  descriptionTokenSearch.addEventListener('input', function () {
+    filterDescriptionSelect(this, descriptionTokenSelect);
+    updateDescriptionImageOptions();
+  });
+  descriptionTokenSelect.addEventListener('change', function () {
+    updateDescriptionImageOptions();
+  });
+  Object.entries(descriptionParameterTokens).forEach(([key, label]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    descriptionParameterSelect.appendChild(option);
+  });
+
+  descriptionParameterSearch.addEventListener('input', function () {
+    filterDescriptionSelect(this, descriptionParameterSelect);
+  });
+  document.getElementById('insertDescriptionParameter').addEventListener('click', function () {
+    if (!descriptionParameterSelect.value) return;
+    insertHtmlAtCursor('{{' + descriptionParameterSelect.value + '}}');
+  });
 
   function syncDescriptionInput() {
     descriptionInput.value = descriptionVisualEditor.innerHTML;
     descriptionSourceEditor.value = descriptionVisualEditor.innerHTML;
   }
 
+  function saveDescriptionEditorRange() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement;
+    if (container && descriptionVisualEditor.contains(container)) {
+      descriptionEditorRange = range.cloneRange();
+    }
+  }
+
   function insertHtmlAtCursor(html) {
+    if (!descriptionSourceEditor.classList.contains('d-none')) {
+      const start = descriptionSourceEditor.selectionStart;
+      const end = descriptionSourceEditor.selectionEnd;
+      descriptionSourceEditor.setRangeText(html, start, end, 'end');
+      descriptionInput.value = descriptionSourceEditor.value;
+      descriptionSourceEditor.focus();
+      return;
+    }
+
     descriptionVisualEditor.focus();
-    document.execCommand('insertHTML', false, html);
+    const selection = window.getSelection();
+    let range = descriptionEditorRange;
+    if (!range || !descriptionVisualEditor.contains(range.commonAncestorContainer)) {
+      range = document.createRange();
+      range.selectNodeContents(descriptionVisualEditor);
+      range.collapse(false);
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+    range.deleteContents();
+    const fragment = range.createContextualFragment(html);
+    const lastNode = fragment.lastChild;
+    range.insertNode(fragment);
+    if (lastNode) {
+      range.setStartAfter(lastNode);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      descriptionEditorRange = range.cloneRange();
+    }
     syncDescriptionInput();
+  }
+
+  function isDescriptionImageToken(token) {
+    return /^main_img_/.test(token)
+      || /^product_image\./.test(token)
+      || /^component_image\./.test(token)
+      || /^image\./.test(token);
+  }
+
+  function updateDescriptionImageOptions() {
+    descriptionImageOptions.classList.toggle('d-none', !isDescriptionImageToken(descriptionTokenSelect.value));
+  }
+
+  function safeImageDimension(value, fallback) {
+    value = String(value || '').trim().toLowerCase();
+    if (/^\d+(?:\.\d+)?$/.test(value)) return value + 'px';
+    return /^(auto|\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh))$/.test(value) ? value : fallback;
+  }
+
+  function escapeHtmlAttribute(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function escapePreviewText(value) {
@@ -336,10 +491,23 @@
     }
   }
 
-  descriptionTokenSelect.addEventListener('change', function () {
-    if (!this.value) return;
-    insertHtmlAtCursor('{{' + this.value + '}}');
-    this.value = '';
+  document.getElementById('insertDescriptionToken').addEventListener('click', function () {
+    if (!descriptionTokenSelect.value) return;
+    const token = '{{' + descriptionTokenSelect.value + '}}';
+    if (!isDescriptionImageToken(descriptionTokenSelect.value)) {
+      insertHtmlAtCursor(token);
+      return;
+    }
+    const width = safeImageDimension(descriptionImageWidth.value, '100%');
+    const height = safeImageDimension(descriptionImageHeight.value, 'auto');
+    const fit = ['contain', 'cover', 'fill', 'none'].includes(descriptionImageFit.value)
+      ? descriptionImageFit.value
+      : 'contain';
+    const selectedOption = descriptionTokenSelect.selectedOptions[0];
+    const defaultAlt = selectedOption ? selectedOption.textContent.trim() : 'Zdjęcie produktu';
+    const alt = escapeHtmlAttribute(descriptionImageAlt.value.trim() || defaultAlt);
+    insertHtmlAtCursor('<img src="' + token + '" alt="' + alt + '" title="' + alt + '" style="width:' + width
+      + ';height:' + height + ';object-fit:' + fit + ';max-width:100%;">');
   });
   document.querySelectorAll('.description-command').forEach((button) => {
     button.addEventListener('click', function () {
@@ -374,6 +542,9 @@
     descriptionInput.value = this.value;
   });
   descriptionVisualEditor.addEventListener('input', syncDescriptionInput);
+  descriptionVisualEditor.addEventListener('keyup', saveDescriptionEditorRange);
+  descriptionVisualEditor.addEventListener('mouseup', saveDescriptionEditorRange);
+  descriptionVisualEditor.addEventListener('focus', saveDescriptionEditorRange);
   document.getElementById('refreshDescriptionPreview').addEventListener('click', renderDescriptionPreview);
 
   descriptionProductSearch.addEventListener('input', function () {

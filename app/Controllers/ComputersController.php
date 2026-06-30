@@ -283,6 +283,7 @@ class ComputersController extends Controller
             'sourceOptions' => $this->computerCsvSourceOptions(),
             'sourceOptionsJson' => json_encode($this->computerCsvSourceOptions(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionTokensJson' => json_encode($this->computerDescriptionTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'descriptionParameterTokensJson' => json_encode($this->computerDescriptionParameterTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'computerTab' => 'csvtemplates',
         ));
     }
@@ -2672,9 +2673,24 @@ class ComputersController extends Controller
             if ($category === '') {
                 continue;
             }
+            $tokenCategory = $this->computerDescriptionTokenPart($category);
             foreach ($component as $field => $value) {
                 $vars[$category . '_' . $field] = $value;
                 $vars['component.' . strtoupper($category) . '.' . $field] = $value;
+            }
+            foreach (array(
+                'allegro' => 'parameters_eu',
+                'morele' => 'parameters_morele',
+                'empik' => 'parameters_empik',
+            ) as $market => $parameterField) {
+                foreach ($this->decodeJsonMap((string) ($component[$parameterField] ?? '')) as $parameterKey => $parameterValue) {
+                    $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
+                    if ($identifier === '') {
+                        continue;
+                    }
+                    $vars['market_parameter.' . $market . '.' . $tokenCategory . '.' . $identifier]
+                        = $this->computerDescriptionParameterValue($market, $parameterValue);
+                }
             }
             foreach (array('img', 'img_morele', 'img_empik') as $imageField) {
                 $images = array_values(array_filter(array_map('trim', preg_split('/,|\\r\\n|\\r|\\n/', (string) ($component[$imageField] ?? '')) ?: array())));
@@ -3726,6 +3742,99 @@ class ComputersController extends Controller
             }
         }
         return $tokens;
+    }
+
+    private function computerDescriptionParameterTokens(): array
+    {
+        $tokens = array();
+        $rows = $this->db()->fetchAll(
+            'SELECT category, parameters_eu, parameters_morele, parameters_empik'
+            . ' FROM ' . self::COMPONENTS_TABLE
+            . " WHERE (parameters_eu IS NOT NULL AND parameters_eu <> '' AND parameters_eu <> '{}')"
+            . " OR (parameters_morele IS NOT NULL AND parameters_morele <> '' AND parameters_morele <> '{}')"
+            . " OR (parameters_empik IS NOT NULL AND parameters_empik <> '' AND parameters_empik <> '{}')"
+            . ' ORDER BY category, id'
+        );
+
+        foreach ($rows as $row) {
+            $category = trim((string) ($row['category'] ?? ''));
+            $tokenCategory = $this->computerDescriptionTokenPart($category);
+            if ($tokenCategory === '') {
+                continue;
+            }
+            foreach (array(
+                'allegro' => array('field' => 'parameters_eu', 'label' => 'Allegro'),
+                'morele' => array('field' => 'parameters_morele', 'label' => 'Morele'),
+                'empik' => array('field' => 'parameters_empik', 'label' => 'Empik'),
+            ) as $market => $config) {
+                foreach ($this->decodeJsonMap((string) ($row[$config['field']] ?? '')) as $parameterKey => $parameterValue) {
+                    $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
+                    if ($identifier === '') {
+                        continue;
+                    }
+                    $token = 'market_parameter.' . $market . '.' . $tokenCategory . '.' . $identifier;
+                    $parameterLabel = $this->computerDescriptionParameterLabel($market, (string) $parameterKey, $parameterValue);
+                    $tokens[$token] = $config['label'] . ' / ' . strtoupper($category) . ' / ' . $parameterLabel;
+                }
+            }
+        }
+        asort($tokens, SORT_NATURAL | SORT_FLAG_CASE);
+        return $tokens;
+    }
+
+    private function computerDescriptionParameterIdentifier(string $market, string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return '';
+        }
+        if ($market !== 'empik') {
+            $key = trim((string) (explode('|', $key)[0] ?? ''));
+        }
+        return $this->computerDescriptionTokenPart($key);
+    }
+
+    private function computerDescriptionTokenPart(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+        $ascii = function_exists('iconv') ? @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value) : $value;
+        $value = is_string($ascii) && $ascii !== '' ? $ascii : $value;
+        $value = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '_', $value));
+        return trim($value, '_');
+    }
+
+    private function computerDescriptionParameterLabel(string $market, string $key, $value): string
+    {
+        if ($market === 'empik') {
+            return trim($key);
+        }
+        if ($market === 'morele') {
+            $sample = is_array($value) ? (string) reset($value) : (string) $value;
+            $separator = strpos($sample, ':');
+            if ($separator !== false && trim(substr($sample, 0, $separator)) !== '') {
+                return trim(substr($sample, 0, $separator)) . ' (ID ' . trim((string) (explode('|', $key)[0] ?? '')) . ')';
+            }
+        }
+        return 'parametr ID ' . trim((string) (explode('|', $key)[0] ?? ''));
+    }
+
+    private function computerDescriptionParameterValue(string $market, $value): string
+    {
+        $values = is_array($value) ? $value : array($value);
+        $result = array();
+        foreach ($values as $item) {
+            $item = trim((string) $item);
+            if ($market === 'morele' && strpos($item, ':') !== false) {
+                $item = trim(substr($item, strpos($item, ':') + 1));
+            }
+            if ($item !== '') {
+                $result[] = $item;
+            }
+        }
+        return implode(', ', array_values(array_unique($result)));
     }
 
     private function defaultComputerDescriptionTemplate(): string
