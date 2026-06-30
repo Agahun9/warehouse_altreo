@@ -8,9 +8,10 @@
   <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/warehouse-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
+  <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   <style>
     /*
      * Kompaktowy interfejs bez CSS zoom. Zmniejszenie bazowego rem skaluje
@@ -21,7 +22,7 @@
     }
 
     .app-wrapper {
-      --lte-sidebar-width: 170px;
+      --lte-sidebar-width: 205px;
     }
 
     .app-sidebar .sidebar-menu .nav-link {
@@ -187,19 +188,10 @@
     .app-brand-link {
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 0.55rem;
       width: 100%;
-      text-align: center;
-    }
-
-    .app-brand-icon {
-      width: 34px;
-      height: 34px;
-      margin: 0;
-      object-fit: contain;
-      float: none;
-      flex-shrink: 0;
+      text-align: left;
     }
 
     .app-brand-text {
@@ -273,11 +265,13 @@
       </div>
     </nav>
 
-    <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
+    <aside class="app-sidebar">
       <div class="sidebar-brand">
         <a href="{if $currentUser}{$baseUrl}?controller=index{else}{$baseUrl}?controller=auth&action=login{/if}" class="brand-link app-brand-link">
-          <img src="{$assetBase}/assets/img/warehouse-icon.svg" alt="Magazyn" class="brand-image app-brand-icon opacity-75 shadow">
-          <span class="brand-text app-brand-text">{$appName|escape}</span>
+          <span class="app-brand-copy">
+            <span class="brand-text app-brand-text">Altreo</span>
+            <span class="app-brand-subtitle">workspace</span>
+          </span>
         </a>
       </div>
 
