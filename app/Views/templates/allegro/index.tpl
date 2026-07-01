@@ -22,6 +22,16 @@
       {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
 
       <style>
+        body.allegro-bulk-modal-open > #allegroBulkModal {
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 12010 !important;
+        }
+
+        body.allegro-bulk-modal-open > .modal-backdrop {
+          z-index: 12000 !important;
+        }
+
         .allegro-pagination-shell {
           display: flex;
           justify-content: flex-end;
@@ -443,7 +453,7 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-select-page">Zaznacz strone</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-clear-page">Odznacz strone</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-invert-page">Odwroc zaznaczenie</button>
-            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#allegroBulkModal">Otworz akcje masowe</button>
+            <button type="button" class="btn btn-sm btn-primary" id="allegro-bulk-modal-open" aria-controls="allegroBulkModal" aria-haspopup="dialog">Otworz akcje masowe</button>
             <span class="small text-secondary">Dziala tez zaznaczanie zakresem z klawiszem Shift.</span>
           </div>
         </div>
@@ -972,32 +982,64 @@
   </div>
 </main>
 <script>
-  (function () {
+  document.addEventListener('DOMContentLoaded', function () {
     var bulkModal = document.getElementById('allegroBulkModal');
-    if (!bulkModal) {
+    var openButton = document.getElementById('allegro-bulk-modal-open');
+
+    if (!bulkModal || !openButton) {
       return;
     }
 
-    // Bootstrap modals should live directly under body. Keeping this fullscreen
-    // modal inside the offers card can make positioned layout ancestors offset it.
-    if (bulkModal.parentElement !== document.body) {
-      document.body.appendChild(bulkModal);
+    // Liquid Glass applies backdrop-filter to cards, which creates a stacking
+    // context. The modal must be a direct child of body before it is initialized.
+    document.body.appendChild(bulkModal);
+
+    if (!window.bootstrap || !window.bootstrap.Modal) {
+      openButton.disabled = true;
+      openButton.title = 'Nie udalo sie zaladowac obslugi okna modalnego.';
+      return;
     }
 
-    bulkModal.addEventListener('show.bs.modal', function () {
-      // Liquid Glass gives cards a backdrop-filter, which creates a stacking
-      // context. Always detach the modal from that context before Bootstrap
-      // creates the body-level backdrop.
-      if (bulkModal.parentElement !== document.body) {
-        document.body.appendChild(bulkModal);
-      }
+    var modalInstance = window.bootstrap.Modal.getOrCreateInstance(bulkModal, {
+      backdrop: true,
+      focus: true,
+      keyboard: true
+    });
 
+    function removeOrphanedBackdrops() {
+      Array.prototype.slice.call(document.querySelectorAll('body > .modal-backdrop')).forEach(function (backdrop) {
+        backdrop.remove();
+      });
+    }
+
+    openButton.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      removeOrphanedBackdrops();
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('padding-right');
+      document.body.classList.add('allegro-bulk-modal-open');
+      modalInstance.show();
+    });
+
+    bulkModal.addEventListener('shown.bs.modal', function () {
       var modalBody = bulkModal.querySelector('.modal-body');
       if (modalBody) {
         modalBody.scrollTop = 0;
       }
     });
-  })();
+
+    bulkModal.addEventListener('hidden.bs.modal', function () {
+      document.body.classList.remove('allegro-bulk-modal-open');
+      removeOrphanedBackdrops();
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('padding-right');
+      openButton.focus();
+    });
+  });
 
   (function () {
     Array.prototype.slice.call(document.querySelectorAll('.js-translate-error')).forEach(function (button) {
