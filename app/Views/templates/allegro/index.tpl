@@ -450,7 +450,7 @@
 
         <div class="card-body border-bottom py-2">
           <div class="d-flex flex-wrap gap-2 align-items-center">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-select-page">Zaznacz strone</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-select-page">{if $duplicatesOnly}Zaznacz duble do usuniecia{else}Zaznacz strone{/if}</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-clear-page">Odznacz strone</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="offers-invert-page">Odwroc zaznaczenie</button>
             <button type="button" class="btn btn-sm btn-primary" id="allegro-bulk-modal-open" aria-controls="allegroBulkModal" aria-haspopup="dialog">Otworz akcje masowe</button>
@@ -832,7 +832,7 @@
               {foreach $offers as $offer}
                 <tr class="js-offer-row {if $offer.queue_meta.row_class}{$offer.queue_meta.row_class|escape}{/if}" data-offer-id="{$offer.offer_id|escape}">
                   <td class="text-center">
-                    <input type="checkbox" class="form-check-input js-offer-select" name="selected_offer_ids[]" value="{$offer.id|escape}" form="allegro-bulk-form" data-offer-id="{$offer.offer_id|escape}" data-offer-name="{$offer.name|escape}" data-account-id="{$offer.account_id|escape}" data-account-name="{$offer.account_name|escape}" data-offer-category-id="{$offer.category_id|default:''|escape}" data-offer-category-name="{$offer.category_name|default:''|escape}" data-offer-allegro-url="https://allegro.pl/oferta/{$offer.offer_id|escape}" data-warehouse-product-id="{$offer.warehouse_product_id|default:''|escape}" data-warehouse-product-name="{$offer.warehouse_product_name|default:''|escape}" data-warehouse-sku="{$offer.warehouse_sku|default:''|escape}" data-warehouse-category-id="{$offer.warehouse_category_id|default:''|escape}" data-warehouse-category-name="{$offer.warehouse_category_name|default:''|escape}" data-warehouse-category-allegro-id="{$offer.warehouse_category_allegro_id|default:''|escape}"{if $offer.duplicate_meta.is_duplicate && !$offer.duplicate_meta.can_end_offer} disabled title="Najstarsza oferta w grupie dubli nie moze zostac zakonczona"{/if}>
+                    <input type="checkbox" class="form-check-input js-offer-select" name="selected_offer_ids[]" value="{$offer.id|escape}" form="allegro-bulk-form" data-offer-id="{$offer.offer_id|escape}" data-offer-name="{$offer.name|escape}" data-account-id="{$offer.account_id|escape}" data-account-name="{$offer.account_name|escape}" data-offer-category-id="{$offer.category_id|default:''|escape}" data-offer-category-name="{$offer.category_name|default:''|escape}" data-offer-allegro-url="https://allegro.pl/oferta/{$offer.offer_id|escape}" data-warehouse-product-id="{$offer.warehouse_product_id|default:''|escape}" data-warehouse-product-name="{$offer.warehouse_product_name|default:''|escape}" data-warehouse-sku="{$offer.warehouse_sku|default:''|escape}" data-warehouse-category-id="{$offer.warehouse_category_id|default:''|escape}" data-warehouse-category-name="{$offer.warehouse_category_name|default:''|escape}" data-warehouse-category-allegro-id="{$offer.warehouse_category_allegro_id|default:''|escape}"{if $offer.duplicate_meta.is_duplicate && !$offer.duplicate_meta.can_end_offer} disabled title="Ta oferta ma zostac: ACTIVE ma priorytet, potem najnizszy numer aukcji"{/if}>
                   </td>
                   <td style="width:80px;">
                     {if $offer.primary_image_url}
@@ -905,12 +905,12 @@
                     {if $offer.duplicate_meta.is_duplicate}
                       <div><span class="badge text-bg-danger">Dubel</span></div>
                       <div class="mt-1">Inne oferty: {$offer.duplicate_meta.duplicate_count|escape}</div>
-                      <div>Najstarsza: <code>{$offer.duplicate_meta.oldest_offer_id|default:'-'|escape}</code>{if $offer.duplicate_meta.is_oldest} <span class="text-danger">(ta oferta)</span>{/if}</div>
+                      <div>Zostaje: <code>{$offer.duplicate_meta.oldest_offer_id|default:'-'|escape}</code>{if $offer.duplicate_meta.is_oldest} <span class="text-danger">(ta oferta)</span>{/if}</div>
                       <div class="mt-1">
                         {if $offer.duplicate_meta.can_end_offer}
                           <span class="text-success">Do zakończenia: tak</span>
                         {else}
-                          <span class="text-danger">Do zakończenia: nie, zostaje jako najstarsza</span>
+                          <span class="text-danger">Do zakończenia: nie, ta oferta zostaje</span>
                         {/if}
                       </div>
                       <div class="mt-1">
@@ -1091,6 +1091,14 @@
   })();
 
   (function () {
+    // Karty w motywie liquid-glass tworza wlasny kontekst warstw przez
+    // backdrop-filter. Modal pozostawiony wewnatrz karty trafia wtedy pod
+    // backdrop Bootstrapa dolaczany bezposrednio do body i nie przyjmuje klikniec.
+    var bulkModal = document.getElementById('allegroBulkModal');
+    if (bulkModal && bulkModal.parentNode !== document.body) {
+      document.body.appendChild(bulkModal);
+    }
+
     var bulkForm = document.getElementById('allegro-bulk-form');
     var operationSelect = document.getElementById('bulk-operation-select');
     var categoryProductSearchInput = document.getElementById('bulk-category-product-search');

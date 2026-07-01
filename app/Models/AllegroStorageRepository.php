@@ -2279,7 +2279,9 @@ class AllegroStorageRepository
             );
         }
 
-        $groupRows = $this->fetchDuplicateGroupRowsForOffers($offerIds, null, true);
+        // Oceniamy cala grupe, niezaleznie od statusu. Jedna oferta ACTIVE ma
+        // pierwszenstwo przed zakonczonymi, a dopiero potem decyduje najnizszy ID.
+        $groupRows = $this->fetchDuplicateGroupRowsForOffers($offerIds, null, false);
         $metaByOfferId = $this->buildDuplicateMetaIndex($groupRows);
         $allowed = array();
         $blocked = array();
@@ -2418,7 +2420,7 @@ class AllegroStorageRepository
                 return $this->compareDuplicateMembers($left, $right);
             });
 
-            $oldestMember = $members[0];
+            $keeperMember = $members[0];
             $peers = array_values(array_filter($members, static function (array $member) use ($baseOfferRowId): bool {
                 return (int) ($member['row_id'] ?? 0) !== $baseOfferRowId;
             }));
@@ -2430,9 +2432,11 @@ class AllegroStorageRepository
                     return (string) ($peer['offer_id'] ?? '');
                 }, $peers)),
                 'peer_details' => $peers,
-                'oldest_offer_id' => (string) ($oldestMember['offer_id'] ?? ''),
-                'is_oldest' => (int) ($oldestMember['row_id'] ?? 0) === $baseOfferRowId,
-                'can_end_offer' => (int) ($oldestMember['row_id'] ?? 0) !== $baseOfferRowId,
+                // Zachowujemy stare klucze dla zgodnosci widoku i API. Wskazuja
+                // teraz oferte wybrana do pozostawienia, nie zawsze najstarsza.
+                'oldest_offer_id' => (string) ($keeperMember['offer_id'] ?? ''),
+                'is_oldest' => (int) ($keeperMember['row_id'] ?? 0) === $baseOfferRowId,
+                'can_end_offer' => (int) ($keeperMember['row_id'] ?? 0) !== $baseOfferRowId,
             );
         }
 
@@ -2441,6 +2445,12 @@ class AllegroStorageRepository
 
     private function compareDuplicateMembers(array $left, array $right): int
     {
+        $leftIsActive = strtoupper(trim((string) ($left['status'] ?? ''))) === 'ACTIVE';
+        $rightIsActive = strtoupper(trim((string) ($right['status'] ?? ''))) === 'ACTIVE';
+        if ($leftIsActive !== $rightIsActive) {
+            return $leftIsActive ? -1 : 1;
+        }
+
         $offerComparison = $this->compareOfferIdentifiers(
             (string) ($left['offer_id'] ?? ''),
             (string) ($right['offer_id'] ?? '')

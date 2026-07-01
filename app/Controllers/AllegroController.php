@@ -401,8 +401,9 @@ class AllegroController extends Controller
                 );
             } else {
                 $message = 'Dodano do kolejki: ' . (int) ($result['queued'] ?? 0) . ' ofert.';
-                if ((string) ($result['operation'] ?? '') === 'end_offer' && (int) ($result['filtered_out'] ?? 0) > 0) {
-                    $message .= ' Pominieto najstarsze duble: ' . (int) ($result['filtered_out'] ?? 0) . '.';
+                if (in_array((string) ($result['operation'] ?? ''), array('end_offer', 'remove_from_system_forever'), true)
+                    && (int) ($result['filtered_out'] ?? 0) > 0) {
+                    $message .= ' Pozostawiono chronione oferty z grup dubli: ' . (int) ($result['filtered_out'] ?? 0) . '.';
                 }
                 $this->setFlash('success', $message);
             }

@@ -20,6 +20,7 @@ use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
 use App\Controllers\TaskboardController;
+use App\Controllers\WorkTimeController;
 
 class Application
 {
@@ -82,6 +83,9 @@ class Application
                 break;
             case 'taskboard':
                 $controller = new TaskboardController();
+                break;
+            case 'worktime':
+                $controller = new WorkTimeController();
                 break;
             default:
                 http_response_code(404);

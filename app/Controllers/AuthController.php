@@ -43,6 +43,7 @@ class AuthController extends Controller
             'contentTitle' => 'Utworz konto',
             'pageDescription' => 'Zarejestruj nowe konto i potwierdz email.',
             'breadcrumbCurrent' => 'Rejestracja',
+            'authBaseUrl' => $this->tokens->baseUrl(),
         ));
     }
 
@@ -126,6 +127,7 @@ class AuthController extends Controller
                 'contentTitle' => 'Utworz konto',
                 'pageDescription' => 'Zarejestruj nowe konto i potwierdz email.',
                 'breadcrumbCurrent' => 'Rejestracja',
+                'authBaseUrl' => $this->tokens->baseUrl(),
                 'flashError' => $exception->getMessage(),
                 'formEmail' => (string) $this->input('email', ''),
                 'formFirstName' => (string) $this->input('first_name', ''),
@@ -157,6 +159,7 @@ class AuthController extends Controller
             'contentTitle' => 'Zaloguj sie',
             'pageDescription' => 'Podaj email i haslo.',
             'breadcrumbCurrent' => 'Logowanie',
+            'authBaseUrl' => $this->tokens->baseUrl(),
         ));
     }
 
@@ -208,6 +211,7 @@ class AuthController extends Controller
             'contentTitle' => 'Zapomniane haslo',
             'pageDescription' => 'Podaj email, a wyslemy link do resetu.',
             'breadcrumbCurrent' => 'Reset hasla',
+            'authBaseUrl' => $this->tokens->baseUrl(),
         ));
     }
 
@@ -247,6 +251,7 @@ class AuthController extends Controller
             'contentTitle' => 'Ustaw nowe haslo',
             'pageDescription' => 'Wpisz nowe haslo dla swojego konta.',
             'breadcrumbCurrent' => 'Nowe haslo',
+            'authBaseUrl' => $this->tokens->baseUrl(),
             'resetToken' => $token,
         ));
     }

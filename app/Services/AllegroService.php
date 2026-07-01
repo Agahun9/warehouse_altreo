@@ -466,13 +466,15 @@ class AllegroService
         }
 
         $filteredOut = 0;
-        if ($operation === 'end_offer') {
+        $protectDuplicateKeeper = $operation === 'end_offer'
+            || ($operation === 'remove_from_system_forever' && trim((string) ($filters['duplicates'] ?? '')) === '1');
+        if ($protectDuplicateKeeper) {
             $endOfferTargets = $this->storage->filterTerminableEndOfferTargets($targets);
             $targets = $endOfferTargets['allowed'] ?? array();
             $filteredOut = count($endOfferTargets['blocked'] ?? array());
 
             if ($targets === array()) {
-                throw new RuntimeException('Nie ma ofert, ktore mozna zakonczyc. Najstarsze oferty w grupach dubli zostaly automatycznie odfiltrowane.');
+                throw new RuntimeException('Nie ma ofert do wykonania operacji. Oferty wybrane do pozostawienia w grupach dubli zostaly automatycznie odfiltrowane.');
             }
         }
 
