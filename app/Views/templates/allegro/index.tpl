@@ -973,6 +973,33 @@
 </main>
 <script>
   (function () {
+    var bulkModal = document.getElementById('allegroBulkModal');
+    if (!bulkModal) {
+      return;
+    }
+
+    // Bootstrap modals should live directly under body. Keeping this fullscreen
+    // modal inside the offers card can make positioned layout ancestors offset it.
+    if (bulkModal.parentElement !== document.body) {
+      document.body.appendChild(bulkModal);
+    }
+
+    bulkModal.addEventListener('show.bs.modal', function () {
+      // Liquid Glass gives cards a backdrop-filter, which creates a stacking
+      // context. Always detach the modal from that context before Bootstrap
+      // creates the body-level backdrop.
+      if (bulkModal.parentElement !== document.body) {
+        document.body.appendChild(bulkModal);
+      }
+
+      var modalBody = bulkModal.querySelector('.modal-body');
+      if (modalBody) {
+        modalBody.scrollTop = 0;
+      }
+    });
+  })();
+
+  (function () {
     Array.prototype.slice.call(document.querySelectorAll('.js-translate-error')).forEach(function (button) {
       button.addEventListener('click', function () {
         if (button.getAttribute('data-loaded') === '1') {
