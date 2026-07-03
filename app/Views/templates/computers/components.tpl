@@ -52,16 +52,16 @@
       <div class="modal-content">
         <div class="modal-header bg-primary text-white">
           <h2 class="modal-title fs-5" id="componentEditorModalLabel">
-            <i class="bi bi-{if $editItem}pencil-square{else}plus-circle{/if} me-2"></i>{if $editItem}Edytuj komponent{else}Dodaj nowy komponent{/if}
+            <i class="bi bi-{if $editItem}pencil-square{else}plus-circle{/if} me-2"></i>{if $editItem}Edytuj komponent — {$editItem.name|escape:'html'}{else}Dodaj nowy komponent{/if}
           </h2>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zamknij"></button>
         </div>
         <div class="modal-body">
             <form method="post" action="" enctype="multipart/form-data">
               <input type="hidden" name="id" value="{$editItem.id|default:''}" />
-              <input type="hidden" name="img_old" value="{$editItem.img|escape:'html'}" />
-              <input type="hidden" name="img_morele_old" value="{$editItem.img_morele|escape:'html'}" />
-              <input type="hidden" name="img_empik_old" value="{$editItem.img_empik|escape:'html'}" />
+              <input type="hidden" id="img_old" name="img_old" value="{$editItem.img|escape:'html'}" />
+              <input type="hidden" id="img_morele_old" name="img_morele_old" value="{$editItem.img_morele|escape:'html'}" />
+              <input type="hidden" id="img_empik_old" name="img_empik_old" value="{$editItem.img_empik|escape:'html'}" />
               <div class="mb-3">
                 <label for="name" class="form-label">Nazwa:</label>
                 <input type="text" id="name" name="name" value="{$editItem.name|escape:'html'}" class="form-control"
@@ -128,75 +128,98 @@
               </div>
 
 
-              <div class="mb-3">
-                <label for="img_file" class="form-label">Zdjęcia komponentu (max 16) ALLEGRO:</label>
-                <input type="file" id="img_file" name="img_file[]" accept=".jpg,.jpeg,.png,.gif,.webp"
-                  class="form-control" multiple />
-              </div>
-              <div class="mb-3">
-                <label for="img_file_morele" class="form-label">Zdjęcia komponentu (max 16) morele:</label>
-                <input type="file" id="img_file_morele" name="img_file_morele[]" accept=".jpg,.jpeg,.png,.gif,.webp"
-                  class="form-control" multiple />
-              </div>
-              <div class="mb-3">
-                <label for="img_file_empik" class="form-label">Zdjęcia komponentu (max 16) empik:</label>
-                <input type="file" id="img_file_empik" name="img_file_empik[]" accept=".jpg,.jpeg,.png,.gif,.webp"
-                  class="form-control" multiple />
-              </div>
-              {if $editItem.img}
-                <div class="mb-3">
-                  <label class="form-label">Aktualne zdjęcia:</label><br />
-                  {assign var="imgList" value=$editItem.img|split:","}
-                  {foreach from=$imgList item=imgFile}
-                    {if $imgFile}
-                      <div style="display:inline-block; margin:3px; text-align:center;">
-                        <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie" class="component-img-thumb"
-                          style="max-width:80px; max-height:80px; object-fit:contain; border:1px solid #ccc; padding:3px; border-radius:5px; display:block; margin-bottom:2px; cursor:pointer;"
-                          data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
-                        <label style="font-size:0.9em;">
-                          <input type="checkbox" name="remove_img[]" value="{$imgFile|escape:'html'}" /> Usuń
-                        </label>
-                      </div>
-                    {/if}
-                  {/foreach}
+              <fieldset class="component-market-images component-market-images--allegro mb-3">
+                <legend><span class="component-market-logo">A</span> Zdjęcia Allegro</legend>
+                <label for="img_file" class="form-label">Dodaj zdjęcia Allegro <span class="text-muted fw-normal">(maks. 16)</span></label>
+                <div class="component-image-upload" data-input="img_file" data-order-input="img_old">
+                  <div class="component-image-dropzone" tabindex="0" role="button">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <strong>Upuść zdjęcia Allegro tutaj</strong>
+                    <span>lub kliknij, aby wybrać pliki</span>
+                  </div>
+                  <input type="file" id="img_file" name="img_file[]" accept=".jpg,.jpeg,.png,.gif,.webp"
+                    class="form-control component-image-file-input" multiple />
+                  <div class="component-new-image-preview"></div>
                 </div>
-              {/if}
-              {if $editItem.img_morele}
-                <div class="mb-3">
-                  <label class="form-label">Aktualne zdjęcia Morele:</label><br />
-                  {assign var="imgListMorele" value=$editItem.img_morele|split:","}
-                  {foreach from=$imgListMorele item=imgFile}
-                    {if $imgFile}
-                      <div style="display:inline-block; margin:3px; text-align:center;">
-                        <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie" class="component-img-thumb"
-                          style="max-width:80px; max-height:80px; object-fit:contain; border:1px solid #ccc; padding:3px; border-radius:5px; display:block; margin-bottom:2px; cursor:pointer;"
-                          data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
-                        <label style="font-size:0.9em;">
-                          <input type="checkbox" name="remove_img_morele[]" value="{$imgFile|escape:'html'}" /> Usuń
-                        </label>
-                      </div>
-                    {/if}
-                  {/foreach}
+                {if $editItem.img}
+                  <div class="component-current-images mt-3">
+                    <label class="form-label mb-1">Aktualne zdjęcia Allegro</label>
+                    <div class="form-text mb-2"><i class="bi bi-grip-vertical"></i> Przytrzymaj zdjęcie i upuść je w wybranym miejscu.</div>
+                    {assign var="imgList" value=$editItem.img|split:","}
+                    <div class="component-image-sorter" data-order-input="img_old">
+                      {foreach from=$imgList item=imgFile}{if $imgFile}
+                        <div class="component-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                          <span class="component-image-drag-handle" title="Przytrzymaj i przeciągnij"><i class="bi bi-grip-vertical"></i></span>
+                          <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie Allegro" class="component-img-thumb" data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
+                          <label style="font-size:0.9em;"><input type="checkbox" name="remove_img[]" value="{$imgFile|escape:'html'}" /> Usuń</label>
+                        </div>
+                      {/if}{/foreach}
+                    </div>
+                  </div>
+                {/if}
+              </fieldset>
+
+              <fieldset class="component-market-images component-market-images--morele mb-3">
+                <legend><span class="component-market-logo">M</span> Zdjęcia Morele</legend>
+                <label for="img_file_morele" class="form-label">Dodaj zdjęcia Morele <span class="text-muted fw-normal">(maks. 16)</span></label>
+                <div class="component-image-upload" data-input="img_file_morele" data-order-input="img_morele_old">
+                  <div class="component-image-dropzone" tabindex="0" role="button">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <strong>Upuść zdjęcia Morele tutaj</strong>
+                    <span>lub kliknij, aby wybrać pliki</span>
+                  </div>
+                  <input type="file" id="img_file_morele" name="img_file_morele[]" accept=".jpg,.jpeg,.png,.gif,.webp"
+                    class="form-control component-image-file-input" multiple />
+                  <div class="component-new-image-preview"></div>
                 </div>
-              {/if}
-              {if $editItem.img_empik}
-                <div class="mb-3">
-                  <label class="form-label">Aktualne zdjęcia Empik:</label><br />
-                  {assign var="imgListEmpik" value=$editItem.img_empik|split:","}
-                  {foreach from=$imgListEmpik item=imgFile}
-                    {if $imgFile}
-                      <div style="display:inline-block; margin:3px; text-align:center;">
-                        <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie" class="component-img-thumb"
-                          style="max-width:80px; max-height:80px; object-fit:contain; border:1px solid #ccc; padding:3px; border-radius:5px; display:block; margin-bottom:2px; cursor:pointer;"
-                          data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
-                        <label style="font-size:0.9em;">
-                          <input type="checkbox" name="remove_img_empik[]" value="{$imgFile|escape:'html'}" /> Usuń
-                        </label>
-                      </div>
-                    {/if}
-                  {/foreach}
+                {if $editItem.img_morele}
+                  <div class="component-current-images mt-3">
+                    <label class="form-label mb-1">Aktualne zdjęcia Morele</label>
+                    <div class="form-text mb-2"><i class="bi bi-grip-vertical"></i> Przytrzymaj zdjęcie i upuść je w wybranym miejscu.</div>
+                    {assign var="imgListMorele" value=$editItem.img_morele|split:","}
+                    <div class="component-image-sorter" data-order-input="img_morele_old">
+                      {foreach from=$imgListMorele item=imgFile}{if $imgFile}
+                        <div class="component-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                          <span class="component-image-drag-handle" title="Przytrzymaj i przeciągnij"><i class="bi bi-grip-vertical"></i></span>
+                          <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie Morele" class="component-img-thumb" data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
+                          <label style="font-size:0.9em;"><input type="checkbox" name="remove_img_morele[]" value="{$imgFile|escape:'html'}" /> Usuń</label>
+                        </div>
+                      {/if}{/foreach}
+                    </div>
+                  </div>
+                {/if}
+              </fieldset>
+
+              <fieldset class="component-market-images component-market-images--empik mb-3">
+                <legend><span class="component-market-logo">E</span> Zdjęcia Empik</legend>
+                <label for="img_file_empik" class="form-label">Dodaj zdjęcia Empik <span class="text-muted fw-normal">(maks. 16)</span></label>
+                <div class="component-image-upload" data-input="img_file_empik" data-order-input="img_empik_old">
+                  <div class="component-image-dropzone" tabindex="0" role="button">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <strong>Upuść zdjęcia Empik tutaj</strong>
+                    <span>lub kliknij, aby wybrać pliki</span>
+                  </div>
+                  <input type="file" id="img_file_empik" name="img_file_empik[]" accept=".jpg,.jpeg,.png,.gif,.webp"
+                    class="form-control component-image-file-input" multiple />
+                  <div class="component-new-image-preview"></div>
                 </div>
-              {/if}
+                {if $editItem.img_empik}
+                  <div class="component-current-images mt-3">
+                    <label class="form-label mb-1">Aktualne zdjęcia Empik</label>
+                    <div class="form-text mb-2"><i class="bi bi-grip-vertical"></i> Przytrzymaj zdjęcie i upuść je w wybranym miejscu.</div>
+                    {assign var="imgListEmpik" value=$editItem.img_empik|split:","}
+                    <div class="component-image-sorter" data-order-input="img_empik_old">
+                      {foreach from=$imgListEmpik item=imgFile}{if $imgFile}
+                        <div class="component-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                          <span class="component-image-drag-handle" title="Przytrzymaj i przeciągnij"><i class="bi bi-grip-vertical"></i></span>
+                          <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie Empik" class="component-img-thumb" data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
+                          <label style="font-size:0.9em;"><input type="checkbox" name="remove_img_empik[]" value="{$imgFile|escape:'html'}" /> Usuń</label>
+                        </div>
+                      {/if}{/foreach}
+                    </div>
+                  </div>
+                {/if}
+              </fieldset>
               <div class="mb-3">
                 <label for="category" class="form-label">Kategoria:</label>
                 <input type="text" id="category" name="category" value="{$editItem.category|escape:'html'}"
@@ -336,14 +359,14 @@
                 </div>
               </div>
               <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle mb-0">
+                <table class="table table-striped table-hover table-bordered align-middle mb-0 component-list-table">
                   <thead class="table-primary">
                     <tr>
                       <th scope="col" style="width:3%;"><input type="checkbox" id="check_all" /></th>
-                      <th scope="col" style="width:12%;">Nazwa</th>
+                      <th scope="col" style="width:16%;">Nazwa</th>
                       <th scope="col" style="width:8%;">Cena</th>
-                      <th scope="col" style="width:23%;">Obrazek</th>
-                      <th scope="col" style="width:12%;">Akcje</th>
+                      <th scope="col" style="width:63%;">Obrazek</th>
+                      <th scope="col" style="width:10%;">Akcje</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -374,7 +397,24 @@
  
   <details class="photo-accordion">
     <summary>
-      <span>🖼️ Zasoby (Morele / Empik / Allegro)</span>
+      <span class="component-resource-summary">
+        <span class="component-resource-title"><i class="bi bi-collection me-1"></i>Zasoby</span>
+        <span class="component-market-stats component-market-stats--allegro">
+          <strong>Allegro</strong>
+          <span><i class="bi bi-images"></i> zdjęcia: {$item.img_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_eu_count|default:0}</span>
+        </span>
+        <span class="component-market-stats component-market-stats--morele">
+          <strong>Morele</strong>
+          <span><i class="bi bi-images"></i> zdjęcia: {$item.img_morele_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_morele_count|default:0}</span>
+        </span>
+        <span class="component-market-stats component-market-stats--empik">
+          <strong>Empik</strong>
+          <span><i class="bi bi-images"></i> zdjęcia: {$item.img_empik_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_empik_count|default:0}</span>
+        </span>
+      </span>
     </summary>
 
     <div class="accordion-content">
@@ -449,11 +489,9 @@
                   </tbody>
 
                 </table>
-                <div id="totalPriceBox">
-                  <strong>Suma zaznaczonych: <span id="totalPrice">0</span> ZŁ</strong>
-                </div>
-
-
+              </div>
+              <div id="totalPriceBox" aria-live="polite">
+                <strong>Suma zaznaczonych: <span id="totalPrice">0.00</span> ZŁ</strong>
               </div>
             </form>
           </div>
@@ -529,6 +567,16 @@
       padding: .45rem .55rem;
     }
 
+    .component-list-table {
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    .component-list-table td:last-child .btn {
+      padding-left: .45rem;
+      padding-right: .45rem;
+    }
+
     .market-params {
       background: #f8fafc;
       border: 1px solid #dbe4f0;
@@ -562,6 +610,191 @@
     .component-img-thumb:hover {
       cursor: pointer;
       filter: brightness(0.95) drop-shadow(0 0 2px #007bff);
+    }
+
+    .component-image-sorter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 118px;
+      padding: 8px;
+      border: 1px dashed #b8c4d4;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+
+    .component-market-images {
+      padding: 14px;
+      border: 2px solid #dbe4f0;
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .component-market-images > legend {
+      float: none;
+      width: auto;
+      margin: 0 0 10px;
+      padding: 0 8px 0 0;
+      font-size: 1.05rem;
+      font-weight: 800;
+    }
+
+    .component-market-logo {
+      display: inline-grid;
+      width: 28px;
+      height: 28px;
+      margin-right: 5px;
+      place-items: center;
+      color: #fff;
+      border-radius: 8px;
+      font-size: .85rem;
+    }
+
+    .component-market-images--allegro { border-color: #ddd6fe; background: #faf9ff; }
+    .component-market-images--allegro .component-market-logo { background: #7c3aed; }
+    .component-market-images--morele { border-color: #bae6fd; background: #f8fcff; }
+    .component-market-images--morele .component-market-logo { background: #0284c7; }
+    .component-market-images--empik { border-color: #fecdd3; background: #fffafb; }
+    .component-market-images--empik .component-market-logo { background: #e11d48; }
+
+    .component-current-images {
+      padding-top: 12px;
+      border-top: 1px solid #dbe4f0;
+    }
+
+    .component-image-dropzone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 112px;
+      padding: 18px;
+      color: #526274;
+      text-align: center;
+      border: 2px dashed #9fb1c7;
+      border-radius: 12px;
+      background: #f8fafc;
+      cursor: pointer;
+      transition: border-color .15s ease, background-color .15s ease, transform .15s ease;
+    }
+
+    .component-image-dropzone > i {
+      margin-bottom: 4px;
+      color: #0d6efd;
+      font-size: 1.8rem;
+    }
+
+    .component-image-dropzone > span {
+      font-size: .85rem;
+    }
+
+    .component-image-dropzone.is-over,
+    .component-image-dropzone:focus {
+      border-color: #0d6efd;
+      background: #eaf3ff;
+      outline: none;
+      transform: translateY(-1px);
+    }
+
+    .component-image-file-input {
+      display: none;
+    }
+
+    .component-new-image-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .component-new-image-item {
+      position: relative;
+      width: 104px;
+      padding: 22px 6px 6px;
+      text-align: center;
+      border: 1px solid #b9d3f5;
+      border-radius: 9px;
+      background: #eef6ff;
+    }
+
+    .component-new-image-item img {
+      display: block;
+      width: 88px;
+      height: 76px;
+      margin: 0 auto 4px;
+      object-fit: contain;
+      border-radius: 5px;
+      background: #fff;
+    }
+
+    .component-new-image-number {
+      position: absolute;
+      top: 3px;
+      left: 5px;
+      font-size: .75rem;
+      font-weight: 700;
+      color: #0d6efd;
+    }
+
+    .component-new-image-remove {
+      position: absolute;
+      top: 2px;
+      right: 3px;
+      padding: 0 4px;
+      color: #dc3545;
+      border: 0;
+      background: transparent;
+    }
+
+    .component-new-image-name {
+      display: block;
+      overflow: hidden;
+      font-size: .72rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .component-image-sort-item {
+      position: relative;
+      width: 104px;
+      padding: 8px 6px 5px;
+      text-align: center;
+      border: 1px solid #d7dee8;
+      border-radius: 9px;
+      background: #fff;
+      cursor: grab;
+      user-select: none;
+      transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
+    }
+
+    .component-image-sort-item:active {
+      cursor: grabbing;
+    }
+
+    .component-image-sort-item.is-dragging {
+      opacity: .35;
+      transform: scale(.96);
+      box-shadow: 0 5px 16px rgba(13, 110, 253, .25);
+    }
+
+    .component-image-drag-handle {
+      position: absolute;
+      top: 2px;
+      right: 3px;
+      z-index: 1;
+      color: #526274;
+      cursor: grab;
+    }
+
+    .component-image-sort-item .component-img-thumb {
+      display: block;
+      width: 88px;
+      height: 76px;
+      margin: 0 auto 3px;
+      padding: 3px;
+      object-fit: contain;
+      border: 1px solid #ccc;
+      border-radius: 5px;
     }
 
     .table td,
@@ -706,13 +939,182 @@
         }
       }, 5000);
 
+      document.querySelectorAll('.component-image-upload').forEach(function(uploadBox) {
+        var input = document.getElementById(uploadBox.dataset.input || '');
+        var dropzone = uploadBox.querySelector('.component-image-dropzone');
+        var preview = uploadBox.querySelector('.component-new-image-preview');
+        var orderInputId = uploadBox.dataset.orderInput || '';
+        var selectedFiles = [];
+        var previewUrls = [];
+
+        if (!input || !dropzone || !preview || typeof DataTransfer === 'undefined') return;
+
+        function existingImageCount() {
+          var orderInput = document.getElementById(orderInputId);
+          var names = orderInput && orderInput.value
+            ? orderInput.value.split(',').map(function(name) { return name.trim(); }).filter(Boolean)
+            : [];
+          var removed = 0;
+          document.querySelectorAll('.component-image-sorter').forEach(function(sorter) {
+            if (sorter.dataset.orderInput === orderInputId) {
+              removed = sorter.querySelectorAll('input[type="checkbox"]:checked').length;
+            }
+          });
+          return Math.max(0, names.length - removed);
+        }
+
+        function syncFileInput() {
+          var transfer = new DataTransfer();
+          selectedFiles.forEach(function(file) { transfer.items.add(file); });
+          input.files = transfer.files;
+        }
+
+        function renderNewImages() {
+          previewUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+          previewUrls = [];
+          preview.innerHTML = '';
+
+          selectedFiles.forEach(function(file, index) {
+            var url = URL.createObjectURL(file);
+            previewUrls.push(url);
+            var item = document.createElement('div');
+            item.className = 'component-new-image-item';
+
+            var number = document.createElement('span');
+            number.className = 'component-new-image-number';
+            number.textContent = 'Nowe ' + (index + 1);
+
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'component-new-image-remove';
+            remove.title = 'Usuń z kolejki';
+            remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+            remove.addEventListener('click', function() {
+              selectedFiles.splice(index, 1);
+              syncFileInput();
+              renderNewImages();
+            });
+
+            var image = document.createElement('img');
+            image.src = url;
+            image.alt = file.name;
+
+            var name = document.createElement('span');
+            name.className = 'component-new-image-name';
+            name.title = file.name;
+            name.textContent = file.name;
+
+            item.appendChild(number);
+            item.appendChild(remove);
+            item.appendChild(image);
+            item.appendChild(name);
+            preview.appendChild(item);
+          });
+        }
+
+        function addFiles(files) {
+          var available = Math.max(0, 16 - existingImageCount() - selectedFiles.length);
+          var rejected = 0;
+          Array.from(files || []).forEach(function(file) {
+            var key = [file.name, file.size, file.lastModified].join(':');
+            var duplicate = selectedFiles.some(function(current) {
+              return [current.name, current.size, current.lastModified].join(':') === key;
+            });
+            var isImage = /^image\/(jpeg|png|gif|webp)$/i.test(file.type)
+              || /\.(jpe?g|png|gif|webp)$/i.test(file.name);
+            if (!isImage || duplicate || available <= 0) {
+              rejected += duplicate ? 0 : 1;
+              return;
+            }
+            selectedFiles.push(file);
+            available -= 1;
+          });
+          syncFileInput();
+          renderNewImages();
+          if (rejected > 0) alert('Możesz dodać maksymalnie 16 poprawnych zdjęć w tej sekcji.');
+        }
+
+        dropzone.addEventListener('click', function() { input.click(); });
+        dropzone.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            input.click();
+          }
+        });
+        ['dragenter', 'dragover'].forEach(function(eventName) {
+          dropzone.addEventListener(eventName, function(event) {
+            event.preventDefault();
+            dropzone.classList.add('is-over');
+          });
+        });
+        ['dragleave', 'drop'].forEach(function(eventName) {
+          dropzone.addEventListener(eventName, function(event) {
+            event.preventDefault();
+            dropzone.classList.remove('is-over');
+          });
+        });
+        dropzone.addEventListener('drop', function(event) { addFiles(event.dataTransfer.files); });
+        input.addEventListener('change', function() { addFiles(input.files); });
+      });
+
       // Dodaj powiększanie obrazka w modalu
+      var imageWasDragged = false;
       document.querySelectorAll('.component-img-thumb').forEach(function(img) {
         img.addEventListener('click', function() {
+          if (imageWasDragged) return;
           var modalImg = document.getElementById('imgModalImg');
           modalImg.src = this.src;
           var modal = new bootstrap.Modal(document.getElementById('imgModal'));
           modal.show();
+        });
+      });
+
+      document.querySelectorAll('.component-image-sorter').forEach(function(sorter) {
+        var draggedItem = null;
+        var orderInput = document.getElementById(sorter.dataset.orderInput || '');
+
+        function saveImageOrder() {
+          if (!orderInput) return;
+          orderInput.value = Array.from(sorter.querySelectorAll('.component-image-sort-item'))
+            .map(function(item) { return item.dataset.filename || ''; })
+            .filter(Boolean)
+            .join(',');
+        }
+
+        sorter.querySelectorAll('.component-image-sort-item').forEach(function(item) {
+          item.addEventListener('dragstart', function(event) {
+            draggedItem = item;
+            imageWasDragged = true;
+            item.classList.add('is-dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', item.dataset.filename || '');
+          });
+
+          item.addEventListener('dragend', function() {
+            item.classList.remove('is-dragging');
+            draggedItem = null;
+            saveImageOrder();
+            setTimeout(function() { imageWasDragged = false; }, 0);
+          });
+        });
+
+        sorter.addEventListener('dragover', function(event) {
+          event.preventDefault();
+          if (!draggedItem) return;
+
+          var target = event.target.closest('.component-image-sort-item');
+          if (!target || target === draggedItem || target.parentElement !== sorter) return;
+
+          var rect = target.getBoundingClientRect();
+          var placeAfter = event.clientY > rect.top + rect.height / 2
+            || (Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 3
+              && event.clientX > rect.left + rect.width / 2);
+          sorter.insertBefore(draggedItem, placeAfter ? target.nextSibling : target);
+        });
+
+        sorter.addEventListener('drop', function(event) {
+          event.preventDefault();
+          saveImageOrder();
         });
       });
 
@@ -835,13 +1237,14 @@
 
       function updateTotal() {
         let total = 0;
-        document.querySelectorAll('.component_checkbox:checked').forEach(cb => {
-          total += parseFloat(cb.getAttribute('data-price')) || 0;
+        const checked = document.querySelectorAll('.component_checkbox:checked');
+        checked.forEach(cb => {
+          total += parseFloat(String(cb.getAttribute('data-price') || '0').replace(',', '.')) || 0;
         });
 
         animateTotal(total);
 
-        if (total > 0) {
+        if (checked.length > 0) {
           totalBox.classList.add('show');
         } else {
           totalBox.classList.remove('show');
@@ -940,6 +1343,54 @@
       color: #333;
     }
     .photo-accordion summary::-webkit-details-marker { display: none; } /* Ukrywa domyślną strzałkę w Chrome */
+
+    .component-resource-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .component-resource-title {
+      margin-right: 2px;
+      font-size: .9rem;
+      font-weight: 700;
+    }
+
+    .component-market-stats {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid #d8e0eb;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: .84rem;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .component-market-stats > strong {
+      padding-right: 5px;
+      border-right: 1px solid currentColor;
+    }
+
+    .component-market-stats > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-weight: 700;
+    }
+
+    .component-market-stats--allegro { color: #7c3aed; background: #f5f3ff; border-color: #ddd6fe; }
+    .component-market-stats--morele { color: #075985; background: #f0f9ff; border-color: #bae6fd; }
+    .component-market-stats--empik { color: #9f1239; background: #fff1f2; border-color: #fecdd3; }
+
+    @media (max-width: 1199.98px) {
+      .component-resource-title {
+        flex-basis: 100%;
+      }
+    }
     
     .photo-accordion summary::after {
       content: '▼';

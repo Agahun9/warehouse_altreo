@@ -284,6 +284,7 @@ class ComputersController extends Controller
             'sourceOptionsJson' => json_encode($this->computerCsvSourceOptions(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionTokensJson' => json_encode($this->computerDescriptionTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionParameterTokensJson' => json_encode($this->computerDescriptionParameterTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'descriptionConditionComponentsJson' => json_encode($this->computerDescriptionConditionComponents(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'computerTab' => 'csvtemplates',
         ));
     }
@@ -1054,7 +1055,7 @@ class ComputersController extends Controller
         $payload = array(
             'name' => $name,
             'name_title' => trim((string) $this->input('name_title', '')),
-            'price' => (float) $this->input('price', 0),
+            'price' => $this->normalizeDecimalInput($this->input('price', 0)),
             'description' => trim((string) $this->input('description', '')),
             'description_morele' => trim((string) $this->input('description_morele', '')),
             'description_empik' => trim((string) $this->input('description_empik', '')),
@@ -1189,7 +1190,12 @@ class ComputersController extends Controller
 
     private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts): array
     {
-        $attachedProducts = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers(array($product)))));
+        // Price updates must reach every offer with the matching SKU, including
+        // offers whose locally synchronized status is currently inactive.
+        $attachedProducts = $this->attachActiveAllegroOffers(array($product), false);
+        $attachedProducts = $this->attachActiveEmpikOffers($attachedProducts, false);
+        $attachedProducts = $this->attachActiveErliProducts($attachedProducts, false);
+        $attachedProducts = $this->attachActiveMoreleOffers($attachedProducts, false);
         $attachedProduct = isset($attachedProducts[0]) && is_array($attachedProducts[0]) ? $attachedProducts[0] : $product;
 
         return array(
@@ -1393,6 +1399,14 @@ class ComputersController extends Controller
         return number_format((float) $normalized, 2, '.', '');
     }
 
+    private function normalizeDecimalInput($value): float
+    {
+        $normalized = str_replace(array("\xc2\xa0", ' '), '', trim((string) $value));
+        $normalized = str_replace(',', '.', $normalized);
+
+        return is_numeric($normalized) ? round((float) $normalized, 2) : 0.0;
+    }
+
     private function normalizeProductImageFields(array $product): array
     {
         foreach (array('img', 'img_morele', 'img_empik') as $field) {
@@ -1443,11 +1457,13 @@ class ComputersController extends Controller
             $hasEmpikTables = $this->tableExists('empik_offers') && $this->tableExists('empik_accounts');
             $hasErliTables = $this->tableExists('erli_products') && $this->tableExists('erli_accounts');
             $hasMoreleTables = $this->tableExists('morele_offers');
-            $skuMatch = '(market_items.sku = products.sku'
-                . ' OR market_items.sku = CAST(products.offerid AS CHAR)'
-                . ' OR market_items.sku = CAST(products.id AS CHAR)'
-                . " OR market_items.sku = CONCAT('ALTREO_', products.id)"
-                . " OR market_items.sku = CONCAT('ALTREO_', products.offerid))";
+            // Marketplace tables were created at different times and can use
+            // utf8mb4_general_ci while the computer tables use unicode_ci.
+            $skuMatch = '(market_items.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci'
+                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.offerid AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.id AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.id) COLLATE utf8mb4_unicode_ci"
+                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.offerid) COLLATE utf8mb4_unicode_ci)";
             $moreleSkuMatch = '(market_items.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci'
                 . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.offerid AS CHAR) COLLATE utf8mb4_unicode_ci'
                 . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.id AS CHAR) COLLATE utf8mb4_unicode_ci'
@@ -1633,7 +1649,7 @@ class ComputersController extends Controller
         ));
     }
 
-    private function attachActiveAllegroOffers(array $products): array
+    private function attachActiveAllegroOffers(array $products, bool $onlyActive = true): array
     {
         foreach ($products as $index => $product) {
             if (is_array($product)) {
@@ -1680,13 +1696,11 @@ class ComputersController extends Controller
                 'SELECT offers.id AS offer_row_id, offers.account_id, offers.offer_id, offers.sku, offers.price_amount, offers.price_currency, offers.publication_status, offers.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
                 . ' FROM allegro_offers offers'
                 . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
-                . ' WHERE offers.publication_status = :publication_status'
-                . ' AND accounts.is_active = 1'
+                . ' WHERE accounts.is_active = 1'
+                . ($onlyActive ? ' AND offers.publication_status = :publication_status' : '')
                 . ' AND offers.sku IN (' . implode(',', $placeholders) . ')'
                 . ' ORDER BY accounts.name ASC, offers.updated_at DESC, offers.id DESC',
-                array_merge(array(
-                    'publication_status' => 'ACTIVE',
-                ), $params)
+                $onlyActive ? array_merge(array('publication_status' => 'ACTIVE'), $params) : $params
             );
 
             foreach ($rows as $row) {
@@ -1739,7 +1753,7 @@ class ComputersController extends Controller
         return false;
     }
 
-    private function attachActiveErliProducts(array $products): array
+    private function attachActiveErliProducts(array $products, bool $onlyActive = true): array
     {
         foreach ($products as $index => $product) {
             if (is_array($product)) {
@@ -1795,7 +1809,7 @@ class ComputersController extends Controller
                 . ' INNER JOIN erli_accounts accounts ON accounts.id = products.account_id'
                 . ' WHERE accounts.is_active = 1'
                 . ' AND products.sku IN (' . implode(',', $placeholders) . ')'
-                . " HAVING effective_status = 'active'"
+                . ($onlyActive ? " HAVING effective_status = 'active'" : '')
                 . ' ORDER BY accounts.name ASC, products.updated_at DESC, products.id DESC',
                 $params
             );
@@ -1831,7 +1845,7 @@ class ComputersController extends Controller
         return $products;
     }
 
-    private function attachActiveMoreleOffers(array $products): array
+    private function attachActiveMoreleOffers(array $products, bool $onlyActive = true): array
     {
         foreach ($products as $index => $product) {
             if (is_array($product)) {
@@ -1879,7 +1893,7 @@ class ComputersController extends Controller
                 . ' COALESCE(stock_override, quantity) AS effective_quantity,'
                 . ' last_synced_at'
                 . ' FROM morele_offers'
-                . ' WHERE active = 1 AND sku IN (' . implode(',', $placeholders) . ')'
+                . ' WHERE ' . ($onlyActive ? 'active = 1 AND ' : '') . 'sku IN (' . implode(',', $placeholders) . ')'
                 . ' ORDER BY account_name ASC, updated_at DESC, id DESC',
                 $params
             );
@@ -1916,7 +1930,7 @@ class ComputersController extends Controller
         return $products;
     }
 
-    private function attachActiveEmpikOffers(array $products): array
+    private function attachActiveEmpikOffers(array $products, bool $onlyActive = true): array
     {
         foreach ($products as $index => $product) {
             if (is_array($product)) {
@@ -1965,8 +1979,8 @@ class ComputersController extends Controller
                 . ' offers.price, offers.total_price, offers.currency_iso_code, offers.quantity, offers.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
                 . ' FROM empik_offers offers'
                 . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id'
-                . ' WHERE offers.active = 1'
-                . ' AND accounts.is_active = 1'
+                . ' WHERE accounts.is_active = 1'
+                . ($onlyActive ? ' AND offers.active = 1' : '')
                 . ' AND (offers.shop_sku IN (' . implode(',', $shopSkuPlaceholders) . ') OR offers.product_sku IN (' . implode(',', $productSkuPlaceholders) . '))'
                 . ' ORDER BY accounts.name ASC, offers.updated_at DESC, offers.id DESC',
                 $params
@@ -2125,7 +2139,9 @@ class ComputersController extends Controller
     {
         foreach (array('img', 'img_morele', 'img_empik') as $field) {
             if (array_key_exists($field, $component)) {
-                $component[$field] = implode(',', $this->existingComponentImages((string) $component[$field]));
+                $images = $this->existingComponentImages((string) $component[$field]);
+                $component[$field] = implode(',', $images);
+                $component[$field . '_count'] = count($images);
             }
         }
 
@@ -2669,6 +2685,10 @@ class ComputersController extends Controller
             }
         }
         foreach ($components as $component) {
+            $componentId = (int) ($component['id'] ?? 0);
+            if ($componentId > 0) {
+                $vars['has_component.' . $componentId] = '1';
+            }
             $category = trim((string) ($component['category'] ?? ''));
             if ($category === '') {
                 continue;
@@ -2703,15 +2723,57 @@ class ComputersController extends Controller
             }
         }
 
-        $template = preg_replace_callback('/\\{%\\s*if\\s+([a-zA-Z0-9_.\\[\\]]+)\\s*%\\}(.*?)\\{%\\s*endif\\s*%\\}/s', static function (array $matches) use ($vars): string {
-            $parts = preg_split('/\\{%\\s*else\\s*%\\}/', $matches[2]);
-            $value = $vars[$matches[1]] ?? '';
-            return trim((string) $value) !== '' ? (string) ($parts[0] ?? '') : (string) ($parts[1] ?? '');
-        }, $template);
+        $template = $this->renderComputerDescriptionConditionals($template, $vars);
 
         return (string) preg_replace_callback('/\\{\\{\\s*([a-zA-Z0-9_.\\[\\]]+)\\s*\\}\\}/', static function (array $matches) use ($vars): string {
             return is_scalar($vars[$matches[1]] ?? '') ? (string) ($vars[$matches[1]] ?? '') : '';
         }, $template);
+    }
+
+    private function renderComputerDescriptionConditionals(string $template, array $vars): string
+    {
+        return (string) preg_replace_callback(
+            '/\\{%\\s*if\\s+([a-zA-Z0-9_.\\[\\]]+)\\s*%\\}(.*?)\\{%\\s*endif\\s*%\\}/s',
+            static function (array $matches) use ($vars): string {
+                $parts = preg_split(
+                    '/\\{%\\s*((?:elseif|else\\s+if)\\s+[a-zA-Z0-9_.\\[\\]]+|else)\\s*%\\}/i',
+                    (string) $matches[2],
+                    -1,
+                    PREG_SPLIT_DELIM_CAPTURE
+                );
+                if (!is_array($parts)) {
+                    return '';
+                }
+
+                $branches = array(array(
+                    'condition' => (string) $matches[1],
+                    'content' => (string) ($parts[0] ?? ''),
+                ));
+                for ($index = 1; $index < count($parts); $index += 2) {
+                    $directive = trim((string) ($parts[$index] ?? ''));
+                    $content = (string) ($parts[$index + 1] ?? '');
+                    if (strtolower($directive) === 'else') {
+                        $branches[] = array('condition' => null, 'content' => $content);
+                        continue;
+                    }
+                    $condition = preg_replace('/^(?:elseif|else\\s+if)\\s+/i', '', $directive);
+                    $branches[] = array('condition' => trim((string) $condition), 'content' => $content);
+                }
+
+                foreach ($branches as $branch) {
+                    if ($branch['condition'] === null) {
+                        return (string) $branch['content'];
+                    }
+                    $value = $vars[(string) $branch['condition']] ?? '';
+                    if (trim((string) $value) !== '') {
+                        return (string) $branch['content'];
+                    }
+                }
+
+                return '';
+            },
+            $template
+        );
     }
 
     private function validatedComputerCsvColumns(): array
@@ -3742,6 +3804,26 @@ class ComputersController extends Controller
             }
         }
         return $tokens;
+    }
+
+    private function computerDescriptionConditionComponents(): array
+    {
+        $options = array();
+        $rows = $this->db()->fetchAll(
+            'SELECT id, name, category FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category ASC, name ASC, id ASC'
+        );
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $category = trim((string) ($row['category'] ?? ''));
+            $name = trim((string) ($row['name'] ?? ''));
+            $options['has_component.' . $id] = ($category !== '' ? '[' . $category . '] ' : '')
+                . ($name !== '' ? $name : 'Komponent') . ' (#' . $id . ')';
+        }
+
+        return $options;
     }
 
     private function computerDescriptionParameterTokens(): array

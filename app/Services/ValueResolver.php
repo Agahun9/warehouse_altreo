@@ -647,7 +647,14 @@ class ValueResolver
                 return $this->resolveTitleFieldExpression($product, $value, $exportOptions);
             }
 
-            return isset($exportOptions[$value]) ? (string) $exportOptions[$value] : '';
+            $format = '';
+            $formatPos = strrpos($value, '=');
+            if ($formatPos !== false) {
+                $format = trim(substr($value, $formatPos + 1));
+                $value = trim(substr($value, 0, $formatPos));
+            }
+            $resolvedOption = isset($exportOptions[$value]) ? (string) $exportOptions[$value] : '';
+            return $this->applyTitleExpressionFormat($resolvedOption, $format);
         }, $pattern);
 
         return $this->cleanGeneratedTitle((string) $resolved);

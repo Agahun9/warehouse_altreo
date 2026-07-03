@@ -794,7 +794,8 @@ class ErliStorageRepository
             'category_id' => $category['id'],
             'category_name' => $category['name'],
             'quantity' => isset($remoteProduct['stock']) ? (int) $remoteProduct['stock'] : null,
-            'price' => isset($remoteProduct['price']) ? round((float) $remoteProduct['price'], 2) : null,
+            // ERLI transfers prices as an integer number of grosze.
+            'price' => isset($remoteProduct['price']) ? round(((float) $remoteProduct['price']) / 100, 2) : null,
             'images_json' => json_encode($images, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'primary_image_url' => isset($images[0]) ? (string) $images[0] : null,
             'remote_exists' => 1,
@@ -821,9 +822,20 @@ class ErliStorageRepository
         $row['effective_description'] = trim((string) ($row['description_override'] ?? '')) !== ''
             ? (string) $row['description_override']
             : (string) ($row['description'] ?? '');
-        $row['effective_price'] = $row['price_override'] !== null && $row['price_override'] !== ''
-            ? (float) $row['price_override']
-            : (float) ($row['price'] ?? 0);
+        if ($row['price_override'] !== null && $row['price_override'] !== '') {
+            $row['effective_price'] = (float) $row['price_override'];
+        } else {
+            $storedPrice = (float) ($row['price'] ?? 0);
+            $remotePayload = json_decode((string) ($row['payload_json'] ?? ''), true);
+            $remotePriceInGrosze = is_array($remotePayload) && isset($remotePayload['price'])
+                ? (float) $remotePayload['price']
+                : null;
+
+            // Compatibility for rows synchronized before prices were normalized to PLN.
+            $row['effective_price'] = $remotePriceInGrosze !== null && abs($storedPrice - $remotePriceInGrosze) < 0.001
+                ? round($storedPrice / 100, 2)
+                : $storedPrice;
+        }
         $row['effective_quantity'] = $row['stock_override'] !== null && $row['stock_override'] !== ''
             ? (int) $row['stock_override']
             : (int) ($row['quantity'] ?? 0);

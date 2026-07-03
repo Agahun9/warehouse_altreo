@@ -53,6 +53,7 @@
               <div class="form-text mt-2"><strong>Najczestsze przyklady:</strong></div>
               <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=upper{rdelim}</code> zmieni wartosc pola na WIELKIE LITERY.</div>
               <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=lower{rdelim}</code> zmieni wartosc pola na male litery.</div>
+              <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=ucfirst{rdelim}</code> zmieni pierwsza litere tekstu na wielka.</div>
               <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna=upper{rdelim}</code> najpierw podmieni tekst, a potem zrobi formatowanie.</div>
               <div class="form-text"><code>{{ldelim}}field:product.created_at=date:Y-m-d{rdelim}</code> sformatuje date.</div>
               <div class="form-text"><code>{{ldelim}}field:product.price_gross=number:2:,: {rdelim}</code> sformatuje liczbe do 2 miejsc po przecinku.</div>
@@ -60,6 +61,7 @@
               <div class="form-text mt-2">Dostepne formaty po znaku <code>=</code>:
                 <code>upper</code> - wielkie litery,
                 <code>lower</code> - male litery,
+                <code>ucfirst</code> - pierwsza litera tekstu jako wielka,
                 <code>trim</code> - usuniecie spacji z poczatku i konca,
                 <code>date:Y-m-d</code> - format daty,
                 <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi.
@@ -72,7 +74,7 @@
           <div class="card-header"><h3 class="card-title mb-0">Wstaw token z listy</h3></div>
           <div class="card-body">
             <div class="row g-2 align-items-end">
-              <div class="col-md-8">
+              <div class="col-md-7">
                 <label class="form-label">Szukaj tokenu</label>
                 <input type="text" id="tokenSearch" class="form-control mb-2" placeholder="Wpisz fragment nazwy albo tokenu">
                 <label class="form-label">Dostepne tokeny</label>
@@ -83,7 +85,17 @@
                   {/foreach}
                 </select>
               </div>
-              <div class="col-md-4 d-grid">
+              <div class="col-md-3">
+                <label class="form-label">Formatowanie</label>
+                <select id="tokenFormat" class="form-select">
+                  <option value="">Bez formatowania</option>
+                  <option value="ucfirst">ucfirst — pierwsza litera wielka</option>
+                  <option value="upper">upper — wielkie litery</option>
+                  <option value="lower">lower — małe litery</option>
+                  <option value="trim">trim — usuń skrajne spacje</option>
+                </select>
+              </div>
+              <div class="col-md-2 d-grid">
                 <button type="button" id="insertTokenBtn" class="btn btn-outline-primary">Wstaw do wzoru</button>
               </div>
             </div>
@@ -112,6 +124,7 @@
   var select = document.getElementById('tokenSelect');
   var tokenSearch = document.getElementById('tokenSearch');
   var insertButton = document.getElementById('insertTokenBtn');
+  var formatSelect = document.getElementById('tokenFormat');
   var quickButtons = document.querySelectorAll('.js-quick-token');
 
   function insertAtCursor(token) {
@@ -128,17 +141,25 @@
     textarea.setSelectionRange(caret, caret);
   }
 
+  function withSelectedFormat(token) {
+    var format = formatSelect ? String(formatSelect.value || '') : '';
+    if (format && /\}\}$/.test(token)) {
+      return token.replace(/\}\}$/, '=' + format + '}}');
+    }
+    return token;
+  }
+
   if (insertButton && select) {
     insertButton.addEventListener('click', function () {
       if (select.value) {
-        insertAtCursor(select.value);
+        insertAtCursor(withSelectedFormat(select.value));
       }
     });
   }
 
   for (var i = 0; i < quickButtons.length; i++) {
     quickButtons[i].addEventListener('click', function () {
-      insertAtCursor(this.getAttribute('data-token') || '');
+      insertAtCursor(withSelectedFormat(this.getAttribute('data-token') || ''));
     });
   }
 

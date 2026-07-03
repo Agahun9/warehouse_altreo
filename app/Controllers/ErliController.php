@@ -124,7 +124,7 @@ class ErliController extends Controller
         try {
             $result = $this->erli->syncAccountBatch(trim((string) $this->input('account', '')), array(
                 'max_batches' => (int) $this->input('max_batches', 5),
-                'page_limit' => (int) $this->input('page_limit', 50),
+                'page_limit' => (int) $this->input('page_limit', 100),
             ));
             if ($this->wantsJson()) {
                 $this->jsonResponse($result);
@@ -163,15 +163,13 @@ class ErliController extends Controller
         try {
             $accountSelector = trim((string) $this->input('account', ''));
             $result = array(
-                'queue' => null,
                 'sync' => array(),
-                'enqueue' => null,
             );
 
             if ($this->input('sync', '0') === '1') {
                 $syncOptions = array(
                     'max_batches' => (int) $this->input('max_batches', 2),
-                    'page_limit' => (int) $this->input('page_limit', 50),
+                    'page_limit' => (int) $this->input('page_limit', 100),
                 );
 
                 if ($accountSelector !== '') {
@@ -191,24 +189,6 @@ class ErliController extends Controller
                         $processedAccounts++;
                     }
                 }
-            }
-
-            $enqueueOperations = $this->input('enqueue', '');
-            if (trim((string) $enqueueOperations) !== '') {
-                $operations = array_values(array_filter(array_map('trim', explode(',', (string) $enqueueOperations))));
-                $result['enqueue'] = $this->erli->enqueueWarehouseUpdates(
-                    $accountSelector,
-                    $operations,
-                    (int) $this->input('enqueue_limit', 500)
-                );
-            }
-
-            $queueLimit = (int) $this->input('queue_limit', 50);
-            if ($queueLimit > 0) {
-                $result['queue'] = $this->erli->processQueue(array(
-                    'account' => $accountSelector,
-                    'limit' => $queueLimit,
-                ));
             }
 
             if ($this->wantsJson()) {

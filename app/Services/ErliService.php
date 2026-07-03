@@ -268,8 +268,8 @@ class ErliService
         $base = rtrim($baseUrl, '?&');
         $links = array(
             'queue_worker' => $base . '?controller=erli&action=processqueue&format=json&limit=50',
-            'sync_worker' => $base . '?controller=erli&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
-            'maintenance' => $base . '?controller=erli&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
+            'sync_worker' => $base . '?controller=erli&action=maintenance&format=json&sync=1&max_batches=2&page_limit=100',
+            'maintenance' => $base . '?controller=erli&action=maintenance&format=json&sync=1&max_batches=2&page_limit=100',
             'accounts' => array(),
         );
 
@@ -280,9 +280,9 @@ class ErliService
                 'name' => (string) ($account['name'] ?? ''),
                 'slug' => (string) ($account['slug'] ?? ''),
                 'is_active' => (int) ($account['is_active'] ?? 0) === 1,
-                'sync' => $base . '?controller=erli&action=sync&format=json&account=' . $accountSlug . '&max_batches=2&page_limit=50',
+                'sync' => $base . '?controller=erli&action=sync&format=json&account=' . $accountSlug . '&max_batches=2&page_limit=100',
                 'queue_only' => $base . '?controller=erli&action=processqueue&format=json&account=' . $accountSlug . '&limit=50',
-                'maintenance' => $base . '?controller=erli&action=maintenance&format=json&account=' . $accountSlug . '&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50&max_batches=2&page_limit=50',
+                'maintenance' => $base . '?controller=erli&action=maintenance&format=json&account=' . $accountSlug . '&sync=1&max_batches=2&page_limit=100',
             );
         }
 
@@ -303,7 +303,7 @@ class ErliService
 
         $accountId = (int) $account['id'];
         $maxBatches = isset($options['max_batches']) ? (int) $options['max_batches'] : 5;
-        $pageLimit = isset($options['page_limit']) ? (int) $options['page_limit'] : 50;
+        $pageLimit = isset($options['page_limit']) ? (int) $options['page_limit'] : 100;
         $maxBatches = max(1, min(20, $maxBatches));
         $pageLimit = max(1, min(200, $pageLimit));
         $synced = 0;
@@ -313,7 +313,6 @@ class ErliService
         $cycle = $currentCycle !== '' ? $currentCycle : $this->uuidV4();
         $after = $afterExternalId !== '' ? $afterExternalId : null;
         $finishedCycle = false;
-
         try {
             $this->storage->markAccountSyncStarted($accountId, $cycle, $after);
 
@@ -334,8 +333,8 @@ class ErliService
                         continue;
                     }
 
-                    $this->storage->upsertRemoteProductSnapshot($accountId, $item, $cycle);
                     $after = $externalId;
+                    $this->storage->upsertRemoteProductSnapshot($accountId, $item, $cycle);
                     $synced++;
                 }
 
@@ -550,12 +549,13 @@ class ErliService
         $description = (string) ($product['effective_description'] ?? $product['description'] ?? '');
         $status = strtolower(trim((string) ($product['effective_status'] ?? 'inactive')));
         $price = round((float) ($product['effective_price'] ?? 0), 2);
+        $priceInGrosze = (int) round($price * 100);
         $stock = max(0, (int) ($product['effective_quantity'] ?? $product['quantity'] ?? 0));
 
         switch ($operation) {
             case 'set_price':
             case 'set_price_from_product':
-                return array('price' => $price);
+                return array('price' => $priceInGrosze);
             case 'set_title':
             case 'set_title_from_product':
             case 'replace_title':
@@ -571,7 +571,7 @@ class ErliService
             case 'sync_product':
                 $payload = array(
                     'name' => $title !== '' ? $title : trim((string) ($product['external_id'] ?? '')),
-                    'price' => $price,
+                    'price' => $priceInGrosze,
                     'stock' => $stock,
                     'status' => in_array($status, array('active', 'inactive'), true) ? $status : 'inactive',
                 );
@@ -618,17 +618,8 @@ class ErliService
             'fields' => array(
                 'externalId',
                 'sku',
-                'ean',
                 'name',
-                'images',
                 'price',
-                'stock',
-                'status',
-                'categories',
-                'marketplaceId',
-                'created',
-                'updated',
-                'archivedAt',
             ),
         );
 

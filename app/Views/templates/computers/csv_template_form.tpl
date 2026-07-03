@@ -59,6 +59,30 @@
               <button type="button" class="btn btn-sm btn-outline-primary description-command" data-command="insertUnorderedList">Lista</button>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="showDescriptionSource">HTML</button>
             </div>
+            <div class="border border-primary-subtle rounded bg-primary-subtle p-2 mb-2">
+              <div class="small fw-semibold mb-2"><i class="bi bi-signpost-split me-1"></i>Warunek według konkretnego komponentu</div>
+              <div class="row g-2">
+                <div class="col-lg-4">
+                  <input type="search" class="form-control form-control-sm mb-1" id="descriptionConditionSearch" placeholder="Szukaj komponentu...">
+                  <select class="form-select form-select-sm" id="descriptionConditionIf">
+                    <option value="">Komponent dla IF...</option>
+                  </select>
+                </div>
+                <div class="col-lg-4">
+                  <div class="small text-muted mb-1">Opcjonalny ELSE IF</div>
+                  <select class="form-select form-select-sm" id="descriptionConditionElseIf">
+                    <option value="">Bez ELSE IF</option>
+                  </select>
+                </div>
+                <div class="col-lg-4 d-flex flex-wrap align-content-end gap-1">
+                  <button type="button" class="btn btn-sm btn-primary" id="insertDescriptionCondition">Wstaw cały IF / ELSE</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary description-condition-tag" data-tag="elseif">Wstaw ELSE IF</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary description-condition-tag" data-tag="else">Wstaw ELSE</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary description-condition-tag" data-tag="endif">Zakończ IF</button>
+                </div>
+              </div>
+              <div class="form-text">Wybierz komponent. Podczas eksportu pojawi się tylko treść pierwszej pasującej gałęzi. Warunki można sprawdzić w podglądzie produktu.</div>
+            </div>
             <div class="border rounded bg-light p-2 mb-2">
               <div class="small fw-semibold mb-2">Parametry Allegro, Empik i Morele</div>
               <div class="d-flex flex-wrap gap-2">
@@ -152,6 +176,7 @@
   const sourceOptions = {$sourceOptionsJson nofilter};
   const descriptionTokens = {$descriptionTokensJson nofilter};
   const descriptionParameterTokens = {$descriptionParameterTokensJson nofilter};
+  const descriptionConditionComponents = {$descriptionConditionComponentsJson nofilter};
   const descriptionProductSearchUrl = '{$baseUrl|escape:"javascript"}?controller=computers&action=searchcsvpreviewproducts';
   const descriptionPreviewUrl = '{$baseUrl|escape:"javascript"}?controller=computers&action=previewcsvdescription';
 {literal}
@@ -169,6 +194,9 @@
   const descriptionImageAlt = document.getElementById('descriptionImageAlt');
   const descriptionParameterSearch = document.getElementById('descriptionParameterSearch');
   const descriptionParameterSelect = document.getElementById('descriptionParameterSelect');
+  const descriptionConditionSearch = document.getElementById('descriptionConditionSearch');
+  const descriptionConditionIf = document.getElementById('descriptionConditionIf');
+  const descriptionConditionElseIf = document.getElementById('descriptionConditionElseIf');
   const descriptionProductSearch = document.getElementById('descriptionProductSearch');
   const descriptionProductResults = document.getElementById('descriptionProductResults');
   const descriptionPreviewProductId = document.getElementById('descriptionPreviewProductId');
@@ -428,6 +456,68 @@
     }
     syncDescriptionInput();
   }
+
+  Object.entries(descriptionConditionComponents).forEach(([token, label]) => {
+    [descriptionConditionIf, descriptionConditionElseIf].forEach(function(select) {
+      const option = document.createElement('option');
+      option.value = token;
+      option.textContent = label;
+      select.appendChild(option);
+    });
+  });
+
+  descriptionConditionSearch.addEventListener('input', function() {
+    const query = this.value.trim().toLocaleLowerCase('pl');
+    [descriptionConditionIf, descriptionConditionElseIf].forEach(function(select) {
+      let firstMatch = null;
+      Array.from(select.options).forEach(function(option, index) {
+        const matches = index === 0 || query === ''
+          || option.textContent.toLocaleLowerCase('pl').includes(query)
+          || option.value.toLocaleLowerCase('pl').includes(query);
+        option.hidden = !matches;
+        option.disabled = !matches;
+        if (index > 0 && matches && firstMatch === null) firstMatch = option;
+      });
+      if (query !== '' && firstMatch && (!select.value || select.selectedOptions[0].hidden)) {
+        firstMatch.selected = true;
+      }
+    });
+  });
+
+  document.getElementById('insertDescriptionCondition').addEventListener('click', function() {
+    const ifToken = descriptionConditionIf.value;
+    if (!ifToken) {
+      alert('Najpierw wybierz komponent dla IF.');
+      return;
+    }
+    const elseIfToken = descriptionConditionElseIf.value;
+    let block = '{% if ' + ifToken + ' %}<p>Treść, gdy komputer ma wybrany komponent.</p>';
+    if (elseIfToken && elseIfToken !== ifToken) {
+      block += '{% elseif ' + elseIfToken + ' %}<p>Treść dla komponentu z ELSE IF.</p>';
+    }
+    block += '{% else %}<p>Treść, gdy żaden warunek nie pasuje.</p>{% endif %}';
+    insertHtmlAtCursor(block);
+  });
+
+  document.querySelectorAll('.description-condition-tag').forEach(function(button) {
+    button.addEventListener('click', function() {
+      const tag = button.dataset.tag;
+      if (tag === 'else') {
+        insertHtmlAtCursor('{% else %}');
+        return;
+      }
+      if (tag === 'endif') {
+        insertHtmlAtCursor('{% endif %}');
+        return;
+      }
+      const token = descriptionConditionElseIf.value || descriptionConditionIf.value;
+      if (!token) {
+        alert('Najpierw wybierz komponent.');
+        return;
+      }
+      insertHtmlAtCursor('{% elseif ' + token + ' %}');
+    });
+  });
 
   function isDescriptionImageToken(token) {
     return /^main_img_/.test(token)
