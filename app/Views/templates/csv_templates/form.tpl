@@ -556,13 +556,22 @@
         <div class="card mb-4">
           <div class="card-header"><h3 class="card-title mb-0">Dane glowne</h3></div>
           <div class="card-body row g-3">
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label">Nazwa szablonu</label>
               <input type="text" name="name" class="form-control" value="{$template.name|default:''|escape}" required>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <label class="form-label">Opis</label>
               <input type="text" name="description" class="form-control" value="{$template.description|default:''|escape}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Kategoria</label>
+              <select name="category_id" class="form-select">
+                <option value="0">Bez kategorii</option>
+                {foreach $templateCategories as $category}
+                  <option value="{$category.id}"{if $template.category_id|default:0 == $category.id} selected{/if}>{$category.name|escape}</option>
+                {/foreach}
+              </select>
             </div>
             <div class="col-md-3">
               <label class="form-label">Separator</label>

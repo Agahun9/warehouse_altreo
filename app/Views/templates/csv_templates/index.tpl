@@ -30,6 +30,7 @@
           </div>
           <div class="d-flex gap-2">
             {if $canWriteCsvTemplates}
+              <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#csvTemplateCategoriesModal">Kategorie</button>
               <a href="{$baseUrl}?controller=csvtemplates&action=importproducts" class="btn btn-outline-primary">Import produktow</a>
             {/if}
             <a href="{$baseUrl}?controller=csvtemplates&action=titlegenerator" class="btn btn-outline-secondary">Generator tytulow</a>
@@ -54,18 +55,33 @@
       {/if}
 
       <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div><h3 class="card-title mb-1">Lista szablonow</h3><div class="small text-secondary">Kliknij naglowek kolumny, aby zmienic sortowanie.</div></div>
+          {if $nameFilter ne '' or $categoryFilter ne 'all'}<a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-sm btn-outline-secondary">Wyczysc filtry</a>{/if}
+        </div>
+        <form method="get" action="{$baseUrl}" id="csvTemplatesFiltersForm">
+          <input type="hidden" name="controller" value="csvtemplates"><input type="hidden" name="action" value="index">
+          <input type="hidden" name="sort_by" value="{$sortBy|escape}"><input type="hidden" name="sort_dir" value="{$sortDir|escape}">
+        </form>
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th>Nazwa</th>
+                  <th><a class="text-decoration-none text-reset d-flex justify-content-between" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=name&sort_dir={if $sortBy eq 'name' and $sortDir eq 'asc'}desc{else}asc{/if}">Nazwa {if $sortBy eq 'name'}<span>{if $sortDir eq 'asc'}↑{else}↓{/if}</span>{/if}</a></th>
+                  <th><a class="text-decoration-none text-reset d-flex justify-content-between" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=category&sort_dir={if $sortBy eq 'category' and $sortDir eq 'asc'}desc{else}asc{/if}">Kategoria {if $sortBy eq 'category'}<span>{if $sortDir eq 'asc'}↑{else}↓{/if}</span>{/if}</a></th>
                   <th>Opis</th>
                   <th>Format</th>
-                  <th>Kolumny</th>
-                  <th>Utworzono</th>
-                  <th>Zmieniono</th>
+                  <th><a class="text-decoration-none text-reset" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=columns&sort_dir={if $sortBy eq 'columns' and $sortDir eq 'asc'}desc{else}asc{/if}">Kolumny {if $sortBy eq 'columns'}{if $sortDir eq 'asc'}↑{else}↓{/if}{/if}</a></th>
+                  <th><a class="text-decoration-none text-reset" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=created_at&sort_dir={if $sortBy eq 'created_at' and $sortDir eq 'asc'}desc{else}asc{/if}">Utworzono {if $sortBy eq 'created_at'}{if $sortDir eq 'asc'}↑{else}↓{/if}{/if}</a></th>
+                  <th><a class="text-decoration-none text-reset" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=updated_at&sort_dir={if $sortBy eq 'updated_at' and $sortDir eq 'asc'}desc{else}asc{/if}">Zmieniono {if $sortBy eq 'updated_at'}{if $sortDir eq 'asc'}↑{else}↓{/if}{/if}</a></th>
                   <th class="text-end">Akcje</th>
+                </tr>
+                <tr>
+                  <th><input form="csvTemplatesFiltersForm" type="search" name="filter_name" class="form-control form-control-sm" value="{$nameFilter|escape}" placeholder="Szukaj po nazwie..."></th>
+                  <th><select form="csvTemplatesFiltersForm" name="filter_category" class="form-select form-select-sm" onchange="document.getElementById('csvTemplatesFiltersForm').submit()"><option value="all"{if $categoryFilter eq 'all'} selected{/if}>Wszystkie kategorie</option>{foreach $templateCategories as $category}<option value="{$category.id}"{if $categoryFilter == $category.id} selected{/if}>{$category.name|escape} ({$category.templates_count|default:0})</option>{/foreach}<option value="none"{if $categoryFilter eq 'none'} selected{/if}>Bez kategorii</option></select></th>
+                  <th colspan="5"></th>
+                  <th class="text-end"><button form="csvTemplatesFiltersForm" type="submit" class="btn btn-sm btn-primary">Filtruj</button></th>
                 </tr>
               </thead>
               <tbody>
@@ -73,6 +89,7 @@
                   {foreach $templates as $template}
                     <tr>
                       <td class="fw-semibold">{$template.name|escape}</td>
+                      <td>{if $template.category_name}<span class="badge text-bg-primary">{$template.category_name|escape}</span>{else}<span class="text-secondary">Bez kategorii</span>{/if}</td>
                       <td>{$template.description|default:'-'|truncate:120|escape}</td>
                       <td>
                         <div><span class="badge text-bg-light border">{$template.delimiter|default:';'|escape}</span></div>
@@ -99,7 +116,7 @@
                     </tr>
                   {/foreach}
                 {else}
-                  <tr><td colspan="7" class="text-center py-4">Brak szablonow CSV.</td></tr>
+                  <tr><td colspan="8" class="text-center py-4">Brak szablonow CSV.</td></tr>
                 {/if}
               </tbody>
             </table>
@@ -109,3 +126,33 @@
     </div>
   </div>
 </main>
+
+{if $canWriteCsvTemplates}
+<div class="modal fade" id="csvTemplateCategoriesModal" tabindex="-1" aria-labelledby="csvTemplateCategoriesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <div><h5 class="modal-title" id="csvTemplateCategoriesModalLabel">Kategorie szablonow</h5><div class="small text-secondary">Dodawaj i porzadkuj grupy szablonow CSV.</div></div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" action="{$baseUrl}?controller=csvtemplates&action=storecategory" class="input-group mb-4">
+          <input type="text" name="name" class="form-control" placeholder="Nazwa nowej kategorii" maxlength="190" required autofocus>
+          <button type="submit" class="btn btn-primary">Dodaj kategorie</button>
+        </form>
+        <div class="list-group list-group-flush border rounded">
+          {foreach $templateCategories as $category}
+            <div class="list-group-item d-flex justify-content-between align-items-center gap-3">
+              <div><div class="fw-semibold">{$category.name|escape}</div><div class="small text-secondary">Szablony: {$category.templates_count|default:0}</div></div>
+              <form method="post" action="{$baseUrl}?controller=csvtemplates&action=deletecategory" onsubmit="return confirm('Usunac kategorie {$category.name|escape:'javascript'}? Szablony pozostana bez kategorii.');">
+                <input type="hidden" name="id" value="{$category.id}"><button type="submit" class="btn btn-sm btn-outline-danger">Usun</button>
+              </form>
+            </div>
+          {foreachelse}<div class="p-4 text-center text-secondary">Nie utworzono jeszcze zadnej kategorii.</div>{/foreach}
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zamknij</button></div>
+    </div>
+  </div>
+</div>
+{/if}

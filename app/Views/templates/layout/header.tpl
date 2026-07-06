@@ -375,6 +375,12 @@
                         <p>Tiny File Manager</p>
                       </a>
                     </li>
+                    <li class="nav-item">
+                      <a href="http://192.168.1.149/tinyfilemanager.php?p=&amp;upload" class="nav-link" target="_blank" rel="noreferrer">
+                        <i class="nav-icon bi bi-cloud-arrow-up"></i>
+                        <p>Wyślij grafiki</p>
+                      </a>
+                    </li>
                   </ul>
                 </li>
               {/if}

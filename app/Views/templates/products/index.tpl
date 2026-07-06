@@ -1049,8 +1049,12 @@
             <label class="form-label">Szablon eksportu</label>
             <select name="template_id" class="form-select" required{if !$exportTemplates} disabled{/if}>
               <option value="">Wybierz szablon</option>
-              {foreach $exportTemplates as $tpl}
-                <option value="{$tpl.id}">{$tpl.name|escape}</option>
+              {foreach $exportTemplateGroups as $templateGroup}
+                <optgroup label="{$templateGroup.label|escape}">
+                  {foreach $templateGroup.items as $tpl}
+                    <option value="{$tpl.id}">{$tpl.name|escape}</option>
+                  {/foreach}
+                </optgroup>
               {/foreach}
             </select>
           </div>

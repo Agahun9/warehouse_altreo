@@ -51,6 +51,10 @@ class CsvTemplateRepository
         );
 
         $this->database->query(
+            "CREATE TABLE IF NOT EXISTS csv_template_categories (id INT UNSIGNED NOT NULL AUTO_INCREMENT, name VARCHAR(190) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY ux_csv_template_categories_name (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+
+        $this->database->query(
             "CREATE TABLE IF NOT EXISTS csv_template_columns (\n"
             . "id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
             . "template_id INT UNSIGNED NOT NULL,\n"
@@ -93,25 +97,77 @@ class CsvTemplateRepository
             if ($hasDescriptionTemplatesColumn === 0) {
                 $this->database->query('ALTER TABLE csv_templates ADD COLUMN description_templates_json LONGTEXT NULL AFTER description');
             }
+            $hasCategoryColumn = (int) $this->database->fetchColumn('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column', array('schema' => $databaseName, 'table' => 'csv_templates', 'column' => 'category_id'));
+            if ($hasCategoryColumn === 0) {
+                $this->database->query('ALTER TABLE csv_templates ADD COLUMN category_id INT UNSIGNED NULL AFTER id, ADD KEY idx_csv_templates_category (category_id), ADD CONSTRAINT fk_csv_templates_category FOREIGN KEY (category_id) REFERENCES csv_template_categories(id) ON DELETE SET NULL');
+            }
         }
 
         self::$schemaEnsured = true;
     }
 
-    public function all(): array
+    public function all(string $categoryFilter = 'all', string $nameFilter = '', string $sortBy = 'updated_at', string $sortDir = 'desc'): array
     {
+        $conditions = array();
+        $params = array();
+        if ($categoryFilter === 'none') {
+            $conditions[] = 't.category_id IS NULL';
+        } elseif (ctype_digit($categoryFilter) && (int) $categoryFilter > 0) {
+            $conditions[] = 't.category_id = :category_id';
+            $params['category_id'] = (int) $categoryFilter;
+        }
+        if ($nameFilter !== '') {
+            $conditions[] = 't.name LIKE :name';
+            $params['name'] = '%' . $nameFilter . '%';
+        }
+        $sortColumns = array('name' => 't.name', 'category' => 'tc.name', 'columns' => 'columns_count', 'created_at' => 't.created_at', 'updated_at' => 't.updated_at');
+        $sortColumn = isset($sortColumns[$sortBy]) ? $sortColumns[$sortBy] : 't.updated_at';
+        $sortDirection = strtolower($sortDir) === 'asc' ? 'ASC' : 'DESC';
+        $where = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+
         return $this->database->fetchAll(
-            'SELECT t.*, COUNT(c.id) AS columns_count'
+            'SELECT t.*, tc.name AS category_name, COUNT(c.id) AS columns_count'
             . ' FROM csv_templates t'
+            . ' LEFT JOIN csv_template_categories tc ON tc.id = t.category_id'
             . ' LEFT JOIN csv_template_columns c ON c.template_id = t.id'
+            . $where
             . ' GROUP BY t.id'
-            . ' ORDER BY t.updated_at DESC, t.id DESC'
+            . ' ORDER BY ' . $sortColumn . ' ' . $sortDirection . ', t.id DESC',
+            $params
         );
     }
+
+    public function allCategories(): array { return $this->database->fetchAll('SELECT c.*, COUNT(t.id) AS templates_count FROM csv_template_categories c LEFT JOIN csv_templates t ON t.category_id = c.id GROUP BY c.id ORDER BY c.name ASC'); }
+    public function createCategory(string $name): int { return (int) $this->database->insert('csv_template_categories', array('name' => $name)); }
+    public function categoryExists(string $name): bool { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_template_categories WHERE name = :name', array('name' => $name)) > 0; }
+    public function categoryExistsById(int $id): bool { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_template_categories WHERE id = :id', array('id' => $id)) > 0; }
+    public function deleteCategory(int $id): void { $this->database->delete('csv_template_categories', 'id = :id', array('id' => $id)); }
 
     public function allForSelect(): array
     {
         return $this->database->fetchAll('SELECT id, name FROM csv_templates ORDER BY name ASC');
+    }
+
+    public function groupedForSelect(): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT t.id, t.name, t.category_id, tc.name AS category_name'
+            . ' FROM csv_templates t'
+            . ' LEFT JOIN csv_template_categories tc ON tc.id = t.category_id'
+            . ' ORDER BY (tc.name IS NULL) ASC, tc.name ASC, t.name ASC'
+        );
+        $groups = array();
+        foreach ($rows as $row) {
+            $key = !empty($row['category_id']) ? 'category_' . (int) $row['category_id'] : 'uncategorized';
+            if (!isset($groups[$key])) {
+                $groups[$key] = array(
+                    'label' => !empty($row['category_name']) ? (string) $row['category_name'] : 'Bez kategorii',
+                    'items' => array(),
+                );
+            }
+            $groups[$key]['items'][] = array('id' => (int) $row['id'], 'name' => (string) $row['name']);
+        }
+        return array_values($groups);
     }
 
     public function findById(int $id)
@@ -216,6 +272,7 @@ class CsvTemplateRepository
         return $this->create(
             array(
                 'name' => $name,
+                'category_id' => !empty($template['category_id']) ? (int) $template['category_id'] : null,
                 'description' => isset($template['description']) ? (string) $template['description'] : null,
                 'description_templates_json' => json_encode(isset($template['description_templates']) && is_array($template['description_templates']) ? $template['description_templates'] : array()),
                 'delimiter' => isset($template['delimiter']) ? (string) $template['delimiter'] : ';',

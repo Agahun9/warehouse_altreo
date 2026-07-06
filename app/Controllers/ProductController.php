@@ -170,6 +170,7 @@ class ProductController extends Controller
             'categories' => $this->categories->all(),
             'selectedCategoryIds' => $this->normalizeCategoryFilterIdsForView($filters['category_id']),
             'exportTemplates' => $this->csvTemplates->allForSelect(),
+            'exportTemplateGroups' => $this->csvTemplates->groupedForSelect(),
             'titleTemplates' => $this->csvTitleTemplates->allForSelect(),
             'page' => $page,
             'perPage' => $perPage,

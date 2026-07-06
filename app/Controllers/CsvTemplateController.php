@@ -101,15 +101,55 @@ class CsvTemplateController extends Controller
     public function index(): void
     {
         $this->requireModule('csvtemplates');
+        $categoryFilter = trim((string) $this->input('filter_category', 'all'));
+        if ($categoryFilter !== 'all' && $categoryFilter !== 'none' && !(ctype_digit($categoryFilter) && (int) $categoryFilter > 0)) {
+            $categoryFilter = 'all';
+        }
+        $nameFilter = trim((string) $this->input('filter_name', ''));
+        $sortBy = trim((string) $this->input('sort_by', 'updated_at'));
+        if (!in_array($sortBy, array('name', 'category', 'columns', 'created_at', 'updated_at'), true)) { $sortBy = 'updated_at'; }
+        $sortDir = strtolower(trim((string) $this->input('sort_dir', 'desc'))) === 'asc' ? 'asc' : 'desc';
 
         $this->render('csv_templates/index', array(
             'pageTitle' => 'Szablony CSV',
             'contentTitle' => 'Szablony eksportu CSV',
             'pageDescription' => 'Tworzenie i zarzadzanie konfiguracjami eksportu produktow.',
             'breadcrumbCurrent' => 'Szablony CSV',
-            'templates' => $this->templates->all(),
+            'templates' => $this->templates->all($categoryFilter, $nameFilter, $sortBy, $sortDir),
+            'templateCategories' => $this->templates->allCategories(),
+            'categoryFilter' => $categoryFilter,
+            'nameFilter' => $nameFilter,
+            'sortBy' => $sortBy,
+            'sortDir' => $sortDir,
             'presets' => $this->presetDefinitions(),
         ));
+    }
+
+    public function storecategory(): void
+    {
+        $this->requireModuleWrite('csvtemplates');
+        if (!$this->isPost()) { $this->redirect('./index.php?controller=csvtemplates&action=index'); }
+        try {
+            $name = trim((string) $this->input('name', ''));
+            if ($name === '') { throw new RuntimeException('Nazwa kategorii jest wymagana.'); }
+            if ($this->templates->categoryExists($name)) { throw new RuntimeException('Kategoria o takiej nazwie juz istnieje.'); }
+            $this->templates->createCategory($name);
+            $this->setFlash('success', 'Kategoria szablonow zostala dodana.');
+        } catch (Throwable $exception) { $this->setFlash('error', $exception->getMessage()); }
+        $this->redirect('./index.php?controller=csvtemplates&action=index');
+    }
+
+    public function deletecategory(): void
+    {
+        $this->requireModuleWrite('csvtemplates');
+        if (!$this->isPost()) { $this->redirect('./index.php?controller=csvtemplates&action=index'); }
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0) { throw new RuntimeException('Nieprawidlowa kategoria.'); }
+            $this->templates->deleteCategory($id);
+            $this->setFlash('success', 'Kategoria zostala usunieta. Szablony pozostaly bez kategorii.');
+        } catch (Throwable $exception) { $this->setFlash('error', $exception->getMessage()); }
+        $this->redirect('./index.php?controller=csvtemplates&action=index');
     }
 
     public function importproducts(): void
@@ -295,6 +335,7 @@ class CsvTemplateController extends Controller
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
             'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'templateCategories' => $this->templates->allCategories(),
             'presets' => $presets,
             'previewCsv' => '',
             'templateColumnsJson' => json_encode(isset($template['columns']) ? $template['columns'] : array()),
@@ -478,6 +519,7 @@ class CsvTemplateController extends Controller
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
             'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'templateCategories' => $this->templates->allCategories(),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
             'templateColumnsJson' => json_encode($this->columnsForPreview(isset($template['columns']) ? $template['columns'] : array())),
@@ -605,6 +647,7 @@ class CsvTemplateController extends Controller
                 'availableFunctions' => $this->availableComputedFunctions(),
                 'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
                 'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+                'templateCategories' => $this->templates->allCategories(),
                 'presets' => $this->presetDefinitions(),
                 'previewCsv' => $csv,
                 'templateColumnsJson' => json_encode(isset($previewTemplate['columns']) ? $previewTemplate['columns'] : array()),
@@ -711,6 +754,7 @@ class CsvTemplateController extends Controller
         $encoding = strtoupper(trim((string) $this->input('encoding', 'UTF-8')));
         $addBom = $this->input('add_bom', '1') === '1' ? 1 : 0;
         $arraySeparator = (string) $this->input('array_separator', '|');
+        $categoryId = max(0, (int) $this->input('category_id', 0));
 
         if ($name === '') {
             throw new RuntimeException('Nazwa szablonu jest wymagana.');
@@ -727,9 +771,13 @@ class CsvTemplateController extends Controller
         if ($arraySeparator === '') {
             $arraySeparator = '|';
         }
+        if ($categoryId > 0 && !$this->templates->categoryExistsById($categoryId)) {
+            throw new RuntimeException('Wybrana kategoria nie istnieje.');
+        }
 
         return array(
             'name' => $name,
+            'category_id' => $categoryId > 0 ? $categoryId : null,
             'description' => ($description !== '' ? $description : null),
             'delimiter' => $delimiter,
             'encoding' => $encoding,
@@ -984,6 +1032,7 @@ class CsvTemplateController extends Controller
         $templateData['id'] = $id ?? 0;
         $templateData['name'] = (string) $this->input('name', '');
         $templateData['description'] = (string) $this->input('description', '');
+        $templateData['category_id'] = max(0, (int) $this->input('category_id', 0));
         $templateData['delimiter'] = (string) $this->input('delimiter', ';');
         $templateData['encoding'] = (string) $this->input('encoding', 'UTF-8');
         $templateData['add_bom'] = $this->input('add_bom', '1') === '1' ? 1 : 0;
@@ -1010,6 +1059,7 @@ class CsvTemplateController extends Controller
             'availableFunctions' => $this->availableComputedFunctions(),
             'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
             'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'templateCategories' => $this->templates->allCategories(),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
             'templateColumnsJson' => json_encode(isset($templateData['columns']) ? $templateData['columns'] : array()),
