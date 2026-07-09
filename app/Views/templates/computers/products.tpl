@@ -9,6 +9,9 @@
     <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'csvtemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link{if $computerTab eq 'titletemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=titletemplates">Szablony tytułów</a>
+    </li>
   </ul>
   <!-- Nagłówek strony -->
   <div class="d-flex align-items-center mb-4 justify-content-between">
@@ -71,6 +74,16 @@
             <div class="mb-3">
               <label for="profit" class="form-label">Marża (profit) w zł:</label>
               <input type="number" step="0.01" id="profit" name="profit" value="{$profit|default:0}" class="form-control" />
+            </div>
+            <div class="mb-3">
+              <label for="title_template_id" class="form-label">Szablon tytułu aukcji:</label>
+              <select id="title_template_id" name="title_template_id" class="form-select">
+                <option value="0">Domyślny tytuł wariantu</option>
+                {foreach from=$titleTemplates item=titleTemplate}
+                  <option value="{$titleTemplate.id}"{if $selectedTitleTemplateId|default:0 eq $titleTemplate.id} selected{/if}>{$titleTemplate.name|escape:'html'}</option>
+                {/foreach}
+              </select>
+              <div class="form-text">Używa osobnych szablonów tytułów z zakładki Komputery.</div>
             </div>
             
             <button type="submit" name="create_variants" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-1"></i>Generuj warianty produktów</button>

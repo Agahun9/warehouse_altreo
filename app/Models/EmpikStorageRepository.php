@@ -652,21 +652,31 @@ class EmpikStorageRepository
         $query = trim((string) ($filters['q'] ?? ''));
         if ($query !== '') {
             $whereParts[] = ' AND ('
-                . ' CAST(offers.offer_id AS CHAR) LIKE :query'
-                . ' OR offers.product_title LIKE :query'
-                . ' OR offers.description LIKE :query'
-                . ' OR offers.category_label LIKE :query'
-                . ' OR offers.shop_sku LIKE :query'
-                . ' OR offers.product_sku LIKE :query'
-                . ' OR offers.product_id LIKE :query'
+                . ' CAST(offers.offer_id AS CHAR) LIKE :query_offer_id'
+                . ' OR offers.product_title LIKE :query_product_title'
+                . ' OR offers.description LIKE :query_description'
+                . ' OR offers.category_label LIKE :query_category_label'
+                . ' OR offers.shop_sku LIKE :query_shop_sku'
+                . ' OR offers.product_sku LIKE :query_product_sku'
+                . ' OR offers.product_id LIKE :query_product_id'
                 . ' )';
-            $params['query'] = '%' . $query . '%';
+            $queryLike = '%' . $query . '%';
+            $params['query_offer_id'] = $queryLike;
+            $params['query_product_title'] = $queryLike;
+            $params['query_description'] = $queryLike;
+            $params['query_category_label'] = $queryLike;
+            $params['query_shop_sku'] = $queryLike;
+            $params['query_product_sku'] = $queryLike;
+            $params['query_product_id'] = $queryLike;
         }
 
         $sku = trim((string) ($filters['sku'] ?? ''));
         if ($sku !== '') {
-            $whereParts[] = ' AND (offers.shop_sku LIKE :sku OR offers.product_sku LIKE :sku OR offers.product_id LIKE :sku)';
-            $params['sku'] = '%' . $sku . '%';
+            $whereParts[] = ' AND (offers.shop_sku LIKE :sku_shop OR offers.product_sku LIKE :sku_product OR offers.product_id LIKE :sku_product_id)';
+            $skuLike = '%' . $sku . '%';
+            $params['sku_shop'] = $skuLike;
+            $params['sku_product'] = $skuLike;
+            $params['sku_product_id'] = $skuLike;
         }
 
         $state = trim((string) ($filters['state'] ?? ''));

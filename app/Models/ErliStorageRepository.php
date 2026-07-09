@@ -779,8 +779,7 @@ class ErliStorageRepository
         $externalId = trim((string) ($remoteProduct['externalId'] ?? ''));
         $category = $this->extractCategoryMeta($remoteProduct);
         $images = $this->extractImageUrls(isset($remoteProduct['images']) && is_array($remoteProduct['images']) ? $remoteProduct['images'] : array());
-        $status = strtolower(trim((string) ($remoteProduct['status'] ?? '')));
-        $status = in_array($status, array('active', 'inactive'), true) ? $status : null;
+        $status = $this->normalizeRemoteStatus($remoteProduct);
 
         return array(
             'account_id' => $accountId,
@@ -848,6 +847,38 @@ class ErliStorageRepository
         return $row;
     }
 
+    private function normalizeRemoteStatus(array $remoteProduct): ?string
+    {
+        $candidates = array(
+            $remoteProduct['status'] ?? null,
+            $remoteProduct['state'] ?? null,
+            isset($remoteProduct['publication']) && is_array($remoteProduct['publication']) ? ($remoteProduct['publication']['status'] ?? null) : null,
+            isset($remoteProduct['offer']) && is_array($remoteProduct['offer']) ? ($remoteProduct['offer']['status'] ?? null) : null,
+            isset($remoteProduct['product']) && is_array($remoteProduct['product']) ? ($remoteProduct['product']['status'] ?? null) : null,
+        );
+
+        foreach ($candidates as $candidate) {
+            $status = strtolower(trim((string) $candidate));
+            if ($status === '') {
+                continue;
+            }
+
+            if (in_array($status, array('active', 'published', 'enabled', 'visible', 'available', 'on', 'true', '1'), true)) {
+                return 'active';
+            }
+
+            if (in_array($status, array('inactive', 'disabled', 'hidden', 'archived', 'deleted', 'unavailable', 'off', 'false', '0'), true)) {
+                return 'inactive';
+            }
+        }
+
+        if (array_key_exists('archived', $remoteProduct)) {
+            return !empty($remoteProduct['archived']) ? 'inactive' : null;
+        }
+
+        return null;
+    }
+
     private function normalizeQueueMetaForView(array $queueMeta): array
     {
         if ($queueMeta === array()) {
@@ -910,14 +941,27 @@ class ErliStorageRepository
 
         $query = trim((string) ($filters['q'] ?? ''));
         if ($query !== '') {
-            $whereParts[] = ' AND (products.external_id LIKE :query OR products.sku LIKE :query OR products.product_name LIKE :query OR products.description LIKE :query OR products.category_name LIKE :query)';
-            $params['query'] = '%' . $query . '%';
+            $whereParts[] = ' AND ('
+                . 'products.external_id LIKE :query_external_id'
+                . ' OR products.sku LIKE :query_sku'
+                . ' OR products.product_name LIKE :query_product_name'
+                . ' OR products.description LIKE :query_description'
+                . ' OR products.category_name LIKE :query_category_name'
+                . ')';
+            $queryLike = '%' . $query . '%';
+            $params['query_external_id'] = $queryLike;
+            $params['query_sku'] = $queryLike;
+            $params['query_product_name'] = $queryLike;
+            $params['query_description'] = $queryLike;
+            $params['query_category_name'] = $queryLike;
         }
 
         $sku = trim((string) ($filters['sku'] ?? ''));
         if ($sku !== '') {
-            $whereParts[] = ' AND (products.sku LIKE :sku OR products.external_id LIKE :sku)';
-            $params['sku'] = '%' . $sku . '%';
+            $whereParts[] = ' AND (products.sku LIKE :sku_product OR products.external_id LIKE :sku_external)';
+            $skuLike = '%' . $sku . '%';
+            $params['sku_product'] = $skuLike;
+            $params['sku_external'] = $skuLike;
         }
 
         $status = strtolower(trim((string) ($filters['status'] ?? '')));

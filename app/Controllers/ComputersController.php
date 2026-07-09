@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\AllegroStorageRepository;
+use App\Models\ComputerCsvTitleTemplateRepository;
 use App\Models\ComputerCsvTemplateRepository;
 use App\Models\EmpikStorageRepository;
 use App\Models\ErliStorageRepository;
@@ -13,6 +14,7 @@ use App\Models\MoreleStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\MoreleService;
+use App\Services\ValueResolver;
 use RuntimeException;
 use Throwable;
 
@@ -42,6 +44,9 @@ class ComputersController extends Controller
     /** @var ComputerCsvTemplateRepository */
     private $computerCsvTemplates;
 
+    /** @var ComputerCsvTitleTemplateRepository */
+    private $computerTitleTemplates;
+
     /** @var array<string, bool> */
     private $tableExistsCache = array();
 
@@ -52,19 +57,21 @@ class ComputersController extends Controller
         $this->settings->ensureSchema();
         $this->computerCsvTemplates = new ComputerCsvTemplateRepository($this->db());
         $this->computerCsvTemplates->ensureSchema();
+        $this->computerTitleTemplates = new ComputerCsvTitleTemplateRepository($this->db());
+        $this->computerTitleTemplates->ensureSchema();
         $this->computerCsvTemplates->seed($this->defaultComputerCsvTemplates());
         $this->computerCsvTemplates->fillEmptyDescriptionTemplates($this->defaultComputerDescriptionTemplate());
     }
 
     public function index(): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         $this->redirect('./index.php?controller=computers&action=products');
     }
 
     public function products(): void
     {
-        $currentUser = $this->requireModule('products');
+        $currentUser = $this->requireModule('computers');
 
         if (trim((string) $this->input('price_market_accounts', '')) === '1') {
             $this->priceMarketAccountsForSelection();
@@ -212,13 +219,15 @@ class ComputersController extends Controller
             'pagination_base_query' => $paginationBaseQuery,
             'productsImageBase' => './img_computers_products',
             'computerTab' => 'products',
-            'csvTemplates' => $this->computerCsvTemplates->all(),
+            'csvTemplates' => $this->computerCsvTemplates->active(),
+            'titleTemplates' => $this->computerTitleTemplates->allForSelect(),
+            'selectedTitleTemplateId' => (int) $this->input('title_template_id', 0),
         ));
     }
 
     public function empikparameteroptions(): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         $attributeId = trim((string) $this->input('attribute_id', ''));
         $query = trim((string) $this->input('q', ''));
         $limit = max(1, min(100, (int) $this->input('limit', 40)));
@@ -248,7 +257,7 @@ class ComputersController extends Controller
 
     public function csvtemplates(): void
     {
-        $currentUser = $this->requireModule('products');
+        $currentUser = $this->requireModule('computers');
 
         $this->render('computers/csv_templates', array(
             'pageTitle' => 'Szablony CSV komputerow',
@@ -263,9 +272,159 @@ class ComputersController extends Controller
         ));
     }
 
+    public function titletemplates(): void
+    {
+        $currentUser = $this->requireModule('computers');
+
+        $this->render('computers/title_generator', array(
+            'pageTitle' => 'Szablony tytulow komputerow',
+            'contentTitle' => 'Szablony tytulow komputerow',
+            'pageDescription' => 'Osobne szablony tytulow aukcji uzywane tylko przy wariantach komputerowych.',
+            'breadcrumbCurrent' => 'Szablony tytulow',
+            'currentUser' => $currentUser,
+            'success' => $this->getFlash('success') ?? '',
+            'errors' => $this->normalizeErrors($this->getFlash('error')),
+            'titleTemplates' => $this->computerTitleTemplates->all(),
+            'availableTitleTokens' => $this->availableComputerTitleTokens(),
+            'computerTab' => 'titletemplates',
+        ));
+    }
+
+    public function createtitletemplate(): void
+    {
+        $this->requireModuleWrite('computers');
+
+        $this->render('computers/title_form', array(
+            'pageTitle' => 'Nowy szablon tytulu komputera',
+            'contentTitle' => 'Dodaj szablon tytulu komputera',
+            'pageDescription' => 'Zbuduj wzor tytulu dla wariantow komputerowych.',
+            'breadcrumbCurrent' => 'Nowy szablon tytulu',
+            'formAction' => './index.php?controller=computers&action=storetitletemplate',
+            'titleTemplate' => $this->defaultComputerTitleTemplateData(),
+            'availableTitleTokens' => $this->availableComputerTitleTokens(),
+            'computerTab' => 'titletemplates',
+        ));
+    }
+
+    public function storetitletemplate(): void
+    {
+        $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        }
+
+        try {
+            $data = $this->validatedComputerTitleTemplateData();
+            if ($this->computerTitleTemplates->existsByName($data['name'])) {
+                throw new RuntimeException('Szablon tytulu o takiej nazwie juz istnieje.');
+            }
+
+            $this->computerTitleTemplates->create($data);
+            $this->setFlash('success', 'Szablon tytulu zostal dodany.');
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        } catch (Throwable $exception) {
+            $this->renderComputerTitleFormWithError('store', null, $exception->getMessage());
+        }
+    }
+
+    public function edittitletemplate(): void
+    {
+        $this->requireModuleWrite('computers');
+
+        $id = (int) $this->input('id', 0);
+        $titleTemplate = $this->computerTitleTemplates->findById($id);
+        if (!$titleTemplate) {
+            $this->setFlash('error', json_encode(array('Nie znaleziono szablonu tytulu.')));
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        }
+
+        $this->render('computers/title_form', array(
+            'pageTitle' => 'Edycja szablonu tytulu komputera',
+            'contentTitle' => 'Edytuj szablon tytulu komputera',
+            'pageDescription' => 'Zmien wzor i tokeny dla wariantow komputerowych.',
+            'breadcrumbCurrent' => 'Edycja szablonu tytulu',
+            'formAction' => './index.php?controller=computers&action=updatetitletemplate&id=' . $id,
+            'titleTemplate' => $titleTemplate,
+            'availableTitleTokens' => $this->availableComputerTitleTokens(),
+            'computerTab' => 'titletemplates',
+        ));
+    }
+
+    public function updatetitletemplate(): void
+    {
+        $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        }
+
+        $id = (int) $this->input('id', 0);
+        $existing = $this->computerTitleTemplates->findById($id);
+        if (!$existing) {
+            $this->setFlash('error', json_encode(array('Nie znaleziono szablonu tytulu.')));
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        }
+
+        try {
+            $data = $this->validatedComputerTitleTemplateData();
+            if ($this->computerTitleTemplates->existsByName($data['name'], $id)) {
+                throw new RuntimeException('Szablon tytulu o takiej nazwie juz istnieje.');
+            }
+
+            $this->computerTitleTemplates->update($id, $data);
+            $this->setFlash('success', 'Szablon tytulu zostal zaktualizowany.');
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        } catch (Throwable $exception) {
+            $this->renderComputerTitleFormWithError('update', $id, $exception->getMessage());
+        }
+    }
+
+    public function deletetitletemplate(): void
+    {
+        $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=titletemplates');
+        }
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0) {
+                throw new RuntimeException('Nieprawidlowe ID szablonu tytulu.');
+            }
+
+            $this->computerTitleTemplates->delete($id);
+            $this->setFlash('success', 'Szablon tytulu zostal usuniety.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', json_encode(array($exception->getMessage())));
+        }
+
+        $this->redirect('./index.php?controller=computers&action=titletemplates');
+    }
+
+    public function togglecsvtemplateactive(): void
+    {
+        $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=csvtemplates');
+        }
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0) {
+                throw new RuntimeException('Nieprawidlowy szablon CSV.');
+            }
+
+            $this->computerCsvTemplates->setActive($id, $this->input('is_active', '0') === '1');
+            $this->setFlash('success', 'Status szablonu CSV zostal zapisany.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', json_encode(array($exception->getMessage())));
+        }
+
+        $this->redirect('./index.php?controller=computers&action=csvtemplates');
+    }
+
     public function editcsvtemplate(): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         $id = (int) $this->input('id', 0);
         $template = $this->computerCsvTemplates->find($id);
         if (!$template) {
@@ -291,7 +450,7 @@ class ComputersController extends Controller
 
     public function savecsvtemplate(): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=computers&action=csvtemplates');
         }
@@ -314,6 +473,7 @@ class ComputersController extends Controller
                 'delimiter' => $delimiter,
                 'encoding' => strtoupper(trim((string) $this->input('encoding', 'UTF-8'))) === 'WINDOWS-1250' ? 'WINDOWS-1250' : 'UTF-8',
                 'add_bom' => $this->input('add_bom', '0') === '1',
+                'is_active' => $this->input('is_active', '0') === '1',
                 'description_template' => (string) $this->input('description_template', ''),
             ), $columns);
             $this->setFlash('success', 'Szablon CSV zostal zapisany.');
@@ -326,7 +486,7 @@ class ComputersController extends Controller
 
     public function duplicatecsvtemplate(): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         if ($this->isPost()) {
             try {
                 $this->computerCsvTemplates->duplicate((int) $this->input('id', 0));
@@ -340,7 +500,7 @@ class ComputersController extends Controller
 
     public function deletecsvtemplate(): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         if ($this->isPost()) {
             try {
                 $this->computerCsvTemplates->delete((int) $this->input('id', 0));
@@ -354,7 +514,7 @@ class ComputersController extends Controller
 
     public function exportcsv(): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=computers&action=products');
         }
@@ -371,7 +531,7 @@ class ComputersController extends Controller
 
     public function searchcsvpreviewproducts(): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         $query = trim((string) $this->input('q', ''));
         $rows = array();
 
@@ -470,7 +630,7 @@ class ComputersController extends Controller
 
     public function previewcsvdescription(): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         if (!$this->isPost()) {
             http_response_code(405);
             header('Content-Type: application/json; charset=utf-8');
@@ -506,9 +666,47 @@ class ComputersController extends Controller
         exit;
     }
 
+    public function previewtitletemplate(): void
+    {
+        $this->requireModule('computers');
+        if (!$this->isPost()) {
+            http_response_code(405);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(array('error' => 'Podglad wymaga zapytania POST.'));
+            exit;
+        }
+
+        $product = $this->productById((int) $this->input('product_id', 0));
+        if (!$product) {
+            http_response_code(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(array('error' => 'Nie znaleziono produktu.'));
+            exit;
+        }
+
+        $components = $this->computerComponentsForProduct($product);
+        $title = $this->buildComputerTitlePreview($product, $components, (string) $this->input('template_body', ''));
+        $length = function_exists('mb_strlen') ? mb_strlen($title, 'UTF-8') : strlen($title);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array(
+            'title' => $title,
+            'length' => $length,
+            'limit' => 75,
+            'too_long' => $length > 75,
+            'product' => array(
+                'id' => (int) ($product['id'] ?? 0),
+                'name' => (string) ($product['name'] ?? ''),
+                'sku' => (string) ($product['sku'] ?? ''),
+                'ean' => (string) ($product['EAN'] ?? ''),
+            ),
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     public function components(): void
     {
-        $currentUser = $this->requireModule('products');
+        $currentUser = $this->requireModule('computers');
 
         $ajaxParams = trim((string) $this->input('ajax_params', ''));
         if ($ajaxParams !== '') {
@@ -627,9 +825,19 @@ class ComputersController extends Controller
     {
         $selectedComponents = array_values(array_filter(array_map('intval', (array) $this->input('components', array()))));
         $profit = (float) $this->input('profit', 0);
+        $titleTemplateId = (int) $this->input('title_template_id', 0);
         if (count($selectedComponents) < 2) {
             $this->setFlash('error', json_encode(array('Wybierz co najmniej dwa komponenty.')));
             $this->redirect('./index.php?controller=computers&action=products');
+        }
+
+        $titleTemplate = null;
+        if ($titleTemplateId > 0) {
+            $titleTemplate = $this->computerTitleTemplates->findById($titleTemplateId);
+            if (!$titleTemplate) {
+                $this->setFlash('error', json_encode(array('Nie znaleziono wybranego szablonu tytulu.')));
+                $this->redirect('./index.php?controller=computers&action=products');
+            }
         }
 
         $placeholders = implode(',', array_fill(0, count($selectedComponents), '?'));
@@ -657,16 +865,7 @@ class ComputersController extends Controller
 
             sort($idsForDb);
             $idComponentsStr = implode(',', $idsForDb);
-            $productNameParts = array('Komputer Gamingowy');
-            foreach (array('Monitor', 'CPU', 'GPU', 'RAM') as $category) {
-                if (!empty($componentsByCategory[$category])) {
-                    $productNameParts[] = $componentsByCategory[$category];
-                }
-            }
-            if (!empty($componentsByCategory['SSD'])) {
-                $productNameParts[] = '/' . $componentsByCategory['SSD'];
-            }
-            $productNameParts[] = 'WIN11';
+            $productName = $this->buildComputerVariantTitle($combination, $componentsByCategory, $titleTemplate);
             $exists = (int) $this->db()->fetchColumn(
                 'SELECT COUNT(*) FROM ' . self::PRODUCTS_TABLE . ' WHERE id_components = :id_components',
                 array('id_components' => $idComponentsStr)
@@ -677,7 +876,7 @@ class ComputersController extends Controller
 
             $this->db()->insert(self::PRODUCTS_TABLE, array(
                 'id_components' => $idComponentsStr,
-                'name' => trim(implode(' ', $productNameParts)),
+                'name' => $productName,
                 'price' => $priceSum + $profit,
                 'profit' => $profit,
                 'img' => '',
@@ -742,6 +941,278 @@ class ComputersController extends Controller
 
         $this->setFlash('success', 'Produkt zostal zapisany.');
         $this->redirect('./index.php?controller=computers&action=products');
+    }
+
+    private function buildComputerVariantTitle(array $combination, array $componentsByCategory, ?array $titleTemplate): string
+    {
+        if ($titleTemplate !== null) {
+            $templateBody = trim((string) ($titleTemplate['template_body'] ?? ''));
+            if ($templateBody !== '') {
+                $product = $this->computerVariantPreviewProduct($combination, $componentsByCategory);
+                $rendered = $this->buildComputerTitlePreview($product, $combination, $templateBody);
+                if ($rendered !== '') {
+                    return $rendered;
+                }
+            }
+        }
+
+        $productNameParts = array('Komputer Gamingowy');
+        foreach (array('Monitor', 'CPU', 'GPU', 'RAM') as $category) {
+            if (!empty($componentsByCategory[$category])) {
+                $productNameParts[] = $componentsByCategory[$category];
+            }
+        }
+        if (!empty($componentsByCategory['SSD'])) {
+            $productNameParts[] = '/' . $componentsByCategory['SSD'];
+        }
+        $productNameParts[] = 'WIN11';
+
+        return trim(implode(' ', $productNameParts));
+    }
+
+    private function buildComputerTitlePreview(array $product, array $components, string $templateBody): string
+    {
+        $templateBody = trim($templateBody);
+        if ($templateBody === '') {
+            return '';
+        }
+
+        $context = $this->computerVariantTitleContext($product, $components);
+        return (new ValueResolver())->renderTitleTemplatePattern($context, $templateBody, array());
+    }
+
+    private function computerVariantPreviewProduct(array $combination, array $componentsByCategory): array
+    {
+        $productNameParts = array('Komputer Gamingowy');
+        foreach (array('Monitor', 'CPU', 'GPU', 'RAM') as $category) {
+            if (!empty($componentsByCategory[$category])) {
+                $productNameParts[] = $componentsByCategory[$category];
+            }
+        }
+        if (!empty($componentsByCategory['SSD'])) {
+            $productNameParts[] = '/' . $componentsByCategory['SSD'];
+        }
+        $productNameParts[] = 'WIN11';
+
+        $componentIds = array();
+        $images = array();
+        foreach ($combination as $component) {
+            $componentIds[] = (int) ($component['id'] ?? 0);
+            $images = array_merge($images, $this->computerComponentImageUrls($component, 'img'));
+        }
+
+        sort($componentIds);
+
+        return array(
+            'id' => 0,
+            'sku' => '',
+            'EAN' => '',
+            'name' => trim(implode(' ', $productNameParts)),
+            'id_components' => implode(',', array_filter($componentIds)),
+            'description' => '',
+            'img' => '',
+            'images' => array_values(array_filter(array_unique($images))),
+        );
+    }
+
+    private function computerVariantTitleContext(array $product, array $components): array
+    {
+        $componentMap = array();
+        $componentNames = array();
+        $allegroParameters = array();
+        $allegroParameterLines = array();
+        $empikParameters = array();
+
+        foreach ($components as $component) {
+            $category = trim((string) ($component['category'] ?? ''));
+            if ($category === '') {
+                continue;
+            }
+
+            $componentName = trim((string) ($component['name_title'] ?? $component['name'] ?? ''));
+            $componentMap[$category] = $componentName;
+            $normalizedCategory = $this->computerTitleCategoryKey($category);
+            if ($normalizedCategory !== '') {
+                $componentMap[$normalizedCategory] = $componentName;
+            }
+            if ($componentName !== '') {
+                $componentNames[] = $componentName;
+            }
+
+            foreach ($this->decodeJsonMap((string) ($component['parameters_eu'] ?? '')) as $name => $value) {
+                if (!array_key_exists($name, $allegroParameters)) {
+                    $allegroParameters[$name] = $value;
+                }
+            }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $name => $value) {
+                if (!array_key_exists($name, $empikParameters)) {
+                    $empikParameters[$name] = $value;
+                }
+            }
+        }
+
+        foreach ($allegroParameters as $name => $value) {
+            $label = trim((string) $name);
+            $formattedValue = $this->computerTitleParameterValue($value);
+            if ($label !== '' && $formattedValue !== '') {
+                $allegroParameterLines[] = $label . ': ' . $formattedValue;
+            }
+        }
+
+        return array(
+            'id' => (string) ($product['id'] ?? ''),
+            'sku' => (string) ($product['sku'] ?? ''),
+            'ean' => (string) ($product['EAN'] ?? ''),
+            'id_components' => (string) ($product['id_components'] ?? ''),
+            'product_name' => (string) ($product['name'] ?? ''),
+            'description' => (string) ($product['description'] ?? ''),
+            'img' => (string) ($product['img'] ?? ''),
+            'images' => array_map(static function (string $url): array {
+                return array('url' => $url);
+            }, (array) ($product['images'] ?? array())),
+            'allegro_parameters' => implode("\n", $allegroParameterLines),
+            'empik_parameters' => $this->computerTitleParametersText($empikParameters),
+            'components' => $componentMap,
+            'component_names' => implode(', ', array_values(array_filter($componentNames))),
+        );
+    }
+
+    private function computerTitleParameterValue($value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                if (is_scalar($item) && trim((string) $item) !== '') {
+                    $parts[] = trim((string) $item);
+                }
+            }
+
+            return implode(', ', $parts);
+        }
+
+        return is_scalar($value) ? trim((string) $value) : '';
+    }
+
+    private function computerTitleParametersText(array $parameters): string
+    {
+        $lines = array();
+        foreach ($parameters as $name => $value) {
+            $formatted = $this->computerTitleParameterValue($value);
+            if (trim((string) $name) !== '' && $formatted !== '') {
+                $lines[] = trim((string) $name) . ': ' . $formatted;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function computerTitleCategoryKey(string $category): string
+    {
+        $value = trim($category);
+        if ($value === '') {
+            return '';
+        }
+
+        $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if (is_string($converted) && $converted !== '') {
+            $value = $converted;
+        }
+
+        $value = strtoupper($value);
+        $value = preg_replace('/[^A-Z0-9]+/', '_', $value);
+
+        return trim((string) $value, '_');
+    }
+
+    private function computerComponentImageUrls(array $component, string $field): array
+    {
+        $images = preg_split('/,|\r\n|\r|\n/', (string) ($component[$field] ?? '')) ?: array();
+        $urls = array();
+        foreach ($images as $image) {
+            $image = trim((string) $image);
+            if ($image === '') {
+                continue;
+            }
+            $url = $this->publicImageUrl($this->publicAppBaseUrl(), 'img_components', $image);
+            if (is_string($url) && $url !== '') {
+                $urls[] = $url;
+            }
+        }
+
+        return $urls;
+    }
+
+    private function validatedComputerTitleTemplateData(): array
+    {
+        $name = trim((string) $this->input('name', ''));
+        $description = trim((string) $this->input('description', ''));
+        $templateBody = trim((string) $this->input('template_body', ''));
+
+        if ($name === '') {
+            throw new RuntimeException('Nazwa szablonu tytulu jest wymagana.');
+        }
+
+        if ($templateBody === '') {
+            throw new RuntimeException('Wzor tytulu jest wymagany.');
+        }
+
+        return array(
+            'name' => $name,
+            'description' => $description !== '' ? $description : null,
+            'template_body' => $templateBody,
+        );
+    }
+
+    private function defaultComputerTitleTemplateData(): array
+    {
+        return array(
+            'id' => 0,
+            'name' => '',
+            'description' => '',
+            'template_body' => '',
+        );
+    }
+
+    private function availableComputerTitleTokens(): array
+    {
+        return array(
+            '{{field:product.product_name}}' => 'Nazwa wariantu',
+            '{{field:product.component_names}}' => 'Lista nazw komponentow',
+            '{{field:product.components.CPU}}' => 'Komponent CPU',
+            '{{field:product.components.GPU}}' => 'Komponent GPU',
+            '{{field:product.components.RAM}}' => 'Komponent RAM',
+            '{{field:product.components.SSD}}' => 'Komponent SSD',
+            '{{field:product.components.Monitor}}' => 'Komponent Monitor',
+            '{{field:product.components.PLYTA_GLOWNA}}' => 'Komponent Plyta glowna',
+            '{{field:product.components.OBUDOWA}}' => 'Komponent Obudowa',
+            '{{field:product.allegro_parameters}}' => 'Parametry Allegro z komponentow',
+            '{{field:product.empik_parameters}}' => 'Parametry Empik z komponentow',
+            '{{field:product.ean}}' => 'EAN produktu',
+            '{{field:product.id_components}}' => 'ID komponentow',
+        );
+    }
+
+    private function renderComputerTitleFormWithError(string $mode, ?int $id, string $error): void
+    {
+        $titleTemplate = $this->defaultComputerTitleTemplateData();
+        $titleTemplate['id'] = $id ?? 0;
+        $titleTemplate['name'] = (string) $this->input('name', '');
+        $titleTemplate['description'] = (string) $this->input('description', '');
+        $titleTemplate['template_body'] = (string) $this->input('template_body', '');
+
+        $this->render('computers/title_form', array(
+            'pageTitle' => $mode === 'update' ? 'Edycja szablonu tytulu komputera' : 'Nowy szablon tytulu komputera',
+            'contentTitle' => $mode === 'update' ? 'Edytuj szablon tytulu komputera' : 'Dodaj szablon tytulu komputera',
+            'pageDescription' => 'Popraw bledy formularza i zapisz szablon tytulu.',
+            'breadcrumbCurrent' => $mode === 'update' ? 'Edycja szablonu tytulu' : 'Nowy szablon tytulu',
+            'formAction' => $mode === 'update' && $id !== null
+                ? './index.php?controller=computers&action=updatetitletemplate&id=' . $id
+                : './index.php?controller=computers&action=storetitletemplate',
+            'titleTemplate' => $titleTemplate,
+            'availableTitleTokens' => $this->availableComputerTitleTokens(),
+            'errors' => array($error),
+            'computerTab' => 'titletemplates',
+        ));
     }
 
     private function handleProductsBulkAction(string $bulkAction, array $productIds): void
@@ -924,7 +1395,7 @@ class ComputersController extends Controller
 
     private function deleteProduct(int $productId): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         $this->db()->delete(self::PRODUCTS_TABLE, 'id = :id', array('id' => $productId));
         $this->setFlash('success', 'Produkt ID ' . $productId . ' zostal usuniety.');
         $this->redirect('./index.php?controller=computers&action=products');
@@ -1103,7 +1574,7 @@ class ComputersController extends Controller
 
     private function deleteComponent(int $componentId): void
     {
-        $this->requireModuleWrite('products');
+        $this->requireModuleWrite('computers');
         $this->deleteComponentFiles($componentId);
         $this->db()->delete(self::COMPONENTS_TABLE, 'id = :id', array('id' => $componentId));
         $this->setFlash('success', 'Komponent zostal usuniety.');
@@ -1112,7 +1583,7 @@ class ComputersController extends Controller
 
     private function renderComponentParams(string $which): void
     {
-        $this->requireModule('products');
+        $this->requireModule('computers');
         $editId = (int) $this->input('edit_id', 0);
         $componentCategory = trim((string) $this->input('component_category', ''));
         $product = array();

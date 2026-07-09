@@ -43,6 +43,11 @@ class CsvExportService
             $rows = array_slice($products, 0, $previewLimit);
         }
 
+        $queueItems = isset($exportOptions['image_queue_items']) && is_array($exportOptions['image_queue_items'])
+            ? array_values($exportOptions['image_queue_items'])
+            : array();
+        $queueItemIndex = 0;
+
         foreach ($rows as $product) {
             $resolvedColumns = array();
             $rowCount = 1;
@@ -57,12 +62,18 @@ class CsvExportService
                 $resolvedColumns[] = array(
                     'items' => $items,
                     'repeat' => !$this->isMultiRowColumn($column),
+                    'queue_item' => $this->isQueueItemColumn($column),
                 );
             }
 
             for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
                 $line = array();
                 foreach ($resolvedColumns as $resolvedColumn) {
+                    if (!empty($resolvedColumn['queue_item'])) {
+                        $line[] = isset($queueItems[$queueItemIndex]) ? $queueItems[$queueItemIndex] : '';
+                        continue;
+                    }
+
                     if ($resolvedColumn['repeat']) {
                         $line[] = isset($resolvedColumn['items'][0]) ? $resolvedColumn['items'][0] : '';
                         continue;
@@ -72,6 +83,7 @@ class CsvExportService
                 }
 
                 fputcsv($stream, $line, $delimiter);
+                $queueItemIndex++;
             }
         }
 
@@ -313,5 +325,16 @@ class CsvExportService
 
         $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
         return in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true);
+    }
+
+    private function isQueueItemColumn(array $column): bool
+    {
+        if (($column['source_type'] ?? 'field') !== 'field') {
+            return false;
+        }
+
+        $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
+
+        return in_array($sourceValue, array('queue_item', 'image_queue_item', 'product.queue_item', 'product.image_queue_item'), true);
     }
 }

@@ -35,6 +35,7 @@ class ComputerCsvTemplateRepository
             . "delimiter VARCHAR(1) NOT NULL DEFAULT ';',\n"
             . "encoding VARCHAR(30) NOT NULL DEFAULT 'UTF-8',\n"
             . "add_bom TINYINT(1) NOT NULL DEFAULT 1,\n"
+            . "is_active TINYINT(1) NOT NULL DEFAULT 1,\n"
             . "description_template LONGTEXT DEFAULT NULL,\n"
             . "columns_json LONGTEXT NOT NULL,\n"
             . "is_system TINYINT(1) NOT NULL DEFAULT 0,\n"
@@ -57,6 +58,20 @@ class ComputerCsvTemplateRepository
         if ($hasDescriptionTemplate === 0) {
             $this->database->query(
                 'ALTER TABLE computer_csv_templates ADD COLUMN description_template LONGTEXT DEFAULT NULL AFTER add_bom'
+            );
+        }
+
+        $hasIsActive = (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS'
+            . ' WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            array(
+                'table' => 'computer_csv_templates',
+                'column' => 'is_active',
+            )
+        );
+        if ($hasIsActive === 0) {
+            $this->database->query(
+                'ALTER TABLE computer_csv_templates ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER add_bom'
             );
         }
     }
@@ -85,6 +100,7 @@ class ComputerCsvTemplateRepository
                 'delimiter' => (string) ($template['delimiter'] ?? ';'),
                 'encoding' => (string) ($template['encoding'] ?? 'UTF-8'),
                 'add_bom' => !empty($template['add_bom']) ? 1 : 0,
+                'is_active' => array_key_exists('is_active', $template) ? (!empty($template['is_active']) ? 1 : 0) : 1,
                 'description_template' => (string) ($template['description_template'] ?? ''),
                 'columns_json' => json_encode($template['columns'] ?? array(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'is_system' => 1,
@@ -111,15 +127,36 @@ class ComputerCsvTemplateRepository
     public function all(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT * FROM computer_csv_templates ORDER BY is_system DESC, name ASC, id ASC'
+            'SELECT * FROM computer_csv_templates ORDER BY is_active DESC, is_system DESC, name ASC, id ASC'
         );
 
-        foreach ($rows as $index => $row) {
-            $rows[$index] = $this->hydrate($row);
-            $rows[$index]['columns_count'] = count($rows[$index]['columns']);
+        return $this->hydrateRows($rows);
+    }
+
+    public function active(): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT * FROM computer_csv_templates WHERE is_active = 1 ORDER BY is_system DESC, name ASC, id ASC'
+        );
+
+        return $this->hydrateRows($rows);
+    }
+
+    public function setActive(int $id, bool $isActive): void
+    {
+        if (!$this->find($id)) {
+            throw new RuntimeException('Nie znaleziono szablonu CSV komputerow.');
         }
 
-        return $rows;
+        $this->database->update(
+            'computer_csv_templates',
+            array(
+                'is_active' => $isActive ? 1 : 0,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ),
+            'id = :id',
+            array('id' => $id)
+        );
     }
 
     public function find(int $id)
@@ -147,6 +184,7 @@ class ComputerCsvTemplateRepository
                 'delimiter' => (string) $data['delimiter'],
                 'encoding' => (string) $data['encoding'],
                 'add_bom' => !empty($data['add_bom']) ? 1 : 0,
+                'is_active' => !empty($data['is_active']) ? 1 : 0,
                 'description_template' => (string) ($data['description_template'] ?? ''),
                 'columns_json' => json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'updated_at' => date('Y-m-d H:i:s'),
@@ -172,6 +210,7 @@ class ComputerCsvTemplateRepository
             'delimiter' => (string) ($template['delimiter'] ?? ';'),
             'encoding' => (string) ($template['encoding'] ?? 'UTF-8'),
             'add_bom' => (int) ($template['add_bom'] ?? 1),
+            'is_active' => (int) ($template['is_active'] ?? 1),
             'description_template' => (string) ($template['description_template'] ?? ''),
             'columns_json' => json_encode($template['columns'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'is_system' => 0,
@@ -195,6 +234,17 @@ class ComputerCsvTemplateRepository
     {
         $columns = json_decode((string) ($row['columns_json'] ?? ''), true);
         $row['columns'] = is_array($columns) ? $columns : array();
+        $row['is_active'] = (int) ($row['is_active'] ?? 1);
         return $row;
+    }
+
+    private function hydrateRows(array $rows): array
+    {
+        foreach ($rows as $index => $row) {
+            $rows[$index] = $this->hydrate($row);
+            $rows[$index]['columns_count'] = count($rows[$index]['columns']);
+        }
+
+        return $rows;
     }
 }

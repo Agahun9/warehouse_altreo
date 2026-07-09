@@ -154,6 +154,35 @@ class ValueResolver
         return $this->computed->apply($functionName, $args, $context);
     }
 
+    public function renderTitleTemplatePattern(array $product, string $pattern, array $exportOptions = array()): string
+    {
+        $pattern = trim($pattern);
+        if ($pattern === '') {
+            return '';
+        }
+
+        $resolved = preg_replace_callback('/\{\{?\s*(field|option)\s*:\s*([^}]+)\}?\}/i', function (array $matches) use ($product, $exportOptions) {
+            $type = strtolower(trim((string) $matches[1]));
+            $value = trim((string) $matches[2]);
+
+            if ($type === 'field') {
+                return $this->resolveTitleFieldExpression($product, $value, $exportOptions);
+            }
+
+            $format = '';
+            $formatPos = strrpos($value, '=');
+            if ($formatPos !== false) {
+                $format = trim(substr($value, $formatPos + 1));
+                $value = trim(substr($value, 0, $formatPos));
+            }
+
+            $resolvedOption = isset($exportOptions[$value]) ? (string) $exportOptions[$value] : '';
+            return $this->applyTitleExpressionFormat($resolvedOption, $format);
+        }, $pattern);
+
+        return $this->cleanGeneratedTitle((string) $resolved);
+    }
+
     private function normalizePath(string $path): string
     {
         $aliases = array(
@@ -639,25 +668,7 @@ class ValueResolver
         );
 
         $pattern = strtr($pattern, $legacyReplacements);
-        $resolved = preg_replace_callback('/\{\{?\s*(field|option)\s*:\s*([^}]+)\}?\}/i', function (array $matches) use ($product, $exportOptions) {
-            $type = strtolower(trim((string) $matches[1]));
-            $value = trim((string) $matches[2]);
-
-            if ($type === 'field') {
-                return $this->resolveTitleFieldExpression($product, $value, $exportOptions);
-            }
-
-            $format = '';
-            $formatPos = strrpos($value, '=');
-            if ($formatPos !== false) {
-                $format = trim(substr($value, $formatPos + 1));
-                $value = trim(substr($value, 0, $formatPos));
-            }
-            $resolvedOption = isset($exportOptions[$value]) ? (string) $exportOptions[$value] : '';
-            return $this->applyTitleExpressionFormat($resolvedOption, $format);
-        }, $pattern);
-
-        return $this->cleanGeneratedTitle((string) $resolved);
+        return $this->renderTitleTemplatePattern($product, $pattern, $exportOptions);
     }
 
     private function resolveTitleFieldExpression(array $product, string $expression, array $exportOptions): string

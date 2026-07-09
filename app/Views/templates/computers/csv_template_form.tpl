@@ -3,6 +3,7 @@
     <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=products">Produkty</a></li>
     <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=components">Komponenty</a></li>
     <li class="nav-item"><a class="nav-link active" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a></li>
+    <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=titletemplates">Szablony tytułów</a></li>
   </ul>
 
   <form method="post" action="{$baseUrl}?controller=computers&action=savecsvtemplate" id="computerCsvTemplateForm">
@@ -24,6 +25,7 @@
             <select class="form-select" name="encoding"><option value="UTF-8" {if $template.encoding eq 'UTF-8'}selected{/if}>UTF-8</option><option value="WINDOWS-1250" {if $template.encoding eq 'WINDOWS-1250'}selected{/if}>Windows-1250</option></select>
           </div>
           <div class="col-md-1 d-flex align-items-end"><div class="form-check mb-2"><input type="checkbox" class="form-check-input" name="add_bom" value="1" id="addBom" {if $template.add_bom}checked{/if}><label for="addBom" class="form-check-label">BOM</label></div></div>
+          <div class="col-md-2 d-flex align-items-end"><div class="form-check mb-2"><input type="checkbox" class="form-check-input" name="is_active" value="1" id="isActive" {if $template.is_active|default:1}checked{/if}><label for="isActive" class="form-check-label">Aktywny</label></div></div>
           <div class="col-12"><label class="form-label">Opis</label><textarea class="form-control" name="description" rows="2">{$template.description|escape:'html'}</textarea></div>
         </div>
       </div>

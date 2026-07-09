@@ -285,12 +285,14 @@
                   <p>Dashboard</p>
                 </a>
               </li>
-              <li class="nav-item">
-                <a href="{$baseUrl}?controller=worktime&action=index" class="nav-link{if $currentController eq 'worktime'} active{/if}">
-                  <i class="nav-icon bi bi-stopwatch"></i>
-                  <p>Czas pracy</p>
-                </a>
-              </li>
+              {if $currentUser.role eq 'admin' or in_array('worktime', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=worktime&action=index" class="nav-link{if $currentController eq 'worktime'} active{/if}">
+                    <i class="nav-icon bi bi-stopwatch"></i>
+                    <p>Czas pracy</p>
+                  </a>
+                </li>
+              {/if}
               {if $currentUser.role eq 'admin' or in_array('products', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=products&action=index" class="nav-link{if $currentController eq 'products'} active{/if}">
@@ -298,6 +300,8 @@
                     <p>Lista produktow</p>
                   </a>
                 </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('computers', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=computers&action=components" class="nav-link{if $currentController eq 'computers'} active{/if}">
                     <i class="nav-icon bi bi-pc-display"></i>

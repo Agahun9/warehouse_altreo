@@ -23,7 +23,7 @@ class WorkTimeController extends Controller
 
     public function index(): void
     {
-        $user = $this->requireAuth();
+        $user = $this->requireModule('worktime');
         $isManager = (int) ($user['id'] ?? 0) === 1;
         $month = $this->validMonth((string) $this->input('month', date('Y-m')));
         $selectedUserId = (int) ($user['id'] ?? 0);
@@ -65,7 +65,7 @@ class WorkTimeController extends Controller
 
     public function save(): void
     {
-        $user = $this->requireAuth();
+        $user = $this->requireModuleWrite('worktime');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=worktime&action=index');
         }
@@ -135,7 +135,7 @@ class WorkTimeController extends Controller
 
     public function delete(): void
     {
-        $user = $this->requireAuth();
+        $user = $this->requireModuleWrite('worktime');
         if (!$this->isPost()) {
             $this->redirect('./index.php?controller=worktime&action=index');
         }

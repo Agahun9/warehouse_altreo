@@ -618,8 +618,17 @@ class ErliService
             'fields' => array(
                 'externalId',
                 'sku',
+                'ean',
                 'name',
                 'price',
+                'stock',
+                'status',
+                'marketplaceId',
+                'created',
+                'updated',
+                'archivedAt',
+                'images',
+                'categories',
             ),
         );
 
