@@ -847,7 +847,7 @@
                     <span class="product-section-chip"><i class="bi bi-diagram-2"></i>Z kategorii Empik</span>
                   </div>
                   <div id="empik-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z Empik, aby zaladowac parametry.</div>
-                  <div id="empik-parameters-container" class="row g-3 border rounded-4 p-3 bg-light-subtle"></div>
+                  <div id="empik-parameters-container"></div>
                 </div>
                 </div>
 
@@ -1553,6 +1553,320 @@
       }
     }
 
+    function renderEmpikComponentLikeParameterFields(containerNode, infoNode, items, values, emptyLabel, loadedLabel) {
+      if (!containerNode) {
+        return;
+      }
+
+      if (!items || !items.length) {
+        containerNode.innerHTML = '<div class="alert alert-light border mb-0">Brak parametrów Empik do wyświetlenia.</div>';
+        if (infoNode) {
+          infoNode.textContent = emptyLabel;
+        }
+        return;
+      }
+
+      var selectedOption = categoryInput && categoryInput.options ? categoryInput.options[categoryInput.selectedIndex] : null;
+      var empikCategoryId = selectedOption ? String(selectedOption.getAttribute('data-empik-category-id') || '') : '';
+      var html = '';
+
+      html += '<div class="market-params market-params--empik" data-options-url="{$baseUrl|escape:"javascript"}?controller=products&action=empikparameteroptions&category_id=' + encodeURIComponent(categoryInput ? categoryInput.value : '') + '">';
+      html += '<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">';
+      html += '<div><div class="fw-bold fs-6">Parametry Empik</div><div class="small text-muted">';
+      if (empikCategoryId) {
+        html += 'Kategoria API: <code>' + escapeHtml(empikCategoryId) + '</code>';
+      }
+      html += '</div></div>';
+      html += '<div class="small text-muted">' + items.length + ' parametrów</div>';
+      html += '</div>';
+      html += '<div class="mb-3">';
+      html += '<input type="text" class="form-control js-market-param-filter" data-target=".js-empik-param-card" placeholder="Szukaj po nazwie lub ID parametru Empik...">';
+      html += '</div>';
+      html += '<div class="row g-3 mb-4">';
+
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i] || {};
+        var pid = String(item.id || '');
+        var pName = String(item.name || 'Parametr');
+        var pType = String(item.type || 'string').toLowerCase();
+        var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
+        var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
+        var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
+        var optionLookup = !!item.option_lookup;
+        var rawValue = values && typeof values === 'object' && Object.prototype.hasOwnProperty.call(values, pid) ? values[pid] : '';
+        var selectedValues = normalizeSelectedArray(rawValue);
+        var storedValue = Array.isArray(rawValue) ? rawValue.join(' | ') : (rawValue === null || typeof rawValue === 'undefined' ? '' : String(rawValue));
+        var cardText = (pName + ' ' + pid + ' ' + pType).toLowerCase();
+
+        html += '<div class="col-12 col-xl-6 js-empik-param-card js-param-card" data-param-id="' + escapeHtml(pid) + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="empik_parameters" data-filter-text="' + escapeHtml(cardText) + '">';
+        html += '<div class="border rounded-3 p-3 h-100 bg-white">';
+        html += '<div class="d-flex align-items-start justify-content-between gap-2 mb-2">';
+        html += '<label class="form-label fw-semibold mb-0" for="empik_param_' + escapeHtml(pid) + '">' + escapeHtml(pName) + '</label>';
+        html += '<span class="badge bg-light text-dark border">ID ' + escapeHtml(pid) + '</span>';
+        html += '</div>';
+
+        if (optionLookup) {
+          html += '<div class="empik-option-lookup" data-attribute-id="' + escapeHtml(pid) + '" data-multiple="' + (multiple ? '1' : '0') + '">';
+          html += '<div class="input-group">';
+          html += '<span class="input-group-text"><i class="bi bi-search"></i></span>';
+          html += '<input type="search" class="form-control js-empik-option-search" placeholder="Szukaj dostępnych wartości dla: ' + escapeHtml(pName) + '" autocomplete="off">';
+          html += '<button type="button" class="btn btn-outline-secondary js-empik-option-clear">Wyczyść</button>';
+          html += '</div>';
+          html += '<div class="form-text">Po kliknięciu pokazujemy dostępne propozycje. Wpisz tekst, aby zawęzić wyniki tylko dla tego parametru.</div>';
+          html += '<div class="list-group mt-2 js-empik-option-results d-none"></div>';
+          html += '<div class="mt-2 js-empik-option-selection">';
+          if (multiple) {
+            selectedValues.forEach(function (selectedValue) {
+              html += '<span class="badge text-bg-primary me-1 mb-1 empik-selected-option">';
+              html += '<span>' + escapeHtml(selectedValue) + '</span>';
+              html += '<input type="hidden" name="empik_parameters[' + escapeHtml(pid) + '][]" value="' + escapeHtml(selectedValue) + '">';
+              html += '<button type="button" class="btn-close btn-close-white ms-1 js-remove-empik-option" aria-label="Usuń"></button>';
+              html += '</span>';
+            });
+          } else {
+            html += '<input type="hidden" name="empik_parameters[' + escapeHtml(pid) + ']" class="js-empik-option-value" value="' + escapeHtml(storedValue) + '">';
+            html += '<div class="alert alert-light border py-2 px-3 mb-0 js-empik-single-selection ' + (storedValue === '' ? 'd-none' : '') + '">';
+            html += 'Wybrano: <strong class="js-empik-selected-label">' + escapeHtml(storedValue) + '</strong>';
+            html += '</div>';
+          }
+          html += '</div></div>';
+        } else if (pType === 'multidictionary' || (pType === 'dictionary' && multiple)) {
+          html += '<div class="param-option-box">';
+          for (var d = 0; d < dict.length; d++) {
+            var option = dict[d] || {};
+            var optId = String(option.id || '');
+            var optionLabel = String(option.value || optId);
+            var checked = isValueSelected(optId, selectedValues) || isValueSelected(optionLabel, selectedValues) ? ' checked' : '';
+            var inputId = 'empik_param_' + escapeHtml(pid) + '_' + d;
+            html += '<div class="form-check mb-1">';
+            html += '<input class="form-check-input" type="checkbox" name="empik_parameters[' + escapeHtml(pid) + '][]" id="' + inputId + '" value="' + escapeHtml(optId) + '"' + checked + '>';
+            html += '<label class="form-check-label" for="' + inputId + '">' + escapeHtml(optionLabel) + '</label>';
+            html += '</div>';
+          }
+          html += '</div><div class="form-text">Wielokrotny wybór z listy.</div>';
+        } else if (pType === 'dictionary' && dict.length) {
+          html += '<select name="empik_parameters[' + escapeHtml(pid) + ']" id="empik_param_' + escapeHtml(pid) + '" class="form-select">';
+          html += '<option value="">-- Wybierz --</option>';
+          for (var s = 0; s < dict.length; s++) {
+            var singleOption = dict[s] || {};
+            var singleId = String(singleOption.id || '');
+            var singleLabel = String(singleOption.value || singleId);
+            var selected = storedValue === singleId || storedValue === singleLabel ? ' selected' : '';
+            html += '<option value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(singleLabel) + '</option>';
+          }
+          html += '</select>';
+        } else if (pType === 'integer' || pType === 'number') {
+          html += '<input type="number" step="any" class="form-control" name="empik_parameters[' + escapeHtml(pid) + ']" id="empik_param_' + escapeHtml(pid) + '" value="' + escapeHtml(storedValue) + '">';
+        } else if (pType === 'textarea') {
+          html += '<textarea class="form-control" name="empik_parameters[' + escapeHtml(pid) + ']" id="empik_param_' + escapeHtml(pid) + '" rows="3" placeholder="Wpisz wartości ręcznie, każdą w osobnej linii">' + escapeHtml(storedValue) + '</textarea>';
+        } else {
+          html += '<input type="text" class="form-control" name="empik_parameters[' + escapeHtml(pid) + ']" id="empik_param_' + escapeHtml(pid) + '" value="' + escapeHtml(storedValue) + '">';
+        }
+
+        html += '<div class="small text-secondary mt-2">Typ: ' + escapeHtml(pType) + (multiple ? ' | multiple' : '') + (optionLookup ? ' | lookup' : '') + '</div>';
+        html += '</div></div>';
+      }
+
+      html += '</div></div>';
+      containerNode.innerHTML = html;
+      bindEmpikComponentLikeControls(containerNode);
+      if (infoNode) {
+        infoNode.textContent = loadedLabel;
+      }
+    }
+
+    function bindEmpikComponentLikeControls(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var root = scopeNode.querySelector('.market-params--empik');
+      var optionsUrl = root ? root.getAttribute('data-options-url') : '';
+
+      function addSelectedOption(lookup, id, label) {
+        var multiple = lookup.getAttribute('data-multiple') === '1';
+        var selection = lookup.querySelector('.js-empik-option-selection');
+        if (!selection) {
+          return;
+        }
+
+        if (!multiple) {
+          var valueInput = selection.querySelector('.js-empik-option-value');
+          var notice = selection.querySelector('.js-empik-single-selection');
+          var labelNode = selection.querySelector('.js-empik-selected-label');
+          if (valueInput) {
+            valueInput.value = label;
+          }
+          if (labelNode) {
+            labelNode.textContent = label;
+          }
+          if (notice) {
+            notice.classList.remove('d-none');
+          }
+          return;
+        }
+
+        var exists = Array.prototype.slice.call(selection.querySelectorAll('input[type="hidden"]')).some(function (input) {
+          return input.value === label || input.getAttribute('data-option-id') === id;
+        });
+        if (exists) {
+          return;
+        }
+
+        var badge = document.createElement('span');
+        badge.className = 'badge text-bg-primary me-1 mb-1 empik-selected-option';
+        badge.innerHTML = '<span>' + escapeHtml(label) + '</span>'
+          + '<input type="hidden" name="empik_parameters[' + escapeHtml(lookup.getAttribute('data-attribute-id')) + '][]" value="' + escapeHtml(label) + '" data-option-id="' + escapeHtml(id) + '">'
+          + '<button type="button" class="btn-close btn-close-white ms-1 js-remove-empik-option" aria-label="Usuń"></button>';
+        selection.appendChild(badge);
+      }
+
+      scopeNode.querySelectorAll('.empik-option-lookup').forEach(function (lookup, lookupIndex) {
+        var input = lookup.querySelector('.js-empik-option-search');
+        var results = lookup.querySelector('.js-empik-option-results');
+        var clear = lookup.querySelector('.js-empik-option-clear');
+        var timer = null;
+        var requestNumber = 0;
+
+        function hideResults() {
+          if (!results) {
+            return;
+          }
+          results.classList.add('d-none');
+          results.innerHTML = '';
+        }
+
+        function search() {
+          if (!input || !results || !optionsUrl) {
+            hideResults();
+            return;
+          }
+
+          var phrase = String(input.value || '').trim();
+          var currentRequest = ++requestNumber;
+          results.classList.remove('d-none');
+          results.innerHTML = '<div class="list-group-item text-muted">Szukam...</div>';
+
+          var url = optionsUrl + '&attribute_id=' + encodeURIComponent(lookup.getAttribute('data-attribute-id'))
+            + '&q=' + encodeURIComponent(phrase)
+            + '&limit=' + (phrase === '' ? 10 : 50);
+
+          fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (response) {
+              return response.json().then(function (data) {
+                if (!response.ok) {
+                  throw new Error(data.error || 'Błąd pobierania wartości.');
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              if (currentRequest !== requestNumber) {
+                return;
+              }
+
+              var optionItems = Array.isArray(data.items) ? data.items : [];
+              results.innerHTML = '';
+              if (!optionItems.length) {
+                results.innerHTML = '<div class="list-group-item text-muted">Brak pasujących wartości.</div>';
+                return;
+              }
+
+              optionItems.forEach(function (option) {
+                var id = String(option.id || option.value || '');
+                var label = String(option.value || option.id || '');
+                var button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'list-group-item list-group-item-action d-flex justify-content-between gap-2';
+                button.innerHTML = '<span>' + escapeHtml(label) + '</span><small class="text-muted">' + escapeHtml(id) + '</small>';
+                button.addEventListener('click', function () {
+                  addSelectedOption(lookup, id, label);
+                  if (lookup.getAttribute('data-multiple') === '1') {
+                    button.classList.add('active');
+                    button.disabled = true;
+                    input.focus();
+                  } else {
+                    input.value = '';
+                    hideResults();
+                  }
+                });
+                results.appendChild(button);
+              });
+            })
+            .catch(function (error) {
+              if (currentRequest !== requestNumber) {
+                return;
+              }
+              results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(error.message) + '</div>';
+            });
+        }
+
+        if (input) {
+          input.addEventListener('input', function () {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(search, 250);
+          });
+          input.addEventListener('focus', function () {
+            if (results && results.classList.contains('d-none')) {
+              search();
+            }
+          });
+        }
+
+        if (clear) {
+          clear.addEventListener('click', function () {
+            input.value = '';
+            hideResults();
+            var selection = lookup.querySelector('.js-empik-option-selection');
+            if (!selection) {
+              return;
+            }
+            if (lookup.getAttribute('data-multiple') === '1') {
+              selection.querySelectorAll('.empik-selected-option').forEach(function (badge) {
+                badge.remove();
+              });
+            } else {
+              var valueInput = selection.querySelector('.js-empik-option-value');
+              var notice = selection.querySelector('.js-empik-single-selection');
+              if (valueInput) {
+                valueInput.value = '';
+              }
+              if (notice) {
+                notice.classList.add('d-none');
+              }
+            }
+          });
+        }
+
+        lookup.addEventListener('click', function (event) {
+          var remove = event.target.closest('.js-remove-empik-option');
+          if (remove) {
+            var badge = remove.closest('.empik-selected-option');
+            if (badge) {
+              badge.remove();
+            }
+          }
+        });
+
+        window.setTimeout(search, 50 + (lookupIndex * 40));
+      });
+
+      scopeNode.querySelectorAll('.js-market-param-filter').forEach(function (input) {
+        input.addEventListener('input', function () {
+          var phrase = String(this.value || '').toLowerCase().trim();
+          var selector = this.getAttribute('data-target') || '';
+          var marketRoot = this.closest('.market-params');
+          if (!marketRoot || !selector) {
+            return;
+          }
+          marketRoot.querySelectorAll(selector).forEach(function (card) {
+            var text = String(card.getAttribute('data-filter-text') || '').toLowerCase();
+            card.classList.toggle('d-none', phrase !== '' && text.indexOf(phrase) === -1);
+          });
+        });
+      });
+    }
+
     function readParameterCurrentValue(card) {
       if (!card) {
         return {
@@ -1682,7 +1996,7 @@
     }
 
     function renderEmpikParameterFields(items, values) {
-      renderMarketplaceParameterFields(empikContainer, empikInfo, items, values, 'empik_parameters', 'Brak parametrow dla tej kategorii Empik.', 'Parametry Empik zaladowane.', 'autocomplete');
+      renderEmpikComponentLikeParameterFields(empikContainer, empikInfo, items, values, 'Brak parametrow dla tej kategorii Empik.', 'Parametry Empik zaladowane.');
       currentEmpikItems = items || [];
     }
 
