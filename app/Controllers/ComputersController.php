@@ -109,6 +109,10 @@ class ComputersController extends Controller
 
         $filterComponents = array_values(array_filter(array_map('intval', (array) $this->input('filter_components', array()))));
         $filterName = trim((string) $this->input('filter_name', ''));
+        $filterCreatedFrom = $this->normalizeDateFilterInput($this->input('filter_created_from', ''));
+        $filterCreatedTo = $this->normalizeDateFilterInput($this->input('filter_created_to', ''));
+        $filterUpdatedFrom = $this->normalizeDateFilterInput($this->input('filter_updated_from', ''));
+        $filterUpdatedTo = $this->normalizeDateFilterInput($this->input('filter_updated_to', ''));
         $filterMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('filter_market_accounts', array()));
         $filterOfferStatus = $this->input('filter_status_offer', '');
         if ($filterMarketAccounts === array() && $filterOfferStatus !== '') {
@@ -132,6 +136,10 @@ class ComputersController extends Controller
         $filters = array(
             'components' => $filterComponents,
             'name' => $filterName,
+            'created_from' => $filterCreatedFrom,
+            'created_to' => $filterCreatedTo,
+            'updated_from' => $filterUpdatedFrom,
+            'updated_to' => $filterUpdatedTo,
             'market_accounts' => $filterMarketAccounts,
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
@@ -205,7 +213,11 @@ class ComputersController extends Controller
             'profit' => (float) $this->input('profit', 0),
             'filterComponents' => $filterComponents,
             'filterName' => $filterName,
+            'filterCreatedFrom' => $filterCreatedFrom,
+            'filterCreatedTo' => $filterCreatedTo,
             'filterMarketAccounts' => $filterMarketAccounts,
+            'filterUpdatedFrom' => $filterUpdatedFrom,
+            'filterUpdatedTo' => $filterUpdatedTo,
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
@@ -797,9 +809,13 @@ class ComputersController extends Controller
         $filters = array(
             'components' => array_values(array_filter(array_map('intval', (array) $this->input('selection_filter_components', array())))),
             'name' => trim((string) $this->input('selection_filter_name', '')),
+            'created_from' => $this->normalizeDateFilterInput($this->input('selection_filter_created_from', '')),
+            'created_to' => $this->normalizeDateFilterInput($this->input('selection_filter_created_to', '')),
             'market_accounts' => $this->selectedMarketAccountFilters(
                 (array) $this->input('selection_filter_market_accounts', array())
             ),
+            'updated_from' => $this->normalizeDateFilterInput($this->input('selection_filter_updated_from', '')),
+            'updated_to' => $this->normalizeDateFilterInput($this->input('selection_filter_updated_to', '')),
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
         $rows = $this->db()->fetchAll(
@@ -823,10 +839,17 @@ class ComputersController extends Controller
 
     private function createVariants(): void
     {
+        $wantsJson = $this->wantsJsonResponse();
         $selectedComponents = array_values(array_filter(array_map('intval', (array) $this->input('components', array()))));
         $profit = (float) $this->input('profit', 0);
         $titleTemplateId = (int) $this->input('title_template_id', 0);
         if (count($selectedComponents) < 2) {
+            if ($wantsJson) {
+                $this->jsonResponse(array(
+                    'success' => false,
+                    'message' => 'Wybierz co najmniej dwa komponenty.',
+                ), 422);
+            }
             $this->setFlash('error', json_encode(array('Wybierz co najmniej dwa komponenty.')));
             $this->redirect('./index.php?controller=computers&action=products');
         }
@@ -835,6 +858,12 @@ class ComputersController extends Controller
         if ($titleTemplateId > 0) {
             $titleTemplate = $this->computerTitleTemplates->findById($titleTemplateId);
             if (!$titleTemplate) {
+                if ($wantsJson) {
+                    $this->jsonResponse(array(
+                        'success' => false,
+                        'message' => 'Nie znaleziono wybranego szablonu tytulu.',
+                    ), 404);
+                }
                 $this->setFlash('error', json_encode(array('Nie znaleziono wybranego szablonu tytulu.')));
                 $this->redirect('./index.php?controller=computers&action=products');
             }
@@ -853,6 +882,7 @@ class ComputersController extends Controller
 
         $combinations = $this->cartesianProduct($groupedComponents);
         $created = 0;
+        $skipped = 0;
         foreach ($combinations as $combination) {
             $idsForDb = array();
             $componentsByCategory = array();
@@ -871,6 +901,7 @@ class ComputersController extends Controller
                 array('id_components' => $idComponentsStr)
             );
             if ($exists > 0) {
+                $skipped++;
                 continue;
             }
 
@@ -884,12 +915,46 @@ class ComputersController extends Controller
             $created++;
         }
 
+        if ($wantsJson) {
+            $message = $created > 0
+                ? 'Utworzono ' . $created . ' nowych wariantow produktow.'
+                : 'Nie utworzono zadnych nowych wariantow (wszystkie juz istnieja).';
+            if ($skipped > 0) {
+                $message .= ' Pominieto duplikaty: ' . $skipped . '.';
+            }
+
+            $this->jsonResponse(array(
+                'success' => $created > 0,
+                'created' => $created,
+                'skipped' => $skipped,
+                'message' => $message,
+            ));
+        }
+
         if ($created > 0) {
             $this->setFlash('success', 'Utworzono ' . $created . ' nowych wariantow produktow.');
         } else {
             $this->setFlash('error', json_encode(array('Nie utworzono zadnych nowych wariantow (wszystkie juz istnieja).')));
         }
         $this->redirect('./index.php?controller=computers&action=products');
+    }
+
+    private function wantsJsonResponse(): bool
+    {
+        $accept = isset($_SERVER['HTTP_ACCEPT']) ? (string) $_SERVER['HTTP_ACCEPT'] : '';
+        $requestedWith = isset($_SERVER['HTTP_X_REQUESTED_WITH']) ? (string) $_SERVER['HTTP_X_REQUESTED_WITH'] : '';
+
+        return (string) $this->input('ajax', '') === '1'
+            || stripos($accept, 'application/json') !== false
+            || strtolower($requestedWith) === 'xmlhttprequest';
+    }
+
+    private function jsonResponse(array $payload, int $statusCode = 200): void
+    {
+        http_response_code($statusCode);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     private function saveProduct(int $productId): void
@@ -1257,6 +1322,11 @@ class ComputersController extends Controller
                     $successCount++;
                 }
             }
+        } elseif ($bulkAction === 'regenerate_title') {
+            $successCount = $this->regenerateProductTitles($productIds, $componentsById, $errors);
+            if ($successCount > 0) {
+                $successMessage = 'Przeregenerowano tytuly dla ' . $successCount . ' produktow.';
+            }
         } elseif ($bulkAction === 'change_images') {
             $target = trim((string) $this->input('bulk_img_target', 'img'));
             if (!in_array($target, array('img', 'img_morele', 'img_empik'), true)) {
@@ -1345,6 +1415,60 @@ class ComputersController extends Controller
             $this->setFlash('error', json_encode($errors));
         }
         $this->redirect('./index.php?controller=computers&action=products');
+    }
+
+    private function regenerateProductTitles(array $productIds, array $componentsById, array &$errors): int
+    {
+        $titleTemplateId = (int) $this->input('bulk_title_template_id', 0);
+        if ($titleTemplateId <= 0) {
+            $errors[] = 'Wybierz szablon tytulu do regeneracji.';
+            return 0;
+        }
+
+        $titleTemplate = $this->computerTitleTemplates->findById($titleTemplateId);
+        if (!$titleTemplate) {
+            $errors[] = 'Nie znaleziono wybranego szablonu tytulu.';
+            return 0;
+        }
+
+        $templateBody = trim((string) ($titleTemplate['template_body'] ?? ''));
+        if ($templateBody === '') {
+            $errors[] = 'Wybrany szablon tytulu jest pusty.';
+            return 0;
+        }
+
+        $updated = 0;
+        $skipped = 0;
+        foreach ($productIds as $productId) {
+            $product = $this->productById($productId);
+            if ($product === null) {
+                continue;
+            }
+
+            $components = array();
+            foreach ($this->csvIds((string) ($product['id_components'] ?? '')) as $componentId) {
+                if (isset($componentsById[$componentId])) {
+                    $components[] = $componentsById[$componentId];
+                }
+            }
+
+            $newTitle = $this->buildComputerTitlePreview($product, $components, $templateBody);
+            if ($newTitle === '') {
+                $skipped++;
+                continue;
+            }
+
+            $this->db()->update(self::PRODUCTS_TABLE, array(
+                'name' => $newTitle,
+            ), 'id = :id', array('id' => $productId));
+            $updated++;
+        }
+
+        if ($skipped > 0) {
+            $errors[] = 'Pominieto ' . $skipped . ' produktow, dla ktorych szablon zwrocil pusty tytul.';
+        }
+
+        return $updated;
     }
 
     private function handleProductComponentBulkChange(string $bulkAction, array $productIds, array $componentsById, array &$errors): int
@@ -1922,6 +2046,30 @@ class ComputersController extends Controller
             $params[$key] = (string) $componentId;
         }
 
+        $createdFrom = $this->normalizeDateFilterInput($filters['created_from'] ?? '');
+        if ($createdFrom !== '') {
+            $where[] = 'products.created_at >= :computer_filter_created_from';
+            $params['computer_filter_created_from'] = $createdFrom . ' 00:00:00';
+        }
+
+        $createdTo = $this->normalizeDateFilterInput($filters['created_to'] ?? '');
+        if ($createdTo !== '') {
+            $where[] = 'products.created_at < :computer_filter_created_to';
+            $params['computer_filter_created_to'] = $this->nextDateFilterBoundary($createdTo);
+        }
+
+        $updatedFrom = $this->normalizeDateFilterInput($filters['updated_from'] ?? '');
+        if ($updatedFrom !== '') {
+            $where[] = 'products.updated_at >= :computer_filter_updated_from';
+            $params['computer_filter_updated_from'] = $updatedFrom . ' 00:00:00';
+        }
+
+        $updatedTo = $this->normalizeDateFilterInput($filters['updated_to'] ?? '');
+        if ($updatedTo !== '') {
+            $where[] = 'products.updated_at < :computer_filter_updated_to';
+            $params['computer_filter_updated_to'] = $this->nextDateFilterBoundary($updatedTo);
+        }
+
         $marketFilters = $this->selectedMarketAccountFilters((array) ($filters['market_accounts'] ?? array()));
         if ($marketFilters !== array()) {
             $hasAllegroTables = $this->tableExists('allegro_offers') && $this->tableExists('allegro_accounts');
@@ -2011,6 +2159,31 @@ class ComputersController extends Controller
             $where === array() ? '' : ' WHERE ' . implode(' AND ', $where),
             $params,
         );
+    }
+
+    private function normalizeDateFilterInput($value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '';
+        }
+
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        if (!$date || $date->format('Y-m-d') !== $value) {
+            return '';
+        }
+
+        return $value;
+    }
+
+    private function nextDateFilterBoundary(string $date): string
+    {
+        $dateObject = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        if (!$dateObject) {
+            return $date . ' 23:59:59';
+        }
+
+        return $dateObject->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
     }
 
     private function productMatchesMarketAccountFilters(array $product, array $filters): bool
@@ -4683,6 +4856,16 @@ class ComputersController extends Controller
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_empik");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'created_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER offerid");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'updated_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
+        $this->ensureTableIndex(
+            self::PRODUCTS_TABLE,
+            'idx_products_altreo_created_at_id',
+            'CREATE INDEX idx_products_altreo_created_at_id ON ' . self::PRODUCTS_TABLE . ' (created_at, id)'
+        );
+        $this->ensureTableIndex(
+            self::PRODUCTS_TABLE,
+            'idx_products_altreo_updated_at_id',
+            'CREATE INDEX idx_products_altreo_updated_at_id ON ' . self::PRODUCTS_TABLE . ' (updated_at, id)'
+        );
 
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'name', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN name VARCHAR(255) NOT NULL AFTER id");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'name_title', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN name_title VARCHAR(255) DEFAULT NULL AFTER name");
@@ -4728,6 +4911,21 @@ class ComputersController extends Controller
 
         if ($exists === 0) {
             $this->db()->query($alterSql);
+        }
+    }
+
+    private function ensureTableIndex(string $table, string $indexName, string $createSql): void
+    {
+        $exists = (int) $this->db()->fetchColumn(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name',
+            array(
+                'table_name' => $table,
+                'index_name' => $indexName,
+            )
+        );
+
+        if ($exists === 0) {
+            $this->db()->query($createSql);
         }
     }
 

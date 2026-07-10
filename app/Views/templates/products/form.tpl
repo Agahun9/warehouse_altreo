@@ -1906,7 +1906,7 @@
 
           var url = optionsUrl + '&attribute_id=' + encodeURIComponent(lookup.getAttribute('data-attribute-id'))
             + '&q=' + encodeURIComponent(phrase)
-            + '&limit=' + (phrase === '' ? 10 : 50);
+            + '&limit=' + (phrase === '' ? 10 : 400);
 
           fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (response) {

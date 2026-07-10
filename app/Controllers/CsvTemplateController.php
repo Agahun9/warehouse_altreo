@@ -96,6 +96,7 @@ class CsvTemplateController extends Controller
 
         $this->exportService = new CsvExportService();
         $this->ensureWarehouseProductsExportTemplate();
+        $this->ensureEmpikTshirtExportTemplate();
     }
 
     public function index(): void
@@ -3002,6 +3003,16 @@ class CsvTemplateController extends Controller
     private function presetDefinitions(): array
     {
         return array(
+            'empik_tshirt_damski' => array(
+                'name' => 'Empik - t-shirt damski',
+                'description' => 'Wstepny preset CSV pod Empik dla t-shirtu damskiego.',
+                'delimiter' => ';',
+                'encoding' => 'UTF-8',
+                'add_bom' => 1,
+                'array_separator' => '|',
+                'description_templates' => $this->empikTshirtDescriptionTemplates(),
+                'columns' => $this->empikTshirtColumns(),
+            ),
             'allegro' => array(
                 'name' => 'Allegro basic',
                 'description' => 'Preset eksportu pod wystawianie ofert Allegro.',
@@ -3048,6 +3059,106 @@ class CsvTemplateController extends Controller
                     array('header_name' => 'price', 'source_type' => 'computed', 'source_value' => 'computed', 'settings' => array('function' => 'concat', 'args' => array('separator' => ' ', 'parts' => array('field:product.price_gross', 'PLN'))), 'mappings' => array()),
                 ),
             ),
+        );
+    }
+
+    private function empikTshirtDescriptionTemplates(): array
+    {
+        return array(
+            array(
+                'name' => 'T-shirt damski - opis Empik',
+                'key' => 'tshirt_damski_opis',
+                'sections' => array(
+                    array(
+                        'layout' => 'text',
+                        'text' => '<h2>T-shirt damski {{field:product.product_name}}</h2><strong>Wygodny fason na co dzien</strong><br>T-shirt damski zaprojektowany z mysla o codziennym komforcie i uniwersalnym stylu. Latwo polaczysz go z jeansami, spodniami lub spodnica.<br><br><strong>Szczegoly produktu:</strong><br>SKU: {{field:product.sku}}<br>EAN: {{field:product.ean}}<br>Plec: damska<br>Styl: casual<br><br><strong>Wskazowka:</strong><br>To gotowa baza opisu, ktora mozna dopasowac do konkretnego modelu, koloru i materialu.',
+                    ),
+                ),
+            ),
+        );
+    }
+
+    private function empikTshirtColumns(): array
+    {
+        return array(
+            array('header_name' => 'Struktura towarowa GOLD', 'source_type' => 'static', 'source_value' => 'GOLD', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Numer katalogowy', 'source_type' => 'field', 'source_value' => 'product.sku', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Tytuł .com (pełny)', 'source_type' => 'field', 'source_value' => 'product.product_name', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Opis Empik.com', 'source_type' => 'field', 'source_value' => 'product.csv_description.tshirt_damski_opis', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'EAN', 'source_type' => 'field', 'source_value' => 'product.ean', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Zdjęcie okładki/produktu', 'source_type' => 'field', 'source_value' => 'product.img', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Stawka VAT', 'source_type' => 'field', 'source_value' => 'product.vat_rate', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Certyfikaty i Instrukcje GPSR', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (1)', 'source_type' => 'field', 'source_value' => 'product.images[0].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (2)', 'source_type' => 'field', 'source_value' => 'product.images[1].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (3)', 'source_type' => 'field', 'source_value' => 'product.images[2].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (4)', 'source_type' => 'field', 'source_value' => 'product.images[3].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (5)', 'source_type' => 'field', 'source_value' => 'product.images[4].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (6)', 'source_type' => 'field', 'source_value' => 'product.images[5].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (7)', 'source_type' => 'field', 'source_value' => 'product.images[6].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (8)', 'source_type' => 'field', 'source_value' => 'product.images[7].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (9)', 'source_type' => 'field', 'source_value' => 'product.images[8].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe zdjęcia (10)', 'source_type' => 'field', 'source_value' => 'product.images[9].url', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Producent(600)', 'source_type' => 'field', 'source_value' => 'product.empik_parameter.600', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Kolor główny', 'source_type' => 'field', 'source_value' => 'product.custom_fields.color_main', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Rozmiar - wartość', 'source_type' => 'field', 'source_value' => 'product.custom_fields.size', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Waga produktu (g)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.weight_g', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Waga produktu w opak. (g)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.package_weight_g', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Szerokość produktu (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.width_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Szerokość w opak. (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.package_width_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Wysokość produktu (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.height_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Wysokość w opak. (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.package_height_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Głębokość produktu (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.depth_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Głębokość w opak. (mm)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.package_depth_mm', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Kod modelu', 'source_type' => 'field', 'source_value' => 'product.custom_fields.model_code', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Kolor - szczegóły', 'source_type' => 'field', 'source_value' => 'product.custom_fields.color_details', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Data premiery', 'source_type' => 'field', 'source_value' => 'product.custom_fields.release_date', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Zestaw bez kodu ean', 'source_type' => 'static', 'source_value' => 'Nie', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Wymiary(665)', 'source_type' => 'field', 'source_value' => 'product.dimensions', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Numer Wariantu', 'source_type' => 'field', 'source_value' => 'product.custom_fields.variant_number', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Zestaw', 'source_type' => 'static', 'source_value' => 'Nie', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Seria(2201)', 'source_type' => 'field', 'source_value' => 'product.custom_fields.series_2201', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Licencja', 'source_type' => 'field', 'source_value' => 'product.custom_fields.license', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Cechy dodatkowe', 'source_type' => 'static', 'source_value' => 'T-shirt damski', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Skład surowcowy', 'source_type' => 'static', 'source_value' => 'Bawełna', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Płeć', 'source_type' => 'static', 'source_value' => 'Damska', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Seria/kolekcja', 'source_type' => 'field', 'source_value' => 'product.custom_fields.collection', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Sezon(2403)', 'source_type' => 'static', 'source_value' => 'Całoroczny', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dekolt', 'source_type' => 'static', 'source_value' => 'Okrągły', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Długość rękawa', 'source_type' => 'static', 'source_value' => 'Krótki', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Krój ubrania', 'source_type' => 'static', 'source_value' => 'Regular', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Zapięcie', 'source_type' => 'static', 'source_value' => 'Brak', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Materiał(621)', 'source_type' => 'static', 'source_value' => 'Bawełna', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Wskazówki pielęgnacyjne', 'source_type' => 'static', 'source_value' => 'Prać w 30 C. Nie wybielać. Prasować po lewej stronie.', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Marka', 'source_type' => 'field', 'source_value' => 'product.custom_fields.brand', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'SKU oferty', 'source_type' => 'field', 'source_value' => 'product.sku', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'ID produktu', 'source_type' => 'field', 'source_value' => 'product.id', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Typ identyfikatora produktu', 'source_type' => 'static', 'source_value' => 'EAN', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Opis oferty', 'source_type' => 'field', 'source_value' => 'product.csv_description.tshirt_damski_opis', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Wewnętrzny opis oferty', 'source_type' => 'field', 'source_value' => 'product.description', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Cena oferty', 'source_type' => 'field', 'source_value' => 'product.price_gross', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Dodatkowe informacje na temat ceny oferty', 'source_type' => 'static', 'source_value' => 'Brutto', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Oferowana ilość', 'source_type' => 'field', 'source_value' => 'product.quantity', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Ostrzeżenie o minimalnej ilości', 'source_type' => 'static', 'source_value' => '0', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Stan oferty', 'source_type' => 'static', 'source_value' => 'nowy', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Data początku dostępności', 'source_type' => 'field', 'source_value' => 'product.created_at', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Data końca dostępności', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Klasa logistyczna', 'source_type' => 'static', 'source_value' => 'standard', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Pozycja w ulubionych', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Cena promocyjna', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Data początkowa rabatu', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Data końcowa rabatu', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Minimalny czas dostawy (w dniach)', 'source_type' => 'static', 'source_value' => '2', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Aktualizuj/Usuń', 'source_type' => 'static', 'source_value' => 'Aktualizuj', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Faktura VAT marża', 'source_type' => 'static', 'source_value' => '0', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'Lepsze Ceny', 'source_type' => 'static', 'source_value' => '0', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Producent / Osoba odpowiedzialna za zgodność produktu', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Adres', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Kraj', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Miasto', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Kod pocztowy', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - E-mail', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'GPSR - Numer telefonu', 'source_type' => 'static', 'source_value' => '', 'settings' => array(), 'mappings' => array()),
         );
     }
 
@@ -3102,6 +3213,33 @@ class CsvTemplateController extends Controller
         } catch (Throwable $exception) {
             if (function_exists('app_log')) {
                 app_log('Nie udalo sie automatycznie utworzyc szablonu "Eksport produktów magazynu": ' . $exception->getMessage(), 'WARNING');
+            }
+        }
+    }
+
+    private function ensureEmpikTshirtExportTemplate(): void
+    {
+        $name = 'Empik - t-shirt damski';
+        if ($this->templates->existsByName($name)) {
+            return;
+        }
+
+        try {
+            $this->templates->create(
+                array(
+                    'name' => $name,
+                    'description' => 'Wstepnie przygotowany eksport Empik dla t-shirtu damskiego.',
+                    'description_templates_json' => json_encode($this->empikTshirtDescriptionTemplates()),
+                    'delimiter' => ';',
+                    'encoding' => 'UTF-8',
+                    'add_bom' => 1,
+                    'array_separator' => '|',
+                ),
+                $this->empikTshirtColumns()
+            );
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Nie udalo sie automatycznie utworzyc szablonu "Empik - t-shirt damski": ' . $exception->getMessage(), 'WARNING');
             }
         }
     }

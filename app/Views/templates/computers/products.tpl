@@ -56,7 +56,7 @@
           <i class="bi bi-layers me-2"></i>Generowanie wariantów produktów
         </div>
         <div class="card-body">
-          <form method="post" action="">
+          <form method="post" action="" id="createVariantsForm">
             {foreach from=$grouped key=category item=comps}
               <fieldset class="mb-3 border rounded p-3">
                 <legend class="float-none w-auto px-2 fs-6 fw-bold">{$category|escape:'html'}</legend>
@@ -86,7 +86,8 @@
               <div class="form-text">Używa osobnych szablonów tytułów z zakładki Komputery.</div>
             </div>
             
-            <button type="submit" name="create_variants" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-1"></i>Generuj warianty produktów</button>
+            <button type="submit" name="create_variants" value="1" class="btn btn-primary w-100" id="createVariantsBtn"><i class="bi bi-plus-circle me-1"></i>Generuj warianty produktów</button>
+            <div id="createVariantsFeedback" class="alert d-none py-2 px-3 mt-3 mb-0" role="status"></div>
           </form>
         </div>
       </div>
@@ -98,87 +99,136 @@
       <div class="card shadow-sm mb-4">
         {* <div class="card-header bg-light fw-bold"><i class="bi bi-funnel me-2"></i>Filtruj produkty</div> <a href="https://magazyn.altreo.pl/crm/allegro_api_synchro.php?action=ACCRA_SHOP_COMPUTERS" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-arrow-clockwise"></i> Synchronizuj z ACCRA_SHOP</a> *}
         <div class="card-body pb-2">
-          <form method="get" action="{$baseUrl}" class="row g-3 align-items-end">
+          <form method="get" action="{$baseUrl}" class="row g-3 computers-filter-form">
             <input type="hidden" name="controller" value="computers" />
             <input type="hidden" name="action" value="products" />
             <input type="hidden" name="per_page" id="filter_per_page_input" value="{$per_page}" />
             <input type="hidden" name="page" id="filter_page_input" value="{$current_page}" />
-            <div class="col-md-4">
-              <label for="filter_name" class="form-label fw-bold">Nazwa produktu</label>
-              <input type="text" id="filter_name" name="filter_name" value="{$filterName|escape:'html'}" class="form-control" placeholder="Wpisz nazwę..." />
+            <div class="col-12 col-xl-8">
+              <div class="computers-filter-panel h-100">
+                <div class="computers-filter-panel__header">
+                  <div>
+                    <div class="computers-filter-panel__title">Szukaj i zawężaj</div>
+                    <div class="computers-filter-panel__hint">Nazwa produktu i zakres dat utworzenia lub modyfikacji.</div>
+                  </div>
+                </div>
+                <div class="row g-3">
+                  <div class="col-12">
+                    <label for="filter_name" class="form-label fw-bold">Nazwa produktu</label>
+                    <input type="text" id="filter_name" name="filter_name" value="{$filterName|escape:'html'}" class="form-control" placeholder="Wpisz nazwę..." />
+                  </div>
+                  <div class="col-md-6 col-xl-3">
+                    <label for="filter_created_from" class="form-label fw-bold">Utworzone od</label>
+                    <input type="date" id="filter_created_from" name="filter_created_from" value="{$filterCreatedFrom|escape:'html'}" class="form-control" />
+                  </div>
+                  <div class="col-md-6 col-xl-3">
+                    <label for="filter_created_to" class="form-label fw-bold">Utworzone do</label>
+                    <input type="date" id="filter_created_to" name="filter_created_to" value="{$filterCreatedTo|escape:'html'}" class="form-control" />
+                  </div>
+                  <div class="col-md-6 col-xl-3">
+                    <label for="filter_updated_from" class="form-label fw-bold">Modyfikowane od</label>
+                    <input type="date" id="filter_updated_from" name="filter_updated_from" value="{$filterUpdatedFrom|escape:'html'}" class="form-control" />
+                  </div>
+                  <div class="col-md-6 col-xl-3">
+                    <label for="filter_updated_to" class="form-label fw-bold">Modyfikowane do</label>
+                    <input type="date" id="filter_updated_to" name="filter_updated_to" value="{$filterUpdatedTo|escape:'html'}" class="form-control" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="col-md-2">
-              <label for="filter_market_accounts" class="form-label fw-bold">Wystawione aukcje na kontach</label>
-              <select id="filter_market_accounts" name="filter_market_accounts[]" class="form-control" multiple size="7">
-                <optgroup label="Ogólne">
-                  <option value="1" {if in_array('1', $filterMarketAccounts)}selected{/if}>Wystawione gdziekolwiek</option>
-                  <option value="0" {if in_array('0', $filterMarketAccounts)}selected{/if}>Bez aktywnych aukcji</option>
-                </optgroup>
-                <optgroup label="Allegro">
-                  {foreach from=$allegroMarketAccounts item=marketAccount}
-                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
-                  {foreachelse}
-                    <option value="" disabled>Brak aktywnych kont Allegro</option>
-                  {/foreach}
-                </optgroup>
-                <optgroup label="Empik">
-                  {foreach from=$empikMarketAccounts item=marketAccount}
-                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
-                  {foreachelse}
-                    <option value="" disabled>Brak aktywnych kont Empik</option>
-                  {/foreach}
-                </optgroup>
-                <optgroup label="Erli">
-                  {foreach from=$erliMarketAccounts item=marketAccount}
-                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
-                  {foreachelse}
-                    <option value="" disabled>Brak aktywnych kont Erli</option>
-                  {/foreach}
-                </optgroup>
-                <optgroup label="Morele">
-                  {foreach from=$moreleMarketAccounts item=marketAccount}
-                    <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
-                  {foreachelse}
-                    <option value="" disabled>Brak aktywnych ofert Morele</option>
-                  {/foreach}
-                </optgroup>
-              </select>
-              <div class="form-text">Ctrl/Cmd pozwala wybrac kilka kont.</div>
+            <div class="col-12 col-md-6 col-xl-2">
+              <div class="computers-filter-panel h-100">
+                <div class="computers-filter-panel__header">
+                  <div>
+                    <div class="computers-filter-panel__title">Marketplace</div>
+                    <div class="computers-filter-panel__hint">Filtruj po aktywnych aukcjach i kontach.</div>
+                  </div>
+                </div>
+                <label for="filter_market_accounts" class="form-label fw-bold">Wystawione aukcje na kontach</label>
+                <select id="filter_market_accounts" name="filter_market_accounts[]" class="form-control computers-filter-select" multiple size="7">
+                  <optgroup label="Ogólne">
+                    <option value="1" {if in_array('1', $filterMarketAccounts)}selected{/if}>Wystawione gdziekolwiek</option>
+                    <option value="0" {if in_array('0', $filterMarketAccounts)}selected{/if}>Bez aktywnych aukcji</option>
+                  </optgroup>
+                  <optgroup label="Allegro">
+                    {foreach from=$allegroMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Allegro</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Empik">
+                    {foreach from=$empikMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Empik</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Erli">
+                    {foreach from=$erliMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Erli</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Morele">
+                    {foreach from=$moreleMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych ofert Morele</option>
+                    {/foreach}
+                  </optgroup>
+                </select>
+                <div class="form-text">Ctrl/Cmd pozwala wybrac kilka kont.</div>
+              </div>
             </div>
-<div class="col-md-6">
-  <label class="form-label fw-bold">Komponenty (można wiele):</label>
-  <div class="border rounded p-2 bg-light" 
-       style="overflow-y: auto; resize: vertical; height: 150px;">
-    
-    {assign var="currentCategory" value=""}
-    <div class="row">
-      {foreach from=$components item=comp}
-        {if $comp.category != $currentCategory}
-          {assign var="currentCategory" value=$comp.category}
-          <div class="col-12 mt-2 mb-1">
-            <strong>{$comp.category|escape:'html'}</strong>
-          </div>
-        {/if}
+            <div class="col-12 col-md-6 col-xl-2">
+              <div class="computers-filter-panel h-100">
+                <div class="computers-filter-panel__header">
+                  <div>
+                    <div class="computers-filter-panel__title">Akcje</div>
+                    <div class="computers-filter-panel__hint">Uruchom filtrowanie lub wyczyść wszystkie pola.</div>
+                  </div>
+                </div>
+                <div class="d-grid gap-2 computers-filter-actions">
+                  <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Filtruj</button>
+                  <a href="{$baseUrl}?controller=computers&action=products" class="btn btn-outline-secondary">Wyczysc</a>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="computers-filter-panel">
+                <div class="computers-filter-panel__header">
+                  <div>
+                    <div class="computers-filter-panel__title">Komponenty</div>
+                    <div class="computers-filter-panel__hint">Mozesz zaznaczyc wiele komponentów jednocześnie.</div>
+                  </div>
+                </div>
+                <label class="form-label fw-bold">Komponenty (można wiele):</label>
+                <div class="computers-filter-components">
+                  {assign var="currentCategory" value=""}
+                  <div class="row g-2">
+                    {foreach from=$components item=comp}
+                      {if $comp.category != $currentCategory}
+                        {assign var="currentCategory" value=$comp.category}
+                        <div class="col-12 mt-2 mb-1">
+                          <div class="computers-filter-category">{$comp.category|escape:'html'}</div>
+                        </div>
+                      {/if}
 
-        <div class="col-md-6">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="filter_components[]" value="{$comp.id}"
-                   {if in_array($comp.id, $filterComponents)}checked{/if} id="filter_comp_{$comp.id}" />
-            <label class="form-check-label small" for="filter_comp_{$comp.id}">
-              {$comp.name|escape:'html'}
-            </label>
-          </div>
-        </div>
-      {/foreach}
-    </div>
-
-  </div>
-</div>
-
-
-            <div class="col-md-2 d-grid gap-2">
-              <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Filtruj</button>
-              <a href="{$baseUrl}?controller=computers&action=products" class="btn btn-outline-secondary">Wyczysc</a>
+                      <div class="col-md-6 col-xl-4">
+                        <label class="form-check computers-filter-component-item" for="filter_comp_{$comp.id}">
+                          <input class="form-check-input" type="checkbox" name="filter_components[]" value="{$comp.id}"
+                                 {if in_array($comp.id, $filterComponents)}checked{/if} id="filter_comp_{$comp.id}" />
+                          <span class="form-check-label small">
+                            {$comp.name|escape:'html'}
+                          </span>
+                        </label>
+                      </div>
+                    {/foreach}
+                  </div>
+                </div>
+              </div>
             </div>
           </form>
         </div>
@@ -222,12 +272,16 @@
           <form method="post" action="" enctype="multipart/form-data" id="productsBulkForm">
             <input type="hidden" name="selection_scope" id="selection_scope" value="page" />
             <input type="hidden" name="selection_filter_name" value="{$filterName|escape:'html'}" />
+            <input type="hidden" name="selection_filter_created_from" value="{$filterCreatedFrom|escape:'html'}" />
+            <input type="hidden" name="selection_filter_created_to" value="{$filterCreatedTo|escape:'html'}" />
             {foreach from=$filterComponents item=filterComponentId}
               <input type="hidden" name="selection_filter_components[]" value="{$filterComponentId}" />
             {/foreach}
             {foreach from=$filterMarketAccounts item=filterMarketAccount}
               <input type="hidden" name="selection_filter_market_accounts[]" value="{$filterMarketAccount|escape:'html'}" />
             {/foreach}
+            <input type="hidden" name="selection_filter_updated_from" value="{$filterUpdatedFrom|escape:'html'}" />
+            <input type="hidden" name="selection_filter_updated_to" value="{$filterUpdatedTo|escape:'html'}" />
             <div id="excluded_product_ids"></div>
             <div id="all_filtered_selection_notice" class="alert alert-primary py-2 px-3 mb-3 d-none" role="status">
               Zaznaczono wszystkie produkty zgodne z bieżącymi filtrami: <strong>{$total_products}</strong>.
@@ -250,6 +304,10 @@
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('replace_name'); return false;">
     <i class="bi bi-type me-1"></i>Znajdź i zamień w nazwie
+</a></li>
+
+<li><a class="dropdown-item" href="#" onclick="setBulkAction('regenerate_title'); return false;">
+    <i class="bi bi-magic me-1"></i>Przeregeneruj tytuły z szablonu
 </a></li>
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('change_images'); return false;">
@@ -313,6 +371,16 @@
                 <label for="bulk_replace" class="form-label">Zamień na:</label>
                 <input type="text" id="bulk_replace" name="bulk_replace" class="form-control" />
                 <p class="mt-2 text-muted small">Wszystkie zaznaczone produkty będą miały w nazwie podmieniony wskazany tekst.</p>
+              </div>
+              <div id="regenerate_title_field" style="display:none; max-width: 460px;">
+                <label for="bulk_title_template_id" class="form-label">Szablon tytułu:</label>
+                <select name="bulk_title_template_id" id="bulk_title_template_id" class="form-select">
+                  <option value="">-- Wybierz szablon tytułu --</option>
+                  {foreach from=$titleTemplates item=titleTemplate}
+                    <option value="{$titleTemplate.id}">{$titleTemplate.name|escape:'html'}</option>
+                  {/foreach}
+                </select>
+                <p class="mt-2 text-muted small">Zaznaczone produkty dostaną nowe tytuły wygenerowane z wybranego szablonu i aktualnych komponentów.</p>
               </div>
               <div id="change_images_field" style="display:none; max-width: 400px;">
                 <label for="bulk_img" class="form-label">Wybierz plik obrazu:</label>
@@ -822,6 +890,92 @@
     font-weight: 500;
   }
 
+  .computers-filter-form {
+    align-items: stretch;
+  }
+  .computers-filter-panel {
+    height: 100%;
+    padding: 1rem;
+    border: 1px solid rgba(13, 110, 253, 0.12);
+    border-radius: 0.85rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .computers-filter-panel__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+  .computers-filter-panel__title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #0f3d75;
+    line-height: 1.2;
+  }
+  .computers-filter-panel__hint {
+    margin-top: 0.2rem;
+    color: #6b7280;
+    font-size: 0.83rem;
+    line-height: 1.35;
+  }
+  .computers-filter-select {
+    min-height: 190px;
+  }
+  .computers-filter-components {
+    max-height: 240px;
+    overflow-y: auto;
+    resize: vertical;
+    padding: 0.35rem;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+  }
+  .computers-filter-category {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(13, 110, 253, 0.1);
+    color: #0b63d6;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .computers-filter-component-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    min-height: 100%;
+    margin: 0;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 0.75rem;
+    background: #fff;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+    cursor: pointer;
+  }
+  .computers-filter-component-item:hover {
+    border-color: rgba(13, 110, 253, 0.25);
+    background: #fdfefe;
+    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.06);
+  }
+  .computers-filter-component-item .form-check-input {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+  .computers-filter-component-item .form-check-label {
+    margin: 0;
+    color: #1f2937;
+    line-height: 1.35;
+  }
+  .computers-filter-actions {
+    min-height: calc(100% - 3rem);
+    align-content: end;
+  }
+
   /* Fancy translucent & animated styles for variants panel and products column */
   /* Smoothly animate grid column width changes */
   /* Transitions are disabled by default to prevent layout shift on initial load.
@@ -936,6 +1090,12 @@
   }
   
   @media (max-width: 768px) {
+    .computers-filter-select,
+    .computers-filter-components {
+      max-height: none;
+      min-height: 0;
+      resize: none;
+    }
     .bulk-component-select {
       min-width: 100%;
     }
@@ -1124,6 +1284,60 @@
         });
       });
     });
+
+    var createVariantsForm = document.getElementById('createVariantsForm');
+    var createVariantsBtn = document.getElementById('createVariantsBtn');
+    var createVariantsFeedback = document.getElementById('createVariantsFeedback');
+    function showCreateVariantsFeedback(type, message) {
+      if (!createVariantsFeedback) return;
+      createVariantsFeedback.className = 'alert alert-' + type + ' py-2 px-3 mt-3 mb-0';
+      createVariantsFeedback.textContent = message;
+    }
+    if (createVariantsForm) {
+      createVariantsForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        var originalButtonHtml = createVariantsBtn ? createVariantsBtn.innerHTML : '';
+        var formData = new FormData(createVariantsForm);
+        formData.set('create_variants', '1');
+        formData.set('ajax', '1');
+
+        if (createVariantsBtn) {
+          createVariantsBtn.disabled = true;
+          createVariantsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Generuję...';
+        }
+        showCreateVariantsFeedback('info', 'Generuję warianty, zaznaczenia zostają na miejscu.');
+
+        fetch(createVariantsForm.getAttribute('action') || window.location.href, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        })
+          .then(function(response) {
+            return response.json().then(function(payload) {
+              if (!response.ok) {
+                throw payload;
+              }
+              return payload;
+            });
+          })
+          .then(function(payload) {
+            showCreateVariantsFeedback(payload.success ? 'success' : 'warning', payload.message || 'Gotowe.');
+          })
+          .catch(function(payload) {
+            showCreateVariantsFeedback('danger', payload && payload.message ? payload.message : 'Nie udalo sie wygenerowac wariantow.');
+          })
+          .finally(function() {
+            if (createVariantsBtn) {
+              createVariantsBtn.disabled = false;
+              createVariantsBtn.innerHTML = originalButtonHtml;
+            }
+          });
+      });
+    }
     
     // Obsługa rozszerzania listy produktów gdy panel wariantów jest zwinięty
     var variantsPanel = document.getElementById('variantsPanel');
@@ -1325,6 +1539,12 @@
   }
 
   var productsBulkForm = document.getElementById('productsBulkForm');
+  var bulkTitleTemplateSelect = document.getElementById('bulk_title_template_id');
+  if (bulkTitleTemplateSelect) {
+    bulkTitleTemplateSelect.addEventListener('change', function () {
+      bulkTitleTemplateSelect.classList.remove('is-invalid');
+    });
+  }
   if (productsBulkForm) {
     productsBulkForm.addEventListener('submit', function (event) {
       var actionInput = document.getElementById('bulk_action');
@@ -1332,6 +1552,12 @@
       if (actionInput && actionInput.value === 'update_price' && selectedInputs.length === 0) {
         event.preventDefault();
         showPriceMarketplaceModal();
+      }
+      var titleTemplateSelect = document.getElementById('bulk_title_template_id');
+      if (actionInput && actionInput.value === 'regenerate_title' && titleTemplateSelect && !titleTemplateSelect.value) {
+        event.preventDefault();
+        titleTemplateSelect.focus();
+        titleTemplateSelect.classList.add('is-invalid');
       }
     });
   }
@@ -1345,6 +1571,7 @@
     document.getElementById('bulk_action_fields').style.display = 'block';
     document.getElementById('profit_field').style.display = 'none';
     document.getElementById('replace_name_fields').style.display = 'none';
+    document.getElementById('regenerate_title_field').style.display = 'none';
     document.getElementById('change_images_field').style.display = 'none';
     document.getElementById('set_ean_field').style.display = 'none';
     document.getElementById('import_ean_field').style.display = 'none';
@@ -1357,6 +1584,8 @@
       document.getElementById('profit_field').style.display = 'block';
     } else if (action === 'replace_name') {
       document.getElementById('replace_name_fields').style.display = 'block';
+    } else if (action === 'regenerate_title') {
+      document.getElementById('regenerate_title_field').style.display = 'block';
     } else if (action === 'change_images') {
       document.getElementById('change_images_field').style.display = 'block';
     } else if (action === 'delete') {

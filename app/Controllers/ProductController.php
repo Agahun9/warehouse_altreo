@@ -834,7 +834,7 @@ class ProductController extends Controller
         $categoryId = (int) $this->input('category_id', 0);
         $attributeId = trim((string) $this->input('attribute_id', ''));
         $query = trim((string) $this->input('q', ''));
-        $limit = max(1, min(50, (int) $this->input('limit', 10)));
+        $limit = max(1, min(400, (int) $this->input('limit', 10)));
 
         if ($categoryId <= 0 || $attributeId === '') {
             $this->jsonResponse(array('items' => array()));
