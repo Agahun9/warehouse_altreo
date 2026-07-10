@@ -994,11 +994,13 @@
     var existingAllegroValues = {$allegroValuesJson|default:'{}'};
     var existingAllegroCompatibilityList = {$allegroCompatibilityListJson|default:'[]' nofilter};
     var existingEmpikValues = {$empikValuesJson|default:'{}'};
+    var existingEmpikHiddenKeys = {$empikHiddenKeysJson|default:'[]' nofilter};
     var existingTemuValues = {$temuValuesJson|default:'{}'};
     var currentAllegroItems = [];
     var currentAllegroCompatibilitySupport = null;
     var currentAllegroCompatibilityList = Array.isArray(existingAllegroCompatibilityList.items) ? existingAllegroCompatibilityList.items.slice() : [];
     var currentEmpikItems = [];
+    var currentEmpikHiddenKeys = Array.isArray(existingEmpikHiddenKeys) ? existingEmpikHiddenKeys.slice() : [];
     var currentTemuItems = [];
 
     function toNumber(value) {
@@ -1415,6 +1417,69 @@
       return normalizedName.indexOf('pasuje do') !== -1;
     }
 
+    function normalizeMarketplaceTokenText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/[ąćęłńóśźż]/g, function (letter) {
+          return {
+            'ą': 'a',
+            'ć': 'c',
+            'ę': 'e',
+            'ł': 'l',
+            'ń': 'n',
+            'ó': 'o',
+            'ś': 's',
+            'ź': 'z',
+            'ż': 'z'
+          }[letter] || letter;
+        })
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    }
+
+    function isEmpikFreeTextIdentityParameter(item) {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      var normalized = normalizeMarketplaceTokenText(String(item.id || '') + ' ' + String(item.name || ''));
+      var tokens = ['ean', 'gtin', 'isbn', 'issn', 'upc', 'sku', 'mpn'];
+      for (var i = 0; i < tokens.length; i++) {
+        var pattern = new RegExp('(^|[^a-z0-9])' + tokens[i] + '([^a-z0-9]|$)');
+        if (pattern.test(normalized)) {
+          return true;
+        }
+      }
+
+      return normalized.indexOf('kod producenta') !== -1
+        || normalized.indexOf('numer katalogowy') !== -1
+        || normalized.indexOf('kod kreskowy') !== -1;
+    }
+
+    function empikDisplayNameKey(value) {
+      return normalizeMarketplaceTokenText(String(value || '').replace(/\s*\(\s*\d+\s*\)\s*$/, ''));
+    }
+
+    function currentEmpikHiddenKeyMap() {
+      var map = {};
+      for (var i = 0; i < currentEmpikHiddenKeys.length; i++) {
+        var key = String(currentEmpikHiddenKeys[i] || '').trim();
+        if (key !== '') {
+          map[key] = true;
+        }
+      }
+      return map;
+    }
+
+    function isEmpikParameterHidden(item) {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      var key = empikDisplayNameKey(item.name || item.id || '');
+      return key !== '' && !!currentEmpikHiddenKeyMap()[key];
+    }
+
     function renderMarketplaceParameterFields(containerNode, infoNode, items, values, inputName, emptyLabel, loadedLabel, singleDictionaryMode) {
       if (!containerNode) {
         return;
@@ -1569,6 +1634,15 @@
       var selectedOption = categoryInput && categoryInput.options ? categoryInput.options[categoryInput.selectedIndex] : null;
       var empikCategoryId = selectedOption ? String(selectedOption.getAttribute('data-empik-category-id') || '') : '';
       var html = '';
+      var hiddenKeyMap = currentEmpikHiddenKeyMap();
+      var hiddenCount = 0;
+      for (var hiddenIndex = 0; hiddenIndex < items.length; hiddenIndex++) {
+        var hiddenItem = items[hiddenIndex] || {};
+        var hiddenKey = empikDisplayNameKey(hiddenItem.name || hiddenItem.id || '');
+        if (hiddenKey !== '' && hiddenKeyMap[hiddenKey]) {
+          hiddenCount++;
+        }
+      }
 
       html += '<div class="market-params market-params--empik" data-options-url="{$baseUrl|escape:"javascript"}?controller=products&action=empikparameteroptions&category_id=' + encodeURIComponent(categoryInput ? categoryInput.value : '') + '">';
       html += '<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">';
@@ -1577,32 +1651,55 @@
         html += 'Kategoria API: <code>' + escapeHtml(empikCategoryId) + '</code>';
       }
       html += '</div></div>';
+      html += '<div class="d-flex flex-wrap align-items-center gap-2 js-empik-header-controls">';
       html += '<div class="small text-muted">' + items.length + ' parametrów</div>';
+      if (hiddenCount > 0) {
+        html += '<button type="button" class="btn btn-sm btn-outline-secondary js-empik-toggle-hidden" data-show-hidden="0">Pokaż ukryte (' + hiddenCount + ')</button>';
+      }
+      html += '</div>';
       html += '</div>';
       html += '<div class="mb-3">';
       html += '<input type="text" class="form-control js-market-param-filter" data-target=".js-empik-param-card" placeholder="Szukaj po nazwie lub ID parametru Empik...">';
       html += '</div>';
       html += '<div class="row g-3 mb-4">';
 
+      var seenEmpikNames = {};
       for (var i = 0; i < items.length; i++) {
         var item = items[i] || {};
         var pid = String(item.id || '');
         var pName = String(item.name || 'Parametr');
+        var displayNameKey = empikDisplayNameKey(pName);
+        if (displayNameKey !== '' && seenEmpikNames[displayNameKey]) {
+          continue;
+        }
+        if (displayNameKey !== '') {
+          seenEmpikNames[displayNameKey] = true;
+        }
         var pType = String(item.type || 'string').toLowerCase();
         var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
         var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
         var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
         var optionLookup = !!item.option_lookup;
+        if (isEmpikFreeTextIdentityParameter(item)) {
+          pType = 'text';
+          multiple = false;
+          dict = [];
+          optionLookup = false;
+        }
+        var isHidden = displayNameKey !== '' && !!hiddenKeyMap[displayNameKey];
         var rawValue = values && typeof values === 'object' && Object.prototype.hasOwnProperty.call(values, pid) ? values[pid] : '';
         var selectedValues = normalizeSelectedArray(rawValue);
         var storedValue = Array.isArray(rawValue) ? rawValue.join(' | ') : (rawValue === null || typeof rawValue === 'undefined' ? '' : String(rawValue));
         var cardText = (pName + ' ' + pid + ' ' + pType).toLowerCase();
 
-        html += '<div class="col-12 col-xl-6 js-empik-param-card js-param-card" data-param-id="' + escapeHtml(pid) + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="empik_parameters" data-filter-text="' + escapeHtml(cardText) + '">';
+        html += '<div class="col-12 col-xl-6 js-empik-param-card js-param-card' + (isHidden ? ' d-none' : '') + '" data-param-id="' + escapeHtml(pid) + '" data-param-key="' + escapeHtml(displayNameKey) + '" data-param-hidden-global="' + (isHidden ? '1' : '0') + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="empik_parameters" data-filter-text="' + escapeHtml(cardText) + '">';
         html += '<div class="border rounded-3 p-3 h-100 bg-white">';
         html += '<div class="d-flex align-items-start justify-content-between gap-2 mb-2">';
         html += '<label class="form-label fw-semibold mb-0" for="empik_param_' + escapeHtml(pid) + '">' + escapeHtml(pName) + '</label>';
+        html += '<div class="d-flex flex-wrap align-items-center justify-content-end gap-2">';
         html += '<span class="badge bg-light text-dark border">ID ' + escapeHtml(pid) + '</span>';
+        html += '<button type="button" class="btn btn-sm ' + (isHidden ? 'btn-outline-success' : 'btn-outline-secondary') + ' js-empik-toggle-param-visibility" data-hidden="' + (isHidden ? '1' : '0') + '" data-param-id="' + escapeHtml(pid) + '" data-param-name="' + escapeHtml(pName) + '">' + (isHidden ? 'Przywróć' : 'Ukryj globalnie') + '</button>';
+        html += '</div>';
         html += '</div>';
 
         if (optionLookup) {
@@ -1682,6 +1779,66 @@
 
       var root = scopeNode.querySelector('.market-params--empik');
       var optionsUrl = root ? root.getAttribute('data-options-url') : '';
+      var showHidden = false;
+      var visibilityUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=empikparametervisibility';
+
+      function refreshEmpikHiddenCards() {
+        if (!root) {
+          return;
+        }
+
+        var hiddenCount = 0;
+        root.querySelectorAll('.js-empik-param-card').forEach(function (card) {
+          var hidden = card.getAttribute('data-param-hidden-global') === '1';
+          if (hidden) {
+            hiddenCount++;
+          }
+          card.classList.toggle('d-none', hidden && !showHidden);
+        });
+
+        var headerControls = root.querySelector('.js-empik-header-controls');
+        var toggleHiddenButton = root.querySelector('.js-empik-toggle-hidden');
+        if (!toggleHiddenButton && hiddenCount > 0 && headerControls) {
+          toggleHiddenButton = document.createElement('button');
+          toggleHiddenButton.type = 'button';
+          toggleHiddenButton.className = 'btn btn-sm btn-outline-secondary js-empik-toggle-hidden';
+          toggleHiddenButton.setAttribute('data-show-hidden', showHidden ? '1' : '0');
+          headerControls.appendChild(toggleHiddenButton);
+        }
+
+        if (!toggleHiddenButton) {
+          return;
+        }
+
+        if (hiddenCount <= 0) {
+          toggleHiddenButton.remove();
+          return;
+        }
+
+        toggleHiddenButton.textContent = showHidden ? 'Ukryj schowane (' + hiddenCount + ')' : 'Pokaż ukryte (' + hiddenCount + ')';
+        toggleHiddenButton.setAttribute('data-show-hidden', showHidden ? '1' : '0');
+      }
+
+      function applyEmpikHiddenKeys(nextKeys) {
+        currentEmpikHiddenKeys = Array.isArray(nextKeys) ? nextKeys.slice() : [];
+        var hiddenMap = currentEmpikHiddenKeyMap();
+
+        scopeNode.querySelectorAll('.js-empik-param-card').forEach(function (card) {
+          var key = String(card.getAttribute('data-param-key') || '').trim();
+          var hidden = key !== '' && !!hiddenMap[key];
+          card.setAttribute('data-param-hidden-global', hidden ? '1' : '0');
+
+          var button = card.querySelector('.js-empik-toggle-param-visibility');
+          if (button) {
+            button.setAttribute('data-hidden', hidden ? '1' : '0');
+            button.textContent = hidden ? 'Przywróć' : 'Ukryj globalnie';
+            button.classList.toggle('btn-outline-success', hidden);
+            button.classList.toggle('btn-outline-secondary', !hidden);
+          }
+        });
+
+        refreshEmpikHiddenCards();
+      }
 
       function addSelectedOption(lookup, id, label) {
         var multiple = lookup.getAttribute('data-multiple') === '1';
@@ -1865,6 +2022,59 @@
           });
         });
       });
+
+      if (root) {
+        root.addEventListener('click', function (event) {
+          var toggleHiddenButton = event.target.closest('.js-empik-toggle-hidden');
+          if (toggleHiddenButton) {
+            showHidden = !showHidden;
+            refreshEmpikHiddenCards();
+            return;
+          }
+
+          var visibilityButton = event.target.closest('.js-empik-toggle-param-visibility');
+          if (!visibilityButton) {
+            return;
+          }
+
+          var nextHidden = visibilityButton.getAttribute('data-hidden') !== '1';
+          var payload = new URLSearchParams();
+          payload.set('id', String(visibilityButton.getAttribute('data-param-id') || ''));
+          payload.set('name', String(visibilityButton.getAttribute('data-param-name') || ''));
+          payload.set('hidden', nextHidden ? '1' : '0');
+
+          visibilityButton.disabled = true;
+          fetch(visibilityUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: payload.toString()
+          })
+            .then(function (response) {
+              return response.json().then(function (data) {
+                if (!response.ok) {
+                  throw new Error(data.error || 'Nie udalo sie zapisac ustawienia parametru.');
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              applyEmpikHiddenKeys(data.hidden_keys || []);
+            })
+            .catch(function (error) {
+              window.alert(error && error.message ? error.message : 'Nie udalo sie zapisac ustawienia parametru Empik.');
+            })
+            .finally(function () {
+              visibilityButton.disabled = false;
+            });
+        });
+      }
+
+      refreshEmpikHiddenCards();
     }
 
     function readParameterCurrentValue(card) {
@@ -3081,6 +3291,7 @@
 
           var items = data && data.items ? data.items : [];
           var values = data && data.values ? data.values : existingEmpikValues;
+          currentEmpikHiddenKeys = Array.isArray(data && data.hidden_keys) ? data.hidden_keys.slice() : currentEmpikHiddenKeys;
           renderEmpikParameterFields(items, values);
         })
         .catch(function () {

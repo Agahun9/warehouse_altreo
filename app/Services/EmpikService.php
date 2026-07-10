@@ -427,7 +427,7 @@ class EmpikService
             throw new RuntimeException('Najpierw skonfiguruj aktywne konto Empik, zeby pobierac parametry.');
         }
 
-        $cacheKey = 'empik_attributes_v2_' . (int) $account['id'] . '_' . md5($hierarchyCode);
+        $cacheKey = 'empik_attributes_v5_' . (int) $account['id'] . '_' . md5($hierarchyCode);
         if (!$forceRefresh) {
             $cached = $this->storage->getCache($cacheKey);
             if (is_array($cached)) {
@@ -457,6 +457,8 @@ class EmpikService
 
             return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
         });
+
+        $result = $this->deduplicateAttributeDefinitions($result);
 
         $this->storage->putCache($cacheKey, $result, min(3600, $this->cacheTtl()));
         return $result;
@@ -496,7 +498,14 @@ class EmpikService
             return array();
         }
 
-        $dictionary = $this->normalizeAttributeDictionary($matchedAttribute, $account, strtolower(trim((string) ($matchedAttribute['type'] ?? $matchedAttribute['value_type'] ?? $matchedAttribute['input_type'] ?? 'text'))));
+        $matchedId = trim((string) ($matchedAttribute['code'] ?? $matchedAttribute['attribute_code'] ?? $matchedAttribute['id'] ?? ''));
+        $matchedName = trim((string) ($matchedAttribute['label'] ?? $matchedAttribute['name'] ?? $matchedAttribute['code'] ?? $matchedId));
+        if ($this->isFreeTextIdentityAttribute($matchedId, $matchedName)) {
+            return array();
+        }
+
+        $dictionaryType = $this->normalizeAttributeDictionaryType((string) ($matchedAttribute['type'] ?? $matchedAttribute['value_type'] ?? $matchedAttribute['input_type'] ?? 'text'));
+        $dictionary = $this->normalizeAttributeDictionary($matchedAttribute, $account, $dictionaryType);
         if ($dictionary === array()) {
             return array();
         }
@@ -638,24 +647,47 @@ class EmpikService
         }
 
         $name = trim((string) ($attribute['label'] ?? $attribute['name'] ?? $attribute['code'] ?? $id));
-        $type = strtolower(trim((string) ($attribute['type'] ?? $attribute['value_type'] ?? $attribute['input_type'] ?? 'text')));
-        $multiple = !empty($attribute['multivalued']) || !empty($attribute['multi_valued']) || !empty($attribute['multiple']);
-        $required = false;
-        $hasLookup = $this->attributeSupportsLookup($attribute, $type);
+        $rawType = strtolower(trim((string) ($attribute['type'] ?? $attribute['value_type'] ?? $attribute['input_type'] ?? 'text')));
+        $type = str_replace(array('-', ' '), '_', $rawType);
+        $multiple = $this->truthyAttributeFlag($attribute['multivalued'] ?? null)
+            || $this->truthyAttributeFlag($attribute['multi_valued'] ?? null)
+            || $this->truthyAttributeFlag($attribute['multiple'] ?? null)
+            || in_array($type, array('multidictionary', 'multi_dictionary', 'multi_select', 'multiple_select', 'list_multiple', 'multiple_list', 'multi_value_list', 'multiple_values_list'), true);
+        $required = $this->truthyAttributeFlag($attribute['required'] ?? null)
+            || $this->truthyAttributeFlag($attribute['mandatory'] ?? null)
+            || in_array(strtolower(trim((string) ($attribute['requirement_level'] ?? $attribute['requirement'] ?? ''))), array('required', 'mandatory'), true);
         $dictionary = array();
 
-        if (in_array($type, array('enum', 'enumeration', 'list', 'lov'), true)) {
+        if (in_array($type, array('enum', 'enumeration', 'list', 'lov', 'select', 'choice'), true)) {
             $type = $multiple ? 'multidictionary' : 'dictionary';
+        } elseif (in_array($type, array('multidictionary', 'multi_dictionary', 'multi_select', 'multiple_select', 'list_multiple', 'multiple_list', 'multi_value_list', 'multiple_values_list'), true)) {
+            $type = 'multidictionary';
+            $multiple = true;
         } elseif (in_array($type, array('numeric', 'decimal', 'double'), true)) {
             $type = 'number';
-        } elseif ($type === 'boolean') {
+        } elseif (in_array($type, array('int', 'long'), true)) {
+            $type = 'integer';
+        } elseif (in_array($type, array('bool', 'boolean'), true)) {
             $type = 'dictionary';
             $dictionary = array(
                 array('id' => 'true', 'value' => 'Tak'),
                 array('id' => 'false', 'value' => 'Nie'),
             );
+        } elseif (in_array($type, array('textarea', 'text_area', 'long_text', 'description', 'html'), true)) {
+            $type = 'textarea';
+        } elseif (in_array($type, array('string', 'char', 'varchar'), true)) {
+            $type = 'text';
         } elseif (!in_array($type, array('dictionary', 'multidictionary', 'integer', 'number', 'textarea', 'text'), true)) {
             $type = $multiple ? 'textarea' : 'text';
+        }
+
+        if ($this->isFreeTextIdentityAttribute($id, $name)) {
+            $type = 'text';
+            $multiple = false;
+            $dictionary = array();
+            $hasLookup = false;
+        } else {
+            $hasLookup = $dictionary === array() && $this->attributeSupportsLookup($attribute, $type);
         }
 
         return array(
@@ -672,7 +704,7 @@ class EmpikService
 
     private function attributeSupportsLookup(array $attribute, string $type): bool
     {
-        if (in_array($type, array('boolean', 'dictionary', 'multidictionary', 'enum', 'enumeration', 'list', 'lov'), true)) {
+        if (in_array($type, array('dictionary', 'multidictionary', 'enum', 'enumeration', 'list', 'lov', 'select', 'choice'), true)) {
             return true;
         }
 
@@ -687,7 +719,7 @@ class EmpikService
             return true;
         }
 
-        return $this->fallbackValueListCodes($attribute) !== array();
+        return false;
     }
 
     private function loadCategoryAttributesPayload(array $account, string $hierarchyCode, bool $forceRefresh): array
@@ -752,7 +784,7 @@ class EmpikService
             }
         }
 
-        if (!in_array($type, array('list', 'dictionary', 'multidictionary', 'boolean', 'enum', 'enumeration', 'lov', 'text', 'string'), true)) {
+        if (!in_array($type, array('list', 'dictionary', 'multidictionary', 'boolean', 'enum', 'enumeration', 'lov', 'select', 'choice'), true)) {
             return array();
         }
 
@@ -826,6 +858,117 @@ class EmpikService
         }
 
         return array_values(array_unique($candidates));
+    }
+
+    private function normalizeAttributeDictionaryType(string $type): string
+    {
+        $type = strtolower(trim($type));
+        $type = str_replace(array('-', ' '), '_', $type);
+
+        if (in_array($type, array('multidictionary', 'multi_dictionary', 'multi_select', 'multiple_select', 'list_multiple', 'multiple_list', 'multi_value_list', 'multiple_values_list'), true)) {
+            return 'multidictionary';
+        }
+
+        if (in_array($type, array('enum', 'enumeration', 'list', 'lov', 'select', 'choice'), true)) {
+            return 'dictionary';
+        }
+
+        if (in_array($type, array('bool', 'boolean'), true)) {
+            return 'boolean';
+        }
+
+        return $type;
+    }
+
+    private function deduplicateAttributeDefinitions(array $definitions): array
+    {
+        $result = array();
+        $seen = array();
+
+        foreach ($definitions as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+
+            $key = $this->attributeDisplayNameKey((string) ($definition['name'] ?? ''));
+            if ($key === '') {
+                $key = $this->attributeDisplayNameKey((string) ($definition['id'] ?? ''));
+            }
+
+            if ($key !== '' && isset($seen[$key])) {
+                continue;
+            }
+
+            if ($key !== '') {
+                $seen[$key] = true;
+            }
+
+            $result[] = $definition;
+        }
+
+        return $result;
+    }
+
+    private function attributeDisplayNameKey(string $name): string
+    {
+        $name = preg_replace('/\s*\(\s*\d+\s*\)\s*$/', '', $name);
+        return $this->normalizeAttributeTokenText((string) $name);
+    }
+
+    private function isFreeTextIdentityAttribute(string $id, string $name): bool
+    {
+        $normalized = $this->normalizeAttributeTokenText($id . ' ' . $name);
+
+        foreach (array('ean', 'gtin', 'isbn', 'issn', 'upc', 'sku', 'mpn') as $token) {
+            if (preg_match('/(^|[^a-z0-9])' . preg_quote($token, '/') . '([^a-z0-9]|$)/', $normalized)) {
+                return true;
+            }
+        }
+
+        foreach (array('kod producenta', 'numer katalogowy', 'kod kreskowy') as $phrase) {
+            if (strpos($normalized, $phrase) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeAttributeTokenText(string $value): string
+    {
+        $value = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        $map = array(
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' => 'z',
+            'ż' => 'z',
+        );
+        $value = strtr($value, $map);
+        $value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+
+        return trim((string) $value);
+    }
+
+    private function truthyAttributeFlag($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (int) $value === 1;
+        }
+
+        if (!is_scalar($value)) {
+            return false;
+        }
+
+        return in_array(strtolower(trim((string) $value)), array('1', 'true', 'yes', 'y', 'tak'), true);
     }
 
     private function fetchValueListOptions(string $valueListCode, array $account, bool $suppressErrors = false): array

@@ -15,6 +15,7 @@ use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductEmpikParameterRepository;
 use App\Models\ProductTemuParameterRepository;
 use App\Models\ProductRepository;
+use App\Models\SettingRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
@@ -60,6 +61,9 @@ class ProductController extends Controller
     /** @var DerivedStockLinkRepository */
     private $derivedStockLinks;
 
+    /** @var SettingRepository */
+    private $settings;
+
     public function __construct()
     {
         $this->categories = new CategoryRepository($this->db());
@@ -82,6 +86,8 @@ class ProductController extends Controller
         $this->sharedStockGroups->ensureSchema();
         $this->derivedStockLinks = new DerivedStockLinkRepository($this->db());
         $this->derivedStockLinks->ensureSchema();
+        $this->settings = new SettingRepository($this->db());
+        $this->settings->ensureSchema();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
     }
@@ -642,7 +648,7 @@ class ProductController extends Controller
 
         $categoryId = (int) $this->input('category_id', 0);
         if ($categoryId <= 0) {
-            $this->jsonResponse(array('items' => array()));
+            $this->jsonResponse(array('items' => array(), 'hidden_keys' => $this->hiddenEmpikParameterKeys()));
             return;
         }
 
@@ -660,7 +666,11 @@ class ProductController extends Controller
                 }
             }
 
-            $this->jsonResponse(array('items' => $definitions, 'values' => $values));
+            $this->jsonResponse(array(
+                'items' => $definitions,
+                'values' => $values,
+                'hidden_keys' => $this->hiddenEmpikParameterKeys(),
+            ));
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
@@ -773,6 +783,48 @@ class ProductController extends Controller
         } catch (Throwable $exception) {
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
+    }
+
+    public function empikparametervisibility(): void
+    {
+        $this->requireModuleWrite('products');
+
+        if (!$this->isPost()) {
+            $this->jsonResponse(array('error' => 'Niedozwolona metoda.'), 405);
+            return;
+        }
+
+        $name = trim((string) $this->input('name', ''));
+        $id = trim((string) $this->input('id', ''));
+        $hidden = $this->input('hidden', '1');
+        $hidden = in_array(strtolower(trim((string) $hidden)), array('1', 'true', 'yes', 'tak'), true);
+        $key = $this->empikParameterVisibilityKey($name, $id);
+
+        if ($key === '') {
+            $this->jsonResponse(array('error' => 'Brak poprawnego parametru Empik.'), 422);
+            return;
+        }
+
+        $keys = $this->hiddenEmpikParameterKeys();
+        if ($hidden) {
+            if (!in_array($key, $keys, true)) {
+                $keys[] = $key;
+            }
+        } else {
+            $keys = array_values(array_filter($keys, static function (string $item) use ($key): bool {
+                return $item !== $key;
+            }));
+        }
+
+        sort($keys);
+        $this->settings->set('products_empik_hidden_parameters', json_encode($keys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        $this->jsonResponse(array(
+            'ok' => true,
+            'hidden' => $hidden,
+            'key' => $key,
+            'hidden_keys' => $keys,
+        ));
     }
 
     public function empikparameteroptions(): void
@@ -1549,6 +1601,7 @@ class ProductController extends Controller
             'empikDefinitions' => $empikDefinitions,
             'empikValues' => $empikValues,
             'empikValuesJson' => json_encode($empikValues),
+            'empikHiddenKeysJson' => json_encode($this->hiddenEmpikParameterKeys(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             'temuDefinitions' => $temuDefinitions,
             'temuValues' => $temuValues,
             'temuValuesJson' => json_encode($temuValues),
@@ -2974,6 +3027,60 @@ class ProductController extends Controller
     {
         return trim((string) $this->input('save_action', 'return')) === 'stay';
     }
+
+    private function hiddenEmpikParameterKeys(): array
+    {
+        $raw = $this->settings->get('products_empik_hidden_parameters', '[]');
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return array();
+        }
+
+        $keys = array();
+        foreach ($decoded as $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+
+            $normalized = trim($value);
+            if ($normalized !== '') {
+                $keys[] = $normalized;
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    private function empikParameterVisibilityKey(string $name, string $id = ''): string
+    {
+        $normalizedName = $this->normalizeEmpikParameterNameKey($name);
+        if ($normalizedName !== '') {
+            return $normalizedName;
+        }
+
+        return $this->normalizeEmpikParameterNameKey($id);
+    }
+
+    private function normalizeEmpikParameterNameKey(string $value): string
+    {
+        $value = strtolower(trim($value));
+        $value = preg_replace('/\s*\(\s*\d+\s*\)\s*$/', '', $value);
+        $value = strtr($value, array(
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' => 'z',
+            'ż' => 'z',
+        ));
+        $value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+
+        return trim((string) $value);
+    }
+
     private function jsonResponse(array $payload, int $status = 200): void
     {
         http_response_code($status);
