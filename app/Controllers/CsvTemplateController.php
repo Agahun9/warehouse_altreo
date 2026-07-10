@@ -940,7 +940,7 @@ class CsvTemplateController extends Controller
 
     private function normalizeDescriptionSections(array $sections, string $templateName): array
     {
-        $allowedLayouts = array('image', 'image_image', 'image_text', 'text_image', 'text', 'text_text');
+        $allowedLayouts = array('image', 'image_image', 'image_text', 'text_image', 'text', 'text_text', 'html');
         $normalized = array();
 
         foreach ($sections as $section) {
@@ -956,6 +956,7 @@ class CsvTemplateController extends Controller
             $leftText = trim((string) ($section['left_text'] ?? ''));
             $rightText = trim((string) ($section['right_text'] ?? ''));
             $singleText = trim((string) ($section['text'] ?? ''));
+            $rawHtml = trim((string) ($section['html'] ?? ''));
             $leftImage = $this->normalizeDescriptionImageSlot($section['left_image'] ?? array());
             $rightImage = $this->normalizeDescriptionImageSlot($section['right_image'] ?? array());
 
@@ -983,11 +984,16 @@ class CsvTemplateController extends Controller
                 continue;
             }
 
+            if ($layout === 'html' && $rawHtml === '') {
+                continue;
+            }
+
             $normalized[] = array(
                 'layout' => $layout,
                 'text' => $singleText,
                 'left_text' => $leftText,
                 'right_text' => $rightText,
+                'html' => $rawHtml,
                 'left_image' => $leftImage,
                 'right_image' => $rightImage,
             );
@@ -2258,6 +2264,22 @@ class CsvTemplateController extends Controller
             'product.image_queue_to' => 'Koniec zakresu kolejki wpisany przy eksporcie CSV',
             'queue_item' => 'Miniatura wpisywana podczas eksportu CSV',
             'product.generated_images' => 'Generowane sciezki obrazów (EU)',
+            'product.generated_images[1]' => 'Generowana sciezka obrazka EU nr 1',
+            'product.generated_images[2]' => 'Generowana sciezka obrazka EU nr 2',
+            'product.generated_images[3]' => 'Generowana sciezka obrazka EU nr 3',
+            'product.generated_images[4]' => 'Generowana sciezka obrazka EU nr 4',
+            'product.generated_images[5]' => 'Generowana sciezka obrazka EU nr 5',
+            'product.generated_images[6]' => 'Generowana sciezka obrazka EU nr 6',
+            'product.generated_images[7]' => 'Generowana sciezka obrazka EU nr 7',
+            'product.generated_images[8]' => 'Generowana sciezka obrazka EU nr 8',
+            'product.generated_images[9]' => 'Generowana sciezka obrazka EU nr 9',
+            'product.generated_images[10]' => 'Generowana sciezka obrazka EU nr 10',
+            'product.generated_images[11]' => 'Generowana sciezka obrazka EU nr 11',
+            'product.generated_images[12]' => 'Generowana sciezka obrazka EU nr 12',
+            'product.generated_images[13]' => 'Generowana sciezka obrazka EU nr 13',
+            'product.generated_images[14]' => 'Generowana sciezka obrazka EU nr 14',
+            'product.generated_images[15]' => 'Generowana sciezka obrazka EU nr 15',
+            'product.generated_images[16]' => 'Generowana sciezka obrazka EU nr 16',
             'product.price_net' => 'Cena netto',
             'product.price_gross' => 'Cena brutto',
             'product.price_to_csv' => 'Cena wpisana przy eksporcie CSV',

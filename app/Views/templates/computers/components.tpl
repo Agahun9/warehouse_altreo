@@ -1216,6 +1216,9 @@
     });
     document.addEventListener('DOMContentLoaded', function() {
       const totalBox = document.getElementById('totalPriceBox');
+      if (totalBox && totalBox.parentElement !== document.body) {
+        document.body.appendChild(totalBox);
+      }
       const totalSpan = document.getElementById('totalPrice');
       let currentTotal = 0;
 
@@ -1283,7 +1286,7 @@
     <style>
       #totalPriceBox {
         position: fixed;
-        bottom: 10%;
+        bottom: 20px;
         right: 20px;
         background: #0d6efd;
         color: #fff;

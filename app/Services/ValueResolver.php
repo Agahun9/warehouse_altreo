@@ -123,7 +123,21 @@ class ValueResolver
         }
 
         if (in_array($normalized, array('generated_images', 'images_export'), true)) {
-            return $this->generateImageExportLines($product, $exportOptions);
+            $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
+                ? $exportOptions['csv_generated_images_settings']
+                : array();
+
+            return implode("\n", $this->generateImageExportRows($product, $exportOptions, $settings));
+        }
+
+        if (preg_match('/^(?:generated_images|images_export)\[(\d+)\]$/', $normalized, $imageIndexMatches) === 1) {
+            $index = max(1, (int) $imageIndexMatches[1]);
+            $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
+                ? $exportOptions['csv_generated_images_settings']
+                : array();
+            $lines = $this->generateImageExportFlattenedLines($product, $exportOptions, $settings);
+
+            return isset($lines[$index - 1]) ? $lines[$index - 1] : '';
         }
 
         if (strpos($normalized, 'csv_description.') === 0) {
@@ -970,6 +984,89 @@ class ValueResolver
         return array('');
     }
 
+    public function generateImageExportFlatCatalog(array $product, array $exportOptions, array $settings = array()): array
+    {
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
+        $productName = isset($product['product_name']) ? (string) $product['product_name'] : '';
+        $collectionCode = strtoupper(trim((string) ($exportOptions['image_collection_code'] ?? ($imageOptions['image_collection_code'] ?? ''))));
+        $collectionName = trim((string) ($exportOptions['collection_name'] ?? ''));
+        $imageCount = max(0, (int) ($exportOptions['image_count'] ?? ($imageOptions['image_count'] ?? 0)));
+        $thumbnailCount = max(0, (int) ($exportOptions['thumbnail_count'] ?? ($imageOptions['thumbnail_count'] ?? 0)));
+        $queueItems = isset($exportOptions['thumbnail_pattern_items']) && is_array($exportOptions['thumbnail_pattern_items'])
+            ? $exportOptions['thumbnail_pattern_items']
+            : array();
+        if ($queueItems !== array()) {
+            $thumbnailCount = count($queueItems);
+        }
+        $mockupCount = max(0, (int) ($exportOptions['mockup_count'] ?? ($exportOptions['grid_count'] ?? ($imageOptions['mockup_count'] ?? 0))));
+        $baseDirectory = trim((string) ($exportOptions['image_base_directory'] ?? ($imageOptions['image_base_directory'] ?? 'T:\\wygnerowane_do_EU')));
+        $thumbnailMacro = trim((string) ($imageOptions['thumbnail_macro'] ?? ($exportOptions['thumbnail_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png')));
+        $mockupMacro = trim((string) ($imageOptions['mockup_macro'] ?? ($exportOptions['mockup_macro'] ?? '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg')));
+        $imageMacro = trim((string) ($imageOptions['image_macro'] ?? ($exportOptions['image_macro'] ?? '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg')));
+
+        $thumbnailLines = array();
+        for ($i = 1; $i <= $thumbnailCount; $i++) {
+            $path = $this->renderImageExportMacro($thumbnailMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i, $this->queueItemForIndex($exportOptions, $i));
+            if ($path !== '') {
+                $thumbnailLines[] = $path;
+            }
+        }
+
+        $mockupLines = array();
+        for ($i = 1; $i <= $mockupCount; $i++) {
+            $path = $this->renderImageExportMacro($mockupMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $mockupLines[] = $path;
+            }
+        }
+
+        $imageLines = array();
+        for ($i = 1; $i <= $imageCount; $i++) {
+            $path = $this->renderImageExportMacro($imageMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $i);
+            if ($path !== '') {
+                $imageLines[] = $path;
+            }
+        }
+
+        $layout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
+        if ($layout === array()) {
+            $layout = array(
+                array('type' => 'thumbnail', 'value' => ''),
+                array('type' => 'mockup', 'value' => ''),
+                array('type' => 'image', 'value' => ''),
+            );
+        }
+
+        $lines = array();
+        foreach ($layout as $layoutItem) {
+            $type = trim((string) ($layoutItem['type'] ?? ''));
+
+            if ($type === 'thumbnail') {
+                $lines = array_merge($lines, $thumbnailLines);
+                continue;
+            }
+
+            if ($type === 'mockup') {
+                $lines = array_merge($lines, $mockupLines);
+                continue;
+            }
+
+            if ($type === 'image') {
+                $lines = array_merge($lines, $imageLines);
+                continue;
+            }
+
+            if ($type === 'static') {
+                $staticValue = trim((string) ($layoutItem['value'] ?? ''));
+                if ($staticValue !== '') {
+                    $lines[] = $staticValue;
+                }
+            }
+        }
+
+        return $lines;
+    }
+
     public function generateImageExportAssetPaths(array $product, array $exportOptions, array $settings = array()): array
     {
         $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
@@ -1017,11 +1114,6 @@ class ValueResolver
         }
 
         return $lines;
-    }
-
-    private function generateImageExportLines(array $product, array $exportOptions): string
-    {
-        return implode("\n", $this->generateImageExportRows($product, $exportOptions));
     }
 
     private function renderCsvDescriptionTemplate(array $product, string $templateKey, array $exportOptions): string
@@ -1096,10 +1188,29 @@ class ValueResolver
                 return $this->csvDescriptionTwoColumnSection($leftText, $rightImage);
             case 'text_text':
                 return $this->csvDescriptionTwoColumnSection($leftText, $rightText);
+            case 'html':
+                return $this->csvDescriptionRawHtml($product, (string) ($section['html'] ?? ''), $exportOptions);
             case 'text':
             default:
                 return $this->csvDescriptionSingleColumnSection($text);
         }
+    }
+
+    private function csvDescriptionRawHtml(array $product, string $template, array $exportOptions): string
+    {
+        $template = trim($template);
+        if ($template === '') {
+            return '';
+        }
+
+        return (string) preg_replace_callback('/\{\{\s*(field|option):\s*([^}]+)\}\}/i', function (array $matches) use ($product, $exportOptions): string {
+            $token = trim((string) ($matches[2] ?? ''));
+            if ($token === '') {
+                return '';
+            }
+
+            return (string) $this->resolveField($product, $token, '|', $exportOptions);
+        }, $template);
     }
 
     private function csvDescriptionSingleColumnSection(string $content): string
@@ -1123,8 +1234,8 @@ class ValueResolver
         }
 
         return '<table role="presentation" class="csv-desc-two-col" style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr>'
-            . '<td style="width:50%;vertical-align:top;padding-right:12px;">' . $leftContent . '</td>'
-            . '<td style="width:50%;vertical-align:top;padding-left:12px;">' . $rightContent . '</td>'
+            . '<td style="width:50%;vertical-align:middle;padding-right:12px;">' . $leftContent . '</td>'
+            . '<td style="width:50%;vertical-align:middle;padding-left:12px;">' . $rightContent . '</td>'
             . '</tr></table>';
     }
 
@@ -1190,7 +1301,7 @@ class ValueResolver
             $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
                 ? $exportOptions['csv_generated_images_settings']
                 : array();
-            $images = $this->generateImageExportFlattenedLines($product, $exportOptions, $settings);
+            $images = $this->generateImageExportFlatCatalog($product, $exportOptions, $settings);
             if (isset($images[$index - 1])) {
                 $imageUrl = trim((string) $images[$index - 1]);
             }

@@ -348,6 +348,20 @@
           display: none;
         }
 
+        #csv-template-form .desc-editor-shell.is-source-mode .desc-visual-editor {
+          display: none;
+        }
+
+        #csv-template-form .desc-editor-shell.is-source-mode .desc-text-input {
+          display: block;
+          font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+
+        #csv-template-form .desc-source-toggle.is-active {
+          color: #ffffff;
+          background: var(--csv-accent);
+        }
+
         #csv-template-form .desc-visual-editor {
           border: 1px solid rgba(148, 163, 184, 0.4);
           border-radius: 14px;
@@ -643,7 +657,7 @@
                   <li><code>product.allegro_parameters_eu</code> - wszystkie parametry Allegro w formacie EU: <code>parameter_id|type|value|</code></li>
                   <li><code>product.empik_parameters</code> - wszystkie parametry Empik w jednej komorce, kazdy w nowej linii</li>
                   <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
-                  <li><code>images</code> lub <code>product.generated_images</code> - generowana lista sciezek obrazow EasyUploader</li>
+                  <li><code>images</code> lub <code>product.generated_images</code> (oraz <code>product.generated_images[1..16]</code>) - generowana lista / pojedyncze sciezki obrazow EasyUploader. <strong>Uwaga:</strong> dzialaja tylko, gdy przy eksporcie CSV ustawisz liczby Zdjecia/Miniatury/Mockupy - sam szablon tego nie definiuje.</li>
                   <li><code>queue_item</code> - miniatura wpisywana podczas eksportu CSV</li>
                 </ul>
                 </div>
@@ -801,6 +815,19 @@
   var initialDescriptionTemplates = {$descriptionTemplatesJson nofilter};
   var descriptionImageSources = {$descriptionImageSourcesJson nofilter};
 
+  function debounce(fn, wait) {
+    var timeoutId = null;
+    return function () {
+      var context = this;
+      var args = arguments;
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(function () {
+        fn.apply(context, args);
+      }, wait);
+    };
+  }
+
+  var descTemplateCounter = 0;
   var builder = document.getElementById('columnsBuilder');
   var descriptionBuilder = document.getElementById('descriptionTemplatesBuilder');
   var addButton = document.getElementById('addColumnBtn');
@@ -1033,7 +1060,8 @@
       image_text: 'Zdjecie + tekst',
       text_image: 'Tekst + zdjecie',
       text: 'Tekst',
-      text_text: 'Tekst + tekst'
+      text_text: 'Tekst + tekst',
+      html: 'Wlasny kod HTML'
     };
     var html = '';
     Object.keys(options).forEach(function (key) {
@@ -1091,6 +1119,10 @@
     var html = escapeHtml(value || '');
     html = html.replace(/&lt;\s*(\/?)\s*(h1|h2|h3|strong|b|em|i|u)\s*&gt;/gi, '<$1$2>');
     html = html.replace(/&lt;\s*br\s*\/?\s*&gt;/gi, '<br>');
+    html = html.replace(/&lt;\s*p\s*&gt;/gi, '<br>');
+    html = html.replace(/&lt;\s*\/\s*p\s*&gt;/gi, '');
+    html = html.replace(/&lt;\s*div\s*&gt;/gi, '<br>');
+    html = html.replace(/&lt;\s*\/\s*div\s*&gt;/gi, '');
     html = html.replace(/\r?\n/g, '<br>');
     html = html.replace(descriptionTokenRegex('gi'), function (token) {
       return descriptionTokenPillHtml(token);
@@ -1111,8 +1143,11 @@
 
     return String(clone.innerHTML || '')
       .replace(/<div><br><\/div>/gi, '<br>')
+      .replace(/<p><br><\/p>/gi, '<br>')
       .replace(/<div>/gi, '<br>')
       .replace(/<\/div>/gi, '')
+      .replace(/<p>/gi, '<br>')
+      .replace(/<\/p>/gi, '')
       .replace(/&nbsp;/gi, ' ')
       .trim();
   }
@@ -1319,9 +1354,10 @@
       + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button fw-bold" data-format="bold">B</button>'
       + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button fst-italic" data-format="italic">I</button>'
       + '<button type="button" class="btn btn-sm btn-outline-secondary desc-format-button text-decoration-underline" data-format="underline">U</button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary desc-source-toggle ms-auto">Kod HTML</button>'
       + '</div>'
       + '<div class="desc-visual-editor" contenteditable="true" data-placeholder="' + escapeHtml(placeholder || 'Wpisz tekst lub tokeny') + '">' + descriptionEditorHtmlFromValue(value || '') + '</div>'
-      + '<textarea class="form-control form-control-sm desc-text-input" rows="5">' + escapeHtml(value || '') + '</textarea>'
+      + '<textarea class="form-control form-control-sm desc-text-input" rows="8" placeholder="Wklej tutaj wlasny kod HTML">' + escapeHtml(value || '') + '</textarea>'
       + '<div class="border rounded bg-light-subtle desc-token-tools">'
       + '<div class="small fw-semibold mb-1">Wstaw token</div>'
       + '<div class="row g-2 align-items-end">'
@@ -1356,12 +1392,87 @@
     }).join('');
   }
 
+  function descriptionImageLabelToSource(label) {
+    var found = null;
+    Object.keys(descriptionImageSources || {}).forEach(function (key) {
+      if (!found && String(descriptionImageSources[key]).trim() === String(label).trim()) {
+        found = key;
+      }
+    });
+    return found;
+  }
+
+  function parseDescSlotFromCellHtml(cellHtml) {
+    var trimmed = String(cellHtml || '').trim();
+    if (/^<img\b[^>]*>$/i.test(trimmed)) {
+      var srcMatch = trimmed.match(/src\s*=\s*["']\[ZDJECIE:\s*(.+?)\s*nr\s*(\d+)\]["']/i);
+      if (srcMatch) {
+        var label = srcMatch[1].trim();
+        var index = parseInt(srcMatch[2], 10) || 1;
+        return { type: 'image', source: descriptionImageLabelToSource(label) || 'IMG_EU', index: index };
+      }
+    }
+    return { type: 'text', html: trimmed };
+  }
+
+  function parseDescriptionHtmlIntoSections(rawHtml) {
+    var container = document.createElement('div');
+    container.innerHTML = String(rawHtml || '');
+    Array.prototype.forEach.call(container.querySelectorAll('style'), function (styleEl) {
+      styleEl.remove();
+    });
+
+    var defaultImage = { source: 'IMG_EU', index: 1 };
+    var sections = [];
+
+    Array.prototype.forEach.call(container.children, function (node) {
+      var row = node.tagName === 'TABLE' ? node.querySelector('tr') : null;
+      if (row) {
+        var cells = row.children;
+        if (cells.length === 2) {
+          var left = parseDescSlotFromCellHtml(cells[0].innerHTML);
+          var right = parseDescSlotFromCellHtml(cells[1].innerHTML);
+          var layout = 'text_text';
+          if (left.type === 'image' && right.type === 'image') layout = 'image_image';
+          else if (left.type === 'image' && right.type === 'text') layout = 'image_text';
+          else if (left.type === 'text' && right.type === 'image') layout = 'text_image';
+
+          sections.push({
+            layout: layout,
+            left_text: left.type === 'text' ? left.html : '',
+            right_text: right.type === 'text' ? right.html : '',
+            left_image: left.type === 'image' ? { source: left.source, index: left.index } : defaultImage,
+            right_image: right.type === 'image' ? { source: right.source, index: right.index } : defaultImage
+          });
+          return;
+        }
+        if (cells.length === 1) {
+          var only = parseDescSlotFromCellHtml(cells[0].innerHTML);
+          if (only.type === 'image') {
+            sections.push({ layout: 'image', left_image: { source: only.source, index: only.index }, right_image: defaultImage });
+          } else {
+            sections.push({ layout: 'text', text: only.html, left_image: defaultImage, right_image: defaultImage });
+          }
+          return;
+        }
+      }
+
+      var outer = node.outerHTML || '';
+      if (outer.trim()) {
+        sections.push({ layout: 'html', html: outer, left_image: defaultImage, right_image: defaultImage });
+      }
+    });
+
+    return sections;
+  }
+
   function createDescriptionSectionCard(section) {
     var data = section || {
       layout: 'text',
       text: '',
       left_text: '',
       right_text: '',
+      html: '',
       left_image: { source: 'IMG_EU', index: 1 },
       right_image: { source: 'IMG_EU', index: 1 }
     };
@@ -1384,6 +1495,11 @@
       + '  <div class="col-12 col-lg-6 desc-left-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.left_text || '', 'Lewy tekst', 'Lewy tekst') + '</div></div>'
       + '  <div class="col-12 col-lg-6 desc-right-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.right_text || '', 'Prawy tekst', 'Prawy tekst') + '</div></div>'
       + '  <div class="col-12 desc-single-text"><div class="description-section-pane h-100">' + descriptionTextEditorHtml(data.text || '', 'Tresci sekcji', 'Tekst') + '</div></div>'
+      + '  <div class="col-12 desc-raw-html"><div class="description-section-pane h-100">'
+      + '    <div class="small fw-semibold mb-1">Wlasny kod HTML (wklejony 1:1, bez zadnych zmian)</div>'
+      + '    <textarea class="form-control form-control-sm desc-html-raw" rows="12" placeholder="Wklej tutaj gotowy kod HTML sekcji" style="font-family: SFMono-Regular, Consolas, \'Liberation Mono\', Menlo, monospace;">' + escapeHtml(data.html || '') + '</textarea>'
+      + '    <div class="form-text">Tokeny: <code>{ldelim}{ldelim}field:product.product_name{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code>, <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code>. Kod nie jest filtrowany - wstawiany jest dokladnie tak, jak zostal wklejony.</div>'
+      + '  </div></div>'
       + '</div>'
       + '</div>';
 
@@ -1394,12 +1510,14 @@
       var leftText = card.querySelector('.desc-left-text');
       var rightText = card.querySelector('.desc-right-text');
       var singleText = card.querySelector('.desc-single-text');
+      var rawHtml = card.querySelector('.desc-raw-html');
 
       leftImage.style.display = (layout === 'image' || layout === 'image_image' || layout === 'image_text') ? '' : 'none';
       rightImage.style.display = (layout === 'image_image' || layout === 'text_image') ? '' : 'none';
       leftText.style.display = (layout === 'text_image' || layout === 'text_text') ? '' : 'none';
       rightText.style.display = (layout === 'image_text' || layout === 'text_text') ? '' : 'none';
       singleText.style.display = layout === 'text' ? '' : 'none';
+      rawHtml.style.display = layout === 'html' ? '' : 'none';
 
       leftImage.style.order = '1';
       leftImage.className = layout === 'image' ? 'col-12 desc-left-image' : 'col-12 col-lg-6 desc-left-image';
@@ -1437,7 +1555,6 @@
       if (event.target.classList.contains('desc-visual-editor')) {
         syncDescriptionEditor(descriptionTextScopeFromNode(event.target));
         refreshDescriptionFormatState(event.target);
-        refreshAvailableFieldsFromDescriptions();
         return;
       }
 
@@ -1445,7 +1562,7 @@
         return;
       }
 
-      refreshAvailableFieldsFromDescriptions();
+      refreshAvailableFieldsFromDescriptionsDebounced();
     });
     card.addEventListener('change', function (event) {
       if (event.target.classList.contains('desc-token-search')) {
@@ -1482,13 +1599,6 @@
         event.preventDefault();
       }
     });
-    card.addEventListener('keyup', function (event) {
-      var editor = descriptionActiveEditorFromNode(event.target);
-      if (editor) {
-        syncDescriptionEditor(descriptionTextScopeFromNode(editor));
-        refreshDescriptionFormatState(editor);
-      }
-    });
     card.addEventListener('mouseup', function (event) {
       var editor = descriptionActiveEditorFromNode(event.target);
       if (editor) {
@@ -1517,6 +1627,30 @@
 
         insertHtmlIntoDescriptionEditor(editor, descriptionTokenPillHtml(String(select.value || '')) + '&nbsp;');
         refreshAvailableFieldsFromDescriptions();
+        return;
+      }
+
+      if (event.target.classList.contains('desc-source-toggle')) {
+        var shell = event.target.closest('.desc-editor-shell');
+        var textInput = shell ? shell.querySelector('.desc-text-input') : null;
+        if (!shell || !editor || !textInput) {
+          return;
+        }
+
+        var enteringSourceMode = !shell.classList.contains('is-source-mode');
+        if (enteringSourceMode) {
+          syncDescriptionEditor(scope);
+          shell.classList.add('is-source-mode');
+          event.target.classList.add('is-active');
+          event.target.textContent = 'Edytor wizualny';
+          textInput.focus();
+        } else {
+          editor.innerHTML = descriptionEditorHtmlFromValue(textInput.value);
+          shell.classList.remove('is-source-mode');
+          event.target.classList.remove('is-active');
+          event.target.textContent = 'Kod HTML';
+          refreshAvailableFieldsFromDescriptions();
+        }
       }
     });
     var dragHandle = card.querySelector('.js-drag-handle');
@@ -1580,6 +1714,82 @@
     return card;
   }
 
+  function descTemplateSingleColumnSection(content) {
+    content = String(content || '').trim();
+    if (!content) {
+      return '';
+    }
+
+    return '<table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr><td style="vertical-align:top;">' + content + '</td></tr></table>';
+  }
+
+  function descTemplateTwoColumnSection(leftContent, rightContent) {
+    leftContent = String(leftContent || '').trim();
+    rightContent = String(rightContent || '').trim();
+    if (!leftContent && !rightContent) {
+      return '';
+    }
+
+    return '<table role="presentation" class="csv-desc-two-col" style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr>'
+      + '<td style="width:50%;vertical-align:middle;padding-right:12px;">' + leftContent + '</td>'
+      + '<td style="width:50%;vertical-align:middle;padding-left:12px;">' + rightContent + '</td>'
+      + '</tr></table>';
+  }
+
+  function descTemplateImagePlaceholderHtml(slot) {
+    slot = slot || {};
+    var source = slot.source || '';
+    if (!source) {
+      return '';
+    }
+
+    var index = parseInt(slot.index || 1, 10) || 1;
+    var label = (descriptionImageSources && descriptionImageSources[source]) ? descriptionImageSources[source] : source;
+
+    return '<img src="[ZDJECIE: ' + escapeHtml(label) + ' nr ' + index + ']" alt="" style="display:block;max-width:100%;height:auto;">';
+  }
+
+  function buildDescriptionTemplateHtmlCode(sections) {
+    var style = '<style>'
+      + '@media only screen and (max-width: 640px) {ldelim}'
+      + '.csv-desc-two-col,.csv-desc-two-col tbody,.csv-desc-two-col tr,.csv-desc-two-col td{ldelim}display:block!important;width:100%!important;{rdelim}'
+      + '.csv-desc-two-col td{ldelim}padding-left:0!important;padding-right:0!important;padding-bottom:12px!important;{rdelim}'
+      + '{rdelim}'
+      + '</style>';
+
+    var parts = (sections || []).map(function (section) {
+      var leftImage = descTemplateImagePlaceholderHtml(section.left_image);
+      var rightImage = descTemplateImagePlaceholderHtml(section.right_image);
+      var text = section.text || '';
+      var leftText = section.left_text || '';
+      var rightText = section.right_text || '';
+
+      switch (section.layout) {
+        case 'image':
+          return descTemplateSingleColumnSection(leftImage);
+        case 'image_image':
+          return descTemplateTwoColumnSection(leftImage, rightImage);
+        case 'image_text':
+          return descTemplateTwoColumnSection(leftImage, rightText);
+        case 'text_image':
+          return descTemplateTwoColumnSection(leftText, rightImage);
+        case 'text_text':
+          return descTemplateTwoColumnSection(leftText, rightText);
+        case 'html':
+          return String(section.html || '').trim();
+        case 'text':
+        default:
+          return descTemplateSingleColumnSection(text);
+      }
+    }).filter(function (html) { return html !== ''; });
+
+    if (!parts.length) {
+      return '';
+    }
+
+    return style + parts.join('\n');
+  }
+
   function collectDescriptionSectionData(card) {
     var leftSource = card.querySelector('.desc-left-image .desc-image-source');
     var leftIndex = card.querySelector('.desc-left-image .desc-image-index');
@@ -1588,12 +1798,14 @@
     var leftText = card.querySelector('.desc-left-text .desc-text-input');
     var rightText = card.querySelector('.desc-right-text .desc-text-input');
     var singleText = card.querySelector('.desc-single-text .desc-text-input');
+    var rawHtml = card.querySelector('.desc-html-raw');
 
     return {
       layout: card.querySelector('.desc-layout').value,
       text: singleText ? singleText.value : '',
       left_text: leftText ? leftText.value : '',
       right_text: rightText ? rightText.value : '',
+      html: rawHtml ? rawHtml.value : '',
       left_image: {
         source: leftSource ? leftSource.value : '',
         index: leftIndex ? leftIndex.value : 1
@@ -1607,6 +1819,8 @@
 
   function createDescriptionTemplateCard(template) {
     var data = template || { name: '', key: '', sections: [] };
+    descTemplateCounter += 1;
+    var descTemplateUid = descTemplateCounter;
     var card = document.createElement('div');
     card.className = 'card border description-template-card';
     card.draggable = true;
@@ -1618,15 +1832,31 @@
       + '    <div class="col-md-3 d-flex align-items-end justify-content-end"><button type="button" class="btn btn-sm btn-outline-danger remove-description-template">Usun opis</button></div>'
       + '  </div>'
       + '  <div class="small text-secondary mb-3">To pole bedzie dostepne jako <span class="desc-template-label-preview">Opis CSV: ' + escapeHtml(data.name || '...') + '</span>.</div>'
-      + '  <div class="d-flex gap-2 flex-wrap mb-3">'
+      + '  <div class="form-check form-switch mb-3">'
+      + '    <input type="checkbox" class="form-check-input desc-html-toggle" id="descHtmlToggle' + descTemplateUid + '">'
+      + '    <label class="form-check-label small" for="descHtmlToggle' + descTemplateUid + '">Pokaz / edytuj HTML (caly kod opisu do skopiowania, eksportu lub recznej edycji)</label>'
+      + '  </div>'
+      + '  <div class="d-flex gap-2 flex-wrap mb-3 desc-sections-controls">'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image">Samo zdjecie</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_image">Zdjecie + zdjecie</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="image_text">Zdjecie + tekst</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text_image">Tekst + zdjecie</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text">Tekst</button>'
       + '    <button type="button" class="btn btn-sm btn-outline-secondary add-description-section" data-layout="text_text">Tekst + tekst</button>'
+      + '    <button type="button" class="btn btn-sm btn-outline-primary add-description-section" data-layout="html">Wlasny kod HTML</button>'
       + '  </div>'
-      + '  <div class="description-sections-list d-grid gap-2"></div>'
+      + '  <div class="description-sections-list d-grid gap-2 desc-sections-controls"></div>'
+      + '  <div class="border rounded p-2 desc-html-view" style="display:none;">'
+      + '    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">'
+      + '      <div class="small fw-semibold">Pelny kod HTML tego opisu</div>'
+      + '      <div class="d-flex gap-2">'
+      + '        <button type="button" class="btn btn-sm btn-outline-secondary copy-desc-html">Kopiuj kod</button>'
+      + '        <button type="button" class="btn btn-sm btn-outline-primary apply-desc-html">Zastosuj kod HTML</button>'
+      + '      </div>'
+      + '    </div>'
+      + '    <div class="form-text mb-2">To jest kod szablonu (tokeny <code>{ldelim}{ldelim}field:...{rdelim}{rdelim}</code> nie sa tu jeszcze podstawione realnymi danymi produktu - podstawiaja sie dopiero przy eksporcie CSV). Mozesz edytowac ten kod bezposrednio i kliknac <strong>Zastosuj kod HTML</strong>, aby zamienic sekcje ponizej na Twoj wlasny kod (zastapi to wszystkie obecne sekcje tego opisu).</div>'
+      + '    <textarea class="form-control form-control-sm desc-html-code" rows="12" spellcheck="false" style="font-family: SFMono-Regular, Consolas, \'Liberation Mono\', Menlo, monospace;"></textarea>'
+      + '  </div>'
       + '</div>';
 
     var nameInput = card.querySelector('.desc-template-name');
@@ -1654,8 +1884,95 @@
 
     bindContainerDropzone(sectionsList, '.description-section-card', 'description-section', refreshAvailableFieldsFromDescriptions);
 
+    var htmlToggle = card.querySelector('.desc-html-toggle');
+    var htmlView = card.querySelector('.desc-html-view');
+    var htmlCode = card.querySelector('.desc-html-code');
+    var sectionsControls = card.querySelectorAll('.desc-sections-controls');
+
+    if (htmlToggle) {
+      htmlToggle.addEventListener('change', function () {
+        if (htmlToggle.checked) {
+          syncAllDescriptionEditors(card);
+          var sections = [];
+          var sectionCards = sectionsList.querySelectorAll('.description-section-card');
+          for (var sIndex = 0; sIndex < sectionCards.length; sIndex++) {
+            sections.push(collectDescriptionSectionData(sectionCards[sIndex]));
+          }
+          if (htmlCode) {
+            htmlCode.value = buildDescriptionTemplateHtmlCode(sections);
+          }
+          for (var cIndex = 0; cIndex < sectionsControls.length; cIndex++) {
+            sectionsControls[cIndex].style.display = 'none';
+          }
+          if (htmlView) {
+            htmlView.style.display = '';
+          }
+        } else {
+          for (var hIndex = 0; hIndex < sectionsControls.length; hIndex++) {
+            sectionsControls[hIndex].style.display = '';
+          }
+          if (htmlView) {
+            htmlView.style.display = 'none';
+          }
+        }
+      });
+    }
+
+    var copyHtmlButton = card.querySelector('.copy-desc-html');
+    if (copyHtmlButton && htmlCode) {
+      copyHtmlButton.addEventListener('click', function () {
+        htmlCode.focus();
+        htmlCode.select();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(htmlCode.value).catch(function () {});
+        } else {
+          try {
+            document.execCommand('copy');
+          } catch (error) {}
+        }
+      });
+    }
+
+    var applyHtmlButton = card.querySelector('.apply-desc-html');
+    if (applyHtmlButton && htmlCode) {
+      applyHtmlButton.addEventListener('click', function () {
+        if (!window.confirm('To zastapi wszystkie obecne sekcje tego opisu tresci wklejonego kodu HTML. Kontynuowac?')) {
+          return;
+        }
+
+        var rawValue = String(htmlCode.value || '');
+        var parsedSections = parseDescriptionHtmlIntoSections(rawValue);
+
+        if (!parsedSections.length) {
+          parsedSections = [{
+            layout: 'html',
+            html: rawValue.trim(),
+            left_image: { source: 'IMG_EU', index: 1 },
+            right_image: { source: 'IMG_EU', index: 1 }
+          }];
+        }
+
+        sectionsList.innerHTML = '';
+        parsedSections.forEach(function (parsedSection) {
+          sectionsList.appendChild(createDescriptionSectionCard(parsedSection));
+        });
+
+        if (htmlToggle) {
+          htmlToggle.checked = false;
+        }
+        for (var acIndex = 0; acIndex < sectionsControls.length; acIndex++) {
+          sectionsControls[acIndex].style.display = '';
+        }
+        if (htmlView) {
+          htmlView.style.display = 'none';
+        }
+
+        refreshAvailableFieldsFromDescriptions();
+      });
+    }
+
     nameInput.addEventListener('input', syncTemplatePresentation);
-    keyInput.addEventListener('input', refreshAvailableFieldsFromDescriptions);
+    keyInput.addEventListener('input', refreshAvailableFieldsFromDescriptionsDebounced);
     card.querySelector('.remove-description-template').addEventListener('click', function () {
       card.remove();
       refreshAvailableFieldsFromDescriptions();
@@ -1670,6 +1987,7 @@
         text: '',
         left_text: '',
         right_text: '',
+        html: '',
         left_image: { source: 'IMG_EU', index: 1 },
         right_image: { source: 'IMG_EU', index: 1 }
       }));
@@ -1680,7 +1998,7 @@
         return;
       }
 
-      refreshAvailableFieldsFromDescriptions();
+      refreshAvailableFieldsFromDescriptionsDebounced();
     });
     card.addEventListener('change', function (event) {
       if (event.target.classList.contains('desc-token-search')) {
@@ -1744,6 +2062,66 @@
     return card;
   }
 
+  function isGeneratedImagesFieldValue(fieldValue) {
+    return fieldValue === 'images' || /^(product\.)?(generated_images|images_export)(\[\d+\])?$/.test(fieldValue || '');
+  }
+
+  function refreshGeneratedImagesVisibility() {
+    var cards = builder.querySelectorAll('.column-card');
+    var firstMatchCard = null;
+
+    for (var i = 0; i < cards.length; i++) {
+      var typeSelect = cards[i].querySelector('.col-type');
+      var fieldSelect = cards[i].querySelector('.col-field');
+      var isField = typeSelect && typeSelect.value === 'field';
+      var isMatch = isField && fieldSelect && isGeneratedImagesFieldValue(fieldSelect.value);
+
+      if (isMatch) {
+        firstMatchCard = cards[i];
+        break;
+      }
+    }
+
+    for (var j = 0; j < cards.length; j++) {
+      var card = cards[j];
+      var typeSel = card.querySelector('.col-type');
+      var fieldSel = card.querySelector('.col-field');
+      var isFieldCol = typeSel && typeSel.value === 'field';
+      var isMatchCol = isFieldCol && fieldSel && isGeneratedImagesFieldValue(fieldSel.value);
+      var imageLayoutWrap = card.querySelector('.image-layout-wrap');
+      var note = card.querySelector('.generated-images-note');
+
+      if (!isMatchCol) {
+        if (imageLayoutWrap) {
+          imageLayoutWrap.style.display = 'none';
+        }
+        if (note) {
+          note.style.display = 'none';
+        }
+        continue;
+      }
+
+      if (card === firstMatchCard) {
+        if (imageLayoutWrap) {
+          imageLayoutWrap.style.display = '';
+        }
+        if (note) {
+          note.style.display = 'none';
+        }
+      } else {
+        if (imageLayoutWrap) {
+          imageLayoutWrap.style.display = 'none';
+        }
+        if (note) {
+          var headerInput = firstMatchCard ? firstMatchCard.querySelector('.col-header') : null;
+          var headerLabel = headerInput && headerInput.value ? headerInput.value : 'pierwsza kolumna z generowanymi zdjeciami';
+          note.textContent = 'Ustawienia sciezek (makra, uklad sekcji) dla tego pola sa wspolne dla calego szablonu i skonfigurowane w kolumnie "' + headerLabel + '". Ta kolumna korzysta z nich automatycznie.';
+          note.style.display = '';
+        }
+      }
+    }
+  }
+
   function createColumnCard(column) {
     var data = column || {
       header_name: '',
@@ -1801,7 +2179,11 @@
       + '    </div>'
       + '    <div class="mapping-list">' + mappingRowsHtml(data.mappings) + '</div>'
       + '  </div>'
+      + '  <div class="alert alert-secondary small mt-2 mb-0 generated-images-note" style="display:none;"></div>'
       + '  <div class="border rounded p-2 mt-2 image-layout-wrap" style="display:none;">'
+      + '    <div class="alert alert-warning small mb-3">'
+      + '      <strong>Uwaga:</strong> te pola (<code>product.generated_images</code> oraz <code>product.generated_images[1..16]</code>) generuja sciezki dopiero wtedy, gdy przy eksporcie CSV (w oknie eksportu produktow) zostana ustawione liczby <code>Zdjecia</code> / <code>Miniatury</code> / <code>Mockupy</code> (pola <code>image_count</code>, <code>thumbnail_count</code>, <code>mockup_count</code>) rowne lub wieksze od numeru, ktorego uzywasz w kolumnie. Sam szablon CSV tego nie ustawia - jesli te liczby nie zostana wpisane przy eksporcie (domyslnie 0), pole bedzie puste, nawet gdy makro ponizej jest poprawnie skonfigurowane. Ustawienia ponizej (makra, uklad sekcji) dotycza <strong>wszystkich</strong> kolumn z generowanymi zdjeciami w tym szablonie - konfigurujesz je tylko raz, w pierwszej takiej kolumnie.'
+      + '    </div>'
       + '    <div class="row g-2 mb-3">'
       + '      <div class="col-12"><label class="form-label small">Makro miniatur</label><textarea class="form-control form-control-sm image-option-thumbnail-macro" rows="2">' + escapeHtml(imageOptions.thumbnail_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\{ldelim}{ldelim}collection_code{rdelim}{rdelim}\\miniatura_t_{ldelim}{ldelim}index{rdelim}{rdelim}.png') + '</textarea></div>'
       + '      <div class="col-12"><label class="form-label small">Makro mockupow / gridow</label><textarea class="form-control form-control-sm image-option-mockup-macro" rows="2">' + escapeHtml(imageOptions.mockup_macro || '{ldelim}{ldelim}base_directory{rdelim}{rdelim}\\{ldelim}{ldelim}contours{rdelim}{rdelim}\\mockup_{ldelim}{ldelim}index{rdelim}{rdelim}.jpg') + '</textarea></div>'
@@ -1859,10 +2241,7 @@
       for (var i = 0; i < computedFields.length; i++) {
         computedFields[i].style.display = (type === 'computed') ? '' : 'none';
       }
-      var imageLayoutWrap = card.querySelector('.image-layout-wrap');
-      if (imageLayoutWrap) {
-        imageLayoutWrap.style.display = (type === 'field' && (fieldValue === 'product.generated_images' || fieldValue === 'images' || fieldValue === 'generated_images')) ? '' : 'none';
-      }
+      refreshGeneratedImagesVisibility();
     }
 
     typeSelect.addEventListener('change', updateVisibility);
@@ -1908,10 +2287,12 @@
 
     card.querySelector('.remove-column').addEventListener('click', function () {
       card.remove();
+      refreshGeneratedImagesVisibility();
     });
 
     card.querySelector('.duplicate-column').addEventListener('click', function () {
       builder.insertBefore(createColumnCard(collectCardData(card)), card.nextSibling);
+      refreshGeneratedImagesVisibility();
     });
 
     card.querySelector('.add-mapping').addEventListener('click', function () {
@@ -2053,6 +2434,7 @@
       moveDraggedItem(builder, card, position);
       clearDragIndicators(builder);
       endDragItem();
+      refreshGeneratedImagesVisibility();
     });
 
     function bindImageLayoutInteractions(scope) {
@@ -2303,6 +2685,8 @@
     }
   }
 
+  var refreshAvailableFieldsFromDescriptionsDebounced = debounce(refreshAvailableFieldsFromDescriptions, 250);
+
   function bindContainerDropzone(container, itemSelector, dragType, onDropCallback) {
     if (!container) {
       return;
@@ -2362,6 +2746,7 @@
 
   addButton.addEventListener('click', function () {
     builder.appendChild(createColumnCard());
+    refreshGeneratedImagesVisibility();
   });
 
   if (addDescriptionTemplateButton) {
@@ -2389,6 +2774,7 @@
         },
         mappings: []
       }));
+      refreshGeneratedImagesVisibility();
     });
   }
 
@@ -2404,7 +2790,7 @@
     });
   }
 
-  bindContainerDropzone(builder, '.column-card', 'column-card', null);
+  bindContainerDropzone(builder, '.column-card', 'column-card', refreshGeneratedImagesVisibility);
   bindContainerDropzone(descriptionBuilder, '.description-template-card', 'description-template', refreshAvailableFieldsFromDescriptions);
 
   document.addEventListener('drop', function () {
@@ -2436,5 +2822,6 @@
       builder.appendChild(createColumnCard(column));
     });
   }
+  refreshGeneratedImagesVisibility();
 })();
 </script>

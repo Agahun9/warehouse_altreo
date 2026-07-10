@@ -118,7 +118,7 @@ class CsvExportService
                 continue;
             }
 
-            if (!in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true)) {
+            if ($sourceValue !== 'images' && preg_match('/^(?:product\.)?(?:generated_images|images_export)(?:\[\d+\])?$/', $sourceValue) !== 1) {
                 continue;
             }
 
