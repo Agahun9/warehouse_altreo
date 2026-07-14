@@ -632,6 +632,24 @@ class AccountingWarehouseRepository
         });
     }
 
+    public function itemKindsByName(): array
+    {
+        $kinds = array();
+        foreach ($this->macroCatalog() as $row) {
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $normalized = $this->classifier->normalize($name);
+            if ($normalized === '') {
+                continue;
+            }
+            $kinds[$normalized] = trim((string) ($row['item_kind'] ?? 'towar')) ?: 'towar';
+        }
+
+        return $kinds;
+    }
+
     public function itemNameSuggestions(): array
     {
         $names = array();

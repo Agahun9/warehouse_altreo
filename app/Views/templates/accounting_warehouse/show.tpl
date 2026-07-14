@@ -38,7 +38,7 @@
             <div class="col-md-2"><strong>NIP:</strong><br>{$document.supplier_tax_id|default:'-'|escape}</div>
             <div class="col-md-2"><strong>Data sprzedazy:</strong><br>{$document.sale_date|default:'-'|escape}</div>
             <div class="col-md-2"><strong>Data wystawienia:</strong><br>{$document.issue_date|default:'-'|escape}</div>
-            <div class="col-md-2"><strong>Typ:</strong><br>{if $document.document_kind eq 'adjustment'}korekta{elseif $document.source_type eq 'xml'}xml{else}reczne{/if}</div>
+            <div class="col-md-2"><strong>Typ:</strong><br>{if $document.document_kind eq 'adjustment'}korekta{elseif $document.document_kind eq 'koszt'}koszt{elseif $document.source_type eq 'xml'}xml{else}reczne{/if}</div>
             <div class="col-md-3"><strong>Netto:</strong><br>{$document.total_net|string_format:'%.2f'} {$document.currency|escape}</div>
             <div class="col-md-3"><strong>Brutto:</strong><br>{$document.total_gross|string_format:'%.2f'} {$document.currency|escape}</div>
             <div class="col-md-6"><strong>Uwagi:</strong><br>{$document.notes|default:'-'|escape}</div>

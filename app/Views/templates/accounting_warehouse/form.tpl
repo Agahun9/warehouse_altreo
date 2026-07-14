@@ -147,7 +147,7 @@
                   </div>
                   <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=storexml" id="xmlPreviewForm">
                     {foreach $xmlPreview as $documentIndex => $document}
-                      <div class="border rounded p-3 mb-4 xml-document-block supplier-lookup-block{if $document.header.document_kind|default:'receipt' eq 'adjustment'} border-warning border-3 bg-warning-subtle{/if}" data-xml-hash="{$document.header.xml_hash|escape}">
+                      <div class="border rounded p-3 mb-4 xml-document-block supplier-lookup-block{if $document.header.document_kind|default:'receipt' eq 'adjustment'} border-warning border-3 bg-warning-subtle{elseif $document.header.document_kind|default:'receipt' eq 'koszt'} border-info border-3 bg-info-subtle{/if}" data-xml-hash="{$document.header.xml_hash|escape}">
                         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                           <div>
                             <div class="fw-semibold">Faktura {$documentIndex+1} z {$xmlPreview|@count}: {$document.header.document_number|default:'bez numeru'|escape}</div>
@@ -157,6 +157,8 @@
                             <span class="badge text-bg-danger d-none xml-skipped-badge">NIE DO IMPORTU</span>
                             {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
                               <span class="badge text-bg-warning">KOREKTA XML - BEDZIE POMINIETA</span>
+                            {elseif $document.header.document_kind|default:'receipt' eq 'koszt'}
+                              <span class="badge text-bg-info">KOSZT (wykryto automatycznie)</span>
                             {else}
                               <span class="badge text-bg-success">PRZYJECIE DO IMPORTU</span>
                             {/if}
@@ -171,6 +173,10 @@
                         {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
                           <div class="alert alert-warning border-warning mb-3">
                             Ten XML wyglada na korekte. Zostawiamy go w podgladzie do kontroli, ale przy zapisie zostanie automatycznie pominiety.
+                          </div>
+                        {elseif $document.header.document_kind|default:'receipt' eq 'koszt'}
+                          <div class="alert alert-info border-info mb-3">
+                            Wiekszosc pozycji (min. 60% wartosci) to pozycje ksiegowe typu "koszt", wiec dokument oznaczono automatycznie jako koszt. Mozna to zmienic ponizej.
                           </div>
                         {/if}
 
@@ -188,6 +194,7 @@
                             <label class="form-label">Rodzaj dokumentu</label>
                             <select class="form-select" name="xml_documents[{$documentIndex}][document_kind]">
                               <option value="receipt"{if $document.header.document_kind|default:'receipt' eq 'receipt'} selected{/if}>przyjecie</option>
+                              <option value="koszt"{if $document.header.document_kind|default:'receipt' eq 'koszt'} selected{/if}>koszt</option>
                               <option value="adjustment"{if $document.header.document_kind|default:'receipt' eq 'adjustment'} selected{/if}>korekta</option>
                             </select>
                           </div>

@@ -1556,6 +1556,7 @@ class AccountingWarehouseController extends Controller
         foreach ($this->warehouse->itemNameSuggestions() as $name) {
             $availableNames[trim((string) $name)] = true;
         }
+        $itemKinds = $this->warehouse->itemKindsByName();
 
         foreach ($documents as $documentIndex => $document) {
             if (!is_array($document) || !isset($document['lines']) || !is_array($document['lines'])) {
@@ -1564,6 +1565,8 @@ class AccountingWarehouseController extends Controller
 
             if (isset($document['header']) && is_array($document['header']) && $this->looksLikeCorrectionDocument($document['header'])) {
                 $documents[$documentIndex]['header']['document_kind'] = 'adjustment';
+            } elseif ($this->looksLikeCostDocument($document['lines'], $itemKinds)) {
+                $documents[$documentIndex]['header']['document_kind'] = 'koszt';
             }
 
             foreach ($document['lines'] as $lineIndex => $line) {
@@ -1576,6 +1579,45 @@ class AccountingWarehouseController extends Controller
         }
 
         return $documents;
+    }
+
+    private function looksLikeCostDocument(array $lines, array $itemKinds): bool
+    {
+        $totalValue = 0.0;
+        $costValue = 0.0;
+
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $canonicalName = trim((string) ($line['canonical_name'] ?? ''));
+            if ($canonicalName === '') {
+                continue;
+            }
+
+            $lineValue = abs($this->toDecimal($line['line_net'] ?? 0));
+            if ($lineValue <= 0.0) {
+                $lineValue = abs($this->toDecimal($line['line_gross'] ?? 0));
+            }
+            if ($lineValue <= 0.0) {
+                continue;
+            }
+
+            $normalized = $this->classifier->normalize($canonicalName);
+            $itemKind = $itemKinds[$normalized] ?? 'towar';
+
+            $totalValue += $lineValue;
+            if ($itemKind === 'koszt') {
+                $costValue += $lineValue;
+            }
+        }
+
+        if ($totalValue <= 0.0) {
+            return false;
+        }
+
+        return ($costValue / $totalValue) >= 0.6;
     }
 
     private function looksLikeCorrectionDocument(array $document): bool

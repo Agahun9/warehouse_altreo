@@ -67,22 +67,47 @@ class AccountingWarehouseXmlImporter
         if (!is_array($lineNodes) || $lineNodes === array()) {
             $lineNodes = $xml->xpath('//*[local-name()="FaWiersz"]');
         }
+
+        $isAdvanceOrderLines = false;
+        if (!is_array($lineNodes) || $lineNodes === array()) {
+            // Faktury zaliczkowe (np. RodzajFaktury=ZAL) nie maja Fa/FaWiersz,
+            // tylko Zamowienie/ZamowienieWiersz z odmiennymi nazwami pol (sufiks "Z").
+            $lineNodes = $xml->xpath('//fa:Zamowienie/fa:ZamowienieWiersz');
+            if (!is_array($lineNodes) || $lineNodes === array()) {
+                $lineNodes = $xml->xpath('//*[local-name()="ZamowienieWiersz"]');
+            }
+            $isAdvanceOrderLines = is_array($lineNodes) && $lineNodes !== array();
+        }
+
         if (!is_array($lineNodes) || $lineNodes === array()) {
             throw new RuntimeException($this->formatInvoiceXmlError('Faktura XML nie zawiera pozycji.', $filename, $documentNumber));
         }
 
         $lines = array();
         foreach ($lineNodes as $lineNode) {
-            $originalName = $this->nodeValue($lineNode, $defaultNamespace, 'P_7');
-            $quantity = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8B');
-            $unit = $this->nodeValue($lineNode, $defaultNamespace, 'P_8A');
-            $unit = $unit !== '' ? $unit : 'szt.';
-            $lineGross = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11A');
-            $lineNet = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11');
-            $vatRate = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_12');
+            if ($isAdvanceOrderLines) {
+                $originalName = $this->nodeValue($lineNode, $defaultNamespace, 'P_7Z');
+                $quantity = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8BZ');
+                $unit = $this->nodeValue($lineNode, $defaultNamespace, 'P_8AZ');
+                $unit = $unit !== '' ? $unit : 'szt.';
+                $lineNet = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11NettoZ');
+                $vatAmount = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11VatZ');
+                $lineGross = round($lineNet + $vatAmount, 2);
+                $vatRate = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_12Z');
+            } else {
+                $originalName = $this->nodeValue($lineNode, $defaultNamespace, 'P_7');
+                $quantity = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8B');
+                $unit = $this->nodeValue($lineNode, $defaultNamespace, 'P_8A');
+                $unit = $unit !== '' ? $unit : 'szt.';
+                $lineGross = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11A');
+                $lineNet = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_11');
+                $vatRate = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_12');
+            }
 
             if ($quantity == 0.0) {
-                $quantity = $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8B');
+                $quantity = $isAdvanceOrderLines
+                    ? $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8BZ')
+                    : $this->nodeDecimalValue($lineNode, $defaultNamespace, 'P_8B');
             }
 
             if ($isCorrection && $lineNet < 0 && $quantity > 0) {

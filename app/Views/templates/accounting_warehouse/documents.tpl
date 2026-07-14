@@ -75,8 +75,8 @@
                     <td>{$document.supplier_name|default:'-'|escape}</td>
                     <td>{$document.supplier_tax_id|default:'-'|escape}</td>
                     <td>
-                      <span class="badge text-bg-{if $document.document_kind eq 'issue'}primary{elseif $document.document_kind eq 'adjustment'}warning{elseif $document.source_type eq 'xml'}info{elseif $document.source_type eq 'legacy_sql'}dark{else}secondary{/if}">
-                        {if $document.document_kind eq 'issue'}wyjscie{elseif $document.document_kind eq 'adjustment'}korekta{elseif $document.source_type eq 'xml'}xml{elseif $document.source_type eq 'legacy_sql'}stary sql{else}reczne{/if}
+                      <span class="badge text-bg-{if $document.document_kind eq 'issue'}primary{elseif $document.document_kind eq 'adjustment'}warning{elseif $document.document_kind eq 'koszt'}info{elseif $document.source_type eq 'xml'}info{elseif $document.source_type eq 'legacy_sql'}dark{else}secondary{/if}">
+                        {if $document.document_kind eq 'issue'}wyjscie{elseif $document.document_kind eq 'adjustment'}korekta{elseif $document.document_kind eq 'koszt'}koszt{elseif $document.source_type eq 'xml'}xml{elseif $document.source_type eq 'legacy_sql'}stary sql{else}reczne{/if}
                       </span>
                     </td>
                     <td>{$document.sale_date|default:'-'|escape}</td>
