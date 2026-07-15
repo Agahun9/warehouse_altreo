@@ -1124,7 +1124,7 @@ class AccountingWarehouseRepository
             'SELECT documents.id AS document_id, documents.document_kind, documents.document_number, documents.supplier_name,'
             . ' documents.supplier_tax_id, documents.issue_date, documents.sale_date, documents.currency,'
             . ' documents.total_net, documents.total_gross,'
-            . ' export_lines.id AS line_id, items.item_kind'
+            . ' export_lines.id AS line_id, export_lines.canonical_name, items.item_kind'
             . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
             . ' LEFT JOIN ' . self::LINES_TABLE . ' export_lines ON export_lines.document_id = documents.id'
             . ' LEFT JOIN ' . self::ITEMS_TABLE . ' items ON items.id = export_lines.warehouse_item_id'
@@ -1154,6 +1154,7 @@ class AccountingWarehouseRepository
 
             if ($row['line_id'] !== null) {
                 $documents[$documentId]['lines'][] = array(
+                    'canonical_name' => (string) ($row['canonical_name'] ?? ''),
                     'item_kind' => $this->normalizeItemKind((string) ($row['item_kind'] ?? 'towar')),
                 );
             }
@@ -1532,9 +1533,13 @@ class AccountingWarehouseRepository
         }
 
         $kosztLineCount = 0;
+        $kosztNonShippingLineCount = 0;
         foreach ($lines as $line) {
             if ($this->normalizeItemKind((string) ($line['item_kind'] ?? 'towar')) === 'koszt') {
                 $kosztLineCount++;
+                if (!$this->isShippingLine($line)) {
+                    $kosztNonShippingLineCount++;
+                }
             }
         }
 
@@ -1544,12 +1549,21 @@ class AccountingWarehouseRepository
             return 'koszt';
         }
 
-        // Mieszana: faktura typu towar, ktora ma co najmniej dwie pozycje typu koszt.
-        if ($kosztLineCount >= 2) {
+        // Mieszana: faktura typu towar, ktora ma przynajmniej jedna pozycje typu koszt inna niz
+        // wysylka - wysylka wystepuje niemal na kazdej fakturze towarowej i sama w sobie nie
+        // powinna oznaczac dokumentu jako "mieszany".
+        if ($kosztNonShippingLineCount >= 1) {
             return 'mieszane';
         }
 
         return 'towar';
+    }
+
+    private function isShippingLine(array $line): bool
+    {
+        $normalized = $this->classifier->normalize((string) ($line['canonical_name'] ?? ''));
+
+        return $normalized === 'wysylka';
     }
 
     private function prepareInboundLines(array $lines, string $documentKind = 'receipt', bool $affectsStock = true): array
