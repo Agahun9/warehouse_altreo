@@ -1124,7 +1124,7 @@ class AccountingWarehouseRepository
             'SELECT documents.id AS document_id, documents.document_kind, documents.document_number, documents.supplier_name,'
             . ' documents.supplier_tax_id, documents.issue_date, documents.sale_date, documents.currency,'
             . ' documents.total_net, documents.total_gross,'
-            . ' export_lines.id AS line_id, export_lines.canonical_name, items.item_kind'
+            . ' export_lines.id AS line_id, export_lines.canonical_name, export_lines.line_net, export_lines.line_gross, items.item_kind'
             . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
             . ' LEFT JOIN ' . self::LINES_TABLE . ' export_lines ON export_lines.document_id = documents.id'
             . ' LEFT JOIN ' . self::ITEMS_TABLE . ' items ON items.id = export_lines.warehouse_item_id'
@@ -1156,6 +1156,8 @@ class AccountingWarehouseRepository
                 $documents[$documentId]['lines'][] = array(
                     'canonical_name' => (string) ($row['canonical_name'] ?? ''),
                     'item_kind' => $this->normalizeItemKind((string) ($row['item_kind'] ?? 'towar')),
+                    'line_net' => (float) ($row['line_net'] ?? 0),
+                    'line_gross' => (float) ($row['line_gross'] ?? 0),
                 );
             }
         }

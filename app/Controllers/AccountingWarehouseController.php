@@ -501,10 +501,17 @@ class AccountingWarehouseController extends Controller
                     ));
                 } elseif ((string) $bestDocument['classification'] === 'mieszane') {
                     $status = 'mieszane';
+                    $split = $this->splitDocumentLinesByKind((array) ($bestDocument['lines'] ?? array()));
                     $mixedDocuments[] = array_merge($accountantRow, array(
                         'local_net' => (float) $bestDocument['total_net'],
                         'local_gross' => (float) $bestDocument['total_gross'],
                         'local_document_id' => (int) $bestDocument['id'],
+                        'goods_net' => $split['goods_net'],
+                        'goods_gross' => $split['goods_gross'],
+                        'cost_net' => $split['cost_net'],
+                        'cost_gross' => $split['cost_gross'],
+                        'cost_names' => $split['cost_names'],
+                        'cost_names_label' => implode(', ', $split['cost_names']),
                     ));
                 } else {
                     $matchedOk++;
@@ -539,6 +546,42 @@ class AccountingWarehouseController extends Controller
 
         // expectedType === 'towar'
         return in_array($classification, array('towar', 'mieszane'), true);
+    }
+
+    /**
+     * Rozbija pozycje faktury mieszanej na czesc towarowa i kosztowa (netto/brutto),
+     * zeby dalo sie latwo przekazac ksiegowej ile z takiej faktury jest towarem, a ile kosztem.
+     */
+    private function splitDocumentLinesByKind(array $lines): array
+    {
+        $goodsNet = 0.0;
+        $goodsGross = 0.0;
+        $costNet = 0.0;
+        $costGross = 0.0;
+        $costNames = array();
+
+        foreach ($lines as $line) {
+            if (((string) ($line['item_kind'] ?? 'towar')) === 'koszt') {
+                $costNet += (float) ($line['line_net'] ?? 0);
+                $costGross += (float) ($line['line_gross'] ?? 0);
+                $name = trim((string) ($line['canonical_name'] ?? ''));
+                if ($name !== '') {
+                    $costNames[$name] = true;
+                }
+                continue;
+            }
+
+            $goodsNet += (float) ($line['line_net'] ?? 0);
+            $goodsGross += (float) ($line['line_gross'] ?? 0);
+        }
+
+        return array(
+            'goods_net' => round($goodsNet, 2),
+            'goods_gross' => round($goodsGross, 2),
+            'cost_net' => round($costNet, 2),
+            'cost_gross' => round($costGross, 2),
+            'cost_names' => array_keys($costNames),
+        );
     }
 
     private function extractReconciliationField(array $row, array $keyCandidates): string
@@ -577,40 +620,37 @@ class AccountingWarehouseController extends Controller
         array $mixedDocuments
     ): string {
         $lines = array();
-        $lines[] = 'PODSUMOWANIE POROWNANIA Z KSIEGOWA';
-        $lines[] = 'Zgodne faktury: ' . $matchedOk;
-        $lines[] = 'Brak w magazynie: ' . count($missingInWarehouse);
-        $lines[] = 'Zla kategoria (towar/koszt): ' . count($typeMismatches);
-        $lines[] = 'Mieszane: ' . count($mixedDocuments);
+        $lines[] = 'Porownanie z ksiegowa';
+        $lines[] = 'Zgodne: ' . $matchedOk . ' | Brak w magazynie: ' . count($missingInWarehouse)
+            . ' | Zla kategoria: ' . count($typeMismatches) . ' | Mieszane: ' . count($mixedDocuments);
         $lines[] = '';
 
         if ($missingInWarehouse !== array()) {
-            $lines[] = '=== FAKTURY Z PLIKU KSIEGOWEJ, KTORYCH NIE MA W MAGAZYNIE ===';
+            $lines[] = 'Brak w magazynie (jest u ksiegowej, nie ma w systemie):';
             foreach ($missingInWarehouse as $row) {
-                $lines[] = '- ' . $row['document_number'] . ' (' . $row['expected_type'] . ', ' . $row['contractor']
-                    . ', netto ' . number_format($row['net'], 2, ',', ' ') . ', brutto ' . number_format($row['gross'], 2, ',', ' ') . ')'
-                    . ' - brak dokumentu o tym numerze w magazynie ksiegowym.';
+                $lines[] = '- ' . $row['document_number'] . ', ' . $row['contractor'] . ', ' . $row['expected_type']
+                    . ', netto ' . number_format($row['net'], 2, ',', ' ') . ', brutto ' . number_format($row['gross'], 2, ',', ' ');
             }
             $lines[] = '';
         }
 
         if ($typeMismatches !== array()) {
-            $lines[] = '=== FAKTURY O NIEZGODNEJ KATEGORII (TOWAR / KOSZT) ===';
+            $lines[] = 'Zla kategoria (u ksiegowej inna niz w systemie):';
             foreach ($typeMismatches as $row) {
                 $expectedLabel = $row['expected_type'] === 'koszt' ? 'koszt' : 'towar';
-                $lines[] = '- ' . $row['document_number'] . ' (' . $row['contractor'] . '):'
-                    . ' u ksiegowej jako ' . $expectedLabel . ', a w magazynie oznaczone jako ' . $row['local_classification']
-                    . ' (dokument #' . $row['local_document_id'] . ').';
+                $lines[] = '- ' . $row['document_number'] . ', ' . $row['contractor']
+                    . ': u ksiegowej ' . $expectedLabel . ', w systemie ' . $row['local_classification'];
             }
             $lines[] = '';
         }
 
         if ($mixedDocuments !== array()) {
-            $lines[] = '=== FAKTURY MIESZANE (TOWAR + KOSZT W JEDNYM DOKUMENCIE) ===';
+            $lines[] = 'Mieszane (towar + koszt na jednej fakturze) - podzial dla ksiegowej:';
             foreach ($mixedDocuments as $row) {
-                $lines[] = '- ' . $row['document_number'] . ' (' . $row['contractor'] . '):'
-                    . ' magazyn netto ' . number_format($row['local_net'], 2, ',', ' ') . ' / brutto ' . number_format($row['local_gross'], 2, ',', ' ')
-                    . ' (dokument #' . $row['local_document_id'] . ').';
+                $costLabel = $row['cost_names'] !== array() ? implode(', ', $row['cost_names']) : 'koszt';
+                $lines[] = '- ' . $row['document_number'] . ', ' . $row['contractor'];
+                $lines[] = '    towar: netto ' . number_format($row['goods_net'], 2, ',', ' ') . ', brutto ' . number_format($row['goods_gross'], 2, ',', ' ');
+                $lines[] = '    koszt (' . $costLabel . '): netto ' . number_format($row['cost_net'], 2, ',', ' ') . ', brutto ' . number_format($row['cost_gross'], 2, ',', ' ');
             }
             $lines[] = '';
         }

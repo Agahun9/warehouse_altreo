@@ -106,17 +106,27 @@
 
         {if $report.mixed_documents}
         <div class="card mb-4">
-          <div class="card-header"><h3 class="card-title mb-0">Mieszane (towar + koszt w jednym dokumencie)</h3></div>
+          <div class="card-header"><h3 class="card-title mb-0">Mieszane (towar + koszt w jednym dokumencie) - podzial dla ksiegowej</h3></div>
           <div class="table-responsive">
             <table class="table table-sm mb-0">
-              <thead><tr><th>Numer</th><th>Kontrahent</th><th>Netto magazyn</th><th>Brutto magazyn</th><th></th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Numer</th><th>Kontrahent</th>
+                  <th>Towar netto</th><th>Towar brutto</th>
+                  <th>Koszt (pozycja)</th><th>Koszt netto</th><th>Koszt brutto</th>
+                  <th></th>
+                </tr>
+              </thead>
               <tbody>
                 {foreach $report.mixed_documents as $row}
                   <tr>
                     <td>{$row.document_number|escape}</td>
                     <td>{$row.contractor|escape}</td>
-                    <td>{$row.local_net|string_format:"%.2f"}</td>
-                    <td>{$row.local_gross|string_format:"%.2f"}</td>
+                    <td>{$row.goods_net|string_format:"%.2f"}</td>
+                    <td>{$row.goods_gross|string_format:"%.2f"}</td>
+                    <td>{$row.cost_names_label|escape}</td>
+                    <td>{$row.cost_net|string_format:"%.2f"}</td>
+                    <td>{$row.cost_gross|string_format:"%.2f"}</td>
                     <td><a href="{$baseUrl}?controller=accountingwarehouse&action=show&id={$row.local_document_id}">podgląd</a></td>
                   </tr>
                 {/foreach}
