@@ -25,26 +25,18 @@
       <div class="card mb-4">
         <div class="card-header"><h3 class="card-title mb-0">Wgraj pliki od ksiegowej</h3></div>
         <div class="card-body">
-          <p class="text-secondary">Wgraj plik XLS lub XLSX z zestawieniem Towarow i/lub plik XLS lub XLSX z zestawieniem Kosztow (mozna wgrac tylko jeden z nich). Kazdy plik powinien miec w pierwszym wierszu naglowki kolumn (np. Numer dok. S, Kontrahent, Netto, Brutto, NIP), tak jak w eksporcie z programu ksiegowego. Zakres dat jest uzywany tylko do sprawdzenia, czy w magazynie nie ma faktur, ktorych nie ma w przeslanych plikach.</p>
+          <p class="text-secondary">Wgraj plik XLS lub XLSX z zestawieniem Towarow i/lub plik XLS lub XLSX z zestawieniem Kosztow (mozna wgrac tylko jeden z nich). Kazdy plik powinien miec w pierwszym wierszu naglowki kolumn (np. Numer dok. S, Kontrahent, Netto, Brutto, NIP), tak jak w eksporcie z programu ksiegowego.</p>
           <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=reconcilerun" enctype="multipart/form-data">
             <div class="row g-3 align-items-end">
-              <div class="col-md-3">
+              <div class="col-md-4">
                 <label class="form-label">Plik "Towary" (XLS/XLSX)</label>
                 <input type="file" class="form-control" name="goods_xlsx" accept=".xls,.xlsx">
               </div>
-              <div class="col-md-3">
+              <div class="col-md-4">
                 <label class="form-label">Plik "Koszt" (XLS/XLSX)</label>
                 <input type="file" class="form-control" name="costs_xlsx" accept=".xls,.xlsx">
               </div>
-              <div class="col-md-2">
-                <label class="form-label">Data od</label>
-                <input type="date" class="form-control" name="date_from" value="{$dateFrom|escape}">
-              </div>
-              <div class="col-md-2">
-                <label class="form-label">Data do</label>
-                <input type="date" class="form-control" name="date_to" value="{$dateTo|escape}">
-              </div>
-              <div class="col-md-2">
+              <div class="col-md-4">
                 <button type="submit" class="btn btn-primary w-100">Porownaj</button>
               </div>
             </div>
@@ -60,8 +52,7 @@
               <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-success">{$report.matched_ok}</div><div class="text-secondary small">Zgodne</div></div></div></div>
               <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-danger">{$report.missing_in_warehouse|@count}</div><div class="text-secondary small">Brak w magazynie</div></div></div></div>
               <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-warning">{$report.type_mismatches|@count}</div><div class="text-secondary small">Zla kategoria</div></div></div></div>
-              <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-warning">{$report.amount_mismatches|@count}</div><div class="text-secondary small">Rozne kwoty</div></div></div></div>
-              <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-secondary">{$report.missing_in_accountant|@count}</div><div class="text-secondary small">Brak u ksiegowej</div></div></div></div>
+              <div class="col-md-2"><div class="card text-center"><div class="card-body p-2"><div class="fs-4 fw-semibold text-info">{$report.mixed_documents|@count}</div><div class="text-secondary small">Mieszane</div></div></div></div>
             </div>
 
             <label class="form-label">Raport tekstowy (do skopiowania)</label>
@@ -113,45 +104,20 @@
         </div>
         {/if}
 
-        {if $report.amount_mismatches}
+        {if $report.mixed_documents}
         <div class="card mb-4">
-          <div class="card-header"><h3 class="card-title mb-0">Rozne kwoty</h3></div>
+          <div class="card-header"><h3 class="card-title mb-0">Mieszane (towar + koszt w jednym dokumencie)</h3></div>
           <div class="table-responsive">
             <table class="table table-sm mb-0">
-              <thead><tr><th>Numer</th><th>Kontrahent</th><th>Netto ksiegowa</th><th>Netto magazyn</th><th>Brutto ksiegowa</th><th>Brutto magazyn</th><th></th></tr></thead>
+              <thead><tr><th>Numer</th><th>Kontrahent</th><th>Netto magazyn</th><th>Brutto magazyn</th><th></th></tr></thead>
               <tbody>
-                {foreach $report.amount_mismatches as $row}
+                {foreach $report.mixed_documents as $row}
                   <tr>
                     <td>{$row.document_number|escape}</td>
                     <td>{$row.contractor|escape}</td>
-                    <td>{$row.net|string_format:"%.2f"}</td>
                     <td>{$row.local_net|string_format:"%.2f"}</td>
-                    <td>{$row.gross|string_format:"%.2f"}</td>
                     <td>{$row.local_gross|string_format:"%.2f"}</td>
                     <td><a href="{$baseUrl}?controller=accountingwarehouse&action=show&id={$row.local_document_id}">podgląd</a></td>
-                  </tr>
-                {/foreach}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        {/if}
-
-        {if $report.missing_in_accountant}
-        <div class="card mb-4">
-          <div class="card-header"><h3 class="card-title mb-0">Brak u ksiegowej (jest w magazynie)</h3></div>
-          <div class="table-responsive">
-            <table class="table table-sm mb-0">
-              <thead><tr><th>Numer</th><th>Dostawca</th><th>Klasyfikacja</th><th>Netto</th><th>Brutto</th><th></th></tr></thead>
-              <tbody>
-                {foreach $report.missing_in_accountant as $row}
-                  <tr>
-                    <td>{$row.document_number|escape}</td>
-                    <td>{$row.supplier_name|escape}</td>
-                    <td>{$row.classification|escape}</td>
-                    <td>{$row.total_net|string_format:"%.2f"}</td>
-                    <td>{$row.total_gross|string_format:"%.2f"}</td>
-                    <td><a href="{$baseUrl}?controller=accountingwarehouse&action=show&id={$row.id}">podgląd</a></td>
                   </tr>
                 {/foreach}
               </tbody>

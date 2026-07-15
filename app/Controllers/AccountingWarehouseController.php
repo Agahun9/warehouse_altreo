@@ -394,7 +394,7 @@ class AccountingWarehouseController extends Controller
             }
 
             list($dateFrom, $dateTo) = $this->resolveExportDateRange();
-            $report = $this->buildReconciliationReport($goodsRows, $costsRows, $dateFrom, $dateTo);
+            $report = $this->buildReconciliationReport($goodsRows, $costsRows);
 
             $this->render('accounting_warehouse/reconcile', array(
                 'pageTitle' => 'Porownanie z ksiegowa',
@@ -442,7 +442,7 @@ class AccountingWarehouseController extends Controller
      * Porownuje wiersze z plikow ksiegowej (towar/koszt) ze stanem faktur w magazynie ksiegowym
      * i buduje liste rozbieznosci opisana tekstem.
      */
-    private function buildReconciliationReport(array $goodsRows, array $costsRows, string $dateFrom, string $dateTo): array
+    private function buildReconciliationReport(array $goodsRows, array $costsRows): array
     {
         $allNumbers = array();
         $accountantRows = array();
@@ -469,14 +469,12 @@ class AccountingWarehouseController extends Controller
 
         $missingInWarehouse = array();
         $typeMismatches = array();
-        $amountMismatches = array();
+        $mixedDocuments = array();
         $matchedOk = 0;
-        $matchedNumbers = array();
 
         foreach ($accountantRows as $accountantRow) {
             $key = $this->warehouse->normalizeDocumentNumberKey($accountantRow['document_number']);
             $localMatches = $localByNumber[$key] ?? array();
-            $matchedNumbers[$key] = true;
 
             if ($localMatches === array()) {
                 $missingInWarehouse[] = $accountantRow;
@@ -501,14 +499,10 @@ class AccountingWarehouseController extends Controller
                 continue;
             }
 
-            $netDiff = round($accountantRow['net'] - (float) $bestDocument['total_net'], 2);
-            $grossDiff = round($accountantRow['gross'] - (float) $bestDocument['total_gross'], 2);
-            if (abs($netDiff) > 0.05 || abs($grossDiff) > 0.05) {
-                $amountMismatches[] = array_merge($accountantRow, array(
+            if ((string) $bestDocument['classification'] === 'mieszane') {
+                $mixedDocuments[] = array_merge($accountantRow, array(
                     'local_net' => (float) $bestDocument['total_net'],
                     'local_gross' => (float) $bestDocument['total_gross'],
-                    'net_diff' => $netDiff,
-                    'gross_diff' => $grossDiff,
                     'local_document_id' => (int) $bestDocument['id'],
                 ));
                 continue;
@@ -517,50 +511,13 @@ class AccountingWarehouseController extends Controller
             $matchedOk++;
         }
 
-        // Odwrotny kierunek: dokumenty koszt/towar w magazynie (w podanym zakresie dat) ktorych
-        // numeru nie bylo w zadnym z przeslanych plikow ksiegowej.
-        $relevantClassifications = array();
-        if ($goodsRows !== array()) {
-            $relevantClassifications[] = 'towar';
-            $relevantClassifications[] = 'mieszane';
-        }
-        if ($costsRows !== array()) {
-            $relevantClassifications[] = 'koszt';
-            $relevantClassifications[] = 'mieszane';
-        }
-        $relevantClassifications = array_unique($relevantClassifications);
-
-        $missingInAccountant = array();
-        if ($relevantClassifications !== array()) {
-            $documentsInRange = $this->warehouse->documentsForExport($dateFrom, $dateTo);
-            foreach ($documentsInRange as $document) {
-                if (!in_array((string) ($document['classification'] ?? ''), $relevantClassifications, true)) {
-                    continue;
-                }
-                $key = $this->warehouse->normalizeDocumentNumberKey((string) ($document['document_number'] ?? ''));
-                if ($key === '' || isset($matchedNumbers[$key])) {
-                    continue;
-                }
-                $documentNet = 0.0;
-                $documentGross = 0.0;
-                foreach ((array) ($document['lines'] ?? array()) as $line) {
-                    $documentNet += (float) ($line['line_net'] ?? 0);
-                    $documentGross += (float) ($line['line_gross'] ?? 0);
-                }
-                $document['total_net'] = $documentNet;
-                $document['total_gross'] = $documentGross;
-                $missingInAccountant[] = $document;
-            }
-        }
-
         return array(
             'accountant_rows_count' => count($accountantRows),
             'matched_ok' => $matchedOk,
             'missing_in_warehouse' => $missingInWarehouse,
             'type_mismatches' => $typeMismatches,
-            'amount_mismatches' => $amountMismatches,
-            'missing_in_accountant' => $missingInAccountant,
-            'summary_text' => $this->formatReconciliationSummaryText($matchedOk, $missingInWarehouse, $typeMismatches, $amountMismatches, $missingInAccountant),
+            'mixed_documents' => $mixedDocuments,
+            'summary_text' => $this->formatReconciliationSummaryText($matchedOk, $missingInWarehouse, $typeMismatches, $mixedDocuments),
         );
     }
 
@@ -607,16 +564,14 @@ class AccountingWarehouseController extends Controller
         int $matchedOk,
         array $missingInWarehouse,
         array $typeMismatches,
-        array $amountMismatches,
-        array $missingInAccountant
+        array $mixedDocuments
     ): string {
         $lines = array();
         $lines[] = 'PODSUMOWANIE POROWNANIA Z KSIEGOWA';
         $lines[] = 'Zgodne faktury: ' . $matchedOk;
         $lines[] = 'Brak w magazynie: ' . count($missingInWarehouse);
         $lines[] = 'Zla kategoria (towar/koszt): ' . count($typeMismatches);
-        $lines[] = 'Rozne kwoty: ' . count($amountMismatches);
-        $lines[] = 'Brak u ksiegowej (jest w magazynie): ' . count($missingInAccountant);
+        $lines[] = 'Mieszane: ' . count($mixedDocuments);
         $lines[] = '';
 
         if ($missingInWarehouse !== array()) {
@@ -640,29 +595,17 @@ class AccountingWarehouseController extends Controller
             $lines[] = '';
         }
 
-        if ($amountMismatches !== array()) {
-            $lines[] = '=== FAKTURY Z ROZNA KWOTA ===';
-            foreach ($amountMismatches as $row) {
+        if ($mixedDocuments !== array()) {
+            $lines[] = '=== FAKTURY MIESZANE (TOWAR + KOSZT W JEDNYM DOKUMENCIE) ===';
+            foreach ($mixedDocuments as $row) {
                 $lines[] = '- ' . $row['document_number'] . ' (' . $row['contractor'] . '):'
-                    . ' ksiegowa netto ' . number_format($row['net'], 2, ',', ' ') . ' / brutto ' . number_format($row['gross'], 2, ',', ' ')
-                    . ', magazyn netto ' . number_format($row['local_net'], 2, ',', ' ') . ' / brutto ' . number_format($row['local_gross'], 2, ',', ' ')
-                    . ' (roznica netto ' . number_format($row['net_diff'], 2, ',', ' ') . ', brutto ' . number_format($row['gross_diff'], 2, ',', ' ') . ')'
+                    . ' magazyn netto ' . number_format($row['local_net'], 2, ',', ' ') . ' / brutto ' . number_format($row['local_gross'], 2, ',', ' ')
                     . ' (dokument #' . $row['local_document_id'] . ').';
             }
             $lines[] = '';
         }
 
-        if ($missingInAccountant !== array()) {
-            $lines[] = '=== DOKUMENTY W MAGAZYNIE, KTORYCH NIE MA W PLIKACH KSIEGOWEJ ===';
-            foreach ($missingInAccountant as $row) {
-                $lines[] = '- ' . $row['document_number'] . ' (' . $row['supplier_name'] . '), klasyfikacja: ' . $row['classification']
-                    . ', netto ' . number_format((float) $row['total_net'], 2, ',', ' ') . ', brutto ' . number_format((float) $row['total_gross'], 2, ',', ' ')
-                    . ' (dokument #' . $row['id'] . ') - ksiegowa nie ma tego numeru w przeslanych plikach.';
-            }
-            $lines[] = '';
-        }
-
-        if ($missingInWarehouse === array() && $typeMismatches === array() && $amountMismatches === array() && $missingInAccountant === array()) {
+        if ($missingInWarehouse === array() && $typeMismatches === array() && $mixedDocuments === array()) {
             $lines[] = 'Wszystko sie zgadza - brak rozbieznosci.';
         }
 
