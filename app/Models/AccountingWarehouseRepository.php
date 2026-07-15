@@ -106,6 +106,26 @@ class AccountingWarehouseRepository
         $this->ensureDocumentsColumn('sale_date', 'ALTER TABLE ' . self::DOCUMENTS_TABLE . ' ADD COLUMN sale_date DATE DEFAULT NULL AFTER issue_date');
         $this->ensureItemsColumn('item_kind', 'ALTER TABLE ' . self::ITEMS_TABLE . ' ADD COLUMN item_kind VARCHAR(20) NOT NULL DEFAULT \'towar\' AFTER slug');
 
+        $invoiceTypeColumnAdded = $this->ensureDocumentsColumn(
+            'invoice_type',
+            'ALTER TABLE ' . self::DOCUMENTS_TABLE . ' ADD COLUMN invoice_type VARCHAR(20) DEFAULT NULL AFTER document_kind'
+        );
+        if ($invoiceTypeColumnAdded) {
+            $this->database->query(
+                'UPDATE ' . self::DOCUMENTS_TABLE . ' SET invoice_type = CASE document_kind'
+                . ' WHEN \'koszt\' THEN \'koszt\''
+                . ' WHEN \'adjustment\' THEN \'korekta\''
+                . ' WHEN \'issue\' THEN \'towar\''
+                . ' ELSE \'towar\' END'
+                . ' WHERE invoice_type IS NULL'
+            );
+        }
+
+        $this->ensureDocumentsColumn(
+            'affects_stock',
+            'ALTER TABLE ' . self::DOCUMENTS_TABLE . ' ADD COLUMN affects_stock TINYINT(1) NOT NULL DEFAULT 1 AFTER invoice_type'
+        );
+
         $this->database->query(
             "CREATE TABLE IF NOT EXISTS " . self::LINES_TABLE . " (\n"
             . "id INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
@@ -152,18 +172,22 @@ class AccountingWarehouseRepository
     {
         $documentsCount = (int) $this->database->fetchColumn('SELECT COUNT(*) FROM ' . self::DOCUMENTS_TABLE);
         $row = $this->database->fetch(
-            'SELECT COALESCE(SUM(line_net), 0) AS total_net,'
-            . ' COALESCE(SUM(line_gross), 0) AS total_gross,'
-            . ' COALESCE(SUM(quantity), 0) AS total_quantity'
-            . ' FROM ' . self::LINES_TABLE
+            'SELECT COALESCE(SUM(overview_lines.line_net), 0) AS total_net,'
+            . ' COALESCE(SUM(overview_lines.line_gross), 0) AS total_gross,'
+            . ' COALESCE(SUM(overview_lines.quantity), 0) AS total_quantity'
+            . ' FROM ' . self::LINES_TABLE . ' overview_lines'
+            . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' overview_docs ON overview_docs.id = overview_lines.document_id'
+            . ' WHERE overview_docs.affects_stock = 1'
         );
 
         $itemsOnStock = (int) $this->database->fetchColumn(
             'SELECT COUNT(*) FROM ('
-            . ' SELECT warehouse_item_id'
-            . ' FROM ' . self::LINES_TABLE
-            . ' GROUP BY warehouse_item_id'
-            . ' HAVING ROUND(SUM(quantity), 3) <> 0'
+            . ' SELECT stock_lines.warehouse_item_id'
+            . ' FROM ' . self::LINES_TABLE . ' stock_lines'
+            . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' stock_docs ON stock_docs.id = stock_lines.document_id'
+            . ' WHERE stock_docs.affects_stock = 1'
+            . ' GROUP BY stock_lines.warehouse_item_id'
+            . ' HAVING ROUND(SUM(stock_lines.quantity), 3) <> 0'
             . ' ) stock_items'
         );
 
@@ -186,8 +210,9 @@ class AccountingWarehouseRepository
             . ' COUNT(warehouse_lines.id) AS movements_count'
             . ' FROM ' . self::ITEMS_TABLE . ' items'
             . ' LEFT JOIN ' . self::LINES_TABLE . ' warehouse_lines ON warehouse_lines.warehouse_item_id = items.id'
+            . ' LEFT JOIN ' . self::DOCUMENTS_TABLE . ' warehouse_docs ON warehouse_docs.id = warehouse_lines.document_id AND warehouse_docs.affects_stock = 1'
             . ' GROUP BY items.id, items.name, items.item_kind, items.unit'
-            . ' HAVING ROUND(COALESCE(SUM(warehouse_lines.quantity), 0), 3) <> 0'
+            . ' HAVING ROUND(COALESCE(SUM(CASE WHEN warehouse_docs.id IS NOT NULL THEN warehouse_lines.quantity ELSE 0 END), 0), 3) <> 0'
             . ' ORDER BY items.name ASC'
         );
     }
@@ -202,7 +227,8 @@ class AccountingWarehouseRepository
             . ' COUNT(stock_lines.id) AS movements_count'
             . ' FROM ' . self::ITEMS_TABLE . ' items'
             . ' LEFT JOIN ' . self::LINES_TABLE . ' stock_lines ON stock_lines.warehouse_item_id = items.id'
-            . ' WHERE items.id = :id'
+            . ' LEFT JOIN ' . self::DOCUMENTS_TABLE . ' stock_docs ON stock_docs.id = stock_lines.document_id AND stock_docs.affects_stock = 1'
+            . ' WHERE items.id = :id AND (stock_lines.id IS NULL OR stock_docs.id IS NOT NULL)'
             . ' GROUP BY items.id, items.name, items.item_kind, items.unit, items.is_active'
             . ' LIMIT 1',
             array('id' => $itemId)
@@ -224,7 +250,7 @@ class AccountingWarehouseRepository
             . ' MAX(documents.sale_date) AS last_sale_date'
             . ' FROM ' . self::LINES_TABLE . ' detail_lines'
             . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' documents ON documents.id = detail_lines.document_id'
-            . ' WHERE detail_lines.warehouse_item_id = :item_id'
+            . ' WHERE detail_lines.warehouse_item_id = :item_id AND documents.affects_stock = 1'
             . ' GROUP BY COALESCE(NULLIF(detail_lines.original_name, \'\'), detail_lines.canonical_name), detail_lines.unit'
             . ' ORDER BY total_gross DESC, source_name ASC',
             array('item_id' => $itemId)
@@ -269,7 +295,7 @@ class AccountingWarehouseRepository
             . ' ORDER BY id ASC'
         );
         $documents = $this->database->fetchAll(
-            'SELECT id, source_type, document_kind, document_number, supplier_name, supplier_tax_id, issue_date, sale_date, receipt_date,'
+            'SELECT id, source_type, document_kind, invoice_type, document_number, supplier_name, supplier_tax_id, issue_date, sale_date, receipt_date,'
             . ' currency, total_net, total_gross, notes, xml_filename, xml_hash, xml_payload, created_by_user_id, created_at'
             . ' FROM ' . self::DOCUMENTS_TABLE
             . ' ORDER BY id ASC'
@@ -321,7 +347,7 @@ class AccountingWarehouseRepository
             'id', 'warehouse_item_id', 'source_name', 'normalized_source_name', 'created_at', 'updated_at',
         ));
         $documents = $this->normalizeBackupRows($tables[self::DOCUMENTS_TABLE] ?? array(), array(
-            'id', 'source_type', 'document_kind', 'document_number', 'supplier_name', 'supplier_tax_id', 'issue_date', 'sale_date', 'receipt_date',
+            'id', 'source_type', 'document_kind', 'invoice_type', 'document_number', 'supplier_name', 'supplier_tax_id', 'issue_date', 'sale_date', 'receipt_date',
             'currency', 'total_net', 'total_gross', 'notes', 'xml_filename', 'xml_hash', 'xml_payload', 'created_by_user_id', 'created_at',
         ));
         $lines = $this->normalizeBackupRows($tables[self::LINES_TABLE] ?? array(), array(
@@ -466,11 +492,49 @@ class AccountingWarehouseRepository
         });
     }
 
-    public function documentList(array $filters = array(), int $limit = 50): array
+    public function documentList(array $filters = array(), int $limit = 50, int $offset = 0): array
     {
-        $limit = max(1, min(200, $limit));
+        $limit = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        list($where, $params) = $this->buildDocumentListWhere($filters);
+
+        $sql = 'SELECT documents.*, COUNT(document_lines.id) AS lines_count'
+            . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
+            . ' LEFT JOIN ' . self::LINES_TABLE . ' document_lines ON document_lines.document_id = documents.id';
+
+        if ($where !== array()) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+
+        $sql .= ' GROUP BY documents.id'
+            . ' ORDER BY COALESCE(documents.sale_date, documents.issue_date, documents.created_at) DESC, documents.id DESC'
+            . ' LIMIT ' . $limit . ' OFFSET ' . $offset;
+
+        return $this->database->fetchAll($sql, $params);
+    }
+
+    public function documentCount(array $filters = array()): int
+    {
+        list($where, $params) = $this->buildDocumentListWhere($filters);
+
+        $sql = 'SELECT COUNT(*) FROM ' . self::DOCUMENTS_TABLE . ' documents';
+        if ($where !== array()) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+
+        return (int) $this->database->fetchColumn($sql, $params);
+    }
+
+    private function buildDocumentListWhere(array $filters): array
+    {
         $params = array();
         $where = array();
+
+        $documentNumber = trim((string) ($filters['document_number'] ?? ''));
+        if ($documentNumber !== '') {
+            $where[] = 'documents.document_number LIKE :document_number';
+            $params['document_number'] = '%' . $documentNumber . '%';
+        }
 
         $supplierName = trim((string) ($filters['supplier_name'] ?? ''));
         if ($supplierName !== '') {
@@ -484,19 +548,73 @@ class AccountingWarehouseRepository
             $params['supplier_tax_id'] = '%' . $supplierTaxId . '%';
         }
 
-        $sql = 'SELECT documents.*, COUNT(document_lines.id) AS lines_count'
-            . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
-            . ' LEFT JOIN ' . self::LINES_TABLE . ' document_lines ON document_lines.document_id = documents.id';
-
-        if ($where !== array()) {
-            $sql .= ' WHERE ' . implode(' AND ', $where);
+        $documentKind = trim((string) ($filters['document_kind'] ?? ''));
+        if ($documentKind !== '' && in_array($documentKind, array('receipt', 'koszt', 'adjustment', 'issue'), true)) {
+            $where[] = 'documents.document_kind = :document_kind';
+            $params['document_kind'] = $documentKind;
         }
 
-        $sql .= ' GROUP BY documents.id'
-            . ' ORDER BY COALESCE(documents.sale_date, documents.issue_date, documents.created_at) DESC, documents.id DESC'
-            . ' LIMIT ' . $limit;
+        $invoiceType = trim((string) ($filters['invoice_type'] ?? ''));
+        if ($invoiceType !== '' && in_array($invoiceType, array('towar', 'koszt', 'korekta'), true)) {
+            $where[] = 'documents.invoice_type = :invoice_type';
+            $params['invoice_type'] = $invoiceType;
+        }
 
-        return $this->database->fetchAll($sql, $params);
+        $sourceType = trim((string) ($filters['source_type'] ?? ''));
+        if ($sourceType !== '' && in_array($sourceType, array('manual', 'xml', 'legacy_sql'), true)) {
+            $where[] = 'documents.source_type = :source_type';
+            $params['source_type'] = $sourceType;
+        }
+
+        $currency = trim((string) ($filters['currency'] ?? ''));
+        if ($currency !== '') {
+            $where[] = 'documents.currency = :currency';
+            $params['currency'] = $currency;
+        }
+
+        $notes = trim((string) ($filters['notes'] ?? ''));
+        if ($notes !== '') {
+            $where[] = 'documents.notes LIKE :notes';
+            $params['notes'] = '%' . $notes . '%';
+        }
+
+        $dateFrom = $this->nullableDate($filters['date_from'] ?? null);
+        if ($dateFrom !== null) {
+            $where[] = 'COALESCE(documents.sale_date, documents.issue_date) >= :date_from';
+            $params['date_from'] = $dateFrom;
+        }
+
+        $dateTo = $this->nullableDate($filters['date_to'] ?? null);
+        if ($dateTo !== null) {
+            $where[] = 'COALESCE(documents.sale_date, documents.issue_date) <= :date_to';
+            $params['date_to'] = $dateTo;
+        }
+
+        $addedFrom = $this->nullableDate($filters['added_from'] ?? null);
+        if ($addedFrom !== null) {
+            $where[] = 'DATE(documents.created_at) >= :added_from';
+            $params['added_from'] = $addedFrom;
+        }
+
+        $addedTo = $this->nullableDate($filters['added_to'] ?? null);
+        if ($addedTo !== null) {
+            $where[] = 'DATE(documents.created_at) <= :added_to';
+            $params['added_to'] = $addedTo;
+        }
+
+        $amountMin = trim((string) ($filters['amount_min'] ?? ''));
+        if ($amountMin !== '') {
+            $where[] = 'documents.total_gross >= :amount_min';
+            $params['amount_min'] = $this->toDecimal($amountMin);
+        }
+
+        $amountMax = trim((string) ($filters['amount_max'] ?? ''));
+        if ($amountMax !== '') {
+            $where[] = 'documents.total_gross <= :amount_max';
+            $params['amount_max'] = $this->toDecimal($amountMax);
+        }
+
+        return array($where, $params);
     }
 
     public function recentMovements(int $limit = 100): array
@@ -538,12 +656,13 @@ class AccountingWarehouseRepository
             . ' SUM(document_lines.line_net) AS line_net,'
             . ' SUM(document_lines.line_gross) AS line_gross,'
             . ' document_lines.vat_rate,'
-            . ' items.name AS item_name'
+            . ' items.name AS item_name,'
+            . ' items.item_kind'
             . ' FROM ' . self::LINES_TABLE . ' document_lines'
             . ' INNER JOIN ' . self::ITEMS_TABLE . ' items ON items.id = document_lines.warehouse_item_id'
             . ' WHERE document_lines.document_id = :document_id'
             . ' GROUP BY document_lines.document_id, document_lines.warehouse_item_id, document_lines.original_name, document_lines.canonical_name,'
-            . ' document_lines.unit, document_lines.unit_net, document_lines.unit_gross, document_lines.vat_rate, items.name'
+            . ' document_lines.unit, document_lines.unit_net, document_lines.unit_gross, document_lines.vat_rate, items.name, items.item_kind'
             . ' ORDER BY MIN(document_lines.id) ASC',
             array('document_id' => $documentId)
         );
@@ -577,9 +696,12 @@ class AccountingWarehouseRepository
             throw new RuntimeException('Edycja dokumentow wyjscia z magazynu nie jest jeszcze dostepna.');
         }
 
+        $affectsStock = (bool) ((int) ($document['affects_stock'] ?? 1));
+
         list($preparedLines, $totalNet, $totalGross) = $this->prepareInboundLines(
             $lines,
-            trim((string) ($header['document_kind'] ?? ($document['document_kind'] ?? 'receipt'))) ?: 'receipt'
+            trim((string) ($header['document_kind'] ?? ($document['document_kind'] ?? 'receipt'))) ?: 'receipt',
+            $affectsStock
         );
 
         if ($preparedLines === array()) {
@@ -587,9 +709,11 @@ class AccountingWarehouseRepository
         }
 
         $this->database->transaction(function (Database $database) use ($documentId, $header, $preparedLines, $totalNet, $totalGross): void {
+            $documentKindValue = trim((string) ($header['document_kind'] ?? 'receipt')) ?: 'receipt';
             $database->update(self::DOCUMENTS_TABLE, array(
                 'source_type' => trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual',
-                'document_kind' => trim((string) ($header['document_kind'] ?? 'receipt')) ?: 'receipt',
+                'document_kind' => $documentKindValue,
+                'invoice_type' => $this->invoiceTypeForDocumentKind($documentKindValue),
                 'document_number' => $this->nullableString($header['document_number'] ?? null),
                 'supplier_name' => $this->nullableString($header['supplier_name'] ?? null),
                 'supplier_tax_id' => $this->nullableString($header['supplier_tax_id'] ?? null),
@@ -888,6 +1012,62 @@ class AccountingWarehouseRepository
         );
     }
 
+    public function matchDocumentsByNumbers(array $numbers): array
+    {
+        $seen = array();
+        $queries = array();
+        foreach ($numbers as $number) {
+            $trimmed = trim((string) $number);
+            if ($trimmed === '' || isset($seen[$trimmed])) {
+                continue;
+            }
+            $seen[$trimmed] = true;
+            $queries[] = $trimmed;
+        }
+
+        if ($queries === array()) {
+            return array();
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($queries as $index => $number) {
+            $placeholder = ':number_' . $index;
+            $placeholders[] = $placeholder;
+            $params['number_' . $index] = mb_strtolower((string) $number);
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT id, document_number, supplier_name, supplier_tax_id, issue_date, sale_date, currency, document_kind, invoice_type'
+            . ' FROM ' . self::DOCUMENTS_TABLE
+            . ' WHERE LOWER(TRIM(document_number)) IN (' . implode(', ', $placeholders) . ')'
+            . ' ORDER BY id ASC',
+            $params
+        );
+
+        $documentsByNumber = array();
+        foreach ($rows as $row) {
+            $key = mb_strtolower(trim((string) ($row['document_number'] ?? '')));
+            if ($key === '') {
+                continue;
+            }
+            $documentsByNumber[$key][] = $row;
+        }
+
+        $results = array();
+        foreach ($queries as $number) {
+            $key = mb_strtolower($number);
+            $matches = $documentsByNumber[$key] ?? array();
+            $results[] = array(
+                'query' => $number,
+                'found' => $matches !== array(),
+                'documents' => $matches,
+            );
+        }
+
+        return $results;
+    }
+
     public function saveDocument(array $header, array $lines, int $userId): int
     {
         if ($lines === array()) {
@@ -908,19 +1088,25 @@ class AccountingWarehouseRepository
             return $this->saveIssueDocument($header, $lines, $userId);
         }
 
+        $affectsStock = $this->resolveAffectsStock($header);
+
         list($preparedLines, $totalNet, $totalGross) = $this->prepareInboundLines(
             $lines,
-            $documentKind
+            $documentKind,
+            $affectsStock
         );
 
         if ($preparedLines === array()) {
             throw new RuntimeException('Nie znaleziono poprawnych pozycji do zapisania.');
         }
 
-        return (int) $this->database->transaction(function (Database $database) use ($header, $preparedLines, $userId, $totalNet, $totalGross): int {
+        return (int) $this->database->transaction(function (Database $database) use ($header, $preparedLines, $userId, $totalNet, $totalGross, $affectsStock): int {
+            $documentKindValue = trim((string) ($header['document_kind'] ?? 'receipt')) ?: 'receipt';
             $documentId = (int) $database->insert(self::DOCUMENTS_TABLE, array(
                 'source_type' => trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual',
-                'document_kind' => trim((string) ($header['document_kind'] ?? 'receipt')) ?: 'receipt',
+                'affects_stock' => $affectsStock ? 1 : 0,
+                'document_kind' => $documentKindValue,
+                'invoice_type' => $this->invoiceTypeForDocumentKind($documentKindValue),
                 'document_number' => $this->nullableString($header['document_number'] ?? null),
                 'supplier_name' => $this->nullableString($header['supplier_name'] ?? null),
                 'supplier_tax_id' => $this->nullableString($header['supplier_tax_id'] ?? null),
@@ -1153,7 +1339,116 @@ class AccountingWarehouseRepository
         return array_values($grouped);
     }
 
-    private function prepareInboundLines(array $lines, string $documentKind = 'receipt'): array
+    public function documentsForExport(string $dateFrom, string $dateTo): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT documents.id AS document_id, documents.document_kind, documents.document_number, documents.supplier_name, documents.supplier_tax_id,'
+            . ' documents.issue_date, documents.sale_date, documents.currency, documents.notes,'
+            . ' export_lines.id AS line_id, export_lines.original_name, export_lines.canonical_name, export_lines.quantity, export_lines.unit,'
+            . ' export_lines.unit_net, export_lines.unit_gross, export_lines.line_net, export_lines.line_gross,'
+            . ' items.item_kind'
+            . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
+            . ' LEFT JOIN ' . self::LINES_TABLE . ' export_lines ON export_lines.document_id = documents.id'
+            . ' LEFT JOIN ' . self::ITEMS_TABLE . ' items ON items.id = export_lines.warehouse_item_id'
+            . ' WHERE documents.document_kind IN (\'receipt\', \'koszt\', \'adjustment\')'
+            . ' AND COALESCE(documents.sale_date, documents.issue_date) BETWEEN :date_from AND :date_to'
+            . ' ORDER BY COALESCE(documents.sale_date, documents.issue_date) ASC, documents.id ASC, export_lines.id ASC',
+            array(
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            )
+        );
+
+        $documents = array();
+        foreach ($rows as $row) {
+            $documentId = (int) ($row['document_id'] ?? 0);
+            if (!isset($documents[$documentId])) {
+                $documents[$documentId] = array(
+                    'id' => $documentId,
+                    'document_kind' => trim((string) ($row['document_kind'] ?? 'receipt')) ?: 'receipt',
+                    'document_number' => (string) ($row['document_number'] ?? ''),
+                    'supplier_name' => (string) ($row['supplier_name'] ?? ''),
+                    'supplier_tax_id' => (string) ($row['supplier_tax_id'] ?? ''),
+                    'issue_date' => (string) ($row['issue_date'] ?? ''),
+                    'sale_date' => (string) ($row['sale_date'] ?? ''),
+                    'currency' => (string) ($row['currency'] ?? 'PLN'),
+                    'notes' => (string) ($row['notes'] ?? ''),
+                    'lines' => array(),
+                );
+            }
+
+            if ($row['line_id'] === null) {
+                // Dokument bez pozycji lub z pozycja wskazujaca na usuniety wpis w katalogu -
+                // nie pomijamy calego dokumentu w eksporcie z powodu brakujacego JOIN-a.
+                continue;
+            }
+
+            $documents[$documentId]['lines'][] = array(
+                'original_name' => (string) ($row['original_name'] ?? ''),
+                'canonical_name' => (string) ($row['canonical_name'] ?? ''),
+                'item_kind' => $this->normalizeItemKind((string) ($row['item_kind'] ?? 'towar')),
+                'quantity' => (float) ($row['quantity'] ?? 0),
+                'unit' => (string) ($row['unit'] ?? 'szt.'),
+                'unit_net' => (float) ($row['unit_net'] ?? 0),
+                'unit_gross' => (float) ($row['unit_gross'] ?? 0),
+                'line_net' => (float) ($row['line_net'] ?? 0),
+                'line_gross' => (float) ($row['line_gross'] ?? 0),
+            );
+        }
+
+        foreach ($documents as $documentId => $document) {
+            $documents[$documentId]['classification'] = $this->classifyDocument($document);
+        }
+
+        return array_values($documents);
+    }
+
+    private function classifyDocument(array $document): string
+    {
+        $documentKind = trim((string) ($document['document_kind'] ?? 'receipt')) ?: 'receipt';
+
+        if ($documentKind === 'adjustment') {
+            return 'korekta';
+        }
+
+        // document_kind = 'koszt' to recznie/automatycznie oznaczona cala faktura kosztowa -
+        // w praktyce jedyny wiarygodny sygnal, bo pozycje rzadko sa tagowane pojedynczo.
+        if ($documentKind === 'koszt') {
+            return 'koszt';
+        }
+
+        return $this->classifyDocumentLines((array) ($document['lines'] ?? array()));
+    }
+
+    private function classifyDocumentLines(array $lines): string
+    {
+        $totalLineCount = count($lines);
+        if ($totalLineCount === 0) {
+            return 'towar';
+        }
+
+        $kosztLineCount = 0;
+        foreach ($lines as $line) {
+            if ($this->normalizeItemKind((string) ($line['item_kind'] ?? 'towar')) === 'koszt') {
+                $kosztLineCount++;
+            }
+        }
+
+        // Faktura, w ktorej kazda pozycja jest typu koszt (np. sama wysylka) - traktujemy jako FV koszt,
+        // nawet jesli nikt recznie nie oznaczyl calego dokumentu jako 'koszt'.
+        if ($kosztLineCount === $totalLineCount) {
+            return 'koszt';
+        }
+
+        // Mieszana: faktura typu towar, ktora ma co najmniej dwie pozycje typu koszt.
+        if ($kosztLineCount >= 2) {
+            return 'mieszane';
+        }
+
+        return 'towar';
+    }
+
+    private function prepareInboundLines(array $lines, string $documentKind = 'receipt', bool $affectsStock = true): array
     {
         $preparedLines = array();
         $totalNet = 0.0;
@@ -1167,7 +1462,7 @@ class AccountingWarehouseRepository
             }
 
             $quantity = $this->toDecimal($line['quantity'] ?? 0);
-            if ($quantity == 0.0) {
+            if ($quantity == 0.0 && $affectsStock) {
                 continue;
             }
 
@@ -1211,7 +1506,7 @@ class AccountingWarehouseRepository
                 $runningStockByItem[$itemId] = $this->currentStockQuantityForItem($itemId);
             }
 
-            if ($documentKind === 'adjustment' && $quantity < 0) {
+            if ($affectsStock && $documentKind === 'adjustment' && $quantity < 0) {
                 $projectedQuantity = $runningStockByItem[$itemId] + $quantity;
                 if ($projectedQuantity < -0.0001) {
                     throw new RuntimeException(
@@ -1354,9 +1649,10 @@ class AccountingWarehouseRepository
     private function currentStockQuantityForItem(int $itemId): float
     {
         $row = $this->database->fetch(
-            'SELECT ROUND(COALESCE(SUM(quantity), 0), 3) AS quantity'
-            . ' FROM ' . self::LINES_TABLE
-            . ' WHERE warehouse_item_id = :item_id',
+            'SELECT ROUND(COALESCE(SUM(stock_lines.quantity), 0), 3) AS quantity'
+            . ' FROM ' . self::LINES_TABLE . ' stock_lines'
+            . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' stock_docs ON stock_docs.id = stock_lines.document_id'
+            . ' WHERE stock_lines.warehouse_item_id = :item_id AND stock_docs.affects_stock = 1',
             array('item_id' => $itemId)
         );
 
@@ -1382,10 +1678,12 @@ class AccountingWarehouseRepository
         }
 
         $rows = $this->database->fetchAll(
-            'SELECT warehouse_item_id, ROUND(COALESCE(SUM(quantity), 0), 3) AS quantity'
-            . ' FROM ' . self::LINES_TABLE
-            . ' WHERE warehouse_item_id IN (' . implode(', ', $placeholders) . ')'
-            . ' GROUP BY warehouse_item_id',
+            'SELECT stock_lines.warehouse_item_id, ROUND(COALESCE(SUM(stock_lines.quantity), 0), 3) AS quantity'
+            . ' FROM ' . self::LINES_TABLE . ' stock_lines'
+            . ' INNER JOIN ' . self::DOCUMENTS_TABLE . ' stock_docs ON stock_docs.id = stock_lines.document_id'
+            . ' WHERE stock_lines.warehouse_item_id IN (' . implode(', ', $placeholders) . ')'
+            . ' AND stock_docs.affects_stock = 1'
+            . ' GROUP BY stock_lines.warehouse_item_id',
             $params
         );
 
@@ -1464,6 +1762,7 @@ class AccountingWarehouseRepository
             . '   GROUP BY related_line_id'
             . ' ) used_lines ON used_lines.related_line_id = source_lines.id'
             . ' WHERE source_lines.quantity > 0'
+            . ' AND source_docs.affects_stock = 1'
             . ' AND LOWER(TRIM(items.item_kind)) = :item_kind'
             . ' AND COALESCE(used_lines.issue_units, 0) = 0'
             . ' ORDER BY COALESCE(source_docs.sale_date, source_docs.issue_date, source_docs.created_at) ASC, source_lines.id ASC',
@@ -1632,6 +1931,7 @@ class AccountingWarehouseRepository
             $documentId = (int) $database->insert(self::DOCUMENTS_TABLE, array(
                 'source_type' => trim((string) ($header['source_type'] ?? 'manual')) ?: 'manual',
                 'document_kind' => 'issue',
+                'invoice_type' => $this->invoiceTypeForDocumentKind('issue'),
                 'document_number' => $this->nullableString($header['document_number'] ?? null),
                 'supplier_name' => $this->nullableString($header['supplier_name'] ?? 'Wyjscie z magazynu'),
                 'supplier_tax_id' => $this->nullableString($header['supplier_tax_id'] ?? null),
@@ -1862,6 +2162,32 @@ class AccountingWarehouseRepository
         return $itemKind;
     }
 
+    private function invoiceTypeForDocumentKind(string $documentKind): string
+    {
+        switch (trim($documentKind)) {
+            case 'koszt':
+                return 'koszt';
+            case 'adjustment':
+                return 'korekta';
+            default:
+                return 'towar';
+        }
+    }
+
+    private function resolveAffectsStock(array $header): bool
+    {
+        if (!array_key_exists('affects_stock', $header)) {
+            return true;
+        }
+
+        $value = $header['affects_stock'];
+        if (is_string($value)) {
+            return !in_array(strtolower(trim($value)), array('0', 'false', ''), true);
+        }
+
+        return (bool) $value;
+    }
+
     private function rememberAlias(string $sourceName, int $itemId): void
     {
         $normalized = $this->classifier->normalize($sourceName);
@@ -1981,7 +2307,28 @@ class AccountingWarehouseRepository
         });
     }
 
-    private function ensureDocumentsColumn(string $columnName, string $ddl): void
+    public function deleteDocuments(array $documentIds): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $documentIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($ids === array()) {
+            return 0;
+        }
+
+        return (int) $this->database->transaction(function (Database $database) use ($ids): int {
+            $deleted = 0;
+            foreach ($ids as $documentId) {
+                $database->delete(self::LINES_TABLE, 'document_id = :document_id', array('document_id' => $documentId));
+                $deleted += $database->delete(self::DOCUMENTS_TABLE, 'id = :id', array('id' => $documentId));
+            }
+
+            return $deleted;
+        });
+    }
+
+    private function ensureDocumentsColumn(string $columnName, string $ddl): bool
     {
         $exists = (int) $this->database->fetchColumn(
             'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
@@ -1990,7 +2337,10 @@ class AccountingWarehouseRepository
 
         if ($exists <= 0) {
             $this->database->query($ddl);
+            return true;
         }
+
+        return false;
     }
 
     private function ensureItemsColumn(string $columnName, string $ddl): void

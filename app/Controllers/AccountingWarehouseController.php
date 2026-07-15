@@ -81,9 +81,36 @@ class AccountingWarehouseController extends Controller
     {
         $currentUser = $this->requireModule('accountingwarehouse');
         $filters = array(
+            'document_number' => trim((string) $this->input('document_number', '')),
             'supplier_name' => trim((string) $this->input('supplier_name', '')),
             'supplier_tax_id' => trim((string) $this->input('supplier_tax_id', '')),
+            'document_kind' => trim((string) $this->input('document_kind', '')),
+            'invoice_type' => trim((string) $this->input('invoice_type', '')),
+            'source_type' => trim((string) $this->input('source_type', '')),
+            'currency' => trim((string) $this->input('currency', '')),
+            'notes' => trim((string) $this->input('notes', '')),
+            'date_from' => trim((string) $this->input('date_from', '')),
+            'date_to' => trim((string) $this->input('date_to', '')),
+            'added_from' => trim((string) $this->input('added_from', '')),
+            'added_to' => trim((string) $this->input('added_to', '')),
+            'amount_min' => trim((string) $this->input('amount_min', '')),
+            'amount_max' => trim((string) $this->input('amount_max', '')),
         );
+
+        $allowedPerPage = array(10, 50, 100, 500);
+        $perPage = (int) $this->input('per_page', 50);
+        if (!in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 50;
+        }
+        $page = max(1, (int) $this->input('page', 1));
+        $totalDocuments = $this->warehouse->documentCount($filters);
+        $totalPages = max(1, (int) ceil($totalDocuments / $perPage));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $perPage;
+
+        $filterQuery = http_build_query(array_filter($filters, static function (string $value): bool {
+            return $value !== '';
+        }));
 
         $this->render('accounting_warehouse/documents', array(
             'pageTitle' => 'Dokumenty magazynu ksiegowego',
@@ -93,9 +120,92 @@ class AccountingWarehouseController extends Controller
             'currentUser' => $currentUser,
             'flashSuccess' => $this->getFlash('success'),
             'flashError' => $this->getFlash('error'),
-            'documents' => $this->warehouse->documentList($filters, 200),
+            'documents' => $this->warehouse->documentList($filters, $perPage, $offset),
             'filters' => $filters,
+            'currencyOptions' => $this->currencyOptions(),
+            'page' => $page,
+            'perPage' => $perPage,
+            'allowedPerPage' => $allowedPerPage,
+            'totalPages' => $totalPages,
+            'totalDocuments' => $totalDocuments,
+            'filterQuery' => $filterQuery,
         ));
+    }
+
+    public function bulkdelete(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=documents');
+        }
+
+        $ids = array_map('intval', (array) $this->input('document_ids', array()));
+        $queryString = trim((string) $this->input('return_query', ''));
+        $redirectUrl = './index.php?controller=accountingwarehouse&action=documents' . ($queryString !== '' ? '&' . $queryString : '');
+
+        try {
+            $deleted = $this->warehouse->deleteDocuments($ids);
+            if ($deleted > 0) {
+                $this->setFlash('success', 'Usunieto dokumentow: ' . $deleted . '.');
+            } else {
+                $this->setFlash('error', 'Nie zaznaczono zadnych dokumentow do usuniecia.');
+            }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect($redirectUrl);
+    }
+
+    public function checknumbers(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        $rawList = trim((string) $this->input('numbers', ''));
+
+        $results = array();
+        $foundCount = 0;
+        $missingCount = 0;
+        if ($rawList !== '') {
+            $numbers = $this->splitPastedNumberList($rawList);
+            $results = $this->warehouse->matchDocumentsByNumbers($numbers);
+            foreach ($results as $result) {
+                if (!empty($result['found'])) {
+                    $foundCount++;
+                } else {
+                    $missingCount++;
+                }
+            }
+        }
+
+        $this->render('accounting_warehouse/checknumbers', array(
+            'pageTitle' => 'Sprawdz numery FV',
+            'contentTitle' => 'Sprawdz numery FV',
+            'pageDescription' => 'Wklej liste numerow faktur (jeden pod drugim), aby sprawdzic ktore z nich sa juz w magazynie ksiegowym.',
+            'breadcrumbCurrent' => 'Sprawdz numery FV',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'rawList' => $rawList,
+            'results' => $results,
+            'foundCount' => $foundCount,
+            'missingCount' => $missingCount,
+        ));
+    }
+
+    private function splitPastedNumberList(string $rawList): array
+    {
+        $pieces = preg_split('/[\r\n]+/', $rawList) ?: array();
+        $numbers = array();
+        foreach ($pieces as $piece) {
+            $piece = trim($piece);
+            if ($piece === '') {
+                continue;
+            }
+            $numbers[] = $piece;
+        }
+
+        return $numbers;
     }
 
     public function issues(): void
@@ -165,6 +275,266 @@ class AccountingWarehouseController extends Controller
             $this->setFlash('error', 'Nie udalo sie przygotowac eksportu XLSX: ' . $exception->getMessage());
             $this->redirect('./index.php?controller=accountingwarehouse&action=issues&month=' . rawurlencode($month));
         }
+    }
+
+    public function export(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $documents = $this->warehouse->documentsForExport($dateFrom, $dateTo);
+        $counts = array('koszt' => 0, 'towar' => 0, 'mieszane' => 0, 'korekta' => 0);
+        $lineKindCounts = array('towar' => 0, 'koszt' => 0, 'korekta' => 0);
+        $documentKindCounts = array();
+        $costLineCountBreakdown = array();
+        $itemsWithCostLines = array();
+        foreach ($documents as $document) {
+            $classification = (string) ($document['classification'] ?? 'mieszane');
+            if (isset($counts[$classification])) {
+                $counts[$classification]++;
+            }
+
+            $documentKind = trim((string) ($document['document_kind'] ?? 'receipt')) ?: 'receipt';
+            $documentKindCounts[$documentKind] = ($documentKindCounts[$documentKind] ?? 0) + 1;
+
+            $kosztLinesInDocument = 0;
+            foreach ((array) ($document['lines'] ?? array()) as $line) {
+                $kind = (string) ($line['item_kind'] ?? 'towar');
+                if (isset($lineKindCounts[$kind])) {
+                    $lineKindCounts[$kind]++;
+                }
+                if ($kind === 'koszt') {
+                    $kosztLinesInDocument++;
+                    $name = (string) ($line['canonical_name'] ?? '');
+                    if ($name !== '') {
+                        $itemsWithCostLines[$name] = ($itemsWithCostLines[$name] ?? 0) + 1;
+                    }
+                }
+            }
+            $costLineCountBreakdown[$kosztLinesInDocument] = ($costLineCountBreakdown[$kosztLinesInDocument] ?? 0) + 1;
+        }
+        ksort($costLineCountBreakdown);
+        arsort($itemsWithCostLines);
+
+        $this->render('accounting_warehouse/export', array(
+            'pageTitle' => 'Eksport XLSX',
+            'contentTitle' => 'Eksport kosztow i towaru',
+            'pageDescription' => 'Eksport faktur z magazynu ksiegowego do plikow XLSX z podzialem na koszty, towar i pozycje mieszane.',
+            'breadcrumbCurrent' => 'Eksport XLSX',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'counts' => $counts,
+            'totalDocuments' => count($documents),
+            'lineKindCounts' => $lineKindCounts,
+            'documentKindCounts' => $documentKindCounts,
+            'costLineCountBreakdown' => $costLineCountBreakdown,
+            'itemsWithCostLines' => array_slice($itemsWithCostLines, 0, 15, true),
+        ));
+    }
+
+    public function exportcostsxlsx(): void
+    {
+        $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $documents = array_values(array_filter(
+            $this->warehouse->documentsForExport($dateFrom, $dateTo),
+            static function (array $document): bool {
+                return ((string) ($document['classification'] ?? '')) === 'koszt';
+            }
+        ));
+
+        $sheetRows = array();
+        $sheetRows[] = array('Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycje', 'Netto', 'Brutto', 'Waluta');
+        $totalNet = 0.0;
+        $totalGross = 0.0;
+        foreach ($documents as $document) {
+            $lineNames = array();
+            $documentNet = 0.0;
+            $documentGross = 0.0;
+            foreach ((array) ($document['lines'] ?? array()) as $line) {
+                $lineNames[] = (string) ($line['canonical_name'] ?? '');
+                $documentNet += (float) ($line['line_net'] ?? 0);
+                $documentGross += (float) ($line['line_gross'] ?? 0);
+            }
+
+            $sheetRows[] = array(
+                (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? '')),
+                (string) ($document['document_number'] ?? ''),
+                (string) ($document['supplier_name'] ?? ''),
+                (string) ($document['supplier_tax_id'] ?? ''),
+                implode(', ', array_unique($lineNames)),
+                round($documentNet, 2),
+                round($documentGross, 2),
+                (string) ($document['currency'] ?? 'PLN'),
+            );
+
+            $totalNet += $documentNet;
+            $totalGross += $documentGross;
+        }
+        $sheetRows[] = array('', '', '', '', 'SUMA', round($totalNet, 2), round($totalGross, 2), '');
+
+        $this->respondWithXlsx('Koszty', $sheetRows, 'accounting_warehouse_koszty', $dateFrom, $dateTo);
+    }
+
+    public function exportgoodsxlsx(): void
+    {
+        $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $documents = array_values(array_filter(
+            $this->warehouse->documentsForExport($dateFrom, $dateTo),
+            static function (array $document): bool {
+                return ((string) ($document['classification'] ?? '')) === 'towar';
+            }
+        ));
+
+        $sheetRows = array();
+        $sheetRows[] = array(
+            'Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycja kosztowa',
+            'Towar netto', 'Towar brutto', 'Koszt netto', 'Koszt brutto',
+            'Razem netto', 'Razem brutto', 'Waluta',
+        );
+        $totals = array('goods_net' => 0.0, 'goods_gross' => 0.0, 'cost_net' => 0.0, 'cost_gross' => 0.0, 'net' => 0.0, 'gross' => 0.0);
+        foreach ($documents as $document) {
+            $goodsNet = 0.0;
+            $goodsGross = 0.0;
+            $costNet = 0.0;
+            $costGross = 0.0;
+            $costName = '';
+            foreach ((array) ($document['lines'] ?? array()) as $line) {
+                if (((string) ($line['item_kind'] ?? '')) === 'koszt') {
+                    $costNet += (float) ($line['line_net'] ?? 0);
+                    $costGross += (float) ($line['line_gross'] ?? 0);
+                    $costName = (string) ($line['canonical_name'] ?? '');
+                    continue;
+                }
+
+                $goodsNet += (float) ($line['line_net'] ?? 0);
+                $goodsGross += (float) ($line['line_gross'] ?? 0);
+            }
+
+            $sheetRows[] = array(
+                (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? '')),
+                (string) ($document['document_number'] ?? ''),
+                (string) ($document['supplier_name'] ?? ''),
+                (string) ($document['supplier_tax_id'] ?? ''),
+                $costName,
+                round($goodsNet, 2),
+                round($goodsGross, 2),
+                round($costNet, 2),
+                round($costGross, 2),
+                round($goodsNet + $costNet, 2),
+                round($goodsGross + $costGross, 2),
+                (string) ($document['currency'] ?? 'PLN'),
+            );
+
+            $totals['goods_net'] += $goodsNet;
+            $totals['goods_gross'] += $goodsGross;
+            $totals['cost_net'] += $costNet;
+            $totals['cost_gross'] += $costGross;
+            $totals['net'] += $goodsNet + $costNet;
+            $totals['gross'] += $goodsGross + $costGross;
+        }
+        $sheetRows[] = array(
+            '', '', '', '', 'SUMA',
+            round($totals['goods_net'], 2), round($totals['goods_gross'], 2),
+            round($totals['cost_net'], 2), round($totals['cost_gross'], 2),
+            round($totals['net'], 2), round($totals['gross'], 2), '',
+        );
+
+        $this->respondWithXlsx('Towar', $sheetRows, 'accounting_warehouse_towar', $dateFrom, $dateTo);
+    }
+
+    public function exportmixedxlsx(): void
+    {
+        $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $documents = array_values(array_filter(
+            $this->warehouse->documentsForExport($dateFrom, $dateTo),
+            static function (array $document): bool {
+                return ((string) ($document['classification'] ?? '')) === 'mieszane';
+            }
+        ));
+
+        $sheetRows = array();
+        $sheetRows[] = array('Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycja ksiegowa', 'Rodzaj', 'Ilosc', 'Netto', 'Brutto', 'Waluta');
+        $totalNet = 0.0;
+        $totalGross = 0.0;
+        foreach ($documents as $document) {
+            $date = (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? ''));
+            foreach ((array) ($document['lines'] ?? array()) as $line) {
+                $lineNet = (float) ($line['line_net'] ?? 0);
+                $lineGross = (float) ($line['line_gross'] ?? 0);
+                $sheetRows[] = array(
+                    $date,
+                    (string) ($document['document_number'] ?? ''),
+                    (string) ($document['supplier_name'] ?? ''),
+                    (string) ($document['supplier_tax_id'] ?? ''),
+                    (string) ($line['canonical_name'] ?? ''),
+                    ((string) ($line['item_kind'] ?? '')) === 'koszt' ? 'koszt' : 'towar',
+                    round((float) ($line['quantity'] ?? 0), 3),
+                    round($lineNet, 2),
+                    round($lineGross, 2),
+                    (string) ($document['currency'] ?? 'PLN'),
+                );
+
+                $totalNet += $lineNet;
+                $totalGross += $lineGross;
+            }
+        }
+        $sheetRows[] = array('', '', '', '', '', 'SUMA', '', round($totalNet, 2), round($totalGross, 2), '');
+
+        $this->respondWithXlsx('Mieszane', $sheetRows, 'accounting_warehouse_mieszane', $dateFrom, $dateTo);
+    }
+
+    public function exportadjustmentsxlsx(): void
+    {
+        $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $documents = array_values(array_filter(
+            $this->warehouse->documentsForExport($dateFrom, $dateTo),
+            static function (array $document): bool {
+                return ((string) ($document['classification'] ?? '')) === 'korekta';
+            }
+        ));
+
+        $sheetRows = array();
+        $sheetRows[] = array('Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycje', 'Netto', 'Brutto', 'Waluta');
+        $totalNet = 0.0;
+        $totalGross = 0.0;
+        foreach ($documents as $document) {
+            $lineNames = array();
+            $documentNet = 0.0;
+            $documentGross = 0.0;
+            foreach ((array) ($document['lines'] ?? array()) as $line) {
+                $lineNames[] = (string) ($line['canonical_name'] ?? '');
+                $documentNet += (float) ($line['line_net'] ?? 0);
+                $documentGross += (float) ($line['line_gross'] ?? 0);
+            }
+
+            $sheetRows[] = array(
+                (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? '')),
+                (string) ($document['document_number'] ?? ''),
+                (string) ($document['supplier_name'] ?? ''),
+                (string) ($document['supplier_tax_id'] ?? ''),
+                implode(', ', array_unique($lineNames)),
+                round($documentNet, 2),
+                round($documentGross, 2),
+                (string) ($document['currency'] ?? 'PLN'),
+            );
+
+            $totalNet += $documentNet;
+            $totalGross += $documentGross;
+        }
+        $sheetRows[] = array('', '', '', '', 'SUMA', round($totalNet, 2), round($totalGross, 2), '');
+
+        $this->respondWithXlsx('Korekty', $sheetRows, 'accounting_warehouse_korekty', $dateFrom, $dateTo);
     }
 
     public function issuecreate(): void
@@ -432,7 +802,7 @@ class AccountingWarehouseController extends Controller
             }
 
             $savedIds = array();
-            $skippedAdjustments = 0;
+            $savedAdjustments = 0;
             $skippedDuplicates = 0;
             $skippedMarked = 0;
             foreach ($documents as $documentData) {
@@ -445,10 +815,6 @@ class AccountingWarehouseController extends Controller
                 $documentKind = trim((string) ($documentData['document_kind'] ?? 'receipt')) ?: 'receipt';
                 if ($this->looksLikeCorrectionDocument($documentData)) {
                     $documentKind = 'adjustment';
-                }
-                if ($documentKind === 'adjustment') {
-                    $skippedAdjustments++;
-                    continue;
                 }
 
                 $xmlPayload = base64_decode((string) ($documentData['xml_payload_base64'] ?? ''), true);
@@ -466,6 +832,7 @@ class AccountingWarehouseController extends Controller
                     'notes' => (string) ($documentData['notes'] ?? ''),
                     'source_type' => 'xml',
                     'document_kind' => $documentKind,
+                    'affects_stock' => $documentKind === 'adjustment' ? 0 : 1,
                     'xml_filename' => (string) ($documentData['xml_filename'] ?? 'faktura.xml'),
                     'xml_hash' => (string) ($documentData['xml_hash'] ?? hash('sha256', $xmlPayload)),
                     'xml_payload' => $xmlPayload,
@@ -479,15 +846,15 @@ class AccountingWarehouseController extends Controller
                 }
 
                 $savedIds[] = $this->warehouse->saveDocument($header, (array) ($documentData['lines'] ?? array()), (int) ($currentUser['id'] ?? 0));
+                if ($documentKind === 'adjustment') {
+                    $savedAdjustments++;
+                }
             }
 
             if ($savedIds === array()) {
                 $this->clearStoredXmlPreview();
-                if ($skippedAdjustments > 0 || $skippedDuplicates > 0 || $skippedMarked > 0) {
+                if ($skippedDuplicates > 0 || $skippedMarked > 0) {
                     $message = 'Nie zapisano zadnych dokumentow XML.';
-                    if ($skippedAdjustments > 0) {
-                        $message .= ' Pominieto korekty: ' . $skippedAdjustments . '.';
-                    }
                     if ($skippedDuplicates > 0) {
                         $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
                     }
@@ -504,8 +871,8 @@ class AccountingWarehouseController extends Controller
             $firstDocumentId = (int) ($savedIds[0] ?? 0);
             $this->clearStoredXmlPreview();
             $message = 'Zapisano dokumenty XML: ' . count($savedIds) . '.';
-            if ($skippedAdjustments > 0) {
-                $message .= ' Pominieto korekty: ' . $skippedAdjustments . '.';
+            if ($savedAdjustments > 0) {
+                $message .= ' W tym korekt (bez wplywu na stan magazynu): ' . $savedAdjustments . '.';
             }
             if ($skippedDuplicates > 0) {
                 $message .= ' Pominieto duplikaty: ' . $skippedDuplicates . '.';
@@ -532,7 +899,9 @@ class AccountingWarehouseController extends Controller
         try {
             $header = $this->headerFromPrefix('manual_');
             $header['source_type'] = 'manual';
-            $header['document_kind'] = 'receipt';
+            $documentKind = trim((string) $this->input('manual_document_kind', 'receipt'));
+            $header['document_kind'] = in_array($documentKind, array('receipt', 'koszt', 'adjustment'), true) ? $documentKind : 'receipt';
+            $header['affects_stock'] = $header['document_kind'] === 'adjustment' ? 0 : 1;
 
             $this->validateSupplierHeader($header);
             $this->warehouse->saveDocument($header, $this->linesFromPrefix('manual_'), (int) ($currentUser['id'] ?? 0));
@@ -1088,6 +1457,7 @@ class AccountingWarehouseController extends Controller
                 'sale_date' => date('Y-m-d'),
                 'currency' => 'PLN',
                 'notes' => '',
+                'document_kind' => 'receipt',
             ),
             'manual_lines' => array(
                 array(
@@ -1372,6 +1742,41 @@ class AccountingWarehouseController extends Controller
     private function currencyOptions(): array
     {
         return array('PLN', 'EUR', 'USD', 'GBP', 'CZK', 'HUF', 'NOK', 'SEK', 'CHF');
+    }
+
+    private function resolveExportDateRange(): array
+    {
+        $dateFrom = trim((string) $this->input('date_from', date('Y-m-01')));
+        if (preg_match('/^\d{4}\-\d{2}\-\d{2}$/', $dateFrom) !== 1) {
+            $dateFrom = date('Y-m-01');
+        }
+
+        $dateTo = trim((string) $this->input('date_to', date('Y-m-t')));
+        if (preg_match('/^\d{4}\-\d{2}\-\d{2}$/', $dateTo) !== 1) {
+            $dateTo = date('Y-m-t');
+        }
+
+        if ($dateTo < $dateFrom) {
+            list($dateFrom, $dateTo) = array($dateTo, $dateFrom);
+        }
+
+        return array($dateFrom, $dateTo);
+    }
+
+    private function respondWithXlsx(string $sheetName, array $sheetRows, string $filenamePrefix, string $dateFrom, string $dateTo): void
+    {
+        try {
+            $binary = $this->buildSimpleXlsx($sheetName, $sheetRows);
+            $filename = $filenamePrefix . '_' . str_replace('-', '', $dateFrom) . '_' . str_replace('-', '', $dateTo) . '.xlsx';
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($binary));
+            echo $binary;
+            exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', 'Nie udalo sie przygotowac eksportu XLSX: ' . $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=export&date_from=' . rawurlencode($dateFrom) . '&date_to=' . rawurlencode($dateTo));
+        }
     }
 
     private function buildSimpleXlsx(string $sheetName, array $rows): string

@@ -55,6 +55,7 @@
                 <tr>
                   <th>Oryginalna nazwa</th>
                   <th>Pozycja ksiegowa</th>
+                  <th>Typ</th>
                   <th class="text-end">Ilosc</th>
                   <th class="text-end">Netto/szt.</th>
                   <th class="text-end">Brutto/szt.</th>
@@ -67,6 +68,7 @@
                   <tr>
                     <td>{$line.original_name|escape}</td>
                     <td>{$line.item_name|escape}</td>
+                    <td><span class="badge text-bg-{if $line.item_kind eq 'koszt'}info{elseif $line.item_kind eq 'korekta'}warning{else}secondary{/if}">{$line.item_kind|default:'towar'|escape}</span></td>
                     <td class="text-end">{$line.quantity|string_format:'%.3f'} {$line.unit|escape}</td>
                     <td class="text-end">{$line.unit_net|string_format:'%.2f'} PLN</td>
                     <td class="text-end">{$line.unit_gross|string_format:'%.2f'} PLN</td>
@@ -74,7 +76,7 @@
                     <td class="text-end">{$line.line_gross|string_format:'%.2f'} PLN</td>
                   </tr>
                 {foreachelse}
-                  <tr><td colspan="7" class="text-center py-3">Brak pozycji.</td></tr>
+                  <tr><td colspan="8" class="text-center py-3">Brak pozycji.</td></tr>
                 {/foreach}
               </tbody>
             </table>

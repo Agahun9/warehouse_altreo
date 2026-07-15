@@ -33,7 +33,7 @@
             </div>
             <div class="col-md-3 d-flex gap-2">
               <button type="submit" class="btn btn-primary">Pokaz raport</button>
-              <a href="{$baseUrl}?controller=accountingwarehouse&action=exportissuesxlsx&month={$selectedMonth|escape:'url'}" class="btn btn-outline-success">Eksport XLSX</a>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=exportissuesxlsx&month={$selectedMonth|escape:'url'}" class="btn btn-outline-success" data-no-page-loader="1">Eksport XLSX</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issuecreate" class="btn btn-outline-secondary">Nowe wyjscie</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issuebalancecreate" class="btn btn-outline-warning">Wyrownanie stanu</a>
             </div>

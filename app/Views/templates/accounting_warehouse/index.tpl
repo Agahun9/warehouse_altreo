@@ -81,10 +81,12 @@
             <div class="card-body d-grid gap-2">
               <a href="{$baseUrl}?controller=accountingwarehouse&action=create" class="btn btn-primary">Dodaj fakture lub XML</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=documents" class="btn btn-outline-dark">Lista dokumentow</a>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=checknumbers" class="btn btn-outline-info">Sprawdz numery FV</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issuecreate" class="btn btn-outline-primary">Wyjscie z magazynu</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issuebalancecreate" class="btn btn-outline-warning">Wyrownanie stanu</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=issues" class="btn btn-outline-dark">Raport wyjsc</a>
               <a href="{$baseUrl}?controller=accountingwarehouse&action=macros" class="btn btn-outline-secondary">Pozycje ksiegowe i aliasy</a>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=export" class="btn btn-outline-info">Eksport XLSX (koszty/towar)</a>
             </div>
           </div>
         </div>

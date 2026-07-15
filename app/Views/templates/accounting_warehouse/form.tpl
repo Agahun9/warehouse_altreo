@@ -45,7 +45,6 @@
             <form method="post" action="{$baseUrl}?controller=accountingwarehouse&action=update">
               <input type="hidden" name="id" value="{$edit.id}">
               <input type="hidden" name="edit_source_type" value="{$edit.source_type|escape}">
-              <input type="hidden" name="edit_document_kind" value="{$edit.document_kind|escape}">
               <input type="hidden" name="edit_xml_filename" value="{$edit.xml_filename|escape}">
               <input type="hidden" name="edit_xml_hash" value="{$edit.xml_hash|escape}">
               <input type="hidden" name="edit_xml_payload" value="{$edit.xml_payload|escape}">
@@ -62,6 +61,14 @@
                     {foreach $currencyOptions as $currencyOption}
                       <option value="{$currencyOption|escape}"{if $edit.currency eq $currencyOption} selected{/if}>{$currencyOption|escape}</option>
                     {/foreach}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Typ dokumentu</label>
+                  <select class="form-select" name="edit_document_kind">
+                    <option value="receipt"{if $edit.document_kind|default:'receipt' eq 'receipt'} selected{/if}>towar</option>
+                    <option value="koszt"{if $edit.document_kind|default:'receipt' eq 'koszt'} selected{/if}>koszt</option>
+                    <option value="adjustment"{if $edit.document_kind|default:'receipt' eq 'adjustment'} selected{/if}>korekta</option>
                   </select>
                 </div>
                 <div class="col-md-3"><label class="form-label">Uwagi</label><input type="text" class="form-control" name="edit_notes" value="{$edit.notes|escape}"></div>
@@ -85,7 +92,7 @@
                           <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                         </div>
                       </div>
-                      <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="edit_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
+                      <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" class="form-control" name="edit_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
                       <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control" name="edit_unit[]" value="{$line.unit|escape}"></div>
                       <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="edit_unit_net[]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                       <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="edit_unit_gross[]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
@@ -156,7 +163,7 @@
                           <div class="d-flex flex-wrap gap-2 align-items-start">
                             <span class="badge text-bg-danger d-none xml-skipped-badge">NIE DO IMPORTU</span>
                             {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
-                              <span class="badge text-bg-warning">KOREKTA XML - BEDZIE POMINIETA</span>
+                              <span class="badge text-bg-warning">KOREKTA - BEZ WPLYWU NA STAN MAGAZYNU</span>
                             {elseif $document.header.document_kind|default:'receipt' eq 'koszt'}
                               <span class="badge text-bg-info">KOSZT (wykryto automatycznie)</span>
                             {else}
@@ -172,7 +179,7 @@
 
                         {if $document.header.document_kind|default:'receipt' eq 'adjustment'}
                           <div class="alert alert-warning border-warning mb-3">
-                            Ten XML wyglada na korekte. Zostawiamy go w podgladzie do kontroli, ale przy zapisie zostanie automatycznie pominiety.
+                            Ten XML wyglada na korekte. Zostanie zapisany w magazynie jako korekta, ale nie zmieni zadnych stanow magazynowych (mozna to zmienic ponizej).
                           </div>
                         {elseif $document.header.document_kind|default:'receipt' eq 'koszt'}
                           <div class="alert alert-info border-info mb-3">
@@ -197,6 +204,7 @@
                               <option value="koszt"{if $document.header.document_kind|default:'receipt' eq 'koszt'} selected{/if}>koszt</option>
                               <option value="adjustment"{if $document.header.document_kind|default:'receipt' eq 'adjustment'} selected{/if}>korekta</option>
                             </select>
+                            <div class="small text-secondary mt-1">Korekta nie zmienia stanow magazynowych.</div>
                           </div>
                           <div class="col-md-3 position-relative">
                             <label class="form-label">Dostawca</label>
@@ -252,7 +260,7 @@
                                   <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                                 </div>
                               </div>
-                              <div class="col-md-2"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][quantity]" value="{$line.quantity|string_format:'%.0f'}"></div>
+                              <div class="col-md-2"><label class="form-label">Ilosc</label><input type="number" step="1" class="form-control" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][quantity]" value="{$line.quantity|string_format:'%.0f'}"></div>
                               <div class="col-md-2"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][unit_net]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                               <div class="col-md-2"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][unit_gross]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
                               <div class="col-md-2"><label class="form-label">VAT %</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="vat" name="xml_documents[{$documentIndex}][lines][{$lineIndex}][vat_rate]" value="{$line.vat_rate|string_format:'%.2f'}"></div>
@@ -313,6 +321,15 @@
                         {/foreach}
                       </select>
                     </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Typ dokumentu</label>
+                      <select class="form-select" name="manual_document_kind">
+                        <option value="receipt"{if $formData.manual_header.document_kind|default:'receipt' eq 'receipt'} selected{/if}>towar</option>
+                        <option value="koszt"{if $formData.manual_header.document_kind|default:'receipt' eq 'koszt'} selected{/if}>koszt</option>
+                        <option value="adjustment"{if $formData.manual_header.document_kind|default:'receipt' eq 'adjustment'} selected{/if}>korekta</option>
+                      </select>
+                      <div class="small text-secondary mt-1">Korekta zapisuje sie w magazynie, ale nie zmienia zadnych stanow magazynowych - mozna podac ilosc 0 lub ujemna.</div>
+                    </div>
                     <div class="col-md-3"><label class="form-label">Uwagi</label><input type="text" class="form-control" name="manual_notes" value="{$formData.manual_header.notes|escape}"></div>
                   </div>
                   <div class="supplier-validation mb-3 small text-danger"></div>
@@ -335,7 +352,7 @@
                               <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
                             </div>
                           </div>
-                          <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control" name="manual_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
+                          <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" class="form-control" name="manual_quantity[]" value="{$line.quantity|string_format:'%.0f'}"></div>
                           <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control" name="manual_unit[]" value="{$line.unit|escape}"></div>
                           <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="net" name="manual_unit_net[]" value="{$line.unit_net|string_format:'%.2f'}"></div>
                           <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input" data-field="gross" name="manual_unit_gross[]" value="{$line.unit_gross|string_format:'%.2f'}"></div>
@@ -378,7 +395,7 @@
             <button type="button" class="btn btn-outline-secondary btn-sm refresh-item-names" title="Odswiez pozycje ksiegowe" aria-label="Odswiez pozycje ksiegowe">↻</button>
           </div>
         </div>
-        <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" min="1" class="form-control js-quantity" value="1"></div>
+        <div class="col-md-1"><label class="form-label">Ilosc</label><input type="number" step="1" class="form-control js-quantity" value="1"></div>
         <div class="col-md-1"><label class="form-label">Jedn.</label><input type="text" class="form-control js-unit" value="szt."></div>
         <div class="col-md-1"><label class="form-label">Netto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input js-unit-net" data-field="net" value="0.00"></div>
         <div class="col-md-1"><label class="form-label">Brutto / szt.</label><input type="number" step="0.01" class="form-control line-calc-input js-unit-gross" data-field="gross" value="0.00"></div>
