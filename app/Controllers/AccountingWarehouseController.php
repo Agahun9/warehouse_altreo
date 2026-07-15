@@ -377,7 +377,7 @@ class AccountingWarehouseController extends Controller
         }
         $sheetRows[] = array('', '', '', '', 'SUMA', round($totalNet, 2), round($totalGross, 2), '');
 
-        $this->respondWithXlsx('Koszty', $sheetRows, 'accounting_warehouse_koszty', $dateFrom, $dateTo);
+        $this->respondWithXlsx('Koszty', $sheetRows, 'koszty', $dateFrom, $dateTo);
     }
 
     public function exportgoodsxlsx(): void
@@ -446,7 +446,7 @@ class AccountingWarehouseController extends Controller
             round($totals['net'], 2), round($totals['gross'], 2), '',
         );
 
-        $this->respondWithXlsx('Towar', $sheetRows, 'accounting_warehouse_towar', $dateFrom, $dateTo);
+        $this->respondWithXlsx('Towar', $sheetRows, 'towar', $dateFrom, $dateTo);
     }
 
     public function exportmixedxlsx(): void
@@ -462,34 +462,60 @@ class AccountingWarehouseController extends Controller
         ));
 
         $sheetRows = array();
-        $sheetRows[] = array('Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycja ksiegowa', 'Rodzaj', 'Ilosc', 'Netto', 'Brutto', 'Waluta');
-        $totalNet = 0.0;
-        $totalGross = 0.0;
+        $sheetRows[] = array(
+            'Data', 'Numer dokumentu', 'Dostawca', 'NIP', 'Pozycja kosztowa',
+            'Towar netto', 'Towar brutto', 'Koszt netto', 'Koszt brutto',
+            'Razem netto', 'Razem brutto', 'Waluta',
+        );
+        $totals = array('goods_net' => 0.0, 'goods_gross' => 0.0, 'cost_net' => 0.0, 'cost_gross' => 0.0, 'net' => 0.0, 'gross' => 0.0);
         foreach ($documents as $document) {
-            $date = (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? ''));
+            $goodsNet = 0.0;
+            $goodsGross = 0.0;
+            $costNet = 0.0;
+            $costGross = 0.0;
+            $costNames = array();
             foreach ((array) ($document['lines'] ?? array()) as $line) {
-                $lineNet = (float) ($line['line_net'] ?? 0);
-                $lineGross = (float) ($line['line_gross'] ?? 0);
-                $sheetRows[] = array(
-                    $date,
-                    (string) ($document['document_number'] ?? ''),
-                    (string) ($document['supplier_name'] ?? ''),
-                    (string) ($document['supplier_tax_id'] ?? ''),
-                    (string) ($line['canonical_name'] ?? ''),
-                    ((string) ($line['item_kind'] ?? '')) === 'koszt' ? 'koszt' : 'towar',
-                    round((float) ($line['quantity'] ?? 0), 3),
-                    round($lineNet, 2),
-                    round($lineGross, 2),
-                    (string) ($document['currency'] ?? 'PLN'),
-                );
+                if (((string) ($line['item_kind'] ?? '')) === 'koszt') {
+                    $costNet += (float) ($line['line_net'] ?? 0);
+                    $costGross += (float) ($line['line_gross'] ?? 0);
+                    $costNames[] = (string) ($line['canonical_name'] ?? '');
+                    continue;
+                }
 
-                $totalNet += $lineNet;
-                $totalGross += $lineGross;
+                $goodsNet += (float) ($line['line_net'] ?? 0);
+                $goodsGross += (float) ($line['line_gross'] ?? 0);
             }
-        }
-        $sheetRows[] = array('', '', '', '', '', 'SUMA', '', round($totalNet, 2), round($totalGross, 2), '');
 
-        $this->respondWithXlsx('Mieszane', $sheetRows, 'accounting_warehouse_mieszane', $dateFrom, $dateTo);
+            $sheetRows[] = array(
+                (string) (($document['sale_date'] ?? '') ?: ($document['issue_date'] ?? '')),
+                (string) ($document['document_number'] ?? ''),
+                (string) ($document['supplier_name'] ?? ''),
+                (string) ($document['supplier_tax_id'] ?? ''),
+                implode(', ', array_unique($costNames)),
+                round($goodsNet, 2),
+                round($goodsGross, 2),
+                round($costNet, 2),
+                round($costGross, 2),
+                round($goodsNet + $costNet, 2),
+                round($goodsGross + $costGross, 2),
+                (string) ($document['currency'] ?? 'PLN'),
+            );
+
+            $totals['goods_net'] += $goodsNet;
+            $totals['goods_gross'] += $goodsGross;
+            $totals['cost_net'] += $costNet;
+            $totals['cost_gross'] += $costGross;
+            $totals['net'] += $goodsNet + $costNet;
+            $totals['gross'] += $goodsGross + $costGross;
+        }
+        $sheetRows[] = array(
+            '', '', '', '', 'SUMA',
+            round($totals['goods_net'], 2), round($totals['goods_gross'], 2),
+            round($totals['cost_net'], 2), round($totals['cost_gross'], 2),
+            round($totals['net'], 2), round($totals['gross'], 2), '',
+        );
+
+        $this->respondWithXlsx('Mieszane', $sheetRows, 'mieszane', $dateFrom, $dateTo);
     }
 
     public function exportadjustmentsxlsx(): void
@@ -534,7 +560,7 @@ class AccountingWarehouseController extends Controller
         }
         $sheetRows[] = array('', '', '', '', 'SUMA', round($totalNet, 2), round($totalGross, 2), '');
 
-        $this->respondWithXlsx('Korekty', $sheetRows, 'accounting_warehouse_korekty', $dateFrom, $dateTo);
+        $this->respondWithXlsx('Korekty', $sheetRows, 'korekty', $dateFrom, $dateTo);
     }
 
     public function issuecreate(): void
@@ -1767,7 +1793,7 @@ class AccountingWarehouseController extends Controller
     {
         try {
             $binary = $this->buildSimpleXlsx($sheetName, $sheetRows);
-            $filename = $filenamePrefix . '_' . str_replace('-', '', $dateFrom) . '_' . str_replace('-', '', $dateTo) . '.xlsx';
+            $filename = $filenamePrefix . ' - ' . date('Y-m-d') . '.xlsx';
             header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             header('Content-Disposition: attachment; filename="' . $filename . '"');
             header('Content-Length: ' . strlen($binary));
