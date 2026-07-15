@@ -471,44 +471,52 @@ class AccountingWarehouseController extends Controller
         $typeMismatches = array();
         $mixedDocuments = array();
         $matchedOk = 0;
+        $processedGoods = array();
+        $processedCosts = array();
 
         foreach ($accountantRows as $accountantRow) {
             $key = $this->warehouse->normalizeDocumentNumberKey($accountantRow['document_number']);
             $localMatches = $localByNumber[$key] ?? array();
+            $status = 'zgodne';
 
             if ($localMatches === array()) {
+                $status = 'brak w magazynie';
                 $missingInWarehouse[] = $accountantRow;
-                continue;
-            }
+            } else {
+                $hasMatchingType = false;
+                $bestDocument = $localMatches[0];
+                foreach ($localMatches as $localDocument) {
+                    if ($this->classificationMatchesExpectedType((string) $localDocument['classification'], $accountantRow['expected_type'])) {
+                        $hasMatchingType = true;
+                        $bestDocument = $localDocument;
+                        break;
+                    }
+                }
 
-            $hasMatchingType = false;
-            $bestDocument = $localMatches[0];
-            foreach ($localMatches as $localDocument) {
-                if ($this->classificationMatchesExpectedType((string) $localDocument['classification'], $accountantRow['expected_type'])) {
-                    $hasMatchingType = true;
-                    $bestDocument = $localDocument;
-                    break;
+                if (!$hasMatchingType) {
+                    $status = 'zla kategoria';
+                    $typeMismatches[] = array_merge($accountantRow, array(
+                        'local_classification' => (string) $bestDocument['classification'],
+                        'local_document_id' => (int) $bestDocument['id'],
+                    ));
+                } elseif ((string) $bestDocument['classification'] === 'mieszane') {
+                    $status = 'mieszane';
+                    $mixedDocuments[] = array_merge($accountantRow, array(
+                        'local_net' => (float) $bestDocument['total_net'],
+                        'local_gross' => (float) $bestDocument['total_gross'],
+                        'local_document_id' => (int) $bestDocument['id'],
+                    ));
+                } else {
+                    $matchedOk++;
                 }
             }
 
-            if (!$hasMatchingType) {
-                $typeMismatches[] = array_merge($accountantRow, array(
-                    'local_classification' => (string) $bestDocument['classification'],
-                    'local_document_id' => (int) $bestDocument['id'],
-                ));
-                continue;
+            $processedRow = array_merge($accountantRow, array('status' => $status));
+            if ($accountantRow['expected_type'] === 'koszt') {
+                $processedCosts[] = $processedRow;
+            } else {
+                $processedGoods[] = $processedRow;
             }
-
-            if ((string) $bestDocument['classification'] === 'mieszane') {
-                $mixedDocuments[] = array_merge($accountantRow, array(
-                    'local_net' => (float) $bestDocument['total_net'],
-                    'local_gross' => (float) $bestDocument['total_gross'],
-                    'local_document_id' => (int) $bestDocument['id'],
-                ));
-                continue;
-            }
-
-            $matchedOk++;
         }
 
         return array(
@@ -517,6 +525,8 @@ class AccountingWarehouseController extends Controller
             'missing_in_warehouse' => $missingInWarehouse,
             'type_mismatches' => $typeMismatches,
             'mixed_documents' => $mixedDocuments,
+            'processed_goods' => $processedGoods,
+            'processed_costs' => $processedCosts,
             'summary_text' => $this->formatReconciliationSummaryText($matchedOk, $missingInWarehouse, $typeMismatches, $mixedDocuments),
         );
     }

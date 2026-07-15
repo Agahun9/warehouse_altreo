@@ -125,6 +125,68 @@
           </div>
         </div>
         {/if}
+
+        {if $report.processed_goods}
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3 class="card-title mb-0">
+              <a data-bs-toggle="collapse" href="#processedGoods" role="button" aria-expanded="false">
+                Przetworzone faktury - Towary ({$report.processed_goods|@count})
+              </a>
+            </h3>
+          </div>
+          <div class="collapse" id="processedGoods">
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Numer</th><th>Kontrahent</th><th>NIP</th><th>Netto</th><th>Brutto</th><th>Status</th></tr></thead>
+                <tbody>
+                  {foreach $report.processed_goods as $row}
+                    <tr>
+                      <td>{$row.document_number|escape}</td>
+                      <td>{$row.contractor|escape}</td>
+                      <td>{$row.nip|escape}</td>
+                      <td>{$row.net|string_format:"%.2f"}</td>
+                      <td>{$row.gross|string_format:"%.2f"}</td>
+                      <td>{$row.status|escape}</td>
+                    </tr>
+                  {/foreach}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {/if}
+
+        {if $report.processed_costs}
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3 class="card-title mb-0">
+              <a data-bs-toggle="collapse" href="#processedCosts" role="button" aria-expanded="false">
+                Przetworzone faktury - Koszt ({$report.processed_costs|@count})
+              </a>
+            </h3>
+          </div>
+          <div class="collapse" id="processedCosts">
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Numer</th><th>Kontrahent</th><th>NIP</th><th>Netto</th><th>Brutto</th><th>Status</th></tr></thead>
+                <tbody>
+                  {foreach $report.processed_costs as $row}
+                    <tr>
+                      <td>{$row.document_number|escape}</td>
+                      <td>{$row.contractor|escape}</td>
+                      <td>{$row.nip|escape}</td>
+                      <td>{$row.net|string_format:"%.2f"}</td>
+                      <td>{$row.gross|string_format:"%.2f"}</td>
+                      <td>{$row.status|escape}</td>
+                    </tr>
+                  {/foreach}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {/if}
       {/if}
     </div>
   </div>

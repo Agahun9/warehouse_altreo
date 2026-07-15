@@ -345,6 +345,51 @@ class AccountingWarehouseXlsxReader
             return $out;
         };
 
+        // Czyta $charCount znakow tekstu SST, poprawnie obslugujac przypadek gdy string
+        // "przechodzi" na kolejny rekord CONTINUE w srodku swojej tresci: taki rekord
+        // zaczyna sie od WLASNEGO bajtu flag (compressed/uncompressed), ktory NIE jest
+        // czescia tekstu i moze zmienic kodowanie dla pozostalych znakow. Zwykle
+        // readBytes()/nextByte() (dzialajace na surowych bajtach, nie znakach) tego nie
+        // uwzgledniaja, przez co string trafiajacy dokladnie na granice rekordu bywa
+        // ucinany lub przesuniety o jeden bajt (np. "...2026/06" odczytane jako "...2026/0").
+        $readChars = function (int $charCount, bool $isUnicode) use (&$segIndex, &$segData, &$segPos, &$segCount, $segments): ?string {
+            $text = '';
+            $remaining = $charCount;
+            while ($remaining > 0) {
+                if ($segPos >= strlen($segData)) {
+                    $segIndex++;
+                    if ($segIndex >= $segCount) {
+                        return null;
+                    }
+                    $segData = $segments[$segIndex];
+                    if ($segData === '') {
+                        $segPos = 0;
+                        continue;
+                    }
+                    $isUnicode = (ord($segData[0]) & 0x01) !== 0;
+                    $segPos = 1;
+                    continue;
+                }
+
+                $bytesPerChar = $isUnicode ? 2 : 1;
+                $availableBytes = strlen($segData) - $segPos;
+                if ($availableBytes < $bytesPerChar) {
+                    $segPos = strlen($segData);
+                    continue;
+                }
+
+                $take = min($remaining, intdiv($availableBytes, $bytesPerChar));
+                $chunk = substr($segData, $segPos, $take * $bytesPerChar);
+                $segPos += $take * $bytesPerChar;
+                $text .= $isUnicode
+                    ? (@iconv('UTF-16LE', 'UTF-8//IGNORE', $chunk) ?: '')
+                    : (@iconv('CP1250', 'UTF-8//IGNORE', $chunk) ?: $chunk);
+                $remaining -= $take;
+            }
+
+            return $text;
+        };
+
         $strings = array();
         for ($i = 0; $i < $uniqueCount; $i++) {
             $lenBytes = $readBytes(2);
@@ -372,18 +417,7 @@ class AccountingWarehouseXlsxReader
                 $farEastSize = $feBytes !== null ? unpack('V', $feBytes)[1] : 0;
             }
 
-            $text = '';
-            if ($isUnicode) {
-                $raw = $readBytes($charCount * 2);
-                if ($raw !== null) {
-                    $text = @iconv('UTF-16LE', 'UTF-8//IGNORE', $raw) ?: '';
-                }
-            } else {
-                $raw = $readBytes($charCount);
-                if ($raw !== null) {
-                    $text = @iconv('CP1250', 'UTF-8//IGNORE', $raw) ?: $raw;
-                }
-            }
+            $text = $readChars($charCount, $isUnicode) ?? '';
 
             if ($hasRichText) {
                 $readBytes($richTextRuns * 4);
