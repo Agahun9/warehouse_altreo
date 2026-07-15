@@ -8,12 +8,16 @@ use App\Core\Controller;
 use App\Models\AccountingWarehouseRepository;
 use App\Services\AccountingWarehouseClassifier;
 use App\Services\AccountingWarehouseSupplierResolver;
+use App\Services\AccountingWarehouseXlsxReader;
 use App\Services\AccountingWarehouseXmlImporter;
+use App\Services\SellasistService;
 use RuntimeException;
 use Throwable;
 
 class AccountingWarehouseController extends Controller
 {
+    const OSS_ORDERS_STATUS_ID = 33;
+
     /** @var AccountingWarehouseRepository */
     private $warehouse;
 
@@ -26,6 +30,12 @@ class AccountingWarehouseController extends Controller
     /** @var AccountingWarehouseSupplierResolver */
     private $supplierResolver;
 
+    /** @var AccountingWarehouseXlsxReader */
+    private $xlsxReader;
+
+    /** @var SellasistService|null */
+    private $sellasist;
+
     public function __construct()
     {
         $this->classifier = new AccountingWarehouseClassifier();
@@ -33,6 +43,16 @@ class AccountingWarehouseController extends Controller
         $this->warehouse->ensureSchema();
         $this->xmlImporter = new AccountingWarehouseXmlImporter($this->classifier);
         $this->supplierResolver = new AccountingWarehouseSupplierResolver();
+        $this->xlsxReader = new AccountingWarehouseXlsxReader();
+    }
+
+    private function sellasist(): SellasistService
+    {
+        if ($this->sellasist === null) {
+            $this->sellasist = new SellasistService($this->db());
+        }
+
+        return $this->sellasist;
     }
 
     public function index(): void
@@ -333,6 +353,471 @@ class AccountingWarehouseController extends Controller
             'costLineCountBreakdown' => $costLineCountBreakdown,
             'itemsWithCostLines' => array_slice($itemsWithCostLines, 0, 15, true),
         ));
+    }
+
+    public function reconcile(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+        list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+
+        $this->render('accounting_warehouse/reconcile', array(
+            'pageTitle' => 'Porownanie z ksiegowa',
+            'contentTitle' => 'Porownanie z ksiegowa',
+            'pageDescription' => 'Wgraj pliki XLS lub XLSX od ksiegowej (Towary i Koszt), aby sprawdzic czy zgadzaja sie z magazynem ksiegowym.',
+            'breadcrumbCurrent' => 'Porownanie z ksiegowa',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'report' => null,
+        ));
+    }
+
+    public function reconcilerun(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=reconcile');
+        }
+
+        try {
+            $goodsFile = $_FILES['goods_xlsx'] ?? null;
+            $costsFile = $_FILES['costs_xlsx'] ?? null;
+
+            $goodsRows = $this->readReconciliationUpload($goodsFile);
+            $costsRows = $this->readReconciliationUpload($costsFile);
+
+            if ($goodsRows === array() && $costsRows === array()) {
+                throw new RuntimeException('Wgraj przynajmniej jeden plik XLS lub XLSX (Towary lub Koszt).');
+            }
+
+            list($dateFrom, $dateTo) = $this->resolveExportDateRange();
+            $report = $this->buildReconciliationReport($goodsRows, $costsRows, $dateFrom, $dateTo);
+
+            $this->render('accounting_warehouse/reconcile', array(
+                'pageTitle' => 'Porownanie z ksiegowa',
+                'contentTitle' => 'Porownanie z ksiegowa',
+                'pageDescription' => 'Wgraj pliki XLS lub XLSX od ksiegowej (Towary i Koszt), aby sprawdzic czy zgadzaja sie z magazynem ksiegowym.',
+                'breadcrumbCurrent' => 'Porownanie z ksiegowa',
+                'currentUser' => $currentUser,
+                'flashSuccess' => $this->getFlash('success'),
+                'flashError' => $this->getFlash('error'),
+                'dateFrom' => $dateFrom,
+                'dateTo' => $dateTo,
+                'report' => $report,
+            ));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=accountingwarehouse&action=reconcile');
+        }
+    }
+
+    private function readReconciliationUpload($file): array
+    {
+        if (!is_array($file)) {
+            return array();
+        }
+
+        $tmpName = (string) ($file['tmp_name'] ?? '');
+        $errorCode = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($errorCode === UPLOAD_ERR_NO_FILE || $tmpName === '') {
+            return array();
+        }
+
+        if ($errorCode !== UPLOAD_ERR_OK || !is_uploaded_file($tmpName)) {
+            throw new RuntimeException('Nie udalo sie wczytac pliku ' . (string) ($file['name'] ?? '') . '.');
+        }
+
+        $binary = file_get_contents($tmpName);
+        if ($binary === false || $binary === '') {
+            throw new RuntimeException('Plik ' . (string) ($file['name'] ?? '') . ' jest pusty lub nie udalo sie go odczytac.');
+        }
+
+        return $this->xlsxReader->readFirstSheetAsAssoc($binary);
+    }
+
+    /**
+     * Porownuje wiersze z plikow ksiegowej (towar/koszt) ze stanem faktur w magazynie ksiegowym
+     * i buduje liste rozbieznosci opisana tekstem.
+     */
+    private function buildReconciliationReport(array $goodsRows, array $costsRows, string $dateFrom, string $dateTo): array
+    {
+        $allNumbers = array();
+        $accountantRows = array();
+        foreach (array('towar' => $goodsRows, 'koszt' => $costsRows) as $expectedType => $rows) {
+            foreach ($rows as $row) {
+                $documentNumber = $this->extractReconciliationField($row, array('numer_dok_s', 'numer_dokumentu', 'numer_dok', 'numer_faktury', 'numer'));
+                if ($documentNumber === '') {
+                    continue;
+                }
+                $allNumbers[] = $documentNumber;
+                $accountantRows[] = array(
+                    'expected_type' => $expectedType,
+                    'document_number' => $documentNumber,
+                    'contractor' => $this->extractReconciliationField($row, array('kontrahent', 'platnik')),
+                    'nip' => $this->extractReconciliationField($row, array('nip')),
+                    'net' => $this->parsePolishAmount($this->extractReconciliationField($row, array('netto'))),
+                    'gross' => $this->parsePolishAmount($this->extractReconciliationField($row, array('brutto'))),
+                    'category' => $this->extractReconciliationField($row, array('kategoria')),
+                );
+            }
+        }
+
+        $localByNumber = $this->warehouse->findDocumentsByNumbersForReconciliation($allNumbers);
+
+        $missingInWarehouse = array();
+        $typeMismatches = array();
+        $amountMismatches = array();
+        $matchedOk = 0;
+        $matchedNumbers = array();
+
+        foreach ($accountantRows as $accountantRow) {
+            $key = $this->warehouse->normalizeDocumentNumberKey($accountantRow['document_number']);
+            $localMatches = $localByNumber[$key] ?? array();
+            $matchedNumbers[$key] = true;
+
+            if ($localMatches === array()) {
+                $missingInWarehouse[] = $accountantRow;
+                continue;
+            }
+
+            $hasMatchingType = false;
+            $bestDocument = $localMatches[0];
+            foreach ($localMatches as $localDocument) {
+                if ($this->classificationMatchesExpectedType((string) $localDocument['classification'], $accountantRow['expected_type'])) {
+                    $hasMatchingType = true;
+                    $bestDocument = $localDocument;
+                    break;
+                }
+            }
+
+            if (!$hasMatchingType) {
+                $typeMismatches[] = array_merge($accountantRow, array(
+                    'local_classification' => (string) $bestDocument['classification'],
+                    'local_document_id' => (int) $bestDocument['id'],
+                ));
+                continue;
+            }
+
+            $netDiff = round($accountantRow['net'] - (float) $bestDocument['total_net'], 2);
+            $grossDiff = round($accountantRow['gross'] - (float) $bestDocument['total_gross'], 2);
+            if (abs($netDiff) > 0.05 || abs($grossDiff) > 0.05) {
+                $amountMismatches[] = array_merge($accountantRow, array(
+                    'local_net' => (float) $bestDocument['total_net'],
+                    'local_gross' => (float) $bestDocument['total_gross'],
+                    'net_diff' => $netDiff,
+                    'gross_diff' => $grossDiff,
+                    'local_document_id' => (int) $bestDocument['id'],
+                ));
+                continue;
+            }
+
+            $matchedOk++;
+        }
+
+        // Odwrotny kierunek: dokumenty koszt/towar w magazynie (w podanym zakresie dat) ktorych
+        // numeru nie bylo w zadnym z przeslanych plikow ksiegowej.
+        $relevantClassifications = array();
+        if ($goodsRows !== array()) {
+            $relevantClassifications[] = 'towar';
+            $relevantClassifications[] = 'mieszane';
+        }
+        if ($costsRows !== array()) {
+            $relevantClassifications[] = 'koszt';
+            $relevantClassifications[] = 'mieszane';
+        }
+        $relevantClassifications = array_unique($relevantClassifications);
+
+        $missingInAccountant = array();
+        if ($relevantClassifications !== array()) {
+            $documentsInRange = $this->warehouse->documentsForExport($dateFrom, $dateTo);
+            foreach ($documentsInRange as $document) {
+                if (!in_array((string) ($document['classification'] ?? ''), $relevantClassifications, true)) {
+                    continue;
+                }
+                $key = $this->warehouse->normalizeDocumentNumberKey((string) ($document['document_number'] ?? ''));
+                if ($key === '' || isset($matchedNumbers[$key])) {
+                    continue;
+                }
+                $documentNet = 0.0;
+                $documentGross = 0.0;
+                foreach ((array) ($document['lines'] ?? array()) as $line) {
+                    $documentNet += (float) ($line['line_net'] ?? 0);
+                    $documentGross += (float) ($line['line_gross'] ?? 0);
+                }
+                $document['total_net'] = $documentNet;
+                $document['total_gross'] = $documentGross;
+                $missingInAccountant[] = $document;
+            }
+        }
+
+        return array(
+            'accountant_rows_count' => count($accountantRows),
+            'matched_ok' => $matchedOk,
+            'missing_in_warehouse' => $missingInWarehouse,
+            'type_mismatches' => $typeMismatches,
+            'amount_mismatches' => $amountMismatches,
+            'missing_in_accountant' => $missingInAccountant,
+            'summary_text' => $this->formatReconciliationSummaryText($matchedOk, $missingInWarehouse, $typeMismatches, $amountMismatches, $missingInAccountant),
+        );
+    }
+
+    private function classificationMatchesExpectedType(string $classification, string $expectedType): bool
+    {
+        if ($expectedType === 'koszt') {
+            return in_array($classification, array('koszt', 'mieszane'), true);
+        }
+
+        // expectedType === 'towar'
+        return in_array($classification, array('towar', 'mieszane'), true);
+    }
+
+    private function extractReconciliationField(array $row, array $keyCandidates): string
+    {
+        foreach ($keyCandidates as $candidate) {
+            foreach ($row as $key => $value) {
+                if (strpos((string) $key, $candidate) !== false) {
+                    $value = trim((string) $value);
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function parsePolishAmount(string $value): float
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 0.0;
+        }
+
+        $value = str_replace(array(' ', "\xC2\xA0"), '', $value);
+        $value = str_replace(',', '.', $value);
+
+        return (float) $value;
+    }
+
+    private function formatReconciliationSummaryText(
+        int $matchedOk,
+        array $missingInWarehouse,
+        array $typeMismatches,
+        array $amountMismatches,
+        array $missingInAccountant
+    ): string {
+        $lines = array();
+        $lines[] = 'PODSUMOWANIE POROWNANIA Z KSIEGOWA';
+        $lines[] = 'Zgodne faktury: ' . $matchedOk;
+        $lines[] = 'Brak w magazynie: ' . count($missingInWarehouse);
+        $lines[] = 'Zla kategoria (towar/koszt): ' . count($typeMismatches);
+        $lines[] = 'Rozne kwoty: ' . count($amountMismatches);
+        $lines[] = 'Brak u ksiegowej (jest w magazynie): ' . count($missingInAccountant);
+        $lines[] = '';
+
+        if ($missingInWarehouse !== array()) {
+            $lines[] = '=== FAKTURY Z PLIKU KSIEGOWEJ, KTORYCH NIE MA W MAGAZYNIE ===';
+            foreach ($missingInWarehouse as $row) {
+                $lines[] = '- ' . $row['document_number'] . ' (' . $row['expected_type'] . ', ' . $row['contractor']
+                    . ', netto ' . number_format($row['net'], 2, ',', ' ') . ', brutto ' . number_format($row['gross'], 2, ',', ' ') . ')'
+                    . ' - brak dokumentu o tym numerze w magazynie ksiegowym.';
+            }
+            $lines[] = '';
+        }
+
+        if ($typeMismatches !== array()) {
+            $lines[] = '=== FAKTURY O NIEZGODNEJ KATEGORII (TOWAR / KOSZT) ===';
+            foreach ($typeMismatches as $row) {
+                $expectedLabel = $row['expected_type'] === 'koszt' ? 'koszt' : 'towar';
+                $lines[] = '- ' . $row['document_number'] . ' (' . $row['contractor'] . '):'
+                    . ' u ksiegowej jako ' . $expectedLabel . ', a w magazynie oznaczone jako ' . $row['local_classification']
+                    . ' (dokument #' . $row['local_document_id'] . ').';
+            }
+            $lines[] = '';
+        }
+
+        if ($amountMismatches !== array()) {
+            $lines[] = '=== FAKTURY Z ROZNA KWOTA ===';
+            foreach ($amountMismatches as $row) {
+                $lines[] = '- ' . $row['document_number'] . ' (' . $row['contractor'] . '):'
+                    . ' ksiegowa netto ' . number_format($row['net'], 2, ',', ' ') . ' / brutto ' . number_format($row['gross'], 2, ',', ' ')
+                    . ', magazyn netto ' . number_format($row['local_net'], 2, ',', ' ') . ' / brutto ' . number_format($row['local_gross'], 2, ',', ' ')
+                    . ' (roznica netto ' . number_format($row['net_diff'], 2, ',', ' ') . ', brutto ' . number_format($row['gross_diff'], 2, ',', ' ') . ')'
+                    . ' (dokument #' . $row['local_document_id'] . ').';
+            }
+            $lines[] = '';
+        }
+
+        if ($missingInAccountant !== array()) {
+            $lines[] = '=== DOKUMENTY W MAGAZYNIE, KTORYCH NIE MA W PLIKACH KSIEGOWEJ ===';
+            foreach ($missingInAccountant as $row) {
+                $lines[] = '- ' . $row['document_number'] . ' (' . $row['supplier_name'] . '), klasyfikacja: ' . $row['classification']
+                    . ', netto ' . number_format((float) $row['total_net'], 2, ',', ' ') . ', brutto ' . number_format((float) $row['total_gross'], 2, ',', ' ')
+                    . ' (dokument #' . $row['id'] . ') - ksiegowa nie ma tego numeru w przeslanych plikach.';
+            }
+            $lines[] = '';
+        }
+
+        if ($missingInWarehouse === array() && $typeMismatches === array() && $amountMismatches === array() && $missingInAccountant === array()) {
+            $lines[] = 'Wszystko sie zgadza - brak rozbieznosci.';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    public function oss(): void
+    {
+        $currentUser = $this->requireModule('accountingwarehouse');
+
+        $orders = array();
+
+        try {
+            $orders = $this->buildOssOrderRows($this->sellasist()->getOrdersByStatus(self::OSS_ORDERS_STATUS_ID));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->render('accounting_warehouse/oss', array(
+            'pageTitle' => 'Eksport OSS',
+            'contentTitle' => 'Eksport OSS',
+            'pageDescription' => 'Generowanie zestawienia OSS na podstawie zamowien Sellasist.',
+            'breadcrumbCurrent' => 'Eksport OSS',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $this->getFlash('success'),
+            'flashError' => $this->getFlash('error'),
+            'orders' => $orders,
+        ));
+    }
+
+    public function ossgenerate(): void
+    {
+        $this->requireModuleWrite('accountingwarehouse');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=accountingwarehouse&action=oss');
+        }
+
+        $orderIds = $this->input('order_id', array());
+        if (!is_array($orderIds)) {
+            $orderIds = array();
+        }
+        $orderIds = array_values(array_unique(array_filter(array_map('intval', $orderIds), function (int $id): bool {
+            return $id > 0;
+        })));
+
+        if ($orderIds === array()) {
+            $this->setFlash('error', 'Wybierz przynajmniej jedno zamowienie.');
+            $this->redirect('./index.php?controller=accountingwarehouse&action=oss');
+        }
+
+        $rows = array();
+        foreach ($orderIds as $orderId) {
+            try {
+                $order = $this->sellasist()->getOrderById($orderId);
+            } catch (Throwable $exception) {
+                continue;
+            }
+
+            if (!is_array($order) || empty($order['id'])) {
+                continue;
+            }
+
+            $rows[] = $this->buildOssRow($order);
+        }
+
+        $headers = array(
+            'Kraj nabywcy',
+            'Zamowiony towar',
+            'Numer dokumentu',
+            'Data wystawienia',
+            'Podstawa opodatkowania w danym kraju',
+            'Wszelkie kolejne kwoty podwyzszajace lub obnizajace podstawe opodatkowania',
+            'Zastosowana stawka VAT',
+            'Wartosc VAT',
+            'Data i kwota otrzymanych platnosci',
+            'platnosci zaliczkowe',
+            'wystawiono fakture',
+            'uslugi',
+            'nr nadania kurier',
+            'zwrot towarow',
+        );
+
+        $csv = fopen('php://temp', 'w+');
+        fputcsv($csv, $headers);
+        foreach ($rows as $row) {
+            fputcsv($csv, $row);
+        }
+        rewind($csv);
+        $content = (string) stream_get_contents($csv);
+        fclose($csv);
+
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="OSS.csv"');
+        header('Content-Length: ' . strlen($content));
+        echo chr(0xEF) . chr(0xBB) . chr(0xBF);
+        echo $content;
+        exit;
+    }
+
+    private function buildOssOrderRows(array $orders): array
+    {
+        $rows = array();
+
+        foreach ($orders as $order) {
+            $orderId = isset($order['id']) ? (int) $order['id'] : 0;
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $rows[] = array(
+                'order_id' => $orderId,
+                'delivery_fullname' => trim(
+                    (string) ($order['bill_address']['name'] ?? '')
+                    . ' ' . (string) ($order['bill_address']['surname'] ?? '')
+                    . ' ' . (string) ($order['bill_address']['company_name'] ?? '')
+                ),
+            );
+        }
+
+        return $rows;
+    }
+
+    private function buildOssRow(array $order): array
+    {
+        $carts = isset($order['carts']) && is_array($order['carts']) ? $order['carts'] : array();
+
+        $productNames = '';
+        foreach ($carts as $cart) {
+            $productNames .= (string) ($cart['name'] ?? '') . ' x ' . (string) ($cart['quantity'] ?? '') . ' ';
+        }
+
+        $taxRatePercent = (float) ($carts[0]['tax_rate'] ?? 0);
+        $taxRateMultiplier = ($taxRatePercent / 100) + 1;
+        $total = (float) ($order['total'] ?? 0);
+        $netto = $taxRateMultiplier > 0 ? $total - ($total / $taxRateMultiplier) : 0.0;
+
+        $paidDate = trim((string) ($order['payment']['paid_date'] ?? ''));
+
+        return array(
+            trim((string) ($order['shipment_address']['country']['name'] ?? '')),
+            trim($productNames),
+            (string) ($order['id'] ?? ''),
+            (string) ($order['date'] ?? ''),
+            $taxRatePercent,
+            $total . (string) ($order['payment']['currency'] ?? ''),
+            $taxRatePercent,
+            $netto,
+            $paidDate !== '' ? $paidDate : 'POBRANIE',
+            0,
+            0,
+            0,
+            (string) ($order['tracking_number'] ?? ''),
+            0,
+        );
     }
 
     public function exportcostsxlsx(): void

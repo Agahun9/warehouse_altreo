@@ -83,6 +83,24 @@
             </div>
           </div>
         </div>
+        <div class="col-md-3">
+          <div class="card h-100">
+            <div class="card-header"><h3 class="card-title mb-0">OSS</h3></div>
+            <div class="card-body d-flex flex-column">
+              <p class="text-secondary">Zestawienie OSS dla zamowien Sellasist (status oczekujacych na rozliczenie).</p>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=oss" class="btn btn-outline-primary mt-auto">Zestawienie OSS</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card h-100">
+            <div class="card-header"><h3 class="card-title mb-0">Porownanie z ksiegowa</h3></div>
+            <div class="card-body d-flex flex-column">
+              <p class="text-secondary">Wgraj pliki XLSX (Towary, Koszt) od ksiegowej i sprawdz co sie nie zgadza z magazynem.</p>
+              <a href="{$baseUrl}?controller=accountingwarehouse&action=reconcile" class="btn btn-outline-info mt-auto">Porownaj pliki</a>
+            </div>
+          </div>
+        </div>
       </div>
 
       <p class="text-secondary mt-3">Zakres {$dateFrom|escape} - {$dateTo|escape}: lacznie {$totalDocuments} faktur.</p>

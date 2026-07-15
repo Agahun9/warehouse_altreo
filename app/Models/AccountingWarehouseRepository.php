@@ -943,41 +943,49 @@ class AccountingWarehouseRepository
             return null;
         }
 
-        $supplierTaxId = preg_replace('/\D+/', '', (string) ($header['supplier_tax_id'] ?? ''));
+        // Ta sama faktura (dokladnie ten sam numer) moze wystapic u dwoch roznych sprzedawcow -
+        // dubel rozpoznajemy dopiero po dopasowaniu NIP (a przy jego braku - nazwy sprzedawcy),
+        // wiec najpierw pobieramy WSZYSTKICH kandydatow po numerze i porownujemy w PHP z
+        // normalizacja NIP (bez spacji/myslnikow/prefiksu kraju), zeby roznice w formacie zapisu
+        // nie psuly ani nie falszowaly dopasowania.
+        $supplierTaxId = (string) preg_replace('/\D+/', '', (string) ($header['supplier_tax_id'] ?? ''));
         $supplierName = trim((string) ($header['supplier_name'] ?? ''));
-        $params = array('document_number' => $documentNumber);
-        $where = array('document_number = :document_number');
-
-        if (is_string($supplierTaxId) && $supplierTaxId !== '') {
-            $where[] = 'supplier_tax_id = :supplier_tax_id';
-            $params['supplier_tax_id'] = $supplierTaxId;
-        } elseif ($supplierName !== '') {
-            $where[] = 'LOWER(TRIM(supplier_name)) = LOWER(TRIM(:supplier_name))';
-            $params['supplier_name'] = $supplierName;
-        } else {
+        if ($supplierTaxId === '' && $supplierName === '') {
             return null;
         }
 
+        $params = array('document_number' => $documentNumber);
+        $where = array('document_number = :document_number');
         if ($excludeDocumentId > 0) {
             $where[] = 'id <> :exclude_id';
             $params['exclude_id'] = $excludeDocumentId;
         }
 
-        $row = $this->database->fetch(
+        $candidates = $this->database->fetchAll(
             'SELECT id, document_number, supplier_name, supplier_tax_id, issue_date, sale_date, currency'
             . ' FROM ' . self::DOCUMENTS_TABLE
             . ' WHERE ' . implode(' AND ', $where)
-            . ' ORDER BY id DESC'
-            . ' LIMIT 1',
+            . ' ORDER BY id DESC',
             $params
         );
 
-        if (!$row) {
-            return null;
+        foreach ($candidates as $candidate) {
+            $candidateTaxId = (string) preg_replace('/\D+/', '', (string) ($candidate['supplier_tax_id'] ?? ''));
+            if ($supplierTaxId !== '' && $candidateTaxId !== '') {
+                if ($supplierTaxId === $candidateTaxId) {
+                    $candidate['duplicate_reason'] = 'document_supplier';
+                    return $candidate;
+                }
+                continue;
+            }
+
+            if ($supplierName !== '' && mb_strtolower(trim((string) ($candidate['supplier_name'] ?? ''))) === mb_strtolower($supplierName)) {
+                $candidate['duplicate_reason'] = 'document_supplier';
+                return $candidate;
+            }
         }
 
-        $row['duplicate_reason'] = 'document_supplier';
-        return $row;
+        return null;
     }
 
     public function searchDocumentsByNumber(string $query, int $limit = 5, int $excludeDocumentId = 0): array
@@ -1066,6 +1074,102 @@ class AccountingWarehouseRepository
         }
 
         return $results;
+    }
+
+    /**
+     * Normalizuje numer dokumentu do postaci porownywalnej miedzy roznymi zrodlami
+     * (magazyn ksiegowy vs plik od ksiegowej): usuwa spacje (w tym twarde \xC2\xA0),
+     * ujednolica wielkosc liter i separatory, oraz usuwa zbedne wiodace zera w kazdym
+     * numerycznym segmencie (np. "06" i "6" albo "00003506" i "3506" to ten sam numer).
+     * Dzieki temu roznice w formatowaniu numeru faktury miedzy systemami nie powoduja
+     * falszywego braku dopasowania przy porownaniu z ksiegowa.
+     */
+    public function normalizeDocumentNumberKey(string $value): string
+    {
+        $value = str_replace("\xC2\xA0", ' ', trim($value));
+        if ($value === '') {
+            return '';
+        }
+
+        $value = mb_strtolower($value);
+        $value = preg_replace_callback('/\d+/', static function (array $matches): string {
+            $stripped = ltrim($matches[0], '0');
+            return $stripped === '' ? '0' : $stripped;
+        }, $value) ?? $value;
+
+        return preg_replace('/[^a-z0-9]+/', '', $value) ?? '';
+    }
+
+    /**
+     * Dla zadanej listy numerow dokumentow zwraca mape znormalizowany_numer => lista dokumentow
+     * wraz z klasyfikacja (koszt/towar/mieszane/korekta) i sumami netto/brutto - do porownania
+     * z zestawieniem ksiegowej (Towary/Koszt). Dopasowanie numerow jest odporne na roznice
+     * w formatowaniu (spacje, separatory, wiodace zera) - patrz normalizeDocumentNumberKey().
+     */
+    public function findDocumentsByNumbersForReconciliation(array $numbers): array
+    {
+        $wantedKeys = array();
+        foreach ($numbers as $number) {
+            $key = $this->normalizeDocumentNumberKey((string) $number);
+            if ($key !== '') {
+                $wantedKeys[$key] = true;
+            }
+        }
+
+        if ($wantedKeys === array()) {
+            return array();
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT documents.id AS document_id, documents.document_kind, documents.document_number, documents.supplier_name,'
+            . ' documents.supplier_tax_id, documents.issue_date, documents.sale_date, documents.currency,'
+            . ' documents.total_net, documents.total_gross,'
+            . ' export_lines.id AS line_id, items.item_kind'
+            . ' FROM ' . self::DOCUMENTS_TABLE . ' documents'
+            . ' LEFT JOIN ' . self::LINES_TABLE . ' export_lines ON export_lines.document_id = documents.id'
+            . ' LEFT JOIN ' . self::ITEMS_TABLE . ' items ON items.id = export_lines.warehouse_item_id'
+            . ' WHERE documents.document_number IS NOT NULL AND TRIM(documents.document_number) <> \'\''
+            . ' ORDER BY documents.id ASC, export_lines.id ASC',
+            array()
+        );
+
+        $documents = array();
+        foreach ($rows as $row) {
+            $documentId = (int) ($row['document_id'] ?? 0);
+            if (!isset($documents[$documentId])) {
+                $documents[$documentId] = array(
+                    'id' => $documentId,
+                    'document_kind' => trim((string) ($row['document_kind'] ?? 'receipt')) ?: 'receipt',
+                    'document_number' => (string) ($row['document_number'] ?? ''),
+                    'supplier_name' => (string) ($row['supplier_name'] ?? ''),
+                    'supplier_tax_id' => (string) ($row['supplier_tax_id'] ?? ''),
+                    'issue_date' => (string) ($row['issue_date'] ?? ''),
+                    'sale_date' => (string) ($row['sale_date'] ?? ''),
+                    'currency' => (string) ($row['currency'] ?? 'PLN'),
+                    'total_net' => (float) ($row['total_net'] ?? 0),
+                    'total_gross' => (float) ($row['total_gross'] ?? 0),
+                    'lines' => array(),
+                );
+            }
+
+            if ($row['line_id'] !== null) {
+                $documents[$documentId]['lines'][] = array(
+                    'item_kind' => $this->normalizeItemKind((string) ($row['item_kind'] ?? 'towar')),
+                );
+            }
+        }
+
+        $documentsByNumber = array();
+        foreach ($documents as $documentId => $document) {
+            $key = $this->normalizeDocumentNumberKey((string) ($document['document_number'] ?? ''));
+            if ($key === '' || !isset($wantedKeys[$key])) {
+                continue;
+            }
+            $document['classification'] = $this->classifyDocument($document);
+            $documentsByNumber[$key][] = $document;
+        }
+
+        return $documentsByNumber;
     }
 
     public function saveDocument(array $header, array $lines, int $userId): int
