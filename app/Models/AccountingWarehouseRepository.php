@@ -1608,19 +1608,16 @@ class AccountingWarehouseRepository
                 $lineGross = round($quantity * $unitGross, 2);
             }
 
+            // item_kind (towar/koszt/korekta) jest ustawiany wylacznie przez makra
+            // (AccountingWarehouseController::savemacro/updatemacro). Zapis lub edycja
+            // dokumentu NIE moze zmieniac klasyfikacji istniejacej pozycji - stad brak
+            // aktualizacji item_kind ponizej, poza pierwszym utworzeniem pozycji.
             $itemKind = $this->normalizeItemKind((string) ($line['item_kind'] ?? 'towar'));
             $itemId = $this->findOrCreateItemId($canonicalName, $unit, $itemKind);
             $originalName = trim((string) ($line['original_name'] ?? ''));
             if ($originalName !== '') {
                 $this->rememberAlias($originalName, $itemId);
             }
-
-            $this->database->update(
-                self::ITEMS_TABLE,
-                array('item_kind' => $itemKind),
-                'id = :id',
-                array('id' => $itemId)
-            );
 
             if (!isset($runningStockByItem[$itemId])) {
                 $runningStockByItem[$itemId] = $this->currentStockQuantityForItem($itemId);
