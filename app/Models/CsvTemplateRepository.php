@@ -138,6 +138,8 @@ class CsvTemplateRepository
     }
 
     public function allCategories(): array { return $this->database->fetchAll('SELECT c.*, COUNT(t.id) AS templates_count FROM csv_template_categories c LEFT JOIN csv_templates t ON t.category_id = c.id GROUP BY c.id ORDER BY c.name ASC'); }
+    public function countAll(): int { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_templates'); }
+    public function countUncategorized(): int { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_templates WHERE category_id IS NULL'); }
     public function createCategory(string $name): int { return (int) $this->database->insert('csv_template_categories', array('name' => $name)); }
     public function categoryExists(string $name): bool { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_template_categories WHERE name = :name', array('name' => $name)) > 0; }
     public function categoryExistsById(int $id): bool { return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM csv_template_categories WHERE id = :id', array('id' => $id)) > 0; }

@@ -110,15 +110,19 @@ class CsvTemplateController extends Controller
         $sortBy = trim((string) $this->input('sort_by', 'updated_at'));
         if (!in_array($sortBy, array('name', 'category', 'columns', 'created_at', 'updated_at'), true)) { $sortBy = 'updated_at'; }
         $sortDir = strtolower(trim((string) $this->input('sort_dir', 'desc'))) === 'asc' ? 'asc' : 'desc';
+        $categorySelected = $this->input('filter_category', null) !== null;
 
         $this->render('csv_templates/index', array(
             'pageTitle' => 'Szablony CSV',
             'contentTitle' => 'Szablony eksportu CSV',
             'pageDescription' => 'Tworzenie i zarzadzanie konfiguracjami eksportu produktow.',
             'breadcrumbCurrent' => 'Szablony CSV',
-            'templates' => $this->templates->all($categoryFilter, $nameFilter, $sortBy, $sortDir),
+            'templates' => $categorySelected ? $this->templates->all($categoryFilter, $nameFilter, $sortBy, $sortDir) : array(),
             'templateCategories' => $this->templates->allCategories(),
+            'totalTemplatesCount' => $this->templates->countAll(),
+            'uncategorizedTemplatesCount' => $this->templates->countUncategorized(),
             'categoryFilter' => $categoryFilter,
+            'categorySelected' => $categorySelected,
             'nameFilter' => $nameFilter,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,

@@ -135,7 +135,10 @@ class ValueResolver
             $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
                 ? $exportOptions['csv_generated_images_settings']
                 : array();
-            $lines = $this->generateImageExportFlattenedLines($product, $exportOptions, $settings);
+            $recordIndex = isset($exportOptions['csv_row_index']) ? max(0, (int) $exportOptions['csv_row_index']) : 0;
+            $rows = $this->generateImageExportRows($product, $exportOptions, $settings);
+            $record = isset($rows[$recordIndex]) ? $rows[$recordIndex] : (isset($rows[0]) ? $rows[0] : '');
+            $lines = $this->splitImageExportRowLines(is_scalar($record) ? (string) $record : '');
 
             return isset($lines[$index - 1]) ? $lines[$index - 1] : '';
         }
@@ -921,6 +924,14 @@ class ValueResolver
                     }
                 }
 
+                $rowImageLines = array();
+                for ($imageIndex = 1; $imageIndex <= $imageCount; $imageIndex++) {
+                    $path = $this->renderImageExportMacro($imageMacro, $product, $exportOptions, $baseDirectory, $collectionCode, $collectionName, $productName, $imageIndex, $thumbnailQueueItem);
+                    if ($path !== '') {
+                        $rowImageLines[] = $path;
+                    }
+                }
+
                 $rowLines = array();
                 foreach ($layout as $layoutItem) {
                     $type = trim((string) ($layoutItem['type'] ?? ''));
@@ -935,7 +946,7 @@ class ValueResolver
                     }
 
                     if ($type === 'image') {
-                        $rowLines = array_merge($rowLines, $imageLines);
+                        $rowLines = array_merge($rowLines, $rowImageLines);
                         continue;
                     }
 
@@ -1107,19 +1118,29 @@ class ValueResolver
                 continue;
             }
 
-            $items = preg_split('/\r\n|\r|\n/', (string) $row);
-            if (!is_array($items)) {
+            foreach ($this->splitImageExportRowLines((string) $row) as $line) {
+                $lines[] = $line;
+            }
+        }
+
+        return $lines;
+    }
+
+    private function splitImageExportRowLines(string $row): array
+    {
+        $items = preg_split('/\r\n|\r|\n/', $row);
+        if (!is_array($items)) {
+            return array();
+        }
+
+        $lines = array();
+        foreach ($items as $item) {
+            $item = trim((string) $item);
+            if ($item === '') {
                 continue;
             }
 
-            foreach ($items as $item) {
-                $item = trim((string) $item);
-                if ($item === '') {
-                    continue;
-                }
-
-                $lines[] = $item;
-            }
+            $lines[] = $item;
         }
 
         return $lines;

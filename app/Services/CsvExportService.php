@@ -76,6 +76,7 @@ class CsvExportService
                 $items = array();
                 for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
                     $rowExportOptions = $exportOptions;
+                    $rowExportOptions['csv_row_index'] = $rowIndex;
                     $queueItem = isset($queueItems[$queueItemIndex + $rowIndex]) ? $queueItems[$queueItemIndex + $rowIndex] : '';
                     if ($queueItem !== '') {
                         $rowExportOptions['image_queue_item'] = $queueItem;
@@ -166,7 +167,7 @@ class CsvExportService
             array('type' => 'image', 'value' => ''),
         );
         $layout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
-        if ($layout !== $defaultLayout) {
+        if ($layout !== array() && $layout !== $defaultLayout) {
             return true;
         }
 

@@ -54,10 +54,50 @@
       </div>
       {/if}
 
+      <div class="card mb-4">
+        <div class="card-header"><h3 class="card-title mb-0">Kategorie</h3></div>
+        <div class="card-body">
+          <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-2">
+            <div class="col">
+              <a href="{$baseUrl}?controller=csvtemplates&action=index&filter_category=all&filter_name={$nameFilter|escape:'url'}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}" class="card h-100 text-decoration-none text-reset{if $categorySelected and $categoryFilter eq 'all'} border-primary bg-primary-subtle{/if}">
+                <div class="card-body text-center py-3">
+                  <div class="fw-semibold">Wszystkie</div>
+                  <div class="small text-secondary">{$totalTemplatesCount|default:0} szablonow</div>
+                </div>
+              </a>
+            </div>
+            {foreach $templateCategories as $category}
+              <div class="col">
+                <a href="{$baseUrl}?controller=csvtemplates&action=index&filter_category={$category.id}&filter_name={$nameFilter|escape:'url'}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}" class="card h-100 text-decoration-none text-reset{if $categorySelected and $categoryFilter == $category.id} border-primary bg-primary-subtle{/if}">
+                  <div class="card-body text-center py-3">
+                    <div class="fw-semibold text-truncate">{$category.name|escape}</div>
+                    <div class="small text-secondary">{$category.templates_count|default:0} szablonow</div>
+                  </div>
+                </a>
+              </div>
+            {/foreach}
+            {if $uncategorizedTemplatesCount > 0}
+              <div class="col">
+                <a href="{$baseUrl}?controller=csvtemplates&action=index&filter_category=none&filter_name={$nameFilter|escape:'url'}&sort_by={$sortBy|escape:'url'}&sort_dir={$sortDir|escape:'url'}" class="card h-100 text-decoration-none text-reset{if $categorySelected and $categoryFilter eq 'none'} border-primary bg-primary-subtle{/if}">
+                  <div class="card-body text-center py-3">
+                    <div class="fw-semibold">Bez kategorii</div>
+                    <div class="small text-secondary">{$uncategorizedTemplatesCount|default:0} szablonow</div>
+                  </div>
+                </a>
+              </div>
+            {/if}
+          </div>
+          {if !$categorySelected}
+            <div class="text-secondary small mt-3 mb-0">Wybierz kategorie (lub "Wszystkie"), aby zobaczyc liste szablonow.</div>
+          {/if}
+        </div>
+      </div>
+
+      {if $categorySelected}
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div><h3 class="card-title mb-1">Lista szablonow</h3><div class="small text-secondary">Kliknij naglowek kolumny, aby zmienic sortowanie.</div></div>
-          {if $nameFilter ne '' or $categoryFilter ne 'all'}<a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-sm btn-outline-secondary">Wyczysc filtry</a>{/if}
+          <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-sm btn-outline-secondary">Wroc do kategorii</a>
         </div>
         <form method="get" action="{$baseUrl}" id="csvTemplatesFiltersForm">
           <input type="hidden" name="controller" value="csvtemplates"><input type="hidden" name="action" value="index">
@@ -123,6 +163,7 @@
           </div>
         </div>
       </div>
+      {/if}
     </div>
   </div>
 </main>
