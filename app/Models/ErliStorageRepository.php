@@ -749,6 +749,40 @@ class ErliStorageRepository
         if (!isset($indexes['idx_erli_products_product_id'])) {
             $this->database->query('ALTER TABLE erli_products ADD KEY idx_erli_products_product_id (product_id)');
         }
+
+        // NOTE: sku may still be utf8mb4_general_ci on older installs, which blocks index use
+        // for the computers-products marketplace filter (see ComputersController::
+        // computerProductFilterSql). Fixed manually via fixSkuCollation() / the CLI script
+        // php/scripts/fix_marketplace_sku_collation.php - deliberately NOT run automatically
+        // here, since a collation change is an ALGORITHM=COPY ALTER (full table rebuild) that
+        // shared hosting can kill mid-flight ("MySQL server has gone away") if triggered from
+        // a web request.
+    }
+
+    public function fixSkuCollation(string $collation = 'utf8mb4_unicode_ci'): array
+    {
+        return array_values(array_filter(array(
+            $this->ensureColumnCollation('erli_products', 'sku', 'VARCHAR(190) DEFAULT NULL', $collation),
+        )));
+    }
+
+    private function ensureColumnCollation(string $table, string $column, string $columnDefinition, string $collation = 'utf8mb4_unicode_ci'): ?string
+    {
+        $currentCollation = (string) $this->database->fetchColumn(
+            'SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
+            array(
+                'table_name' => $table,
+                'column_name' => $column,
+            )
+        );
+
+        if ($currentCollation === '' || strcasecmp($currentCollation, $collation) === 0) {
+            return null;
+        }
+
+        $this->database->query('ALTER TABLE ' . $table . ' MODIFY COLUMN ' . $column . ' ' . $columnDefinition . ' COLLATE ' . $collation);
+
+        return $table . '.' . $column . ': ' . $currentCollation . ' -> ' . $collation;
     }
 
     private function ensureAccountsTableShape(string $databaseName): void

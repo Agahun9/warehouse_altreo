@@ -782,6 +782,15 @@ class ValueResolver
             return number_format((float) $value, $decimals, $decimalPoint, $thousandsSeparator);
         }
 
+        if (strpos($format, 'length:') === 0) {
+            $maxLength = (int) substr($format, 7);
+            if ($maxLength <= 0) {
+                return $value;
+            }
+
+            return function_exists('mb_substr') ? mb_substr($value, 0, $maxLength, 'UTF-8') : substr($value, 0, $maxLength);
+        }
+
         return $value;
     }
 

@@ -85,6 +85,21 @@
               </div>
               <div class="form-text">Wybierz komponent. Podczas eksportu pojawi się tylko treść pierwszej pasującej gałęzi. Warunki można sprawdzić w podglądzie produktu.</div>
             </div>
+            <div class="border border-primary-subtle rounded bg-primary-subtle p-2 mb-2">
+              <div class="small fw-semibold mb-2"><i class="bi bi-collection me-1"></i>Warunek: dowolny z wielu komponentów naraz</div>
+              <div class="row g-2">
+                <div class="col-lg-6">
+                  <input type="search" class="form-control form-control-sm mb-1" id="descriptionConditionMultiSearch" placeholder="Szukaj komponentu...">
+                  <div class="border rounded bg-white p-2" id="descriptionConditionMultiList" style="max-height:180px;overflow:auto"></div>
+                </div>
+                <div class="col-lg-6 d-flex flex-wrap align-content-start gap-1">
+                  <button type="button" class="btn btn-sm btn-primary" id="insertDescriptionConditionMulti">Wstaw IF (którykolwiek zaznaczony)</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="insertDescriptionConditionMultiElseIf">Wstaw jako ELSE IF</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="clearDescriptionConditionMulti">Odznacz wszystkie</button>
+                </div>
+              </div>
+              <div class="form-text">Zaznacz kilka komponentów (np. warianty dysku), aby warunek był prawdziwy, gdy produkt ma <strong>którykolwiek</strong> z nich, np. <code>{ldelim}% if has_component_in(29,28,27,26) %{rdelim}</code>.</div>
+            </div>
             <div class="border rounded bg-light p-2 mb-2">
               <div class="small fw-semibold mb-2">Parametry Allegro, Empik i Morele</div>
               <div class="d-flex flex-wrap gap-2">
@@ -157,9 +172,16 @@
         <button type="button" class="btn btn-sm btn-primary" id="addCsvColumn"><i class="bi bi-plus-circle"></i> Dodaj kolumnę</button>
       </div>
       <div class="card-body p-0">
+        <div class="small text-muted p-3 pb-2">
+          <strong>Formatowanie</strong> (opcjonalnie, kolumna „Formatowanie”): <code>upper</code> – zamiana na wielkie litery,
+          <code>lower</code> – zamiana na małe litery, <code>ucfirst</code> – pierwsza litera tekstu jako wielka,
+          <code>trim</code> – usunięcie spacji z początku i końca, <code>date:Y-m-d</code> – format daty,
+          <code>number:2:,: </code> – format liczbowy: 2 miejsca, przecinek dziesiętny, spacja tysięczna,
+          <code>length:2000</code> – obcięcie tekstu do maksymalnie 2000 znaków.
+        </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th style="width:45px"></th><th>Nagłówek</th><th style="width:140px">Typ</th><th>Źródło / wartość stała</th><th style="width:70px"></th></tr></thead>
+            <thead class="table-light"><tr><th style="width:45px"></th><th>Nagłówek</th><th style="width:120px">Typ</th><th>Źródło / wartość stała</th><th style="width:190px">Formatowanie</th><th style="width:70px"></th></tr></thead>
             <tbody id="csvColumnsBody"></tbody>
           </table>
         </div>
@@ -277,15 +299,17 @@
     return wrapper;
   }
 
-  function addRow(column = {header: '', type: 'source', value: ''}) {
+  function addRow(column = {header: '', type: 'source', value: '', format: ''}) {
     const row = document.createElement('tr');
     row.innerHTML = '<td class="text-center text-nowrap"><button type="button" class="btn btn-sm btn-link p-0 move-up" title="W górę">↑</button> <button type="button" class="btn btn-sm btn-link p-0 move-down" title="W dół">↓</button></td>'
       + '<td><input class="form-control form-control-sm" name="column_header[]" required></td>'
       + '<td><select class="form-select form-select-sm type-select" name="column_type[]"><option value="source">Źródło</option><option value="static">Stała</option><option value="template">Łączenie pól</option></select></td>'
       + '<td class="value-cell"></td>'
+      + '<td><input type="text" class="form-control form-control-sm format-input" name="column_format[]" placeholder="np. upper, date:Y-m-d" title="upper, lower, ucfirst, trim, date:Y-m-d, number:2:,: , length:2000"></td>'
       + '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger remove-column">×</button></td>';
     row.querySelector('input').value = column.header || '';
     row.querySelector('.type-select').value = ['source', 'static', 'template'].includes(column.type) ? column.type : 'source';
+    row.querySelector('.format-input').value = column.format || '';
     body.appendChild(row);
 
     function renderValue() {
@@ -459,6 +483,23 @@
     syncDescriptionInput();
   }
 
+  function conditionTag(directive) {
+    // Wrapping the {% ... %} marker in an HTML comment keeps it in place when it sits directly inside a
+    // <table>/<tbody> (e.g. around a <tr>): browsers foster-parent stray text nodes out of tables when the
+    // visual editor's HTML is re-parsed, but they leave comment nodes untouched.
+    return '<!--{% ' + directive + ' %}-->';
+  }
+
+  const CONDITION_MARKER_RE = /(?:<!--\s*)?(\{%\s*(?:if\s+[^%]+?|elseif\s+[^%]+?|else\s+if\s+[^%]+?|else|endif)\s*%\})(?:\s*-->)?/gi;
+
+  function normalizeDescriptionConditionMarkers(html) {
+    // Any {% if/elseif/else/endif %} marker that isn't already wrapped in an HTML comment gets wrapped here,
+    // BEFORE the string is ever handed to the browser's HTML parser (via innerHTML). Older templates saved
+    // with bare markers directly inside a table would otherwise get their markers foster-parented out of the
+    // table on every page load, silently breaking the condition. Already-wrapped markers pass through unchanged.
+    return (html || '').replace(CONDITION_MARKER_RE, '<!--$1-->');
+  }
+
   Object.entries(descriptionConditionComponents).forEach(([token, label]) => {
     [descriptionConditionIf, descriptionConditionElseIf].forEach(function(select) {
       const option = document.createElement('option');
@@ -493,11 +534,11 @@
       return;
     }
     const elseIfToken = descriptionConditionElseIf.value;
-    let block = '{% if ' + ifToken + ' %}<p>Treść, gdy komputer ma wybrany komponent.</p>';
+    let block = conditionTag('if ' + ifToken) + '<p>Treść, gdy komputer ma wybrany komponent.</p>';
     if (elseIfToken && elseIfToken !== ifToken) {
-      block += '{% elseif ' + elseIfToken + ' %}<p>Treść dla komponentu z ELSE IF.</p>';
+      block += conditionTag('elseif ' + elseIfToken) + '<p>Treść dla komponentu z ELSE IF.</p>';
     }
-    block += '{% else %}<p>Treść, gdy żaden warunek nie pasuje.</p>{% endif %}';
+    block += conditionTag('else') + '<p>Treść, gdy żaden warunek nie pasuje.</p>' + conditionTag('endif');
     insertHtmlAtCursor(block);
   });
 
@@ -505,11 +546,11 @@
     button.addEventListener('click', function() {
       const tag = button.dataset.tag;
       if (tag === 'else') {
-        insertHtmlAtCursor('{% else %}');
+        insertHtmlAtCursor(conditionTag('else'));
         return;
       }
       if (tag === 'endif') {
-        insertHtmlAtCursor('{% endif %}');
+        insertHtmlAtCursor(conditionTag('endif'));
         return;
       }
       const token = descriptionConditionElseIf.value || descriptionConditionIf.value;
@@ -517,8 +558,81 @@
         alert('Najpierw wybierz komponent.');
         return;
       }
-      insertHtmlAtCursor('{% elseif ' + token + ' %}');
+      insertHtmlAtCursor(conditionTag('elseif ' + token));
     });
+  });
+
+  const descriptionConditionMultiSearch = document.getElementById('descriptionConditionMultiSearch');
+  const descriptionConditionMultiList = document.getElementById('descriptionConditionMultiList');
+  const descriptionConditionMultiCheckboxes = [];
+
+  Object.entries(descriptionConditionComponents).forEach(([token, label]) => {
+    const componentId = token.replace(/^has_component\./, '');
+    if (!componentId) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'form-check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'form-check-input';
+    input.value = componentId;
+    input.id = 'descriptionConditionMultiCheckbox' + componentId;
+    const labelEl = document.createElement('label');
+    labelEl.className = 'form-check-label small';
+    labelEl.htmlFor = input.id;
+    labelEl.textContent = label;
+    wrapper.appendChild(input);
+    wrapper.appendChild(labelEl);
+    descriptionConditionMultiList.appendChild(wrapper);
+    descriptionConditionMultiCheckboxes.push({
+      id: componentId,
+      searchText: (label + ' ' + token).toLocaleLowerCase('pl'),
+      wrapper: wrapper,
+      input: input,
+    });
+  });
+
+  descriptionConditionMultiSearch.addEventListener('input', function() {
+    const query = this.value.trim().toLocaleLowerCase('pl');
+    descriptionConditionMultiCheckboxes.forEach(function(item) {
+      item.wrapper.style.display = (query === '' || item.searchText.includes(query)) ? '' : 'none';
+    });
+  });
+
+  function selectedDescriptionConditionMultiIds() {
+    return descriptionConditionMultiCheckboxes
+      .filter(function(item) { return item.input.checked; })
+      .map(function(item) { return item.id; });
+  }
+
+  function descriptionConditionMultiToken() {
+    const ids = selectedDescriptionConditionMultiIds();
+    if (ids.length === 0) return '';
+    if (ids.length === 1) return 'has_component.' + ids[0];
+    return 'has_component_in(' + ids.join(',') + ')';
+  }
+
+  document.getElementById('insertDescriptionConditionMulti').addEventListener('click', function() {
+    const token = descriptionConditionMultiToken();
+    if (!token) {
+      alert('Zaznacz przynajmniej jeden komponent.');
+      return;
+    }
+    const block = conditionTag('if ' + token) + '<p>Treść, gdy produkt ma którykolwiek z zaznaczonych komponentów.</p>'
+      + conditionTag('else') + '<p>Treść, gdy żaden warunek nie pasuje.</p>' + conditionTag('endif');
+    insertHtmlAtCursor(block);
+  });
+
+  document.getElementById('insertDescriptionConditionMultiElseIf').addEventListener('click', function() {
+    const token = descriptionConditionMultiToken();
+    if (!token) {
+      alert('Zaznacz przynajmniej jeden komponent.');
+      return;
+    }
+    insertHtmlAtCursor(conditionTag('elseif ' + token));
+  });
+
+  document.getElementById('clearDescriptionConditionMulti').addEventListener('click', function() {
+    descriptionConditionMultiCheckboxes.forEach(function(item) { item.input.checked = false; });
   });
 
   function isDescriptionImageToken(token) {
@@ -618,7 +732,7 @@
   document.getElementById('showDescriptionSource').addEventListener('click', function () {
     const sourceVisible = !descriptionSourceEditor.classList.contains('d-none');
     if (sourceVisible) {
-      descriptionVisualEditor.innerHTML = descriptionSourceEditor.value;
+      descriptionVisualEditor.innerHTML = normalizeDescriptionConditionMarkers(descriptionSourceEditor.value);
       descriptionSourceEditor.classList.add('d-none');
       descriptionVisualEditor.classList.remove('d-none');
       this.textContent = 'HTML';
@@ -690,7 +804,7 @@
       descriptionProductResults.style.display = 'none';
     }
   });
-  descriptionVisualEditor.innerHTML = descriptionInput.value;
+  descriptionVisualEditor.innerHTML = normalizeDescriptionConditionMarkers(descriptionInput.value);
   syncDescriptionInput();
   document.getElementById('computerCsvTemplateForm').addEventListener('submit', function () {
     if (!descriptionSourceEditor.classList.contains('d-none')) {
@@ -698,6 +812,7 @@
     } else {
       syncDescriptionInput();
     }
+    descriptionInput.value = normalizeDescriptionConditionMarkers(descriptionInput.value);
   });
 {/literal}
 })();

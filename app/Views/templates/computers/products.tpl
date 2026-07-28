@@ -113,9 +113,13 @@
                   </div>
                 </div>
                 <div class="row g-3">
-                  <div class="col-12">
+                  <div class="col-12 col-md-8">
                     <label for="filter_name" class="form-label fw-bold">Nazwa produktu</label>
                     <input type="text" id="filter_name" name="filter_name" value="{$filterName|escape:'html'}" class="form-control" placeholder="Wpisz nazwę..." />
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <label for="filter_ean_sku" class="form-label fw-bold">EAN / SKU</label>
+                    <input type="text" id="filter_ean_sku" name="filter_ean_sku" value="{$filterEanSku|escape:'html'}" class="form-control" placeholder="Wpisz EAN lub SKU..." />
                   </div>
                   <div class="col-md-6 col-xl-3">
                     <label for="filter_created_from" class="form-label fw-bold">Utworzone od</label>
@@ -132,6 +136,16 @@
                   <div class="col-md-6 col-xl-3">
                     <label for="filter_updated_to" class="form-label fw-bold">Modyfikowane do</label>
                     <input type="date" id="filter_updated_to" name="filter_updated_to" value="{$filterUpdatedTo|escape:'html'}" class="form-control" />
+                  </div>
+                  <div class="col-12 d-flex flex-wrap gap-3">
+                    <div class="form-check">
+                      <input type="checkbox" class="form-check-input" id="filter_no_images" name="filter_no_images" value="1" {if $filterNoImages}checked{/if} />
+                      <label for="filter_no_images" class="form-check-label">Bez grafik przypisanych do produktu</label>
+                    </div>
+                    <div class="form-check">
+                      <input type="checkbox" class="form-check-input" id="filter_no_ean" name="filter_no_ean" value="1" {if $filterNoEan}checked{/if} />
+                      <label for="filter_no_ean" class="form-check-label">Bez EAN</label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -201,32 +215,70 @@
                 <div class="computers-filter-panel__header">
                   <div>
                     <div class="computers-filter-panel__title">Komponenty</div>
-                    <div class="computers-filter-panel__hint">Mozesz zaznaczyc wiele komponentów jednocześnie.</div>
+                    <div class="computers-filter-panel__hint">Mozesz zaznaczyc wiele komponentów jednocześnie. Rozwiń kategorię lub wyszukaj po nazwie.</div>
                   </div>
+                  <span class="badge rounded-pill text-bg-primary computers-filter-total-badge" id="componentsSelectedTotal">{$filterComponents|@count} wybranych</span>
                 </div>
-                <label class="form-label fw-bold">Komponenty (można wiele):</label>
-                <div class="computers-filter-components">
-                  {assign var="currentCategory" value=""}
-                  <div class="row g-2">
-                    {foreach from=$components item=comp}
-                      {if $comp.category != $currentCategory}
-                        {assign var="currentCategory" value=$comp.category}
-                        <div class="col-12 mt-2 mb-1">
-                          <div class="computers-filter-category">{$comp.category|escape:'html'}</div>
-                        </div>
-                      {/if}
 
-                      <div class="col-md-6 col-xl-4">
-                        <label class="form-check computers-filter-component-item" for="filter_comp_{$comp.id}">
-                          <input class="form-check-input" type="checkbox" name="filter_components[]" value="{$comp.id}"
-                                 {if in_array($comp.id, $filterComponents)}checked{/if} id="filter_comp_{$comp.id}" />
-                          <span class="form-check-label small">
-                            {$comp.name|escape:'html'}
-                          </span>
-                        </label>
-                      </div>
-                    {/foreach}
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                  <div class="input-group computers-filter-search">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control border-start-0" id="componentSearchInput" placeholder="Szukaj komponentu (np. i5, 16GB, RTX 3060)...">
                   </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="componentsClearBtn">
+                    <i class="bi bi-x-circle me-1"></i>Wyczyść komponenty
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="componentsExpandAllBtn">
+                    <i class="bi bi-arrows-expand me-1"></i>Rozwiń wszystkie
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="componentsCollapseAllBtn">
+                    <i class="bi bi-arrows-collapse me-1"></i>Zwiń wszystkie
+                  </button>
+                </div>
+
+                <div class="accordion computers-filter-accordion" id="componentsAccordion">
+                  {foreach from=$grouped item=comps key=category name=catLoop}
+                    {assign var="catSelectedCount" value=0}
+                    {foreach from=$comps item=comp}
+                      {if in_array($comp.id, $filterComponents)}
+                        {assign var="catSelectedCount" value=$catSelectedCount+1}
+                      {/if}
+                    {/foreach}
+                    {assign var="catIndex" value=$smarty.foreach.catLoop.index}
+                    <div class="accordion-item computers-filter-category-item" data-category-item>
+                      <h2 class="accordion-header" id="filterCatHeading{$catIndex}">
+                        <button class="accordion-button{if $catSelectedCount == 0} collapsed{/if}" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#filterCatCollapse{$catIndex}"
+                                aria-expanded="{if $catSelectedCount > 0}true{else}false{/if}" aria-controls="filterCatCollapse{$catIndex}">
+                          <span class="computers-filter-category-name">{$category|escape:'html'}</span>
+                          <span class="text-muted small ms-2 computers-filter-category-count">{$comps|@count} poz.</span>
+                          <span class="badge rounded-pill text-bg-primary ms-2 computers-filter-category-badge{if $catSelectedCount == 0} d-none{/if}" data-selected-badge>{$catSelectedCount}</span>
+                        </button>
+                      </h2>
+                      <div id="filterCatCollapse{$catIndex}" class="accordion-collapse collapse{if $catSelectedCount > 0} show{/if}" aria-labelledby="filterCatHeading{$catIndex}">
+                        <div class="accordion-body">
+                          <div class="d-flex justify-content-end gap-3 mb-2">
+                            <a href="#" class="small computers-filter-quick-link" data-quick-action="select">Zaznacz widoczne</a>
+                            <a href="#" class="small computers-filter-quick-link" data-quick-action="clear">Odznacz wszystkie</a>
+                          </div>
+                          <div class="row g-2">
+                            {foreach from=$comps item=comp}
+                              <div class="col-md-6 col-xl-4" data-component-col>
+                                <label class="form-check computers-filter-component-item" for="filter_comp_{$comp.id}" data-component-label="{$comp.name|escape:'html'|lower}">
+                                  <input class="form-check-input" type="checkbox" name="filter_components[]" value="{$comp.id}"
+                                         {if in_array($comp.id, $filterComponents)}checked{/if} id="filter_comp_{$comp.id}" data-component-checkbox />
+                                  <span class="form-check-label small">
+                                    {$comp.name|escape:'html'}
+                                  </span>
+                                </label>
+                              </div>
+                            {/foreach}
+                          </div>
+                          <div class="text-muted small computers-filter-no-match d-none">Brak komponentów pasujących do wyszukiwania.</div>
+                        </div>
+                      </div>
+                    </div>
+                  {/foreach}
                 </div>
               </div>
             </div>
@@ -272,6 +324,7 @@
           <form method="post" action="" enctype="multipart/form-data" id="productsBulkForm">
             <input type="hidden" name="selection_scope" id="selection_scope" value="page" />
             <input type="hidden" name="selection_filter_name" value="{$filterName|escape:'html'}" />
+            <input type="hidden" name="selection_filter_ean_sku" value="{$filterEanSku|escape:'html'}" />
             <input type="hidden" name="selection_filter_created_from" value="{$filterCreatedFrom|escape:'html'}" />
             <input type="hidden" name="selection_filter_created_to" value="{$filterCreatedTo|escape:'html'}" />
             {foreach from=$filterComponents item=filterComponentId}
@@ -282,6 +335,8 @@
             {/foreach}
             <input type="hidden" name="selection_filter_updated_from" value="{$filterUpdatedFrom|escape:'html'}" />
             <input type="hidden" name="selection_filter_updated_to" value="{$filterUpdatedTo|escape:'html'}" />
+            <input type="hidden" name="selection_filter_no_images" value="{if $filterNoImages}1{else}0{/if}" />
+            <input type="hidden" name="selection_filter_no_ean" value="{if $filterNoEan}1{else}0{/if}" />
             <div id="excluded_product_ids"></div>
             <div id="all_filtered_selection_notice" class="alert alert-primary py-2 px-3 mb-3 d-none" role="status">
               Zaznaczono wszystkie produkty zgodne z bieżącymi filtrami: <strong>{$total_products}</strong>.
@@ -343,13 +398,15 @@
               </div>
               <button type="submit" class="btn btn-success"><i class="bi bi-play-circle me-1"></i>Wykonaj akcję</button>
               <div class="d-inline-flex align-items-center gap-2 ms-2">
-                <select name="csv_template_id" class="form-select" style="width:220px" aria-label="Szablon eksportu CSV">
+                <select name="csv_template_id" id="computers_csv_template_id" class="form-select" style="width:220px" aria-label="Szablon eksportu CSV">
                   <option value="">Szablon eksportu CSV...</option>
                   {foreach from=$csvTemplates item=csvTemplate}
                     <option value="{$csvTemplate.id}">{$csvTemplate.name|escape:'html'} ({$csvTemplate.columns_count})</option>
                   {/foreach}
                 </select>
-                <button type="submit" formaction="{$baseUrl}?controller=computers&action=exportcsv" formmethod="post" class="btn btn-outline-primary">
+                <label for="computers_csv_batch_size" class="form-label small mb-0 text-muted" title="Ile produktow na jeden plik CSV. Przy wiekszej liczbie zaznaczonych produktow eksport zostanie podzielony na kilka plikow pobranych po kolei.">Produktow/plik:</label>
+                <input type="number" id="computers_csv_batch_size" class="form-control" style="width:110px" min="50" step="50" value="3000" title="Ile produktow na jeden plik CSV. Przy wiekszej liczbie zaznaczonych produktow eksport zostanie podzielony na kilka plikow pobranych po kolei." aria-label="Produktow na plik CSV" />
+                <button type="button" id="computersExportCsvBtn" formaction="{$baseUrl}?controller=computers&action=exportcsv" formmethod="post" class="btn btn-outline-primary">
                   <i class="bi bi-file-earmark-spreadsheet me-1"></i>Eksportuj CSV
                 </button>
                 <a href="{$baseUrl}?controller=computers&action=csvtemplates" class="btn btn-outline-secondary" title="Szablony CSV">
@@ -382,16 +439,30 @@
                 </select>
                 <p class="mt-2 text-muted small">Zaznaczone produkty dostaną nowe tytuły wygenerowane z wybranego szablonu i aktualnych komponentów.</p>
               </div>
-              <div id="change_images_field" style="display:none; max-width: 400px;">
-                <label for="bulk_img" class="form-label">Wybierz plik obrazu:</label>
-                <input type="file" id="bulk_img" name="bulk_img" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control" />
+              <div id="change_images_field" style="display:none; max-width: 460px;">
+                <label class="form-label">Dodaj zdjecia (max 16) — przeciagnij miniaturki, aby ustalic kolejnosc 1, 2, 3...:</label>
+                <div class="product-image-channel product-image-upload-widget" data-max-images="16">
+                  <div class="product-image-dropzone" tabindex="0" role="button">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <strong>Upusc zdjecia tutaj</strong>
+                    <span>lub kliknij, aby wybrac pliki</span>
+                  </div>
+                  <input type="file" name="bulk_img[]" accept=".jpg,.jpeg,.png,.gif,.webp" class="product-image-file-input" multiple />
+                  <div class="product-new-image-preview"></div>
+                </div>
                 <div class="form-text mt-2">Wybierz cel aktualizacji obrazu:</div>
-                <select name="bulk_img_target" id="bulk_img_target" class="form-select form-select-sm mt-1" style="max-width:200px;">
+                <select name="bulk_img_target" id="bulk_img_target" class="form-select form-select-sm mt-1" style="max-width:250px;">
+                  <option value="all">Wszystkie (Allegro + Morele + Empik)</option>
                   <option value="img">ALLEGRO (img)</option>
                   <option value="img_morele">Morele (img_morele)</option>
                   <option value="img_empik">Empik (img_empik)</option>
                 </select>
-                <p class="mt-2 text-muted small">Wybrany obrazek zostanie ustawiony dla wszystkich zaznaczonych produktów (zastąpi obecny).</p>
+                <div class="form-text mt-2">Tryb:</div>
+                <select name="bulk_img_mode" id="bulk_img_mode" class="form-select form-select-sm mt-1" style="max-width:250px;">
+                  <option value="replace">Zastap obecne zdjecia</option>
+                  <option value="append">Dodaj do obecnych zdjec</option>
+                </select>
+                <p class="mt-2 text-muted small">Zdjecia zostana zapisane w kolejnosci widocznej powyzej (numery 1, 2, 3...) dla wszystkich zaznaczonych produktow.</p>
               </div>
               <div id="import_ean_field" style="display:none; max-width: 400px;">
                 <label for="CSV_ean" class="form-label">Wybierz plik CSV z EAN:</label>
@@ -540,26 +611,82 @@
                           {/if}
                           <span class="product-title-counter ms-2 small text-muted" data-prod-id="{$prod.id}"></span>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
-                          {if $prod.img}
-                            Allegro
-                            <img src="{$productsImageBase}/{$prod.img|escape:'html'}" alt="Obrazek" class="img-fluid product-img-thumb rounded border" style="max-height:48px; max-width:64px; object-fit:contain; cursor:pointer;" data-img="{$productsImageBase}/{$prod.img|escape:'html'}" />
-                          {/if}
-                          <input type="file" name="products[{$prod.id}][img_file]" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control form-control-sm mb-1" style="max-width:140px;" />
-
-                          <!-- Morele image -->
-                          {if $prod.img_morele}
-                            Morele
-                            <img src="{$productsImageBase}/{$prod.img_morele|escape:'html'}" alt="Obrazek Morele" class="img-fluid product-img-thumb rounded border" style="max-height:48px; max-width:64px; object-fit:contain; cursor:pointer; margin-left:6px;" data-img="{$productsImageBase}/{$prod.img_morele|escape:'html'}" />
-                          {/if}
-                          <input type="file" name="products[{$prod.id}][img_morele_file]" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control form-control-sm" style="max-width:140px;" />
-
-                          <!-- Empik image -->
-                          {if $prod.img_empik}
-                            Empik
-                            <img src="{$productsImageBase}/{$prod.img_empik|escape:'html'}" alt="Obrazek Empik" class="img-fluid product-img-thumb rounded border" style="max-height:48px; max-width:64px; object-fit:contain; cursor:pointer; margin-left:6px;" data-img="{$productsImageBase}/{$prod.img_empik|escape:'html'}" />
-                          {/if}
-                          <input type="file" name="products[{$prod.id}][img_empik_file]" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control form-control-sm" style="max-width:140px;" />
+                        <div class="d-flex flex-wrap align-items-start gap-2 product-images-editor">
+                          <div class="product-image-channel product-image-upload-widget" data-max-images="16">
+                            <div class="product-image-channel__label">Allegro <span class="text-muted small">({$prod.img_count|default:0})</span></div>
+                            <input type="hidden" name="products[{$prod.id}][img_old]" class="product-image-order-input" value="{$prod.img|escape:'html'}" />
+                            <div class="product-image-dropzone" tabindex="0" role="button">
+                              <i class="bi bi-cloud-arrow-up"></i>
+                              <span>Dodaj zdjecia</span>
+                            </div>
+                            <input type="file" name="products[{$prod.id}][img_file][]" accept=".jpg,.jpeg,.png,.gif,.webp" class="product-image-file-input" multiple />
+                            <div class="product-new-image-preview"></div>
+                            {if $prod.img}
+                              {assign var="channelImagesAllegro" value=$prod.img|split:","}
+                              <div class="product-image-sorter">
+                                {foreach from=$channelImagesAllegro item=imgFile}
+                                  {if $imgFile}
+                                    <div class="product-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                                      <img src="{$productsImageBase}/{$imgFile|escape:'html'}" alt="Allegro" class="product-img-thumb" data-img="{$productsImageBase}/{$imgFile|escape:'html'}" />
+                                      <label class="product-image-thumb-remove" title="Usun to zdjecie">
+                                        <input type="checkbox" name="products[{$prod.id}][remove_img][]" value="{$imgFile|escape:'html'}" /> Usun
+                                      </label>
+                                    </div>
+                                  {/if}
+                                {/foreach}
+                              </div>
+                            {/if}
+                          </div>
+                          <div class="product-image-channel product-image-upload-widget" data-max-images="16">
+                            <div class="product-image-channel__label">Morele <span class="text-muted small">({$prod.img_morele_count|default:0})</span></div>
+                            <input type="hidden" name="products[{$prod.id}][img_morele_old]" class="product-image-order-input" value="{$prod.img_morele|escape:'html'}" />
+                            <div class="product-image-dropzone" tabindex="0" role="button">
+                              <i class="bi bi-cloud-arrow-up"></i>
+                              <span>Dodaj zdjecia</span>
+                            </div>
+                            <input type="file" name="products[{$prod.id}][img_morele_file][]" accept=".jpg,.jpeg,.png,.gif,.webp" class="product-image-file-input" multiple />
+                            <div class="product-new-image-preview"></div>
+                            {if $prod.img_morele}
+                              {assign var="channelImagesMorele" value=$prod.img_morele|split:","}
+                              <div class="product-image-sorter">
+                                {foreach from=$channelImagesMorele item=imgFile}
+                                  {if $imgFile}
+                                    <div class="product-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                                      <img src="{$productsImageBase}/{$imgFile|escape:'html'}" alt="Morele" class="product-img-thumb" data-img="{$productsImageBase}/{$imgFile|escape:'html'}" />
+                                      <label class="product-image-thumb-remove" title="Usun to zdjecie">
+                                        <input type="checkbox" name="products[{$prod.id}][remove_img_morele][]" value="{$imgFile|escape:'html'}" /> Usun
+                                      </label>
+                                    </div>
+                                  {/if}
+                                {/foreach}
+                              </div>
+                            {/if}
+                          </div>
+                          <div class="product-image-channel product-image-upload-widget" data-max-images="16">
+                            <div class="product-image-channel__label">Empik <span class="text-muted small">({$prod.img_empik_count|default:0})</span></div>
+                            <input type="hidden" name="products[{$prod.id}][img_empik_old]" class="product-image-order-input" value="{$prod.img_empik|escape:'html'}" />
+                            <div class="product-image-dropzone" tabindex="0" role="button">
+                              <i class="bi bi-cloud-arrow-up"></i>
+                              <span>Dodaj zdjecia</span>
+                            </div>
+                            <input type="file" name="products[{$prod.id}][img_empik_file][]" accept=".jpg,.jpeg,.png,.gif,.webp" class="product-image-file-input" multiple />
+                            <div class="product-new-image-preview"></div>
+                            {if $prod.img_empik}
+                              {assign var="channelImagesEmpik" value=$prod.img_empik|split:","}
+                              <div class="product-image-sorter">
+                                {foreach from=$channelImagesEmpik item=imgFile}
+                                  {if $imgFile}
+                                    <div class="product-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                                      <img src="{$productsImageBase}/{$imgFile|escape:'html'}" alt="Empik" class="product-img-thumb" data-img="{$productsImageBase}/{$imgFile|escape:'html'}" />
+                                      <label class="product-image-thumb-remove" title="Usun to zdjecie">
+                                        <input type="checkbox" name="products[{$prod.id}][remove_img_empik][]" value="{$imgFile|escape:'html'}" /> Usun
+                                      </label>
+                                    </div>
+                                  {/if}
+                                {/foreach}
+                              </div>
+                            {/if}
+                          </div>
                         </div>
                       </div>
                       <div class="row mt-2">
@@ -694,15 +821,40 @@
                           <!-- licznik znaków pojawi się automatycznie przez JS -->
                         </div>
                         <div class="col-12 col-lg-8 mb-2">
-                          <label class="form-label mb-0">Komponenty:</label>
-                          <div style="max-height:120px; overflow-y:auto; border:1px solid #ddd; padding:5px; border-radius:4px; background:#f8f9fa;">
-                            {foreach from=$components item=comp}
-                              <label style="display:block; margin-bottom:4px; font-size:0.9em;">
-                                <input type="checkbox" name="products[{$prod.id}][components][]" value="{$comp.id}"
-                                  {if in_array($comp.id, $prod.component_ids)}checked{/if} />
-                                {$comp.name|escape:'html'}
-                              </label>
+                          <div class="d-flex align-items-center justify-content-between mb-1">
+                            <label class="form-label mb-0">Komponenty:</label>
+                            <button type="button" class="btn btn-link btn-sm p-0 product-components-toggle"
+                                    data-bs-toggle="collapse" data-bs-target="#prodComponentsCollapse{$prod.id}"
+                                    aria-expanded="false" aria-controls="prodComponentsCollapse{$prod.id}">
+                              <i class="bi bi-pencil-square me-1"></i><span data-toggle-label>Edytuj komponenty</span>
+                            </button>
+                          </div>
+                          <div class="product-components-summary" data-prod-components-summary="{$prod.id}">
+                            {foreach from=$prod.components item=comp}
+                              <span class="badge text-bg-light border product-component-chip" data-remove-component
+                                    data-prod-id="{$prod.id}" data-comp-id="{$comp.id}" title="Kliknij, aby usunąć">
+                                <span class="product-component-chip-cat">{$comp.category|escape:'html'}</span>{$comp.name|escape:'html'}
+                                <i class="bi bi-x-lg ms-1" aria-hidden="true"></i>
+                              </span>
+                            {foreachelse}
+                              <span class="text-muted small fst-italic" data-empty-hint>Brak przypisanych komponentów</span>
                             {/foreach}
+                          </div>
+                          <div class="collapse product-components-editor" id="prodComponentsCollapse{$prod.id}">
+                            <div class="product-components-editor-box" data-prod-components-editor="{$prod.id}">
+                              {foreach from=$grouped item=comps key=category}
+                                <div class="product-components-editor-category">{$category|escape:'html'}</div>
+                                <div class="product-components-editor-grid">
+                                  {foreach from=$comps item=comp}
+                                    <label class="product-components-editor-item" data-comp-name="{$comp.name|escape:'html'}" data-comp-category="{$category|escape:'html'}">
+                                      <input type="checkbox" name="products[{$prod.id}][components][]" value="{$comp.id}"
+                                        {if in_array($comp.id, $prod.component_ids)}checked{/if} data-prod-component-checkbox />
+                                      {$comp.name|escape:'html'}
+                                    </label>
+                                  {/foreach}
+                                </div>
+                              {/foreach}
+                            </div>
                           </div>
                         </div>
                         <div class="col-12 col-lg-4 mb-2 d-flex flex-column gap-2">
@@ -710,9 +862,6 @@
                           <a href="{$baseUrl}?controller=computers&action=products&delete_id={$prod.id}" onclick="return confirm('Czy na pewno chcesz usunąć produkt ID {$prod.id}?')" class="btn btn-sm btn-danger w-100"><i class="bi bi-trash"></i> Usuń</a>
                         </div>
                       </div>
-                      <input type="hidden" name="products[{$prod.id}][img]" value="{$prod.img|escape:'html'}" />
-                      <input type="hidden" name="products[{$prod.id}][img_morele]" value="{$prod.img_morele|escape:'html'}" />
-                      <input type="hidden" name="products[{$prod.id}][img_empik]" value="{$prod.img_empik|escape:'html'}" />
                     </div>
                   </div>
                 </div>
@@ -791,6 +940,143 @@
 </div>
 
 <style>
+  .product-images-editor {
+    width: 100%;
+  }
+  .product-image-channel {
+    min-width: 190px;
+    max-width: 230px;
+    padding: 8px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 10px;
+    background: #f8fafc;
+  }
+  .product-image-channel__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: #475569;
+    margin-bottom: 4px;
+  }
+  .product-image-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 56px;
+    padding: 6px;
+    color: #526274;
+    text-align: center;
+    border: 2px dashed #9fb1c7;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.72rem;
+    transition: border-color .15s ease, background-color .15s ease;
+  }
+  .product-image-dropzone i {
+    color: #0d6efd;
+    font-size: 1.1rem;
+  }
+  .product-image-dropzone strong {
+    display: block;
+    font-size: 0.78rem;
+  }
+  .product-image-dropzone span {
+    font-size: 0.7rem;
+  }
+  .product-image-dropzone.is-over,
+  .product-image-dropzone:focus {
+    border-color: #0d6efd;
+    background: #eaf3ff;
+    outline: none;
+  }
+  .product-image-file-input {
+    display: none;
+  }
+  .product-new-image-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .product-new-image-item,
+  .product-image-sort-item {
+    position: relative;
+    width: 60px;
+    padding: 14px 2px 2px;
+    text-align: center;
+    border: 1px solid #b9d3f5;
+    border-radius: 8px;
+    background: #eef6ff;
+  }
+  .product-image-sort-item {
+    padding: 4px 2px 2px;
+    background: #fff;
+    border-color: #d7dee8;
+    cursor: grab;
+    user-select: none;
+    transition: opacity .15s ease, transform .15s ease;
+  }
+  .product-image-sort-item:active {
+    cursor: grabbing;
+  }
+  .product-image-sort-item.is-dragging,
+  .product-new-image-item.is-dragging {
+    opacity: .35;
+    transform: scale(.95);
+  }
+  .product-new-image-item img,
+  .product-image-sort-item .product-img-thumb {
+    display: block;
+    width: 52px;
+    height: 44px;
+    margin: 0 auto 2px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: #fff;
+  }
+  .product-new-image-number {
+    position: absolute;
+    top: 1px;
+    left: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #0d6efd;
+  }
+  .product-new-image-remove {
+    position: absolute;
+    top: 0;
+    right: 1px;
+    padding: 0 3px;
+    font-size: 0.7rem;
+    color: #dc3545;
+    border: 0;
+    background: transparent;
+    line-height: 1.4;
+  }
+  .product-image-sorter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 4px;
+    border-top: 1px dashed #b8c4d4;
+  }
+  .product-image-thumb-remove {
+    display: block;
+    font-size: 0.6rem;
+    color: #dc3545;
+    margin: 0;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .product-image-thumb-remove input {
+    margin: 0 2px 0 0;
+    vertical-align: middle;
+  }
   .product-img-thumb:hover {
     cursor: pointer;
     filter: brightness(0.95) drop-shadow(0 0 2px #007bff);
@@ -923,26 +1209,70 @@
   .computers-filter-select {
     min-height: 190px;
   }
-  .computers-filter-components {
-    max-height: 240px;
-    overflow-y: auto;
-    resize: vertical;
-    padding: 0.35rem;
+  .computers-filter-total-badge {
+    font-size: 0.78rem;
+    font-weight: 600;
+    align-self: flex-start;
+    white-space: nowrap;
+  }
+  .computers-filter-search {
+    max-width: 340px;
+    flex: 1 1 260px;
+  }
+  .computers-filter-search .input-group-text {
+    color: #6b7280;
+  }
+  .computers-filter-accordion .accordion-item {
     border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 0.75rem;
+    border-radius: 0.75rem !important;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
     background: #f8fafc;
   }
-  .computers-filter-category {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    background: rgba(13, 110, 253, 0.1);
-    color: #0b63d6;
-    font-size: 0.8rem;
+  .computers-filter-accordion .accordion-item:last-child {
+    margin-bottom: 0;
+  }
+  .computers-filter-accordion .accordion-button {
+    padding: 0.6rem 0.9rem;
+    font-size: 0.88rem;
+    background: #f8fafc;
+    box-shadow: none;
+  }
+  .computers-filter-accordion .accordion-button:not(.collapsed) {
+    background: rgba(13, 110, 253, 0.07);
+    color: #0f3d75;
+    box-shadow: none;
+  }
+  .computers-filter-accordion .accordion-button:focus {
+    box-shadow: none;
+    border-color: rgba(13, 110, 253, 0.15);
+  }
+  .computers-filter-category-name {
     font-weight: 700;
+    color: #0f3d75;
     text-transform: uppercase;
     letter-spacing: 0.02em;
+    font-size: 0.8rem;
+  }
+  .computers-filter-category-count {
+    font-weight: 400;
+  }
+  .computers-filter-category-badge {
+    font-size: 0.72rem;
+  }
+  .computers-filter-accordion .accordion-body {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 0.75rem 0.9rem;
+    background: #fff;
+  }
+  .computers-filter-quick-link {
+    color: #0b63d6;
+    text-decoration: none;
+    font-size: 0.78rem;
+  }
+  .computers-filter-quick-link:hover {
+    text-decoration: underline;
   }
   .computers-filter-component-item {
     display: flex;
@@ -974,6 +1304,79 @@
   .computers-filter-actions {
     min-height: calc(100% - 3rem);
     align-content: end;
+  }
+
+  /* Krótka, czytelna lista komponentów przypisanych do produktu (karta produktu) */
+  .product-components-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2rem;
+    padding: 0.35rem 0;
+  }
+  .product-component-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 500;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.55rem;
+    color: #1f2937;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .product-component-chip:hover {
+    background: #fee2e2 !important;
+    border-color: #fca5a5 !important;
+    color: #b91c1c;
+  }
+  .product-component-chip-cat {
+    color: #6b7280;
+    font-weight: 400;
+    margin-right: 0.3rem;
+  }
+  .product-component-chip-cat::after {
+    content: ':';
+  }
+  .product-components-toggle {
+    text-decoration: none;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .product-components-editor-box {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 0.6rem 0.7rem;
+    border-radius: 0.5rem;
+    background: #f8f9fa;
+    margin-top: 0.4rem;
+  }
+  .product-components-editor-category {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: #0b63d6;
+    margin: 0.6rem 0 0.3rem;
+  }
+  .product-components-editor-category:first-child {
+    margin-top: 0;
+  }
+  .product-components-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.15rem 0.5rem;
+  }
+  .product-components-editor-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+    padding: 0.15rem 0;
+    cursor: pointer;
+    margin: 0;
   }
 
   /* Fancy translucent & animated styles for variants panel and products column */
@@ -1090,11 +1493,13 @@
   }
   
   @media (max-width: 768px) {
-    .computers-filter-select,
-    .computers-filter-components {
+    .computers-filter-select {
       max-height: none;
       min-height: 0;
       resize: none;
+    }
+    .computers-filter-accordion .accordion-body {
+      max-height: 260px;
     }
     .bulk-component-select {
       min-width: 100%;
@@ -1265,9 +1670,191 @@
       updateTitleCounter();
     });
 
+    // Widget dodawania/sortowania zdjec produktow (drag&drop, kolejnosc 1,2,3...)
+    var productImageWasDragged = false;
+    document.querySelectorAll('.product-image-upload-widget').forEach(function(root) {
+      var dropzone = root.querySelector('.product-image-dropzone');
+      var input = root.querySelector('.product-image-file-input');
+      var preview = root.querySelector('.product-new-image-preview');
+      var sorter = root.querySelector('.product-image-sorter');
+      var orderInput = root.querySelector('.product-image-order-input');
+      var maxImages = parseInt(root.dataset.maxImages || '16', 10);
+      var selectedFiles = [];
+      var previewUrls = [];
+
+      if (!dropzone || !input || !preview || typeof DataTransfer === 'undefined') return;
+
+      function existingImageCount() {
+        if (!sorter) return 0;
+        var total = sorter.querySelectorAll('.product-image-sort-item').length;
+        var removed = sorter.querySelectorAll('input[type="checkbox"]:checked').length;
+        return Math.max(0, total - removed);
+      }
+
+      function syncFileInput() {
+        var transfer = new DataTransfer();
+        selectedFiles.forEach(function(file) { transfer.items.add(file); });
+        input.files = transfer.files;
+      }
+
+      var draggedNewIndex = null;
+      function bindNewImageDrag() {
+        preview.querySelectorAll('.product-new-image-item').forEach(function(item) {
+          item.addEventListener('dragstart', function() {
+            draggedNewIndex = parseInt(item.dataset.index, 10);
+            productImageWasDragged = true;
+            item.classList.add('is-dragging');
+          });
+          item.addEventListener('dragend', function() {
+            item.classList.remove('is-dragging');
+            draggedNewIndex = null;
+            setTimeout(function() { productImageWasDragged = false; }, 0);
+          });
+          item.addEventListener('dragover', function(event) { event.preventDefault(); });
+          item.addEventListener('drop', function(event) {
+            event.preventDefault();
+            var targetIndex = parseInt(item.dataset.index, 10);
+            if (draggedNewIndex === null || draggedNewIndex === targetIndex) return;
+            var moved = selectedFiles.splice(draggedNewIndex, 1)[0];
+            selectedFiles.splice(targetIndex, 0, moved);
+            syncFileInput();
+            renderNewImages();
+          });
+        });
+      }
+
+      function renderNewImages() {
+        previewUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+        previewUrls = [];
+        preview.innerHTML = '';
+
+        selectedFiles.forEach(function(file, index) {
+          var url = URL.createObjectURL(file);
+          previewUrls.push(url);
+          var item = document.createElement('div');
+          item.className = 'product-new-image-item';
+          item.draggable = true;
+          item.dataset.index = index;
+          item.title = 'Przeciagnij, aby zmienic kolejnosc';
+
+          var number = document.createElement('span');
+          number.className = 'product-new-image-number';
+          number.textContent = index + 1;
+
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'product-new-image-remove';
+          remove.title = 'Usun z kolejki';
+          remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+          remove.addEventListener('click', function() {
+            selectedFiles.splice(index, 1);
+            syncFileInput();
+            renderNewImages();
+          });
+
+          var image = document.createElement('img');
+          image.src = url;
+          image.alt = file.name;
+
+          item.appendChild(number);
+          item.appendChild(remove);
+          item.appendChild(image);
+          preview.appendChild(item);
+        });
+
+        bindNewImageDrag();
+      }
+
+      function addFiles(files) {
+        var available = Math.max(0, maxImages - existingImageCount() - selectedFiles.length);
+        var rejected = 0;
+        Array.from(files || []).forEach(function(file) {
+          var key = [file.name, file.size, file.lastModified].join(':');
+          var duplicate = selectedFiles.some(function(current) {
+            return [current.name, current.size, current.lastModified].join(':') === key;
+          });
+          var isImage = /^image\/(jpeg|png|gif|webp)$/i.test(file.type)
+            || /\.(jpe?g|png|gif|webp)$/i.test(file.name);
+          if (!isImage || duplicate || available <= 0) {
+            rejected += duplicate ? 0 : 1;
+            return;
+          }
+          selectedFiles.push(file);
+          available -= 1;
+        });
+        syncFileInput();
+        renderNewImages();
+        if (rejected > 0) alert('Mozesz dodac maksymalnie ' + maxImages + ' poprawnych zdjec w tej sekcji.');
+      }
+
+      dropzone.addEventListener('click', function() { input.click(); });
+      dropzone.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          input.click();
+        }
+      });
+      ['dragenter', 'dragover'].forEach(function(eventName) {
+        dropzone.addEventListener(eventName, function(event) {
+          event.preventDefault();
+          dropzone.classList.add('is-over');
+        });
+      });
+      ['dragleave', 'drop'].forEach(function(eventName) {
+        dropzone.addEventListener(eventName, function(event) {
+          event.preventDefault();
+          dropzone.classList.remove('is-over');
+        });
+      });
+      dropzone.addEventListener('drop', function(event) { addFiles(event.dataTransfer.files); });
+      input.addEventListener('change', function() { addFiles(input.files); });
+
+      if (sorter && orderInput) {
+        var draggedItem = null;
+        function saveOrder() {
+          orderInput.value = Array.from(sorter.querySelectorAll('.product-image-sort-item'))
+            .map(function(item) { return item.dataset.filename || ''; })
+            .filter(Boolean)
+            .join(',');
+        }
+
+        sorter.querySelectorAll('.product-image-sort-item').forEach(function(item) {
+          item.addEventListener('dragstart', function(event) {
+            draggedItem = item;
+            productImageWasDragged = true;
+            item.classList.add('is-dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', item.dataset.filename || '');
+          });
+          item.addEventListener('dragend', function() {
+            item.classList.remove('is-dragging');
+            draggedItem = null;
+            saveOrder();
+            setTimeout(function() { productImageWasDragged = false; }, 0);
+          });
+        });
+
+        sorter.addEventListener('dragover', function(event) {
+          event.preventDefault();
+          if (!draggedItem) return;
+          var target = event.target.closest('.product-image-sort-item');
+          if (!target || target === draggedItem || target.parentElement !== sorter) return;
+          var rect = target.getBoundingClientRect();
+          var placeAfter = event.clientY > rect.top + rect.height / 2;
+          sorter.insertBefore(draggedItem, placeAfter ? target.nextSibling : target);
+        });
+
+        sorter.addEventListener('drop', function(event) {
+          event.preventDefault();
+          saveOrder();
+        });
+      }
+    });
+
     // Dodaj powiększanie obrazka w modalu
     document.querySelectorAll('.product-img-thumb').forEach(function(img) {
       img.addEventListener('click', function() {
+        if (productImageWasDragged) return;
         var modalImg = document.getElementById('imgModalImg');
         modalImg.src = this.getAttribute('data-img');
         var modal = new bootstrap.Modal(document.getElementById('imgModal'));
@@ -1386,6 +1973,216 @@
     }
   });
 
+  // Panel filtrowania po komponentach: wyszukiwanie, liczniki, zwijanie kategorii
+  document.addEventListener('DOMContentLoaded', function() {
+    var accordion = document.getElementById('componentsAccordion');
+    if (!accordion) return;
+
+    var searchInput = document.getElementById('componentSearchInput');
+    var clearBtn = document.getElementById('componentsClearBtn');
+    var expandAllBtn = document.getElementById('componentsExpandAllBtn');
+    var collapseAllBtn = document.getElementById('componentsCollapseAllBtn');
+    var totalBadge = document.getElementById('componentsSelectedTotal');
+    var categoryItems = accordion.querySelectorAll('[data-category-item]');
+
+    function setCollapseState(collapseEl, expand) {
+      var button = accordion.querySelector('[data-bs-target="#' + collapseEl.id + '"]');
+      if (expand) {
+        collapseEl.classList.add('show');
+        if (button) {
+          button.classList.remove('collapsed');
+          button.setAttribute('aria-expanded', 'true');
+        }
+      } else {
+        collapseEl.classList.remove('show');
+        if (button) {
+          button.classList.add('collapsed');
+          button.setAttribute('aria-expanded', 'false');
+        }
+      }
+    }
+
+    function updateCategoryBadge(categoryItem) {
+      var badge = categoryItem.querySelector('[data-selected-badge]');
+      if (!badge) return;
+      var count = categoryItem.querySelectorAll('[data-component-checkbox]:checked').length;
+      badge.textContent = count;
+      badge.classList.toggle('d-none', count === 0);
+    }
+
+    function updateTotalBadge() {
+      if (!totalBadge) return;
+      var count = accordion.querySelectorAll('[data-component-checkbox]:checked').length;
+      totalBadge.textContent = count + ' wybranych';
+    }
+
+    accordion.addEventListener('change', function(e) {
+      if (!e.target.matches('[data-component-checkbox]')) return;
+      var categoryItem = e.target.closest('[data-category-item]');
+      if (categoryItem) updateCategoryBadge(categoryItem);
+      updateTotalBadge();
+    });
+
+    accordion.addEventListener('click', function(e) {
+      var link = e.target.closest('[data-quick-action]');
+      if (!link) return;
+      e.preventDefault();
+      var categoryItem = link.closest('[data-category-item]');
+      if (!categoryItem) return;
+      var action = link.getAttribute('data-quick-action');
+      categoryItem.querySelectorAll('[data-component-col]').forEach(function(col) {
+        if (action === 'select' && col.style.display === 'none') return;
+        var checkbox = col.querySelector('[data-component-checkbox]');
+        if (checkbox) checkbox.checked = (action === 'select');
+      });
+      updateCategoryBadge(categoryItem);
+      updateTotalBadge();
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        accordion.querySelectorAll('[data-component-checkbox]:checked').forEach(function(chk) {
+          chk.checked = false;
+        });
+        categoryItems.forEach(updateCategoryBadge);
+        updateTotalBadge();
+      });
+    }
+
+    if (expandAllBtn) {
+      expandAllBtn.addEventListener('click', function() {
+        accordion.querySelectorAll('.accordion-collapse').forEach(function(el) {
+          setCollapseState(el, true);
+        });
+      });
+    }
+
+    if (collapseAllBtn) {
+      collapseAllBtn.addEventListener('click', function() {
+        accordion.querySelectorAll('.accordion-collapse').forEach(function(el) {
+          setCollapseState(el, false);
+        });
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', function() {
+        var query = searchInput.value.trim().toLowerCase();
+
+        categoryItems.forEach(function(categoryItem) {
+          var cols = categoryItem.querySelectorAll('[data-component-col]');
+          var visibleCount = 0;
+
+          cols.forEach(function(col) {
+            var label = col.querySelector('[data-component-label]');
+            var labelText = label ? label.getAttribute('data-component-label') : '';
+            var matches = query === '' || labelText.indexOf(query) !== -1;
+            col.style.display = matches ? '' : 'none';
+            if (matches) visibleCount++;
+          });
+
+          var noMatch = categoryItem.querySelector('.computers-filter-no-match');
+          if (noMatch) noMatch.classList.toggle('d-none', visibleCount !== 0 || query === '');
+
+          categoryItem.classList.toggle('d-none', query !== '' && visibleCount === 0);
+
+          var collapseEl = categoryItem.querySelector('.accordion-collapse');
+          if (collapseEl && query !== '') {
+            setCollapseState(collapseEl, visibleCount > 0);
+          } else if (collapseEl && query === '') {
+            var selectedCount = categoryItem.querySelectorAll('[data-component-checkbox]:checked').length;
+            setCollapseState(collapseEl, selectedCount > 0);
+          }
+        });
+      });
+    }
+  });
+
+  // Krótka lista komponentów na karcie produktu: podgląd w formie chipów,
+  // rozwijany edytor pogrupowany po kategoriach, usuwanie komponentu z chipa
+  document.addEventListener('DOMContentLoaded', function() {
+    var productsRow = document.getElementById('productsBulkForm');
+    if (!productsRow) return;
+
+    function buildChip(prodId, compId, compName, compCategory) {
+      var chip = document.createElement('span');
+      chip.className = 'badge text-bg-light border product-component-chip';
+      chip.setAttribute('data-remove-component', '');
+      chip.setAttribute('data-prod-id', prodId);
+      chip.setAttribute('data-comp-id', compId);
+      chip.setAttribute('title', 'Kliknij, aby usunąć');
+      chip.innerHTML = (compCategory ? '<span class="product-component-chip-cat">' + compCategory + '</span>' : '')
+        + compName + ' <i class="bi bi-x-lg ms-1" aria-hidden="true"></i>';
+      return chip;
+    }
+
+    productsRow.addEventListener('change', function(e) {
+      var checkbox = e.target.closest('[data-prod-component-checkbox]');
+      if (!checkbox) return;
+      var editor = checkbox.closest('[data-prod-components-editor]');
+      if (!editor) return;
+      var prodId = editor.getAttribute('data-prod-components-editor');
+      var summary = productsRow.querySelector('[data-prod-components-summary="' + prodId + '"]');
+      if (!summary) return;
+      var label = checkbox.closest('label');
+      var compName = label ? (label.getAttribute('data-comp-name') || '') : '';
+      var compCategory = label ? (label.getAttribute('data-comp-category') || '') : '';
+      var compId = checkbox.value;
+      var emptyHint = summary.querySelector('[data-empty-hint]');
+
+      if (checkbox.checked) {
+        if (emptyHint) emptyHint.remove();
+        if (!summary.querySelector('[data-comp-id="' + compId + '"]')) {
+          summary.appendChild(buildChip(prodId, compId, compName, compCategory));
+        }
+      } else {
+        var existingChip = summary.querySelector('[data-comp-id="' + compId + '"]');
+        if (existingChip) existingChip.remove();
+        if (!summary.querySelector('.product-component-chip')) {
+          var hint = document.createElement('span');
+          hint.className = 'text-muted small fst-italic';
+          hint.setAttribute('data-empty-hint', '');
+          hint.textContent = 'Brak przypisanych komponentów';
+          summary.appendChild(hint);
+        }
+      }
+    });
+
+    productsRow.addEventListener('click', function(e) {
+      var chip = e.target.closest('[data-remove-component]');
+      if (!chip) return;
+      e.preventDefault();
+      var prodId = chip.getAttribute('data-prod-id');
+      var compId = chip.getAttribute('data-comp-id');
+      var editor = productsRow.querySelector('[data-prod-components-editor="' + prodId + '"]');
+      if (!editor) return;
+      var checkbox = editor.querySelector('input[value="' + compId + '"]');
+      if (checkbox && checkbox.checked) {
+        checkbox.checked = false;
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    productsRow.addEventListener('shown.bs.collapse', function(e) {
+      var toggleBtn = productsRow.querySelector('[data-bs-target="#' + e.target.id + '"]');
+      if (!toggleBtn) return;
+      toggleBtn.setAttribute('aria-expanded', 'true');
+      var label = toggleBtn.querySelector('[data-toggle-label]');
+      if (label) label.textContent = 'Zwiń';
+      var icon = toggleBtn.querySelector('i');
+      if (icon) icon.className = 'bi bi-x-lg me-1';
+    });
+    productsRow.addEventListener('hidden.bs.collapse', function(e) {
+      var toggleBtn = productsRow.querySelector('[data-bs-target="#' + e.target.id + '"]');
+      if (!toggleBtn) return;
+      toggleBtn.setAttribute('aria-expanded', 'false');
+      var label = toggleBtn.querySelector('[data-toggle-label]');
+      if (label) label.textContent = 'Edytuj komponenty';
+      var icon = toggleBtn.querySelector('i');
+      if (icon) icon.className = 'bi bi-pencil-square me-1';
+    });
+  });
+
   function selectedProductCheckboxes() {
     return Array.from(document.querySelectorAll('input.product_checkbox:checked'));
   }
@@ -1452,7 +2249,7 @@
     var data = new FormData();
     if (!form) return data;
 
-    ['selection_scope', 'selection_filter_name'].forEach(function (name) {
+    ['selection_scope', 'selection_filter_name', 'selection_filter_ean_sku'].forEach(function (name) {
       var input = form.querySelector('[name="' + name + '"]');
       if (input) data.append(name, input.value || '');
     });
@@ -1559,6 +2356,122 @@
         titleTemplateSelect.focus();
         titleTemplateSelect.classList.add('is-invalid');
       }
+    });
+  }
+
+  // Eksport CSV przez fetch: serwer odpowiada plikiem (Content-Disposition: attachment),
+  // wiec zwykly submit formularza nie przeladowuje strony i globalny loader
+  // (chowany tylko na window 'load'/'pageshow') wisial w nieskonczonosc.
+  var exportCsvBtn = document.getElementById('computersExportCsvBtn');
+  if (exportCsvBtn && productsBulkForm) {
+    exportCsvBtn.addEventListener('click', function () {
+      var templateSelect = document.getElementById('computers_csv_template_id');
+      if (templateSelect && !templateSelect.value) {
+        templateSelect.classList.add('is-invalid');
+        templateSelect.focus();
+        return;
+      }
+      if (templateSelect) {
+        templateSelect.classList.remove('is-invalid');
+      }
+
+      var scopeInput = document.getElementById('selection_scope');
+      var hasSelection = document.querySelector('input.product_checkbox:checked') !== null;
+      if (!hasSelection && (!scopeInput || scopeInput.value !== 'filtered')) {
+        alert('Wybierz co najmniej jeden produkt.');
+        return;
+      }
+
+      var url = exportCsvBtn.getAttribute('formaction');
+      var batchSizeInput = document.getElementById('computers_csv_batch_size');
+      var batchSize = batchSizeInput ? parseInt(batchSizeInput.value, 10) : 0;
+      if (!(batchSize > 0)) {
+        batchSize = 0;
+      }
+
+      exportCsvBtn.disabled = true;
+      if (typeof window.showPageLoader === 'function') {
+        window.showPageLoader('Trwa generowanie pliku CSV...');
+      }
+
+      var offset = 0;
+      var partNumber = 1;
+      var totalParts = 1;
+
+      function downloadBlob(blob, filename) {
+        var objectUrl = window.URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(function () {
+          window.URL.revokeObjectURL(objectUrl);
+        }, 1000);
+      }
+
+      function requestNextBatch() {
+        var formData = new FormData(productsBulkForm);
+        if (batchSize > 0) {
+          formData.set('export_batch_size', String(batchSize));
+          formData.set('export_batch_offset', String(offset));
+        }
+
+        if (typeof window.showPageLoader === 'function') {
+          window.showPageLoader(totalParts > 1
+            ? 'Pobieranie CSV: czesc ' + partNumber + ' z ' + totalParts + '...'
+            : 'Trwa generowanie pliku CSV...');
+        }
+
+        return fetch(url, { method: 'POST', body: formData })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error('Serwer zwrocil blad podczas eksportu CSV.');
+            }
+            if (response.status === 204) {
+              return null;
+            }
+            var totalHeader = response.headers.get('X-Export-Total-Count');
+            if (totalHeader && batchSize > 0) {
+              var total = parseInt(totalHeader, 10);
+              totalParts = Math.max(1, Math.ceil(total / batchSize));
+            }
+            var disposition = response.headers.get('Content-Disposition') || '';
+            var match = /filename="?([^";]+)"?/.exec(disposition);
+            var filename = match ? match[1] : 'export.csv';
+            return response.blob().then(function (blob) {
+              return { blob: blob, filename: filename };
+            });
+          })
+          .then(function (result) {
+            if (!result) {
+              return;
+            }
+
+            downloadBlob(result.blob, result.filename);
+
+            offset += batchSize;
+            partNumber += 1;
+
+            if (batchSize > 0 && partNumber <= totalParts) {
+              return new Promise(function (resolve) {
+                window.setTimeout(resolve, 500);
+              }).then(requestNextBatch);
+            }
+          });
+      }
+
+      requestNextBatch()
+        .catch(function (error) {
+          alert(error.message || 'Nie udalo sie wyeksportowac pliku CSV.');
+        })
+        .finally(function () {
+          exportCsvBtn.disabled = false;
+          if (typeof window.hidePageLoader === 'function') {
+            window.hidePageLoader();
+          }
+        });
     });
   }
 

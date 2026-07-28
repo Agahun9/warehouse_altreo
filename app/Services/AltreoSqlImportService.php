@@ -43,9 +43,9 @@ class AltreoSqlImportService
             . "price_allegro DECIMAL(12,2) DEFAULT NULL,\n"
             . "profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,\n"
             . "EAN VARCHAR(64) DEFAULT NULL,\n"
-            . "img VARCHAR(255) DEFAULT NULL,\n"
-            . "img_morele VARCHAR(255) DEFAULT NULL,\n"
-            . "img_empik VARCHAR(255) DEFAULT NULL,\n"
+            . "img TEXT DEFAULT NULL,\n"
+            . "img_morele TEXT DEFAULT NULL,\n"
+            . "img_empik TEXT DEFAULT NULL,\n"
             . "offerid VARCHAR(64) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -100,10 +100,13 @@ class AltreoSqlImportService
         $this->ensureColumn(self::PRODUCTS_TABLE, 'price_allegro', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN price_allegro DECIMAL(12,2) DEFAULT NULL AFTER price");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'profit', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN profit DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER price_allegro");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'EAN', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN EAN VARCHAR(64) DEFAULT NULL AFTER profit");
-        $this->ensureColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img VARCHAR(255) DEFAULT NULL AFTER EAN");
-        $this->ensureColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele VARCHAR(255) DEFAULT NULL AFTER img");
-        $this->ensureColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik VARCHAR(255) DEFAULT NULL AFTER img_morele");
+        $this->ensureColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER EAN");
+        $this->ensureColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
+        $this->ensureColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_empik");
+        $this->ensureColumnType(self::PRODUCTS_TABLE, 'img', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img TEXT DEFAULT NULL");
+        $this->ensureColumnType(self::PRODUCTS_TABLE, 'img_morele', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_morele TEXT DEFAULT NULL");
+        $this->ensureColumnType(self::PRODUCTS_TABLE, 'img_empik', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_empik TEXT DEFAULT NULL");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'created_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER offerid");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'updated_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
 
@@ -175,8 +178,28 @@ class AltreoSqlImportService
         $this->refreshAutoIncrement(self::PRODUCTS_TABLE, 'id');
         $this->refreshAutoIncrement(self::COMPONENTS_TABLE, 'id');
         $this->refreshAutoIncrement(self::TEMPLATES_TABLE, 'id_template');
+        $this->backfillMissingProductSkus();
 
         return $summary;
+    }
+
+    /**
+     * Imported rows without their own sku must get one, otherwise the computers products
+     * marketplace matching (ComputersController::computerProductSkuCandidates) has nothing
+     * reliable to join on and products end up either unmatched or - worse - coincidentally
+     * matching an unrelated listing on another shop. Convention: id<=1000 keeps the legacy
+     * bare-id sku (those already exist on the marketplace under that plain numeric sku),
+     * everything else gets 'ALTREO_'+id, which no other shop's sku will ever coincidentally
+     * equal. Only fills gaps - never overwrites a sku the import already brought in.
+     */
+    private function backfillMissingProductSkus(): void
+    {
+        $this->database->query(
+            'UPDATE ' . self::PRODUCTS_TABLE . ' SET sku = CASE'
+            . ' WHEN id <= 1000 THEN CAST(id AS CHAR)'
+            . " ELSE CONCAT('ALTREO_', id) END"
+            . " WHERE sku IS NULL OR sku = '' OR sku = '0'"
+        );
     }
 
     private function ensureColumn(string $table, string $column, string $alterSql): void
@@ -187,6 +210,18 @@ class AltreoSqlImportService
         );
 
         if ($exists === 0) {
+            $this->database->query($alterSql);
+        }
+    }
+
+    private function ensureColumnType(string $table, string $column, string $expectedDataType, string $alterSql): void
+    {
+        $currentType = (string) $this->database->fetchColumn(
+            'SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
+            array('table_name' => $table, 'column_name' => $column)
+        );
+
+        if ($currentType !== '' && strtolower($currentType) !== strtolower($expectedDataType)) {
             $this->database->query($alterSql);
         }
     }

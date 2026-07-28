@@ -86,6 +86,17 @@
       font-size: 0.9rem;
     }
 
+    .app-page-loader-close {
+      margin-left: auto;
+      flex: 0 0 auto;
+      display: none;
+      white-space: nowrap;
+    }
+
+    .app-page-loader-close.is-visible {
+      display: inline-block;
+    }
+
     body.page-is-loading {
       cursor: wait;
     }
@@ -210,6 +221,9 @@
         <div class="app-page-loader-title">Ładowanie</div>
         <div class="app-page-loader-text" id="appPageLoaderText">Trwa pobieranie danych.</div>
       </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary app-page-loader-close" id="appPageLoaderCloseBtn">
+        Zamknij ładowanie
+      </button>
     </div>
   </div>
   <div class="app-wrapper">
@@ -432,19 +446,23 @@
                   </a>
                 </li>
               {/if}
-              {if $currentUser.role eq 'admin'}
+              {if $currentUser.role eq 'admin' or in_array('categories', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=categories&action=index" class="nav-link{if $currentController eq 'categories'} active{/if}">
                     <i class="nav-icon bi bi-tags"></i>
                     <p>Lista kategorii</p>
                   </a>
                 </li>
+              {/if}
+              {if $currentUser.role eq 'admin' or in_array('csvtemplates', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=csvtemplates&action=index" class="nav-link{if $currentController eq 'csvtemplates'} active{/if}">
                     <i class="nav-icon bi bi-file-earmark-spreadsheet"></i>
                     <p>Szablony CSV</p>
                   </a>
                 </li>
+              {/if}
+              {if $currentUser.role eq 'admin'}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=administration&action=users" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction neq 'automation'} active{/if}">
                     <i class="nav-icon bi bi-people"></i>

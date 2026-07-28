@@ -27,7 +27,11 @@ try {
     $application = new App\Core\Application();
     $application->run();
 } catch (Throwable $exception) {
-    app_log("BŁĄD APLIKACJI: " . $exception->getMessage(), 'ERROR');
+    $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+    $details = get_class($exception) . ': ' . $exception->getMessage()
+        . ' w ' . $exception->getFile() . ':' . $exception->getLine()
+        . ' (URL: ' . $requestUri . ')' . PHP_EOL . $exception->getTraceAsString();
+    app_log("BŁĄD APLIKACJI: " . $details, 'ERROR');
     http_response_code(500);
     echo nl2br(htmlspecialchars($exception->getMessage(), ENT_QUOTES, 'UTF-8'));
 }

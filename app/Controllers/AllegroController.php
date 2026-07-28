@@ -683,6 +683,7 @@ class AllegroController extends Controller
             'duplicates' => trim((string) $this->input('duplicates', '')),
             'linked' => trim((string) $this->input('linked', '')),
             'market' => trim((string) $this->input('market', '')),
+            'warehouse_name' => trim((string) $this->input('warehouse_name', '')),
             'invoice' => trim((string) $this->input('invoice', '')),
             'warehouse_quantity' => $warehouseQuantity,
             'warehouse_quantity_from' => $warehouseQuantityFrom,

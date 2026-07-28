@@ -20,12 +20,25 @@
     (function () {
       var loader = document.getElementById('appPageLoader');
       var loaderText = document.getElementById('appPageLoaderText');
+      var closeBtn = document.getElementById('appPageLoaderCloseBtn');
       var body = document.body;
       var hideTimer = null;
       var showTimer = null;
+      var stuckTimer = null;
       var loaderVisible = false;
       var loaderDelayMs = 100;
+      var loaderStuckDelayMs = 5000;
       var loaderEnabled = {if !$currentUser || $currentUser.loader_enabled|default:1}true{else}false{/if};
+
+      function clearStuckTimer() {
+        if (stuckTimer) {
+          window.clearTimeout(stuckTimer);
+          stuckTimer = null;
+        }
+        if (closeBtn) {
+          closeBtn.classList.remove('is-visible');
+        }
+      }
 
       function setReadyState() {
         body.classList.add('app-ready');
@@ -55,6 +68,13 @@
           loader.setAttribute('aria-hidden', 'false');
           body.classList.add('page-is-loading');
           loaderVisible = true;
+
+          clearStuckTimer();
+          stuckTimer = window.setTimeout(function () {
+            if (closeBtn) {
+              closeBtn.classList.add('is-visible');
+            }
+          }, loaderStuckDelayMs);
         }, loaderDelayMs);
       }
 
@@ -63,6 +83,8 @@
           window.clearTimeout(showTimer);
           showTimer = null;
         }
+
+        clearStuckTimer();
 
         if (!loader) {
           setReadyState();
@@ -128,6 +150,12 @@
 
       window.addEventListener('load', hideLoader);
       window.addEventListener('pageshow', hideLoader);
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function () {
+          hideLoader();
+        });
+      }
 
       document.addEventListener('click', function (event) {
         var link = event.target.closest('a');

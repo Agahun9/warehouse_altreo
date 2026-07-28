@@ -9,7 +9,7 @@ use App\Core\Database;
 
 class AllegroStorageRepository
 {
-    private const SCHEMA_CACHE_KEY = 'schema:allegro_storage:v3';
+    private const SCHEMA_CACHE_KEY = 'schema:allegro_storage:v5';
     private const OFFER_COUNT_CACHE_TTL = 30;
     private const STATS_CACHE_TTL = 60;
     /** @var bool */
@@ -2011,6 +2011,20 @@ class AllegroStorageRepository
             $this->appendLikeFilter($whereParts, $params, $market, 'offers.marketplaces_json', 'market', '"');
         }
 
+        $warehouseName = isset($filters['warehouse_name']) ? trim((string) $filters['warehouse_name']) : '';
+        if ($warehouseName !== '') {
+            $parsedWarehouseName = $this->parseNegatedFilterValue($warehouseName);
+            $warehouseNameValue = (string) ($parsedWarehouseName['value'] ?? '');
+            if ($warehouseNameValue !== '') {
+                if (!empty($parsedWarehouseName['negated'])) {
+                    $whereParts[] = '(warehouse.product_name IS NULL OR warehouse.product_name NOT LIKE :warehouse_name)';
+                } else {
+                    $whereParts[] = 'warehouse.product_name LIKE :warehouse_name';
+                }
+                $params['warehouse_name'] = '%' . $warehouseNameValue . '%';
+            }
+        }
+
         $invoice = isset($filters['invoice']) ? trim((string) $filters['invoice']) : '';
         if ($invoice !== '') {
             $whereParts[] = 'offers.invoice_type = :invoice';
@@ -2134,8 +2148,9 @@ class AllegroStorageRepository
         $duplicates = isset($filters['duplicates']) ? trim((string) $filters['duplicates']) : '';
         $linked = isset($filters['linked']) ? trim((string) $filters['linked']) : '';
         $resumeReady = isset($filters['resume_ready']) ? trim((string) $filters['resume_ready']) : '';
+        $warehouseName = isset($filters['warehouse_name']) ? trim((string) $filters['warehouse_name']) : '';
 
-        $needsWarehouse = $query !== '';
+        $needsWarehouse = $query !== '' || $warehouseName !== '';
         $needsSharedStock = $warehouseQuantity !== '' || $warehouseQuantityFrom !== '' || $warehouseQuantityTo !== '';
         $needsWarehouseCategory = false;
 
@@ -2778,6 +2793,17 @@ class AllegroStorageRepository
 
     private function ensureOfferIndexes(): void
     {
+        // Products list (computers products?filter_market_accounts[]=1) does a correlated
+        // EXISTS lookup against this table for every row of pr_products_altreo. Without a
+        // sku-leading index that scan is a full table scan per product row, which is what
+        // made that page take ~10 minutes to load on tens of thousands of products.
+        $this->ensureIndex('allegro_offers', 'idx_allegro_offers_sku_status_account', 'CREATE INDEX idx_allegro_offers_sku_status_account ON allegro_offers (sku, publication_status, account_id)');
+        // NOTE: that index only helps if allegro_offers.sku shares products.sku's collation
+        // (utf8mb4_unicode_ci). If it's still utf8mb4_general_ci (older installs), fix it with
+        // php/scripts/fix_marketplace_sku_collation.php run from the CLI - NOT automatically
+        // here. A collation change on an existing column is an ALGORITHM=COPY ALTER (full
+        // table rebuild), which on a table this size is exactly the kind of long-running
+        // operation shared hosting kills, surfacing as "MySQL server has gone away".
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_account_linked', 'CREATE INDEX idx_allegro_offers_account_linked ON allegro_offers (account_id, warehouse_product_id)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_account_invoice', 'CREATE INDEX idx_allegro_offers_account_invoice ON allegro_offers (account_id, invoice_type)');
         $this->ensureIndex('allegro_offers', 'idx_allegro_offers_account_stock', 'CREATE INDEX idx_allegro_offers_account_stock ON allegro_offers (account_id, stock_available)');
@@ -2834,6 +2860,42 @@ class AllegroStorageRepository
         }
 
         $this->database->query($sql);
+    }
+
+    /**
+     * Manual, CLI-only fix - see php/scripts/fix_marketplace_sku_collation.php. Not called
+     * from ensureSchema()/request handling: this is a full-table-rebuild ALTER on a table
+     * that can hold hundreds of thousands of rows, so it must run outside any HTTP request
+     * timeout, with the operator watching it.
+     */
+    public function fixSkuCollation(string $collation = 'utf8mb4_unicode_ci'): ?string
+    {
+        return $this->ensureColumnCollation('allegro_offers', 'sku', 'VARCHAR(190) DEFAULT NULL', $collation);
+    }
+
+    private function ensureColumnCollation(string $table, string $column, string $columnDefinition, string $collation = 'utf8mb4_unicode_ci'): ?string
+    {
+        $schema = $this->mysqlSchema();
+        if ($schema === '') {
+            return null;
+        }
+
+        $currentCollation = (string) $this->database->fetchColumn(
+            'SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
+            array(
+                'schema' => $schema,
+                'table_name' => $table,
+                'column_name' => $column,
+            )
+        );
+
+        if ($currentCollation === '' || strcasecmp($currentCollation, $collation) === 0) {
+            return null;
+        }
+
+        $this->database->query('ALTER TABLE ' . $table . ' MODIFY COLUMN ' . $column . ' ' . $columnDefinition . ' COLLATE ' . $collation);
+
+        return $table . '.' . $column . ': ' . $currentCollation . ' -> ' . $collation;
     }
 
     private function mysqlSchema(): string

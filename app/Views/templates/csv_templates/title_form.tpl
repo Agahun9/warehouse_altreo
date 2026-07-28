@@ -64,7 +64,8 @@
                 <code>ucfirst</code> - pierwsza litera tekstu jako wielka,
                 <code>trim</code> - usuniecie spacji z poczatku i konca,
                 <code>date:Y-m-d</code> - format daty,
-                <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi.
+                <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi,
+                <code>length:2000</code> - obciecie tekstu do maksymalnie 2000 znakow.
               </div>
             </div>
           </div>

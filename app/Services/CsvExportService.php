@@ -60,10 +60,31 @@ class CsvExportService
                 }
 
                 $resolvedColumns[] = array(
+                    'column' => $column,
                     'items' => $items,
-                    'repeat' => !$this->isMultiRowColumn($column),
                     'queue_item' => $this->isQueueItemColumn($column),
                 );
+            }
+
+            for ($columnIndex = 0; $columnIndex < count($resolvedColumns); $columnIndex++) {
+                $column = $resolvedColumns[$columnIndex]['column'];
+
+                if ($this->isMultiRowColumn($column)) {
+                    continue;
+                }
+
+                $items = array();
+                for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
+                    $rowExportOptions = $exportOptions;
+                    $queueItem = isset($queueItems[$queueItemIndex + $rowIndex]) ? $queueItems[$queueItemIndex + $rowIndex] : '';
+                    if ($queueItem !== '') {
+                        $rowExportOptions['image_queue_item'] = $queueItem;
+                    }
+
+                    $items[] = $this->resolveColumnValue($product, $column, $arraySeparator, $rowExportOptions);
+                }
+
+                $resolvedColumns[$columnIndex]['items'] = $items;
             }
 
             for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
@@ -71,11 +92,6 @@ class CsvExportService
                 foreach ($resolvedColumns as $resolvedColumn) {
                     if (!empty($resolvedColumn['queue_item'])) {
                         $line[] = isset($queueItems[$queueItemIndex]) ? $queueItems[$queueItemIndex] : '';
-                        continue;
-                    }
-
-                    if ($resolvedColumn['repeat']) {
-                        $line[] = isset($resolvedColumn['items'][0]) ? $resolvedColumn['items'][0] : '';
                         continue;
                     }
 
@@ -107,6 +123,9 @@ class CsvExportService
 
     private function generatedImagesColumnSettings(array $columns): array
     {
+        $firstMatch = array();
+        $configuredMatch = array();
+
         foreach ($columns as $column) {
             if (!is_array($column)) {
                 continue;
@@ -122,10 +141,67 @@ class CsvExportService
                 continue;
             }
 
-            return isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
+            $settings = isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array();
+            if ($firstMatch === array()) {
+                $firstMatch = $settings;
+            }
+
+            if ($this->hasCustomizedGeneratedImagesSettings($settings)) {
+                $configuredMatch = $settings;
+            }
         }
 
-        return array();
+        if ($configuredMatch !== array()) {
+            return $configuredMatch;
+        }
+
+        return $firstMatch;
+    }
+
+    private function hasCustomizedGeneratedImagesSettings(array $settings): bool
+    {
+        $defaultLayout = array(
+            array('type' => 'thumbnail', 'value' => ''),
+            array('type' => 'mockup', 'value' => ''),
+            array('type' => 'image', 'value' => ''),
+        );
+        $layout = isset($settings['image_layout']) && is_array($settings['image_layout']) ? $settings['image_layout'] : array();
+        if ($layout !== $defaultLayout) {
+            return true;
+        }
+
+        $imageOptions = isset($settings['image_options']) && is_array($settings['image_options']) ? $settings['image_options'] : array();
+        $defaults = array(
+            'image_collection_code' => '',
+            'price_to_csv' => '',
+            'image_count' => 0,
+            'thumbnail_count' => 0,
+            'mockup_count' => 0,
+            'image_base_directory' => 'T:\\wygnerowane_do_EU',
+            'thumbnail_macro' => '{{base_directory}}\\{{contours}}\\{{collection_code}}\\miniatura_t_{{index}}.png',
+            'mockup_macro' => '{{base_directory}}\\{{contours}}\\mockup_{{index}}.jpg',
+            'image_macro' => '{{base_directory}}\\{{contours}}\\{{collection_code}}\\{{index}}.jpg',
+        );
+
+        foreach ($defaults as $key => $defaultValue) {
+            if (!array_key_exists($key, $imageOptions)) {
+                continue;
+            }
+
+            $value = $imageOptions[$key];
+            if (in_array($key, array('image_count', 'thumbnail_count', 'mockup_count'), true)) {
+                if ((int) $value !== (int) $defaultValue) {
+                    return true;
+                }
+                continue;
+            }
+
+            if ((string) $value !== (string) $defaultValue) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function resolveColumnValue(array $product, array $column, string $arraySeparator, array $exportOptions = array()): string
@@ -288,6 +364,16 @@ class CsvExportService
             $thousandsSeparator = isset($parts[3]) ? $parts[3] : ' ';
 
             return number_format((float) $value, $decimals, $decimalPoint, $thousandsSeparator);
+        }
+
+        if (strpos($format, 'length:') === 0) {
+            $maxLength = (int) substr($format, 7);
+            $value = (string) $value;
+            if ($maxLength <= 0) {
+                return $value;
+            }
+
+            return function_exists('mb_substr') ? mb_substr($value, 0, $maxLength, 'UTF-8') : substr($value, 0, $maxLength);
         }
 
         return $value;

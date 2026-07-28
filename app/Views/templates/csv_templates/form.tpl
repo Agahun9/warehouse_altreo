@@ -715,6 +715,7 @@
                   <li><code>trim</code> - usuniecie spacji z poczatku i konca</li>
                   <li><code>date:Y-m-d</code> - format daty</li>
                   <li><code>number:2:,: </code> - format liczbowy: 2 miejsca, przecinek dziesietny, spacja tysieczna</li>
+                  <li><code>length:2000</code> - obciecie tekstu do maksymalnie 2000 znakow</li>
                 </ul>
                 </div>
               </div>
@@ -1306,8 +1307,8 @@
     }
 
     return layout.map(function (item) {
-      var type = String(item && item.type ? item.type : 'static');
-      var value = String(item && item.value ? item.value : '');
+      var type = String(item && item.type !== undefined && item.type !== null ? item.type : 'static');
+      var value = String(item && item.value !== undefined && item.value !== null ? item.value : '');
       var staticStyle = type === 'static' ? '' : ' style="display:none;"';
       return '<div class="border rounded p-2 mb-2 bg-light image-layout-item" draggable="true">'
         + '<div class="d-flex justify-content-between align-items-center gap-2">'
@@ -2163,7 +2164,7 @@
       + '    <div class="col-md-3 field-wrap"><label class="form-label small">Pole</label><input type="text" class="form-control form-control-sm col-field-search mb-1" placeholder="Szukaj pola"><select class="form-select form-select-sm col-field">' + fieldOptions(data.source_value) + '</select></div>'
       + '    <div class="col-md-3 static-wrap"><label class="form-label small">Wartosc stala</label><input type="text" class="form-control form-control-sm col-static" value="' + escapeHtml(data.source_value) + '"></div>'
       + '    <div class="col-md-4 computed-wrap"><label class="form-label small">Funkcja</label><select class="form-select form-select-sm col-fn">' + functionOptions(data.settings.function) + '</select></div>'
-      + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. ucfirst, date:Y-m-d lub number:2:,: " value="' + escapeHtml(data.settings.format || '') + '"></div>'
+      + '    <div class="col-md-4"><label class="form-label small">Format</label><input type="text" class="form-control form-control-sm col-format" placeholder="np. ucfirst, date:Y-m-d, number:2:,: lub length:2000" value="' + escapeHtml(data.settings.format || '') + '"></div>'
       + '    <div class="col-md-2"><label class="form-label small">Array sep.</label><input type="text" class="form-control form-control-sm col-array-sep" value="' + escapeHtml(data.settings.array_separator || '') + '"></div>'
       + '    <div class="col-12 computed-wrap computed-json-wrap"><label class="form-label small">Argumenty (JSON)</label><textarea class="form-control form-control-sm col-fn-args" rows="3">' + escapeHtml(JSON.stringify(data.settings.args || {}, null, 0)) + '</textarea><div class="border rounded bg-light-subtle p-2 mt-2"><div class="small fw-semibold mb-2">Wstaw parametr do JSON</div><div class="row g-2 align-items-end"><div class="col-lg-4"><label class="form-label small mb-1">Wyszukiwarka</label><input type="text" class="form-control form-control-sm col-fn-field-search" placeholder="Szukaj np. allegro_parameter, empik, sku"></div><div class="col-lg-6"><label class="form-label small mb-1">Pole / parametr</label><select class="form-select form-select-sm col-fn-field-insert">' + fieldInsertOptions() + '</select></div><div class="col-lg-2 d-grid"><button type="button" class="btn btn-sm btn-outline-secondary insert-field-token">Wstaw do JSON</button></div></div><div class="form-text mb-0">Wstawia token w formacie <code>field:product.sku</code> albo <code>field:product.allegro_parameter.11748</code> w miejscu kursora.</div></div></div>'
       + '  </div>'

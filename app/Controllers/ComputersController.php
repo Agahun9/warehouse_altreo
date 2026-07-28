@@ -50,6 +50,9 @@ class ComputersController extends Controller
     /** @var array<string, bool> */
     private $tableExistsCache = array();
 
+    /** @var array<string, array<string, bool>> */
+    private $imageDirIndexCache = array();
+
     public function __construct()
     {
         $this->ensureSchema();
@@ -109,10 +112,13 @@ class ComputersController extends Controller
 
         $filterComponents = array_values(array_filter(array_map('intval', (array) $this->input('filter_components', array()))));
         $filterName = trim((string) $this->input('filter_name', ''));
+        $filterEanSku = trim((string) $this->input('filter_ean_sku', ''));
         $filterCreatedFrom = $this->normalizeDateFilterInput($this->input('filter_created_from', ''));
         $filterCreatedTo = $this->normalizeDateFilterInput($this->input('filter_created_to', ''));
         $filterUpdatedFrom = $this->normalizeDateFilterInput($this->input('filter_updated_from', ''));
         $filterUpdatedTo = $this->normalizeDateFilterInput($this->input('filter_updated_to', ''));
+        $filterNoImages = (string) $this->input('filter_no_images', '') === '1';
+        $filterNoEan = (string) $this->input('filter_no_ean', '') === '1';
         $filterMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('filter_market_accounts', array()));
         $filterOfferStatus = $this->input('filter_status_offer', '');
         if ($filterMarketAccounts === array() && $filterOfferStatus !== '') {
@@ -136,11 +142,14 @@ class ComputersController extends Controller
         $filters = array(
             'components' => $filterComponents,
             'name' => $filterName,
+            'ean_sku' => $filterEanSku,
             'created_from' => $filterCreatedFrom,
             'created_to' => $filterCreatedTo,
             'updated_from' => $filterUpdatedFrom,
             'updated_to' => $filterUpdatedTo,
             'market_accounts' => $filterMarketAccounts,
+            'no_images' => $filterNoImages,
+            'no_ean' => $filterNoEan,
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
         $totalProducts = (int) $this->db()->fetchColumn(
@@ -213,11 +222,14 @@ class ComputersController extends Controller
             'profit' => (float) $this->input('profit', 0),
             'filterComponents' => $filterComponents,
             'filterName' => $filterName,
+            'filterEanSku' => $filterEanSku,
             'filterCreatedFrom' => $filterCreatedFrom,
             'filterCreatedTo' => $filterCreatedTo,
             'filterMarketAccounts' => $filterMarketAccounts,
             'filterUpdatedFrom' => $filterUpdatedFrom,
             'filterUpdatedTo' => $filterUpdatedTo,
+            'filterNoImages' => $filterNoImages,
+            'filterNoEan' => $filterNoEan,
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
@@ -538,7 +550,25 @@ class ComputersController extends Controller
             $this->redirect('./index.php?controller=computers&action=products');
         }
 
-        $this->streamComputerTemplateCsv($template, $productIds);
+        $totalCount = count($productIds);
+        $batchSize = max(0, (int) $this->input('export_batch_size', 0));
+        $batchOffset = max(0, (int) $this->input('export_batch_offset', 0));
+        $batchIds = $batchSize > 0 ? array_slice($productIds, $batchOffset, $batchSize) : $productIds;
+
+        if ($batchIds === array()) {
+            header('X-Export-Total-Count: ' . $totalCount);
+            http_response_code(204);
+            exit;
+        }
+
+        // Duze eksporty (kilkanascie-kilkadziesiat tys. rekordow) potrafily przekraczac
+        // domyslny memory_limit przy budowaniu calego CSV w pamieci na raz, dlatego
+        // frontend dzieli eksport na partie (export_batch_size/offset), a tutaj i tak
+        // podnosimy limity jako dodatkowy zapas dla pojedynczej partii.
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(300);
+
+        $this->streamComputerTemplateCsv($template, $batchIds, $totalCount, $batchSize, $batchOffset);
     }
 
     public function searchcsvpreviewproducts(): void
@@ -781,6 +811,19 @@ class ComputersController extends Controller
         ));
     }
 
+    private function productsRedirectUrl(): string
+    {
+        $queryParams = $_GET;
+        unset($queryParams['controller'], $queryParams['action']);
+        $query = http_build_query($queryParams);
+        $url = './index.php?controller=computers&action=products';
+        if ($query !== '') {
+            $url .= '&' . $query;
+        }
+
+        return $url;
+    }
+
     private function handleProductsPost(): void
     {
         if ($this->input('create_variants', null) !== null) {
@@ -809,6 +852,7 @@ class ComputersController extends Controller
         $filters = array(
             'components' => array_values(array_filter(array_map('intval', (array) $this->input('selection_filter_components', array())))),
             'name' => trim((string) $this->input('selection_filter_name', '')),
+            'ean_sku' => trim((string) $this->input('selection_filter_ean_sku', '')),
             'created_from' => $this->normalizeDateFilterInput($this->input('selection_filter_created_from', '')),
             'created_to' => $this->normalizeDateFilterInput($this->input('selection_filter_created_to', '')),
             'market_accounts' => $this->selectedMarketAccountFilters(
@@ -816,6 +860,8 @@ class ComputersController extends Controller
             ),
             'updated_from' => $this->normalizeDateFilterInput($this->input('selection_filter_updated_from', '')),
             'updated_to' => $this->normalizeDateFilterInput($this->input('selection_filter_updated_to', '')),
+            'no_images' => (string) $this->input('selection_filter_no_images', '') === '1',
+            'no_ean' => (string) $this->input('selection_filter_no_ean', '') === '1',
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
         $rows = $this->db()->fetchAll(
@@ -851,7 +897,7 @@ class ComputersController extends Controller
                 ), 422);
             }
             $this->setFlash('error', json_encode(array('Wybierz co najmniej dwa komponenty.')));
-            $this->redirect('./index.php?controller=computers&action=products');
+            $this->redirect($this->productsRedirectUrl());
         }
 
         $titleTemplate = null;
@@ -865,7 +911,7 @@ class ComputersController extends Controller
                     ), 404);
                 }
                 $this->setFlash('error', json_encode(array('Nie znaleziono wybranego szablonu tytulu.')));
-                $this->redirect('./index.php?controller=computers&action=products');
+                $this->redirect($this->productsRedirectUrl());
             }
         }
 
@@ -905,13 +951,23 @@ class ComputersController extends Controller
                 continue;
             }
 
-            $this->db()->insert(self::PRODUCTS_TABLE, array(
+            $newProductId = (int) $this->db()->insert(self::PRODUCTS_TABLE, array(
                 'id_components' => $idComponentsStr,
                 'name' => $productName,
                 'price' => $priceSum + $profit,
                 'profit' => $profit,
                 'img' => '',
             ));
+            // Marketplace matching (computerProductSkuCandidates) joins purely on sku now,
+            // so every product needs one from the moment it's created - new ids are always
+            // well past 1000, so always the 'ALTREO_' + id form (see backfillMissingProductSkus
+            // in AltreoSqlImportService for the legacy id<=1000 half of this convention).
+            $this->db()->update(
+                self::PRODUCTS_TABLE,
+                array('sku' => 'ALTREO_' . $newProductId),
+                'id = :id',
+                array('id' => $newProductId)
+            );
             $created++;
         }
 
@@ -936,7 +992,7 @@ class ComputersController extends Controller
         } else {
             $this->setFlash('error', json_encode(array('Nie utworzono zadnych nowych wariantow (wszystkie juz istnieja).')));
         }
-        $this->redirect('./index.php?controller=computers&action=products');
+        $this->redirect($this->productsRedirectUrl());
     }
 
     private function wantsJsonResponse(): bool
@@ -962,7 +1018,7 @@ class ComputersController extends Controller
         $products = isset($_POST['products']) && is_array($_POST['products']) ? $_POST['products'] : array();
         if (!isset($products[$productId]) || !is_array($products[$productId])) {
             $this->setFlash('error', json_encode(array('Nie znaleziono danych produktu do zapisu.')));
-            $this->redirect('./index.php?controller=computers&action=products');
+            $this->redirect($this->productsRedirectUrl());
         }
 
         $data = $products[$productId];
@@ -977,21 +1033,9 @@ class ComputersController extends Controller
             }
         }
 
-        $img = trim((string) ($data['img'] ?? ''));
-        $imgMorele = trim((string) ($data['img_morele'] ?? ''));
-        $imgEmpik = trim((string) ($data['img_empik'] ?? ''));
-        $uploaded = $this->handleProductImageSet($productId, 'img_file', 'prod_');
-        if ($uploaded !== null) {
-            $img = $uploaded;
-        }
-        $uploadedMorele = $this->handleProductImageSet($productId, 'img_morele_file', 'prod_morele_');
-        if ($uploadedMorele !== null) {
-            $imgMorele = $uploadedMorele;
-        }
-        $uploadedEmpik = $this->handleProductImageSet($productId, 'img_empik_file', 'prod_empik_');
-        if ($uploadedEmpik !== null) {
-            $imgEmpik = $uploadedEmpik;
-        }
+        $img = $this->mergeProductImages((string) ($data['img_old'] ?? ''), (array) ($data['remove_img'] ?? array()), $productId, 'img_file', 'prod_');
+        $imgMorele = $this->mergeProductImages((string) ($data['img_morele_old'] ?? ''), (array) ($data['remove_img_morele'] ?? array()), $productId, 'img_morele_file', 'prod_morele_');
+        $imgEmpik = $this->mergeProductImages((string) ($data['img_empik_old'] ?? ''), (array) ($data['remove_img_empik'] ?? array()), $productId, 'img_empik_file', 'prod_empik_');
 
         $this->db()->update(self::PRODUCTS_TABLE, array(
             'name' => trim((string) ($data['name'] ?? '')),
@@ -1005,7 +1049,7 @@ class ComputersController extends Controller
         ), 'id = :id', array('id' => $productId));
 
         $this->setFlash('success', 'Produkt zostal zapisany.');
-        $this->redirect('./index.php?controller=computers&action=products');
+        $this->redirect($this->productsRedirectUrl());
     }
 
     private function buildComputerVariantTitle(array $combination, array $componentsByCategory, ?array $titleTemplate): string
@@ -1288,6 +1332,9 @@ class ComputersController extends Controller
         $successMessage = '';
 
         if ($bulkAction === 'delete') {
+            foreach ($productIds as $productId) {
+                $this->deleteProductFiles($productId);
+            }
             $placeholders = implode(',', array_fill(0, count($productIds), '?'));
             $this->db()->query('DELETE FROM ' . self::PRODUCTS_TABLE . ' WHERE id IN (' . $placeholders . ')', $productIds);
             $successCount = count($productIds);
@@ -1329,22 +1376,36 @@ class ComputersController extends Controller
             }
         } elseif ($bulkAction === 'change_images') {
             $target = trim((string) $this->input('bulk_img_target', 'img'));
-            if (!in_array($target, array('img', 'img_morele', 'img_empik'), true)) {
+            if (!in_array($target, array('img', 'img_morele', 'img_empik', 'all'), true)) {
                 $target = 'img';
             }
-            $filename = $this->handleFlatUpload('bulk_img', $this->productUploadDir(), 'prod_bulk_');
-            if ($filename === null) {
-                $errors[] = 'Nie przeslano pliku obrazu do masowej zmiany.';
+            $targetColumns = $target === 'all' ? array('img', 'img_morele', 'img_empik') : array($target);
+            $mode = trim((string) $this->input('bulk_img_mode', 'replace'));
+            if (!in_array($mode, array('replace', 'append'), true)) {
+                $mode = 'replace';
+            }
+            $filenames = $this->handleMultipleFlatUploads('bulk_img', $this->productUploadDir(), 'prod_bulk_');
+            if ($filenames === array()) {
+                $errors[] = 'Nie przeslano zadnych plikow obrazow do masowej zmiany.';
             } else {
-                $idPlaceholders = array();
-                $params = array('filename' => $filename);
-                foreach ($productIds as $index => $productId) {
-                    $placeholder = 'id_' . $index;
-                    $idPlaceholders[] = ':' . $placeholder;
-                    $params[$placeholder] = $productId;
+                foreach ($productIds as $productId) {
+                    $product = $this->productById($productId);
+                    if ($product === null) {
+                        continue;
+                    }
+                    $updates = array();
+                    foreach ($targetColumns as $column) {
+                        if ($mode === 'append') {
+                            $existingImages = $this->existingProductImages((string) ($product[$column] ?? ''));
+                            $updates[$column] = implode(',', array_slice(array_merge($existingImages, $filenames), 0, 16));
+                        } else {
+                            $this->deleteImageList((string) ($product[$column] ?? ''), $this->productUploadDir());
+                            $updates[$column] = implode(',', array_slice($filenames, 0, 16));
+                        }
+                    }
+                    $this->db()->update(self::PRODUCTS_TABLE, $updates, 'id = :id', array('id' => $productId));
+                    $successCount++;
                 }
-                $this->db()->query('UPDATE ' . self::PRODUCTS_TABLE . ' SET ' . $target . ' = :filename WHERE id IN (' . implode(',', $idPlaceholders) . ')', $params);
-                $successCount = count($productIds);
             }
         } elseif ($bulkAction === 'set_ean') {
             $rows = array();
@@ -1414,7 +1475,7 @@ class ComputersController extends Controller
         if ($errors !== array()) {
             $this->setFlash('error', json_encode($errors));
         }
-        $this->redirect('./index.php?controller=computers&action=products');
+        $this->redirect($this->productsRedirectUrl());
     }
 
     private function regenerateProductTitles(array $productIds, array $componentsById, array &$errors): int
@@ -1520,9 +1581,10 @@ class ComputersController extends Controller
     private function deleteProduct(int $productId): void
     {
         $this->requireModuleWrite('computers');
+        $this->deleteProductFiles($productId);
         $this->db()->delete(self::PRODUCTS_TABLE, 'id = :id', array('id' => $productId));
         $this->setFlash('success', 'Produkt ID ' . $productId . ' zostal usuniety.');
-        $this->redirect('./index.php?controller=computers&action=products');
+        $this->redirect($this->productsRedirectUrl());
     }
 
     private function handleComponentsPost(): void
@@ -2006,11 +2068,60 @@ class ComputersController extends Controller
     {
         foreach (array('img', 'img_morele', 'img_empik') as $field) {
             if (array_key_exists($field, $product)) {
-                $product[$field] = trim((string) $product[$field]);
+                $images = $this->existingProductImages((string) $product[$field]);
+                $product[$field] = implode(',', $images);
+                $product[$field . '_count'] = count($images);
             }
         }
 
         return $product;
+    }
+
+    private function existingProductImages(string $csv): array
+    {
+        $dir = $this->productUploadDir();
+        $index = $this->directoryFileIndex($dir);
+        $files = array();
+
+        foreach (array_filter(array_map('trim', explode(',', $csv))) as $file) {
+            if ($file === '' || basename($file) !== $file) {
+                continue;
+            }
+
+            if (isset($index[$file])) {
+                $files[] = $file;
+            }
+        }
+
+        return array_values(array_unique($files));
+    }
+
+    /**
+     * Returns a lookup set of filenames present in $dir, built with a single
+     * directory read instead of one is_file() syscall per referenced image.
+     * Listing pages check hundreds/thousands of image references per request,
+     * so per-file stat() calls (especially over slow/networked storage) were
+     * the dominant cost of loading the components/products lists.
+     *
+     * @return array<string, bool>
+     */
+    private function directoryFileIndex(string $dir): array
+    {
+        if (!isset($this->imageDirIndexCache[$dir])) {
+            $index = array();
+            $entries = @scandir($dir);
+            if ($entries !== false) {
+                foreach ($entries as $entry) {
+                    if ($entry === '.' || $entry === '..') {
+                        continue;
+                    }
+                    $index[$entry] = true;
+                }
+            }
+            $this->imageDirIndexCache[$dir] = $index;
+        }
+
+        return $this->imageDirIndexCache[$dir];
     }
 
     private function selectedMarketAccountFilters(array $values): array
@@ -2034,6 +2145,13 @@ class ComputersController extends Controller
         if ($name !== '') {
             $where[] = 'products.name LIKE :computer_filter_name';
             $params['computer_filter_name'] = '%' . $name . '%';
+        }
+
+        $eanSku = trim((string) ($filters['ean_sku'] ?? ''));
+        if ($eanSku !== '') {
+            $where[] = '(products.EAN LIKE :computer_filter_ean OR products.sku LIKE :computer_filter_sku)';
+            $params['computer_filter_ean'] = '%' . $eanSku . '%';
+            $params['computer_filter_sku'] = '%' . $eanSku . '%';
         }
 
         $componentIds = array_values(array_unique(array_filter(array_map(
@@ -2070,88 +2188,30 @@ class ComputersController extends Controller
             $params['computer_filter_updated_to'] = $this->nextDateFilterBoundary($updatedTo);
         }
 
+        if (!empty($filters['no_images'])) {
+            $where[] = "(TRIM(COALESCE(products.img, '')) = '' AND TRIM(COALESCE(products.img_morele, '')) = '' AND TRIM(COALESCE(products.img_empik, '')) = '')";
+        }
+
+        if (!empty($filters['no_ean'])) {
+            $where[] = "(TRIM(COALESCE(products.EAN, '')) = '' OR TRIM(products.EAN) = '0')";
+        }
+
         $marketFilters = $this->selectedMarketAccountFilters((array) ($filters['market_accounts'] ?? array()));
         if ($marketFilters !== array()) {
-            $hasAllegroTables = $this->tableExists('allegro_offers') && $this->tableExists('allegro_accounts');
-            $hasEmpikTables = $this->tableExists('empik_offers') && $this->tableExists('empik_accounts');
-            $hasErliTables = $this->tableExists('erli_products') && $this->tableExists('erli_accounts');
-            $hasMoreleTables = $this->tableExists('morele_offers');
-            // Marketplace tables were created at different times and can use
-            // utf8mb4_general_ci while the computer tables use unicode_ci.
-            $skuMatch = '(market_items.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci'
-                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.offerid AS CHAR) COLLATE utf8mb4_unicode_ci'
-                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.id AS CHAR) COLLATE utf8mb4_unicode_ci'
-                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.id) COLLATE utf8mb4_unicode_ci"
-                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.offerid) COLLATE utf8mb4_unicode_ci)";
-            $moreleSkuMatch = '(market_items.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci'
-                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.offerid AS CHAR) COLLATE utf8mb4_unicode_ci'
-                . ' OR market_items.sku COLLATE utf8mb4_unicode_ci = CAST(products.id AS CHAR) COLLATE utf8mb4_unicode_ci'
-                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.id) COLLATE utf8mb4_unicode_ci"
-                . " OR market_items.sku COLLATE utf8mb4_unicode_ci = CONCAT('ALTREO_', products.offerid) COLLATE utf8mb4_unicode_ci)";
-            $empikSkuMatch = "(market_items.shop_sku = CONCAT('ALTREO_', products.id)"
-                . " OR market_items.product_sku = CONCAT('ALTREO_', products.id))";
-            $allegroExists = $hasAllegroTables
-                ? 'EXISTS (SELECT 1 FROM allegro_offers market_items'
-                    . ' INNER JOIN allegro_accounts market_accounts ON market_accounts.id = market_items.account_id'
-                    . " WHERE market_items.publication_status = 'ACTIVE' AND market_accounts.is_active = 1"
-                    . ' AND ' . $skuMatch . ')'
-                : '0 = 1';
-            $empikExists = $hasEmpikTables
-                ? 'EXISTS (SELECT 1 FROM empik_offers market_items'
-                    . ' INNER JOIN empik_accounts market_accounts ON market_accounts.id = market_items.account_id'
-                    . ' WHERE market_items.active = 1 AND market_accounts.is_active = 1'
-                    . ' AND ' . $empikSkuMatch . ')'
-                : '0 = 1';
-            $erliExists = $hasErliTables
-                ? 'EXISTS (SELECT 1 FROM erli_products market_items'
-                    . ' INNER JOIN erli_accounts market_accounts ON market_accounts.id = market_items.account_id'
-                    . ' WHERE market_accounts.is_active = 1'
-                    . " AND (CASE"
-                    . " WHEN market_items.status_override IS NOT NULL AND market_items.status_override <> '' THEN LOWER(market_items.status_override)"
-                    . " WHEN market_items.remote_status IS NOT NULL AND market_items.remote_status <> '' THEN LOWER(market_items.remote_status)"
-                    . " WHEN COALESCE(market_items.stock_override, market_items.quantity, 0) > 0 THEN 'active'"
-                    . " ELSE 'inactive' END) = 'active'"
-                    . ' AND ' . $skuMatch . ')'
-                : '0 = 1';
-            $moreleExists = $hasMoreleTables
-                ? 'EXISTS (SELECT 1 FROM morele_offers market_items'
-                    . ' WHERE market_items.active = 1'
-                    . ' AND ' . $moreleSkuMatch . ')'
-                : '0 = 1';
-
-            $marketConditions = array();
-            foreach ($marketFilters as $index => $marketFilter) {
-                if ($marketFilter === '1') {
-                    $marketConditions[] = '(' . $allegroExists . ' OR ' . $empikExists . ' OR ' . $erliExists . ' OR ' . $moreleExists . ')';
-                    continue;
-                }
-                if ($marketFilter === '0') {
-                    $marketConditions[] = '(NOT (' . $allegroExists . ') AND NOT (' . $empikExists . ') AND NOT (' . $erliExists . ') AND NOT (' . $moreleExists . '))';
-                    continue;
-                }
-
-                list($market, $accountId) = explode(':', $marketFilter, 2);
-                $key = 'computer_filter_market_account_' . $index;
-                $params[$key] = (int) $accountId;
-                if ($market === 'allegro' && $hasAllegroTables) {
-                    $marketConditions[] = substr($allegroExists, 0, -1)
-                        . ' AND market_items.account_id = :' . $key . ')';
-                } elseif ($market === 'empik' && $hasEmpikTables) {
-                    $marketConditions[] = substr($empikExists, 0, -1)
-                        . ' AND market_items.account_id = :' . $key . ')';
-                } elseif ($market === 'erli' && $hasErliTables) {
-                    $marketConditions[] = substr($erliExists, 0, -1)
-                        . ' AND market_items.account_id = :' . $key . ')';
-                } elseif ($market === 'morele' && $hasMoreleTables) {
-                    $marketConditions[] = substr($moreleExists, 0, -1)
-                        . ' AND market_items.account_id = :' . $key . ')';
-                } else {
-                    $marketConditions[] = '0 = 1';
-                }
-            }
-
-            if ($marketConditions !== array()) {
-                $where[] = '(' . implode(' OR ', $marketConditions) . ')';
+            // A correlated EXISTS per product row here (checked once per row against
+            // allegro_offers/empik_offers/erli_products/morele_offers, run twice - once for
+            // COUNT() and once for the paginated SELECT) is what made this filter take 10+
+            // minutes: EXPLAIN against production showed MySQL repeatedly falling back to a
+            // full scan of the marketplace table per product row instead of seeking an index,
+            // regardless of indexes/collation. Fetching each marketplace's currently-active
+            // offers ONCE (a handful of cheap, non-correlated, plain-indexed queries) and
+            // matching in PHP turns that O(products x offers) cost into O(products + offers).
+            $matchedProductIds = $this->activeMarketFilterProductIds($marketFilters);
+            if ($matchedProductIds === array()) {
+                $where[] = '0 = 1';
+            } else {
+                $this->populateComputerMarketMatchTempTable($matchedProductIds);
+                $where[] = 'products.id IN (SELECT product_id FROM computers_market_filter_match)';
             }
         }
 
@@ -2159,6 +2219,191 @@ class ComputersController extends Controller
             $where === array() ? '' : ' WHERE ' . implode(' AND ', $where),
             $params,
         );
+    }
+
+    /**
+     * Returns the ids of every pr_products_altreo row matching the OR'd market_accounts
+     * filter values ('1' = any active offer, '0' = no active offer anywhere, 'market:accountId'
+     * = active offer on that specific account) - computed by loading each marketplace's
+     * currently-active offers once (cheap, non-correlated queries) and matching them against
+     * every product's candidate identifiers in PHP via the existing
+     * productMatchesMarketAccountFilters() rules, instead of a correlated SQL EXISTS per row.
+     */
+    private function activeMarketFilterProductIds(array $marketFilters): array
+    {
+        $wantsAny = in_array('1', $marketFilters, true) || in_array('0', $marketFilters, true);
+        $wantsAllegro = $wantsAny;
+        $wantsEmpik = $wantsAny;
+        $wantsErli = $wantsAny;
+        $wantsMorele = $wantsAny;
+
+        foreach ($marketFilters as $marketFilter) {
+            if ($marketFilter === '1' || $marketFilter === '0' || strpos($marketFilter, ':') === false) {
+                continue;
+            }
+            list($market) = explode(':', $marketFilter, 2);
+            $wantsAllegro = $wantsAllegro || $market === 'allegro';
+            $wantsEmpik = $wantsEmpik || $market === 'empik';
+            $wantsErli = $wantsErli || $market === 'erli';
+            $wantsMorele = $wantsMorele || $market === 'morele';
+        }
+
+        $allegroIdentifiers = $wantsAllegro ? $this->activeAllegroIdentifierAccounts() : array();
+        $empikIdentifiers = $wantsEmpik ? $this->activeEmpikIdentifierAccounts() : array();
+        $erliIdentifiers = $wantsErli ? $this->activeErliIdentifierAccounts() : array();
+        $moreleIdentifiers = $wantsMorele ? $this->activeMoreleIdentifierAccounts() : array();
+
+        $products = $this->db()->fetchAll('SELECT id, sku, offerid FROM ' . self::PRODUCTS_TABLE);
+
+        $matchedIds = array();
+        foreach ($products as $product) {
+            $genericCandidates = $this->allegroSkuCandidatesForComputerProduct($product);
+            $product['allegro_accounts'] = $wantsAllegro
+                ? $this->matchIdentifierAccounts($genericCandidates, $allegroIdentifiers)
+                : array();
+            $product['erli_accounts'] = $wantsErli
+                ? $this->matchIdentifierAccounts($genericCandidates, $erliIdentifiers)
+                : array();
+            $product['morele_accounts'] = $wantsMorele
+                ? $this->matchIdentifierAccounts($genericCandidates, $moreleIdentifiers)
+                : array();
+            $product['empik_accounts'] = $wantsEmpik
+                ? $this->matchIdentifierAccounts($this->empikSkuCandidatesForComputerProduct($product), $empikIdentifiers)
+                : array();
+
+            if ($this->productMatchesMarketAccountFilters($product, $marketFilters)) {
+                $matchedIds[] = (int) ($product['id'] ?? 0);
+            }
+        }
+
+        return $matchedIds;
+    }
+
+    /** @return array<string, array<int, true>> identifier => set of account ids offering it active */
+    private function activeAllegroIdentifierAccounts(): array
+    {
+        if (!$this->tableExists('allegro_offers') || !$this->tableExists('allegro_accounts')) {
+            return array();
+        }
+
+        (new AllegroStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierAccounts($this->db()->fetchAll(
+            'SELECT ao.sku AS identifier, ao.account_id AS account_id FROM allegro_offers ao'
+            . ' INNER JOIN allegro_accounts aa ON aa.id = ao.account_id'
+            . " WHERE ao.publication_status = 'ACTIVE' AND aa.is_active = 1"
+            . " AND ao.sku IS NOT NULL AND ao.sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, true>> */
+    private function activeEmpikIdentifierAccounts(): array
+    {
+        if (!$this->tableExists('empik_offers') || !$this->tableExists('empik_accounts')) {
+            return array();
+        }
+
+        (new EmpikStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierAccounts($this->db()->fetchAll(
+            'SELECT eo.shop_sku AS identifier, eo.account_id AS account_id FROM empik_offers eo'
+            . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
+            . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.shop_sku IS NOT NULL AND eo.shop_sku <> ''"
+            . ' UNION ALL'
+            . ' SELECT eo.product_sku AS identifier, eo.account_id AS account_id FROM empik_offers eo'
+            . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
+            . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.product_sku IS NOT NULL AND eo.product_sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, true>> */
+    private function activeErliIdentifierAccounts(): array
+    {
+        if (!$this->tableExists('erli_products') || !$this->tableExists('erli_accounts')) {
+            return array();
+        }
+
+        (new ErliStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierAccounts($this->db()->fetchAll(
+            'SELECT ep.sku AS identifier, ep.account_id AS account_id FROM erli_products ep'
+            . ' INNER JOIN erli_accounts ea ON ea.id = ep.account_id'
+            . " WHERE ea.is_active = 1 AND ep.sku IS NOT NULL AND ep.sku <> ''"
+            . ' AND (CASE'
+            . " WHEN ep.status_override IS NOT NULL AND ep.status_override <> '' THEN LOWER(ep.status_override)"
+            . " WHEN ep.remote_status IS NOT NULL AND ep.remote_status <> '' THEN LOWER(ep.remote_status)"
+            . " WHEN COALESCE(ep.stock_override, ep.quantity, 0) > 0 THEN 'active'"
+            . " ELSE 'inactive' END) = 'active'"
+        ));
+    }
+
+    /** @return array<string, array<int, true>> */
+    private function activeMoreleIdentifierAccounts(): array
+    {
+        if (!$this->tableExists('morele_offers')) {
+            return array();
+        }
+
+        (new MoreleStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierAccounts($this->db()->fetchAll(
+            "SELECT sku AS identifier, account_id AS account_id FROM morele_offers WHERE active = 1 AND sku IS NOT NULL AND sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, true>> */
+    private function groupIdentifierAccounts(array $rows): array
+    {
+        $map = array();
+        foreach ($rows as $row) {
+            $identifier = trim((string) ($row['identifier'] ?? ''));
+            if ($identifier === '') {
+                continue;
+            }
+            $map[$identifier][(int) ($row['account_id'] ?? 0)] = true;
+        }
+
+        return $map;
+    }
+
+    /** @param array<string, array<int, true>> $identifierMap @return array<int, array{account_id: int}> */
+    private function matchIdentifierAccounts(array $candidates, array $identifierMap): array
+    {
+        $accounts = array();
+        foreach ($candidates as $candidate) {
+            if (!isset($identifierMap[$candidate])) {
+                continue;
+            }
+            foreach (array_keys($identifierMap[$candidate]) as $accountId) {
+                $accounts[$accountId] = array('account_id' => $accountId);
+            }
+        }
+
+        return array_values($accounts);
+    }
+
+    private function populateComputerMarketMatchTempTable(array $productIds): void
+    {
+        $this->db()->query(
+            'CREATE TEMPORARY TABLE IF NOT EXISTS computers_market_filter_match ('
+            . 'product_id INT UNSIGNED NOT NULL, PRIMARY KEY (product_id)'
+            . ') ENGINE=MEMORY'
+        );
+        $this->db()->query('TRUNCATE TABLE computers_market_filter_match');
+
+        foreach (array_chunk(array_values(array_unique($productIds)), 1000) as $chunk) {
+            $placeholders = array();
+            $params = array();
+            foreach ($chunk as $index => $productId) {
+                $key = 'match_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $productId;
+            }
+            $this->db()->query(
+                'INSERT INTO computers_market_filter_match (product_id) VALUES (' . implode('),(', $placeholders) . ')',
+                $params
+            );
+        }
     }
 
     private function normalizeDateFilterInput($value): string
@@ -2306,6 +2551,8 @@ class ComputersController extends Controller
         if ($products === array() || !$this->tableExists('allegro_offers') || !$this->tableExists('allegro_accounts')) {
             return $products;
         }
+
+        (new AllegroStorageRepository($this->db()))->ensureSchema();
 
         $skuMap = array();
         foreach ($products as $index => $product) {
@@ -2721,48 +2968,33 @@ class ComputersController extends Controller
         return '';
     }
 
+    /**
+     * Matching by bare, unprefixed id/offerid used to be part of this (CAST(id AS CHAR),
+     * CAST(offerid AS CHAR)) - that's what caused unrelated Allegro listings from other
+     * shops on the same account pool to attach to the wrong computer product whenever their
+     * own internal sku happened to equal our product id as plain digits (e.g. product 14344
+     * matching a completely unrelated "CZARNY NOTES A5" listing whose sku was literally
+     * "14344"). products.sku is now backfilled for every row (plain id for id<=1000, legacy
+     * listings that already used that convention on the marketplace; 'ALTREO_'+id for
+     * everything else, which no unrelated shop's sku will ever coincidentally equal), so
+     * matching by that single column is both sufficient and safe - no more guessing via
+     * CAST/CONCAT derivations of id/offerid.
+     */
+    private function computerProductSkuCandidates(array $product): array
+    {
+        $sku = trim((string) ($product['sku'] ?? ''));
+
+        return $sku !== '' ? array($sku) : array();
+    }
+
     private function allegroSkuCandidatesForComputerProduct(array $product): array
     {
-        $raw = array(
-            $product['sku'] ?? '',
-            $product['offerid'] ?? '',
-            $product['id'] ?? '',
-        );
-
-        if (!empty($product['id'])) {
-            $raw[] = 'ALTREO_' . (string) $product['id'];
-        }
-        if (!empty($product['offerid'])) {
-            $raw[] = 'ALTREO_' . (string) $product['offerid'];
-        }
-
-        $values = array();
-        foreach ($raw as $value) {
-            $sku = trim((string) $value);
-            if ($sku !== '') {
-                $values[] = $sku;
-            }
-        }
-
-        return array_values(array_unique($values));
+        return $this->computerProductSkuCandidates($product);
     }
 
     private function empikSkuCandidatesForComputerProduct(array $product): array
     {
-        $raw = array();
-        if (!empty($product['id'])) {
-            $raw[] = 'ALTREO_' . (string) $product['id'];
-        }
-
-        $values = array();
-        foreach ($raw as $value) {
-            $sku = trim((string) $value);
-            if ($sku !== '') {
-                $values[] = $sku;
-            }
-        }
-
-        return array_values(array_unique($values));
+        return $this->computerProductSkuCandidates($product);
     }
 
     private function tableExists(string $table): bool
@@ -2848,6 +3080,7 @@ class ComputersController extends Controller
     private function existingComponentImages(string $csv): array
     {
         $dir = $this->componentUploadDir();
+        $index = $this->directoryFileIndex($dir);
         $files = array();
 
         foreach (array_filter(array_map('trim', explode(',', $csv))) as $file) {
@@ -2855,7 +3088,7 @@ class ComputersController extends Controller
                 continue;
             }
 
-            if (is_file($dir . DIRECTORY_SEPARATOR . $file)) {
+            if (isset($index[$file])) {
                 $files[] = $file;
             }
         }
@@ -2966,29 +3199,6 @@ class ComputersController extends Controller
         return $path;
     }
 
-    private function handleProductImageSet(int $productId, string $field, string $prefix): ?string
-    {
-        $file = $this->nestedFile($productId, $field);
-        if ($file === null || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-            return null;
-        }
-        return $this->moveUploadedFile($file, $this->productUploadDir(), $prefix);
-    }
-
-    private function nestedFile(int $productId, string $field): ?array
-    {
-        if (!isset($_FILES['products']['name'][$productId][$field])) {
-            return null;
-        }
-        return array(
-            'name' => $_FILES['products']['name'][$productId][$field] ?? '',
-            'type' => $_FILES['products']['type'][$productId][$field] ?? '',
-            'tmp_name' => $_FILES['products']['tmp_name'][$productId][$field] ?? '',
-            'error' => $_FILES['products']['error'][$productId][$field] ?? UPLOAD_ERR_NO_FILE,
-            'size' => $_FILES['products']['size'][$productId][$field] ?? 0,
-        );
-    }
-
     private function handleFlatUpload(string $field, string $targetDir, string $prefix): ?string
     {
         if (!isset($_FILES[$field])) {
@@ -3054,8 +3264,9 @@ class ComputersController extends Controller
         exit;
     }
 
-    private function streamComputerTemplateCsv(array $template, array $productIds): void
+    private function streamComputerTemplateCsv(array $template, array $productIds, int $totalCount = 0, int $batchSize = 0, int $batchOffset = 0): void
     {
+        $totalCount = $totalCount > 0 ? $totalCount : count($productIds);
         $headers = array();
         foreach ($template['columns'] as $column) {
             $headers[] = (string) ($column['header'] ?? '');
@@ -3108,7 +3319,19 @@ class ComputersController extends Controller
         }
 
         $filename = $this->safeCsvFilenamePrefix((string) ($template['filename_prefix'] ?? 'computers_export'))
-            . '_' . date('Ymd_His') . '.csv';
+            . '_' . date('Ymd_His');
+        if ($batchSize > 0 && $totalCount > $batchSize) {
+            $partNumber = intdiv($batchOffset, $batchSize) + 1;
+            $totalParts = (int) ceil($totalCount / $batchSize);
+            $filename .= '_czesc' . $partNumber . 'z' . $totalParts;
+        }
+        $filename .= '.csv';
+
+        header('X-Export-Total-Count: ' . $totalCount);
+        if ($batchSize > 0) {
+            header('X-Export-Batch-Size: ' . $batchSize);
+            header('X-Export-Batch-Offset: ' . $batchOffset);
+        }
         header('Content-Type: text/csv; charset=' . ($encoding === 'WINDOWS-1250' ? 'windows-1250' : 'utf-8'));
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         echo $csv;
@@ -3121,9 +3344,9 @@ class ComputersController extends Controller
         $imagesMorele = $this->computerExportImages($product, $components, 'morele');
         $imagesEmpik = $this->computerExportImages($product, $components, 'empik');
         $mainEmpikImage = '';
-        $productEmpikImage = trim((string) ($product['img_empik'] ?? ''));
-        if ($productEmpikImage !== '') {
-            $mainEmpikImage = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImage);
+        $productEmpikImages = $this->existingProductImages((string) ($product['img_empik'] ?? ''));
+        if ($productEmpikImages !== array()) {
+            $mainEmpikImage = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImages[0]);
         } elseif ($imagesEmpik !== array()) {
             $mainEmpikImage = (string) $imagesEmpik[0];
         }
@@ -3131,7 +3354,7 @@ class ComputersController extends Controller
         $moreleParams = array();
         foreach ($components as $component) {
             foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $key => $value) {
-                $empikParams[(string) $key] = is_array($value) ? implode(' | ', $value) : (string) $value;
+                $empikParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_morele'] ?? '')) as $key => $value) {
                 if (!array_key_exists($key, $moreleParams)) {
@@ -3199,9 +3422,13 @@ class ComputersController extends Controller
         $componentField = $productField;
         $images = array();
         $base = $this->publicAppBaseUrl();
-        $main = trim((string) ($product[$productField] ?? ''));
-        if ($channel !== 'empik' && $main !== '') {
-            $url = $this->publicImageUrl($base, 'img_computers_products', $main);
+        $productImages = $this->existingProductImages((string) ($product[$productField] ?? ''));
+        if ($channel === 'empik' && $productImages !== array()) {
+            // Pierwsze zdjecie Empik jest uzywane osobno jako main_image.empik.
+            $productImages = array_slice($productImages, 1);
+        }
+        foreach ($productImages as $file) {
+            $url = $this->publicImageUrl($base, 'img_computers_products', $file);
             if ($url !== null) {
                 $images[] = $url;
             }
@@ -3222,20 +3449,75 @@ class ComputersController extends Controller
     {
         $type = (string) ($column['type'] ?? 'source');
         if ($type === 'static') {
-            return (string) ($column['value'] ?? '');
-        }
-        if ($type === 'template') {
-            return (string) preg_replace_callback(
+            $value = (string) ($column['value'] ?? '');
+        } elseif ($type === 'template') {
+            $value = (string) preg_replace_callback(
                 '/\{\{\s*([^{}]+?)\s*\}\}/',
                 function (array $matches) use ($context): string {
                     return $this->resolveComputerCsvSource(trim((string) $matches[1]), $context);
                 },
                 (string) ($column['value'] ?? '')
             );
+        } else {
+            $source = (string) ($column['value'] ?? '');
+            $value = $this->resolveComputerCsvSource($source, $context);
         }
 
-        $source = (string) ($column['value'] ?? '');
-        return $this->resolveComputerCsvSource($source, $context);
+        return $this->applyComputerCsvFormat((string) ($column['format'] ?? ''), $value);
+    }
+
+    private function applyComputerCsvFormat(string $format, string $value): string
+    {
+        $format = trim($format);
+        if ($format === '') {
+            return $value;
+        }
+
+        if ($format === 'upper') {
+            return function_exists('mb_strtoupper') ? mb_strtoupper($value, 'UTF-8') : strtoupper($value);
+        }
+
+        if ($format === 'lower') {
+            return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        }
+
+        if (in_array($format, array('ucfirst', 'capitalize'), true)) {
+            if ($value === '') {
+                return '';
+            }
+            if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
+                return mb_strtoupper(mb_substr($value, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($value, 1, null, 'UTF-8');
+            }
+            return ucfirst($value);
+        }
+
+        if ($format === 'trim') {
+            return trim($value);
+        }
+
+        if (strpos($format, 'date:') === 0) {
+            $phpFormat = substr($format, 5);
+            $timestamp = strtotime($value);
+            return $timestamp !== false ? date($phpFormat !== '' ? $phpFormat : 'Y-m-d', $timestamp) : $value;
+        }
+
+        if (strpos($format, 'number:') === 0) {
+            $parts = explode(':', $format);
+            $decimals = isset($parts[1]) ? (int) $parts[1] : 2;
+            $decimalPoint = isset($parts[2]) && $parts[2] !== '' ? $parts[2] : ',';
+            $thousandsSeparator = isset($parts[3]) ? $parts[3] : ' ';
+            return number_format((float) $value, $decimals, $decimalPoint, $thousandsSeparator);
+        }
+
+        if (strpos($format, 'length:') === 0) {
+            $maxLength = (int) substr($format, 7);
+            if ($maxLength <= 0) {
+                return $value;
+            }
+            return function_exists('mb_substr') ? mb_substr($value, 0, $maxLength, 'UTF-8') : substr($value, 0, $maxLength);
+        }
+
+        return $value;
     }
 
     private function resolveComputerCsvSource(string $source, array $context): string
@@ -3258,13 +3540,14 @@ class ComputersController extends Controller
             $images = $context['component_images'][$matches[1] . '.' . $matches[2]] ?? array();
             return (string) ($images[max(0, (int) $matches[3] - 1)] ?? '');
         }
-        if (preg_match('/^product_image\.(easy|morele|empik)\.1$/', $source, $matches) === 1) {
+        if (preg_match('/^product_image\.(easy|morele|empik)\.(\d+)$/', $source, $matches) === 1) {
             $field = $matches[1] === 'morele' ? 'img_morele' : ($matches[1] === 'empik' ? 'img_empik' : 'img');
-            return (string) ($this->publicImageUrl(
-                $this->publicAppBaseUrl(),
-                'img_computers_products',
-                (string) ($product[$field] ?? '')
-            ) ?? '');
+            $images = $this->existingProductImages((string) ($product[$field] ?? ''));
+            $file = $images[max(0, (int) $matches[2] - 1)] ?? '';
+            if ($file === '') {
+                return '';
+            }
+            return (string) ($this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $file) ?? '');
         }
         if (strpos($source, 'empik_param:') === 0) {
             return (string) ($context['empik_params'][substr($source, 12)] ?? '');
@@ -3302,12 +3585,13 @@ class ComputersController extends Controller
             return (string) ($product['name'] ?? '');
         }
 
+        $productEmpikImages = $this->existingProductImages((string) ($product['img_empik'] ?? ''));
         $vars = array(
             'title' => (string) ($product['name'] ?? ''),
             'main_img_allegro' => (string) ($this->computerExportImages($product, array(), 'easy')[0] ?? ''),
             'main_img_morele' => (string) ($this->computerExportImages($product, array(), 'morele')[0] ?? ''),
-            'main_img_empik' => trim((string) ($product['img_empik'] ?? '')) !== ''
-                ? (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', (string) $product['img_empik'])
+            'main_img_empik' => $productEmpikImages !== array()
+                ? (string) ($this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImages[0]) ?? '')
                 : '',
             'product.id' => (string) ($product['id'] ?? ''),
             'product.code' => 'ALTREO_' . (string) ($product['id'] ?? ''),
@@ -3316,11 +3600,14 @@ class ComputersController extends Controller
             'product.EAN' => (string) ($product['EAN'] ?? ''),
         );
         foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik') as $channel => $imageField) {
-            $vars['product_image.' . $channel . '.1'] = (string) ($this->publicImageUrl(
-                $this->publicAppBaseUrl(),
-                'img_computers_products',
-                (string) ($product[$imageField] ?? '')
-            ) ?? '');
+            $productChannelImages = $this->existingProductImages((string) ($product[$imageField] ?? ''));
+            foreach ($productChannelImages as $index => $file) {
+                $vars['product_image.' . $channel . '.' . ($index + 1)] = (string) ($this->publicImageUrl(
+                    $this->publicAppBaseUrl(),
+                    'img_computers_products',
+                    $file
+                ) ?? '');
+            }
         }
         foreach (array('easy', 'morele', 'empik') as $channel) {
             $descriptionImages = $this->computerExportImages($product, $components, $channel);
@@ -3376,11 +3663,19 @@ class ComputersController extends Controller
 
     private function renderComputerDescriptionConditionals(string $template, array $vars): string
     {
+        $conditionToken = '[a-zA-Z0-9_.\\[\\](),\\s]+';
+        // The if/endif/elseif markers may be wrapped in an HTML comment (<!--{% if x %}-->). We insert them that
+        // way from the editor so that pasting a condition around a <tr> inside a <table> survives being round-tripped
+        // through the contenteditable visual editor: browsers foster-parent stray text nodes placed directly inside
+        // <table>/<tbody> (moving them before the table), but they leave HTML comment nodes in place.
+        $commentOpen = '(?:<!--\\s*)?';
+        $commentClose = '(?:\\s*-->)?';
         return (string) preg_replace_callback(
-            '/\\{%\\s*if\\s+([a-zA-Z0-9_.\\[\\]]+)\\s*%\\}(.*?)\\{%\\s*endif\\s*%\\}/s',
-            static function (array $matches) use ($vars): string {
+            '/' . $commentOpen . '\\{%\\s*if\\s+(' . $conditionToken . ')\\s*%\\}' . $commentClose
+                . '(.*?)' . $commentOpen . '\\{%\\s*endif\\s*%\\}' . $commentClose . '/s',
+            function (array $matches) use ($vars, $conditionToken, $commentOpen, $commentClose): string {
                 $parts = preg_split(
-                    '/\\{%\\s*((?:elseif|else\\s+if)\\s+[a-zA-Z0-9_.\\[\\]]+|else)\\s*%\\}/i',
+                    '/' . $commentOpen . '\\{%\\s*((?:elseif|else\\s+if)\\s+' . $conditionToken . '|else)\\s*%\\}' . $commentClose . '/i',
                     (string) $matches[2],
                     -1,
                     PREG_SPLIT_DELIM_CAPTURE
@@ -3408,8 +3703,7 @@ class ComputersController extends Controller
                     if ($branch['condition'] === null) {
                         return (string) $branch['content'];
                     }
-                    $value = $vars[(string) $branch['condition']] ?? '';
-                    if (trim((string) $value) !== '') {
+                    if ($this->evaluateComputerDescriptionCondition((string) $branch['condition'], $vars)) {
                         return (string) $branch['content'];
                     }
                 }
@@ -3420,11 +3714,36 @@ class ComputersController extends Controller
         );
     }
 
+    /**
+     * Supports a plain "has_component.ID" truthy check as well as
+     * "has_component_in(ID, ID, ...)" which matches if the product has any one of the listed components.
+     */
+    private function evaluateComputerDescriptionCondition(string $condition, array $vars): bool
+    {
+        $condition = trim($condition);
+        if (preg_match('/^has_component_in\\s*\\(\\s*([0-9\\s,]+)\\s*\\)$/i', $condition, $matches) === 1) {
+            $componentIds = array_filter(array_map('trim', explode(',', $matches[1])), static function (string $id): bool {
+                return $id !== '';
+            });
+            foreach ($componentIds as $componentId) {
+                $value = $vars['has_component.' . $componentId] ?? '';
+                if (trim((string) $value) !== '') {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        $value = $vars[$condition] ?? '';
+        return trim((string) $value) !== '';
+    }
+
     private function validatedComputerCsvColumns(): array
     {
         $headers = (array) $this->input('column_header', array());
         $types = (array) $this->input('column_type', array());
         $values = (array) $this->input('column_value', array());
+        $formats = (array) $this->input('column_format', array());
         $columns = array();
         foreach ($headers as $index => $header) {
             $header = trim((string) $header);
@@ -3436,6 +3755,7 @@ class ComputersController extends Controller
                 'header' => $header,
                 'type' => in_array($type, array('source', 'static', 'template'), true) ? $type : 'source',
                 'value' => (string) ($values[$index] ?? ''),
+                'format' => trim((string) ($formats[$index] ?? '')),
             );
         }
         if ($columns === array()) {
@@ -3454,19 +3774,19 @@ class ComputersController extends Controller
     {
         if (!isset($_FILES['csv_file']) || (int) ($_FILES['csv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $this->setFlash('error', json_encode(array('Blad przesylania pliku CSV.')));
-            $this->redirect('./index.php?controller=computers&action=products');
+            $this->redirect($this->productsRedirectUrl());
         }
         $handle = fopen((string) $_FILES['csv_file']['tmp_name'], 'rb');
         if ($handle === false) {
             $this->setFlash('error', json_encode(array('Nie mozna otworzyc pliku CSV.')));
-            $this->redirect('./index.php?controller=computers&action=products');
+            $this->redirect($this->productsRedirectUrl());
         }
 
         $headers = fgetcsv($handle, 0, ';');
         if ($headers === false) {
             fclose($handle);
             $this->setFlash('error', json_encode(array('Nieprawidlowy plik CSV.')));
-            $this->redirect('./index.php?controller=computers&action=products');
+            $this->redirect($this->productsRedirectUrl());
         }
         $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $headers[0]);
 
@@ -3488,7 +3808,7 @@ class ComputersController extends Controller
         }
         fclose($handle);
         $this->setFlash('success', 'Import EAN zakonczony. Zaktualizowano ' . $updatedCount . ' rekordow.');
-        $this->redirect('./index.php?controller=computers&action=products');
+        $this->redirect($this->productsRedirectUrl());
     }
 
     private function easyUploaderParameters(array $components, string $productName, string $ean): string
@@ -3717,6 +4037,14 @@ class ComputersController extends Controller
     {
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $this->trimArrayRecursive($decoded) : array();
+    }
+
+    private function normalizeEmpikParamKey(string $key): string
+    {
+        // Komponenty zaimportowane ze starego systemu Altreo maja czasem
+        // klucze parametrow Empik z doklejonym ID atrybutu, np. "Wielkosc ekranu(2177)",
+        // podczas gdy szablony CSV odwoluja sie do czystej nazwy "Wielkosc ekranu".
+        return trim((string) preg_replace('/\s*\(\d+(?:_dict)?\)\s*$/u', '', trim($key)));
     }
 
     private function trimArrayRecursive(array $input): array
@@ -4266,6 +4594,43 @@ class ComputersController extends Controller
         return implode(',', array_slice(array_merge($oldImages, $newImages), 0, 16));
     }
 
+    private function mergeProductImages(string $oldCsv, array $removeImages, int $productId, string $field, string $prefix): string
+    {
+        $oldImages = $this->existingProductImages($oldCsv);
+        $removeImages = array_values(array_filter(array_map('trim', $removeImages)));
+        if ($removeImages !== array()) {
+            $oldImages = array_values(array_diff($oldImages, $removeImages));
+            foreach ($removeImages as $image) {
+                if ($image === '' || basename($image) !== $image) {
+                    continue;
+                }
+                $path = $this->productUploadDir() . DIRECTORY_SEPARATOR . $image;
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+        }
+
+        $newImages = array();
+        if (isset($_FILES['products']['name'][$productId][$field]) && is_array($_FILES['products']['name'][$productId][$field])) {
+            foreach ($_FILES['products']['name'][$productId][$field] as $index => $name) {
+                $file = array(
+                    'name' => $name,
+                    'type' => $_FILES['products']['type'][$productId][$field][$index] ?? '',
+                    'tmp_name' => $_FILES['products']['tmp_name'][$productId][$field][$index] ?? '',
+                    'error' => $_FILES['products']['error'][$productId][$field][$index] ?? UPLOAD_ERR_NO_FILE,
+                    'size' => $_FILES['products']['size'][$productId][$field][$index] ?? 0,
+                );
+                $stored = $this->moveUploadedFile($file, $this->productUploadDir(), $prefix . $productId . '_');
+                if ($stored !== null) {
+                    $newImages[] = $stored;
+                }
+            }
+        }
+
+        return implode(',', array_slice(array_merge($oldImages, $newImages), 0, 16));
+    }
+
     private function refreshPricesForProductsUsingComponent(int $componentId): int
     {
         $componentsById = $this->componentsById();
@@ -4299,6 +4664,17 @@ class ComputersController extends Controller
         $this->deleteImageList((string) ($row['img'] ?? ''), $this->componentUploadDir());
         $this->deleteImageList((string) ($row['img_morele'] ?? ''), $this->componentUploadDir());
         $this->deleteImageList((string) ($row['img_empik'] ?? ''), $this->componentUploadDir());
+    }
+
+    private function deleteProductFiles(int $productId): void
+    {
+        $row = $this->db()->fetch('SELECT img, img_morele, img_empik FROM ' . self::PRODUCTS_TABLE . ' WHERE id = :id', array('id' => $productId));
+        if (!is_array($row)) {
+            return;
+        }
+        $this->deleteImageList((string) ($row['img'] ?? ''), $this->productUploadDir());
+        $this->deleteImageList((string) ($row['img_morele'] ?? ''), $this->productUploadDir());
+        $this->deleteImageList((string) ($row['img_empik'] ?? ''), $this->productUploadDir());
     }
 
     private function deleteImageList(string $csv, string $dir): void
@@ -4337,12 +4713,15 @@ class ComputersController extends Controller
             'description' => 'Opis z szablonu komputera',
             'parameters.easy' => 'Parametry EasyUploader',
             'parameters.morele' => 'Parametry Morele',
-            'product_image.easy.1' => 'EasyUploader — zdjecie produktu 1',
-            'product_image.morele.1' => 'Morele — zdjecie produktu 1',
-            'product_image.empik.1' => 'Empik — zdjecie produktu 1',
             'main_image.empik' => 'Empik — zdjecie produktu 1 (zgodnosc ze starym szablonem)',
             'date.today' => 'Dzisiejsza data',
         );
+        $productImageLimits = $this->computerProductImageLimits();
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+            for ($index = 1; $index <= $productImageLimits[$channel]; $index++) {
+                $options['product_image.' . $channel . '.' . $index] = $channelLabel . ' — zdjecie produktu ' . $index;
+            }
+        }
         $componentImageLimits = $this->computerComponentImageLimits();
         foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
             foreach (($componentImageLimits[$channel] ?? array()) as $category => $maxImages) {
@@ -4368,6 +4747,23 @@ class ComputersController extends Controller
             $options['empik_param:' . $name] = 'Empik parametr: ' . $name;
         }
         return $options;
+    }
+
+    private function computerProductImageLimits(): array
+    {
+        $row = $this->db()->fetch(
+            'SELECT '
+            . 'MAX(CASE WHEN img IS NOT NULL AND img <> "" THEN (LENGTH(img) - LENGTH(REPLACE(img, ",", "")) + 1) ELSE 0 END) AS max_easy, '
+            . 'MAX(CASE WHEN img_morele IS NOT NULL AND img_morele <> "" THEN (LENGTH(img_morele) - LENGTH(REPLACE(img_morele, ",", "")) + 1) ELSE 0 END) AS max_morele, '
+            . 'MAX(CASE WHEN img_empik IS NOT NULL AND img_empik <> "" THEN (LENGTH(img_empik) - LENGTH(REPLACE(img_empik, ",", "")) + 1) ELSE 0 END) AS max_empik '
+            . 'FROM ' . self::PRODUCTS_TABLE
+        );
+
+        return array(
+            'easy' => max(1, min(16, (int) ($row['max_easy'] ?? 0))),
+            'morele' => max(1, min(16, (int) ($row['max_morele'] ?? 0))),
+            'empik' => max(1, min(16, (int) ($row['max_empik'] ?? 0))),
+        );
     }
 
     private function computerComponentImageLimits(): array
@@ -4422,10 +4818,13 @@ class ComputersController extends Controller
             'main_img_allegro' => 'EasyUploader: glowne zdjecie produktu',
             'main_img_morele' => 'Morele: glowne zdjecie produktu',
             'main_img_empik' => 'Empik: glowne zdjecie produktu (img_empik produktu)',
-            'product_image.easy.1' => 'EasyUploader — zdjecie produktu 1',
-            'product_image.morele.1' => 'Morele — zdjecie produktu 1',
-            'product_image.empik.1' => 'Empik — zdjecie produktu 1',
         );
+        $productImageLimits = $this->computerProductImageLimits();
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+            for ($index = 1; $index <= $productImageLimits[$channel]; $index++) {
+                $tokens['product_image.' . $channel . '.' . $index] = $channelLabel . ' — zdjecie produktu ' . $index;
+            }
+        }
         foreach (array('GPU', 'CPU', 'RAM', 'SSD', 'MONITOR', 'PSU', 'CASE', 'COOLING', 'MB') as $category) {
             foreach (array(
                 'name' => 'nazwa',
@@ -4779,9 +5178,9 @@ class ComputersController extends Controller
             . "price_allegro DECIMAL(12,2) DEFAULT NULL,\n"
             . "profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,\n"
             . "EAN VARCHAR(64) DEFAULT NULL,\n"
-            . "img VARCHAR(255) DEFAULT NULL,\n"
-            . "img_morele VARCHAR(255) DEFAULT NULL,\n"
-            . "img_empik VARCHAR(255) DEFAULT NULL,\n"
+            . "img TEXT DEFAULT NULL,\n"
+            . "img_morele TEXT DEFAULT NULL,\n"
+            . "img_empik TEXT DEFAULT NULL,\n"
             . "offerid VARCHAR(64) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -4850,10 +5249,13 @@ class ComputersController extends Controller
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'price_allegro', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN price_allegro DECIMAL(12,2) DEFAULT NULL AFTER price");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'profit', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN profit DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER price_allegro");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'EAN', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN EAN VARCHAR(64) DEFAULT NULL AFTER profit");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img VARCHAR(255) DEFAULT NULL AFTER EAN");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele VARCHAR(255) DEFAULT NULL AFTER img");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik VARCHAR(255) DEFAULT NULL AFTER img_morele");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER EAN");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_empik");
+        $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img TEXT DEFAULT NULL");
+        $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img_morele', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_morele TEXT DEFAULT NULL");
+        $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img_empik', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_empik TEXT DEFAULT NULL");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'created_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER offerid");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'updated_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
         $this->ensureTableIndex(
@@ -4910,6 +5312,21 @@ class ComputersController extends Controller
         );
 
         if ($exists === 0) {
+            $this->db()->query($alterSql);
+        }
+    }
+
+    private function ensureTableColumnType(string $table, string $column, string $expectedDataType, string $alterSql): void
+    {
+        $currentType = (string) $this->db()->fetchColumn(
+            'SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
+            array(
+                'table_name' => $table,
+                'column_name' => $column,
+            )
+        );
+
+        if ($currentType !== '' && strtolower($currentType) !== strtolower($expectedDataType)) {
             $this->db()->query($alterSql);
         }
     }
