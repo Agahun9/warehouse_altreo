@@ -262,6 +262,9 @@
                   class="bi bi-check2-square"></i> Zaznacz widoczne</button>
               <button type="button" id="deselect_all_btn" class="btn btn-sm btn-outline-secondary"><i
                   class="bi bi-square"></i> Odznacz wszystkie</button>
+              <a href="{$baseUrl}?controller=computers&action=exportcomponentsxml" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-xml me-1"></i>Eksport XML (wszystkie)</a>
+              <a href="{$baseUrl}?controller=computers&action=exportcomponentscsv" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-csv me-1"></i>Eksport CSV (wszystkie)</a>
+              <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#componentsImportModal"><i class="bi bi-upload me-1"></i>Import</button>
             </div>
           </div>
           <div class="card-body pb-0">
@@ -290,6 +293,8 @@
                 </div>
                 <button type="submit" class="btn btn-success"><i class="bi bi-play-circle me-1"></i>Wykonaj
                   akcję</button>
+                <button type="submit" id="exportComponentsXmlBtn" formaction="{$baseUrl}?controller=computers&action=exportcomponentsxml" formmethod="post" class="btn btn-outline-primary ms-2"><i class="bi bi-filetype-xml me-1"></i>Eksport zaznaczonych (XML)</button>
+                <button type="submit" id="exportComponentsCsvBtn" formaction="{$baseUrl}?controller=computers&action=exportcomponentscsv" formmethod="post" class="btn btn-outline-primary"><i class="bi bi-filetype-csv me-1"></i>Eksport zaznaczonych (CSV)</button>
               </div>
               <div class="component-filters mb-2" aria-label="Filtry komponentów">
                 <div class="row g-2 align-items-center">
@@ -499,6 +504,33 @@
             </form>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal importu komponentów -->
+  <div class="modal fade" id="componentsImportModal" tabindex="-1" aria-labelledby="componentsImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{$baseUrl}?controller=computers&action=importcomponents" enctype="multipart/form-data">
+          <div class="modal-header bg-success text-white">
+            <h2 class="modal-title fs-5" id="componentsImportModalLabel"><i class="bi bi-upload me-2"></i>Import komponentów</h2>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+          </div>
+          <div class="modal-body">
+            <label for="componentsImportFile" class="form-label">Plik XML lub CSV (z eksportu komponentów):</label>
+            <input type="file" id="componentsImportFile" name="components_import_file" accept=".xml,.csv" class="form-control" required />
+            <p class="mt-3 mb-0 text-muted small">
+              Rekordy z ID istniejącego komponentu <strong>zaktualizują</strong> (podmienią) jego dane.
+              Rekordy bez ID lub z nieznanym ID zostaną <strong>dodane</strong> jako nowe komponenty.
+              Puste kolumny w pliku nie kasują istniejących wartości tylko wtedy, gdy kolumna w ogóle nie występuje w pliku.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+            <button type="submit" class="btn btn-success"><i class="bi bi-upload me-1"></i>Importuj</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -1182,8 +1214,16 @@
       const bulkForm = document.getElementById('bulkActionForm');
       if (bulkForm) {
         bulkForm.addEventListener('submit', function(e) {
-          const action = document.getElementById('bulk_action').value;
+          const submitter = e.submitter;
           const checked = Array.from(document.querySelectorAll('input.component_checkbox:checked'));
+          if (submitter && (submitter.id === 'exportComponentsXmlBtn' || submitter.id === 'exportComponentsCsvBtn')) {
+            if (checked.length === 0) {
+              e.preventDefault();
+              alert('Zaznacz przynajmniej jeden komponent do eksportu.');
+            }
+            return;
+          }
+          const action = document.getElementById('bulk_action').value;
           if (!action) {
             e.preventDefault();
             alert('Wybierz akcję masową.');

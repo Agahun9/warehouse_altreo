@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Models\SettingRepository;
+use App\Services\EmpikRateLimitException;
 use App\Services\EmpikService;
 use Throwable;
 
 class EmpikController extends Controller
 {
+    private const MAINTENANCE_LOCK_TTL_SECONDS = 900;
+
     /** @var EmpikService */
     private $empik;
 
@@ -117,8 +121,20 @@ class EmpikController extends Controller
         }
         $this->releaseSessionLock();
 
+        // Kept short on purpose: this endpoint runs inside a normal web worker (PHP-FPM /
+        // Apache), and shared hosting typically only has a handful of those. A multi-minute
+        // request here ties one up for that whole time and, with a small worker pool, can
+        // make the entire admin panel unresponsive for everyone else. The sync is fully
+        // resumable (see EmpikService::syncAccount), so many short ticks are just as
+        // effective as one long one and don't block the panel.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(60);
+        }
+
         try {
-            $result = $this->empik->syncAccount(trim((string) $this->input('account', '')));
+            $result = $this->empik->syncAccount(trim((string) $this->input('account', '')), array(
+                'max_runtime' => max(5, min(240, (int) $this->input('max_runtime', 12))),
+            ));
             if ($this->wantsJson()) {
                 $this->jsonResponse($result);
                 return;
@@ -199,10 +215,19 @@ class EmpikController extends Controller
         }
         $this->releaseSessionLock();
 
+        // See sync() above for why this is kept short: a long-running request here holds a
+        // web worker (and often, on shared hosting, a big chunk of the whole worker pool)
+        // for its whole duration and can freeze the panel for other users. Unprocessed rows
+        // simply stay "pending"/"retry" and get picked up on the next tick.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(70);
+        }
+
         try {
             $result = $this->empik->processQueue(array(
                 'account' => $this->input('account', ''),
                 'limit' => (int) $this->input('limit', 20),
+                'max_runtime' => max(5, min(280, (int) $this->input('max_runtime', 45))),
             ));
 
             if ($this->wantsQueueCron()) {
@@ -229,6 +254,37 @@ class EmpikController extends Controller
         }
         $this->releaseSessionLock();
 
+        // Sync + enqueue + queue processing below are all individually time-boxed (see
+        // EmpikService) and kept short on purpose: this runs inside a normal web worker
+        // (PHP-FPM/Apache), and shared hosting typically only has a handful of those. A
+        // multi-minute request here ties one up for its whole duration and, with a small
+        // worker pool, can make the entire admin panel unresponsive for everyone else. The
+        // sync/queue work is fully resumable, so many short cron ticks make the same
+        // progress as one long one without blocking the panel. set_time_limit is a safety
+        // margin above the sum of the budgets below, not the primary control - harmless
+        // no-op if the host disables it.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(90);
+        }
+
+        $settings = new SettingRepository($this->db());
+        $settings->ensureSchema();
+        $lockKey = 'empik_maintenance_lock';
+        $lockedAt = (int) $settings->get($lockKey, '0');
+
+        if ($lockedAt > 0 && (time() - $lockedAt) < self::MAINTENANCE_LOCK_TTL_SECONDS) {
+            $message = 'Poprzednie zadanie maintenance Empik jeszcze trwa (start: ' . date('H:i:s', $lockedAt) . '), pomijam to wywolanie.';
+            if ($this->wantsJson()) {
+                $this->jsonResponse(array('skipped' => true, 'reason' => $message));
+                return;
+            }
+            $this->setFlash('error', $message);
+            $this->redirect('./index.php?controller=empik&action=index');
+            return;
+        }
+
+        $settings->set($lockKey, (string) time());
+
         try {
             $accountSelector = trim((string) $this->input('account', ''));
             $result = array(
@@ -237,21 +293,52 @@ class EmpikController extends Controller
                 'enqueue' => null,
             );
 
+            $syncOptions = array(
+                'max_runtime' => max(5, min(240, (int) $this->input('sync_account_runtime', 12))),
+            );
+
             if ($this->input('sync', '0') === '1') {
                 if ($accountSelector !== '') {
-                    $result['sync'][] = $this->empik->syncAccount($accountSelector);
+                    try {
+                        $result['sync'][] = $this->empik->syncAccount($accountSelector, $syncOptions);
+                    } catch (EmpikRateLimitException $exception) {
+                        $result['sync'][] = array(
+                            'account' => $accountSelector,
+                            'error' => $exception->getMessage(),
+                            'rate_limited' => true,
+                        );
+                    }
                 } else {
                     $maxAccounts = max(1, min(50, (int) $this->input('max_accounts', 50)));
+                    // Aggregate budget across every account synced in this single request, on
+                    // top of each account's own per-call budget: without it, a maintenance run
+                    // with several accounts (or one account with several full-catalog pages)
+                    // could keep going well past the next cron tick or the host's execution
+                    // time limit. accountsDueForSync() (oldest-synced-first) means whichever
+                    // accounts don't fit this time get priority on the next tick instead of
+                    // the same early accounts starving the rest forever.
+                    $syncBudgetSeconds = max(10, min(300, (int) $this->input('sync_budget', 25)));
+                    $syncBudgetStart = time();
                     $processedAccounts = 0;
-                    foreach ($this->empik->listAccounts() as $account) {
-                        if ((int) ($account['is_active'] ?? 0) !== 1) {
-                            continue;
-                        }
+
+                    foreach ($this->empik->accountsDueForSync() as $account) {
                         if ($processedAccounts >= $maxAccounts) {
                             break;
                         }
+                        if ((time() - $syncBudgetStart) >= $syncBudgetSeconds) {
+                            break;
+                        }
 
-                        $result['sync'][] = $this->empik->syncAccount((string) ($account['slug'] ?? ''));
+                        $accountSlug = (string) ($account['slug'] ?? '');
+                        try {
+                            $result['sync'][] = $this->empik->syncAccount($accountSlug, $syncOptions);
+                        } catch (EmpikRateLimitException $exception) {
+                            $result['sync'][] = array(
+                                'account' => $accountSlug,
+                                'error' => $exception->getMessage(),
+                                'rate_limited' => true,
+                            );
+                        }
                         $processedAccounts++;
                     }
                 }
@@ -272,6 +359,7 @@ class EmpikController extends Controller
                 $result['queue'] = $this->empik->processQueue(array(
                     'account' => $accountSelector,
                     'limit' => $queueLimit,
+                    'max_runtime' => max(5, min(280, (int) $this->input('queue_max_runtime', 15))),
                 ));
             }
 
@@ -287,6 +375,8 @@ class EmpikController extends Controller
                 return;
             }
             $this->setFlash('error', $exception->getMessage());
+        } finally {
+            $settings->set($lockKey, '');
         }
 
         $this->redirect('./index.php?controller=empik&action=index');

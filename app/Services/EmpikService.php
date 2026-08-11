@@ -12,12 +12,18 @@ use RuntimeException;
 class EmpikService
 {
     private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
+    private const RATE_LIMIT_MAX_ATTEMPTS = 8;
+    private const RATE_LIMIT_BASE_DELAY_SECONDS = 30;
+    private const RATE_LIMIT_MAX_DELAY_SECONDS = 900;
 
     /** @var array */
     private $config;
 
     /** @var EmpikStorageRepository */
     private $storage;
+
+    /** @var float */
+    private static $lastRequestAtMicros = 0.0;
 
     public function __construct()
     {
@@ -31,6 +37,11 @@ class EmpikService
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();
+    }
+
+    public function accountsDueForSync(): array
+    {
+        return $this->storage->accountsDueForSync();
     }
 
     public function saveAccount(array $input, ?int $accountId = null): array
@@ -150,7 +161,12 @@ class EmpikService
 
     public function processQueue(array $options = array()): array
     {
-        $limit = max(1, min(100, (int) ($options['limit'] ?? 20)));
+        // Recover anything a previous, abruptly-terminated run left stuck in "processing"
+        // before we look at what's pending - see reclaimStaleProcessing() for why this is
+        // needed at all.
+        $this->storage->reclaimStaleProcessing();
+
+        $limit = max(1, min(300, (int) ($options['limit'] ?? 20)));
         $accountSelector = trim((string) ($options['account'] ?? ''));
         $accountId = null;
 
@@ -160,6 +176,12 @@ class EmpikService
                 $accountId = (int) $account['id'];
             }
         }
+
+        // Bounded so a batch of slow imports (each submit + status poll can take several
+        // seconds) can't run past the next cron tick or the host's execution-time limit;
+        // whatever doesn't fit stays "pending"/"retry" and is picked up next run.
+        $maxRuntime = max(5, min(280, (int) ($options['max_runtime'] ?? 15)));
+        $startTime = time();
 
         $rows = $this->storage->fetchQueueBatch($limit, $accountId);
         $summary = array(
@@ -171,6 +193,10 @@ class EmpikService
         );
 
         foreach ($rows as $row) {
+            if ((time() - $startTime) >= $maxRuntime) {
+                break;
+            }
+
             $queueId = isset($row['id']) ? (int) $row['id'] : 0;
             if ($queueId <= 0) {
                 continue;
@@ -192,6 +218,19 @@ class EmpikService
                     isset($result['import_type']) ? (string) $result['import_type'] : null
                 );
                 $summary['done']++;
+            } catch (EmpikRateLimitException $exception) {
+                $attempts = isset($row['attempts']) ? (int) $row['attempts'] : 0;
+                if ($attempts < self::RATE_LIMIT_MAX_ATTEMPTS) {
+                    $this->storage->markQueueRetry(
+                        $queueId,
+                        $exception->getMessage(),
+                        $this->rateLimitRetryDelay($attempts, $exception->getRetryAfterSeconds())
+                    );
+                    $summary['retry']++;
+                } else {
+                    $this->storage->markQueueError($queueId, $exception->getMessage());
+                    $summary['error']++;
+                }
             } catch (RuntimeException $exception) {
                 $attempts = isset($row['attempts']) ? (int) $row['attempts'] : 0;
                 if ($attempts < 1) {
@@ -273,43 +312,76 @@ class EmpikService
             $filters['account_id'] = (string) ((int) $account['id']);
         }
 
-        $targets = $this->storage->offerTargetsForFilters($filters, max(1, min(5000, $limit)));
-        if ($targets === array()) {
-            return array(
-                'operations' => $operations,
-                'offers' => 0,
-                'queued' => 0,
-                'counts' => $this->storage->queueCounts(),
-            );
-        }
-
+        $perOperationLimit = max(1, min(5000, $limit));
         $queued = 0;
+        $offersConsidered = 0;
+
+        // Each operation gets its own rotating target list via offersDueForOperation()
+        // instead of reusing one shared "top N offers by id" batch for all operations: with
+        // a 10-minute cron and a large active+linked catalog, always grabbing the same
+        // highest-id rows meant most of the catalog never had its price/stock refreshed, and
+        // offers already sitting in the queue for that operation would get queued again on
+        // every tick. offersDueForOperation() excludes offers with an unresolved queue entry
+        // for the operation and prioritises the ones queued longest ago (or never), so
+        // repeated runs sweep through the whole eligible set over time.
         foreach ($operations as $operation) {
+            try {
+                // offersDueForOperation() runs under a DB-side statement timeout - if it
+                // still trips (e.g. an unexpectedly expensive "linked" warehouse match on
+                // this install), skip this operation for this tick rather than let it take
+                // the whole maintenance run down; nothing was queued, so it's picked back up
+                // automatically on the next cron tick.
+                $targets = $this->storage->offersDueForOperation($filters, $operation, $perOperationLimit);
+            } catch (\Throwable $exception) {
+                continue;
+            }
+
+            if ($targets === array()) {
+                continue;
+            }
+
+            $offersConsidered += count($targets);
             $queued += $this->storage->enqueueOfferChanges($targets, $operation, array());
         }
 
         return array(
             'operations' => $operations,
-            'offers' => count($targets),
+            'offers' => $offersConsidered,
             'queued' => $queued,
             'counts' => $this->storage->queueCounts(),
         );
     }
 
-    public function syncAccount(string $accountSelector = ''): array
+    public function syncAccount(string $accountSelector = '', array $options = array()): array
     {
         $account = $this->resolveAccount($accountSelector);
         if (!$account) {
             throw new RuntimeException('Brak aktywnego konta Empik do synchronizacji.');
         }
 
-        $offset = 0;
+        $accountId = (int) $account['id'];
         $limit = 100;
         $synced = 0;
         $total = null;
 
+        // Mirakl's synchronous offer listing (used here) has no "updated since" filter -
+        // only the asynchronous export endpoint (OF52) supports differential mode - so a
+        // full catalog re-read is the only option through this API. Because this runs from
+        // a cron every ~10 minutes, we resume from the offset the previous call left off at
+        // (persisted on the account) instead of restarting from 0 every time; otherwise a
+        // catalog too large to page through inside one time-boxed call would never reach its
+        // later pages.
+        $offset = max(0, (int) ($account['sync_offset'] ?? 0));
+        $maxRuntime = max(5, min(240, (int) ($options['max_runtime'] ?? 12)));
+        $startTime = time();
+        $finishedCycle = false;
+
         try {
-            do {
+            while (true) {
+                if ((time() - $startTime) >= $maxRuntime) {
+                    break;
+                }
+
                 $payload = $this->requestApi($account, 'GET', '/api/offers', array(
                     'max' => $limit,
                     'offset' => $offset,
@@ -319,32 +391,48 @@ class EmpikService
                 $offers = isset($payload['offers']) && is_array($payload['offers']) ? $payload['offers'] : array();
                 $total = isset($payload['total_count']) ? (int) $payload['total_count'] : null;
 
+                $rows = array();
                 foreach ($offers as $offer) {
                     if (!is_array($offer)) {
                         continue;
                     }
+                    $rows[] = $this->normalizeOfferRow($account, $offer);
+                }
 
-                    $this->storage->upsertOffer($this->normalizeOfferRow($account, $offer));
-                    $synced++;
+                if ($rows !== array()) {
+                    $this->storage->upsertOffers($rows);
+                    $synced += count($rows);
                 }
 
                 $offset += count($offers);
-            } while ($offers !== array() && ($total === null ? count($offers) === $limit : $offset < $total));
+                $this->storage->updateAccountSyncOffset($accountId, $offset);
 
-            $this->storage->markAccountSyncSuccess((int) $account['id']);
+                if ($offers === array() || ($total === null ? count($offers) < $limit : $offset >= $total)) {
+                    $finishedCycle = true;
+                    break;
+                }
+            }
+
+            if ($finishedCycle) {
+                $this->storage->updateAccountSyncOffset($accountId, 0);
+            }
+
+            $this->storage->markAccountSyncSuccess($accountId);
         } catch (RuntimeException $exception) {
-            $this->storage->markAccountSyncError((int) $account['id'], $exception->getMessage());
+            $this->storage->markAccountSyncError($accountId, $exception->getMessage());
             throw $exception;
         }
 
         return array(
             'account' => array(
-                'id' => (int) $account['id'],
+                'id' => $accountId,
                 'name' => (string) $account['name'],
                 'slug' => (string) $account['slug'],
             ),
             'synced_offers' => $synced,
             'total_count' => $total !== null ? $total : $synced,
+            'finished_cycle' => $finishedCycle,
+            'resume_offset' => $finishedCycle ? 0 : $offset,
         );
     }
 
@@ -510,17 +598,44 @@ class EmpikService
             return array();
         }
 
-        if ($query !== '') {
-            $needle = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
-            $dictionary = array_values(array_filter($dictionary, static function (array $option) use ($needle): bool {
-                $id = isset($option['id']) ? (string) $option['id'] : '';
-                $label = isset($option['value']) ? (string) $option['value'] : $id;
-                $haystack = function_exists('mb_strtolower') ? mb_strtolower($label . ' ' . $id, 'UTF-8') : strtolower($label . ' ' . $id);
-                return $haystack !== '' && strpos($haystack, $needle) !== false;
-            }));
+        if ($query === '') {
+            return array_slice(array_values($dictionary), 0, max(1, $limit));
         }
 
-        return array_slice(array_values($dictionary), 0, max(1, $limit));
+        $needle = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
+        $ranked = array();
+        foreach (array_values($dictionary) as $index => $option) {
+            $id = isset($option['id']) ? (string) $option['id'] : '';
+            $label = isset($option['value']) ? (string) $option['value'] : $id;
+            $labelLower = function_exists('mb_strtolower') ? mb_strtolower($label, 'UTF-8') : strtolower($label);
+            $idLower = function_exists('mb_strtolower') ? mb_strtolower($id, 'UTF-8') : strtolower($id);
+
+            $rank = null;
+            if ($labelLower === $needle || $idLower === $needle) {
+                $rank = 0;
+            } elseif (strpos($labelLower, $needle) === 0 || strpos($idLower, $needle) === 0) {
+                $rank = 1;
+            } elseif (strpos($labelLower . ' ' . $idLower, $needle) !== false) {
+                $rank = 2;
+            }
+
+            if ($rank === null) {
+                continue;
+            }
+
+            $ranked[] = array('rank' => $rank, 'index' => $index, 'option' => $option);
+        }
+
+        usort($ranked, static function (array $a, array $b): int {
+            return $a['rank'] <=> $b['rank'] ?: $a['index'] <=> $b['index'];
+        });
+
+        // No cap here: with results ranked by relevance the exact/prefix matches
+        // always lead, so truncating would risk hiding them behind unrelated
+        // substring hits instead of just showing everything as-is.
+        return array_map(static function (array $entry) {
+            return $entry['option'];
+        }, $ranked);
     }
 
     public function validateAttributeValues(array $definitions, array $input): array
@@ -1477,6 +1592,8 @@ class EmpikService
             $url .= '?' . http_build_query($query);
         }
 
+        $this->throttleBeforeRequest();
+
         $ch = curl_init($url);
         if ($ch === false) {
             throw new RuntimeException('Nie udalo sie zainicjalizowac polaczenia z Empik API.');
@@ -1506,6 +1623,16 @@ class EmpikService
             }
         }
 
+        $responseHeaders = array();
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, static function ($curlHandle, string $headerLine) use (&$responseHeaders): int {
+            $parts = explode(':', $headerLine, 2);
+            if (count($parts) === 2) {
+                $responseHeaders[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+
+            return strlen($headerLine);
+        });
+
         $raw = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
@@ -1513,6 +1640,13 @@ class EmpikService
 
         if (!is_string($raw)) {
             throw new RuntimeException('Empik API nie zwrocilo odpowiedzi.');
+        }
+
+        if ($httpCode === 429) {
+            throw new EmpikRateLimitException(
+                'Empik API zwrocilo blad HTTP 429: przekroczono limit zapytan.',
+                $this->parseRetryAfterSeconds($responseHeaders)
+            );
         }
 
         $decoded = json_decode($raw, true);
@@ -1552,6 +1686,8 @@ class EmpikService
             $url .= '?' . http_build_query($query);
         }
 
+        $this->throttleBeforeRequest();
+
         $ch = curl_init($url);
         if ($ch === false) {
             throw new RuntimeException('Nie udalo sie zainicjalizowac polaczenia z Empik API.');
@@ -1567,6 +1703,16 @@ class EmpikService
             'User-Agent: ALTREO-Empik-Mirakl/1.0',
         ));
 
+        $responseHeaders = array();
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, static function ($curlHandle, string $headerLine) use (&$responseHeaders): int {
+            $parts = explode(':', $headerLine, 2);
+            if (count($parts) === 2) {
+                $responseHeaders[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+
+            return strlen($headerLine);
+        });
+
         $raw = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
@@ -1576,11 +1722,62 @@ class EmpikService
             throw new RuntimeException('Empik API nie zwrocilo odpowiedzi.');
         }
 
+        if ($httpCode === 429) {
+            throw new EmpikRateLimitException(
+                'Empik API zwrocilo blad HTTP 429: przekroczono limit zapytan.',
+                $this->parseRetryAfterSeconds($responseHeaders)
+            );
+        }
+
         if ($httpCode < 200 || $httpCode >= 300) {
             throw new RuntimeException('Empik API zwrocilo blad HTTP ' . $httpCode . ($curlError !== '' ? ': ' . $curlError : '.'));
         }
 
         return $raw;
+    }
+
+    private function throttleBeforeRequest(): void
+    {
+        $minIntervalMicros = max(0, (int) $this->configValue('min_request_interval_ms', 350)) * 1000;
+        if ($minIntervalMicros <= 0) {
+            return;
+        }
+
+        $elapsedMicros = (microtime(true) - self::$lastRequestAtMicros) * 1000000;
+        $wait = $minIntervalMicros - $elapsedMicros;
+
+        if ($wait > 0) {
+            usleep((int) $wait);
+        }
+
+        self::$lastRequestAtMicros = microtime(true);
+    }
+
+    private function rateLimitRetryDelay(int $attempts, ?int $retryAfterSeconds): int
+    {
+        $backoff = self::RATE_LIMIT_BASE_DELAY_SECONDS * (2 ** max(0, $attempts));
+        $delay = $retryAfterSeconds !== null ? max($retryAfterSeconds, self::RATE_LIMIT_BASE_DELAY_SECONDS) : $backoff;
+
+        return min(self::RATE_LIMIT_MAX_DELAY_SECONDS, max(self::RATE_LIMIT_BASE_DELAY_SECONDS, $delay));
+    }
+
+    private function parseRetryAfterSeconds(array $headers): ?int
+    {
+        $value = trim((string) ($headers['retry-after'] ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        if (ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        $timestamp = strtotime($value);
+        if ($timestamp === false) {
+            return null;
+        }
+
+        return max(0, $timestamp - time());
     }
 
     private function bodyContainsCurlFile(array $body): bool

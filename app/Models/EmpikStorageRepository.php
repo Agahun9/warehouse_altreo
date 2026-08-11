@@ -132,7 +132,53 @@ class EmpikStorageRepository
         // shared hosting can kill mid-flight ("MySQL server has gone away") if triggered from
         // a web request.
 
+        // sync_offset is a resumable pagination cursor: the cron calling maintenance() every
+        // ~10 minutes time-boxes each account's catalog sync (see EmpikService::syncAccount)
+        // and needs to pick up where the previous run left off instead of restarting from
+        // offset 0 every time. Unlike the collation fix above, ADD COLUMN with a fixed default
+        // is a metadata-only change on modern MySQL/MariaDB (no full table rebuild), so it is
+        // safe to run automatically here.
+        $this->ensureColumnExists('empik_accounts', 'sync_offset', 'INT UNSIGNED NOT NULL DEFAULT 0');
+
+        // Backs offersDueForOperation()'s per-offer correlated subqueries (is there an
+        // unresolved queue entry for this offer+operation? when was it last queued for this
+        // operation?) with a single covering index instead of a full scan of the whole,
+        // ever-growing queue history on every maintenance tick.
+        $this->ensureIndexExists(
+            'empik_offer_change_queue',
+            'idx_empik_offer_change_queue_offer_operation',
+            '(offer_row_id, operation, status, created_at)'
+        );
+
         self::$schemaEnsured = true;
+    }
+
+    private function ensureColumnExists(string $table, string $column, string $definitionSql): void
+    {
+        $exists = $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name',
+            array('table_name' => $table, 'column_name' => $column)
+        );
+
+        if ((int) $exists > 0) {
+            return;
+        }
+
+        $this->database->query('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definitionSql);
+    }
+
+    private function ensureIndexExists(string $table, string $indexName, string $columnsSql): void
+    {
+        $exists = $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name',
+            array('table_name' => $table, 'index_name' => $indexName)
+        );
+
+        if ((int) $exists > 0) {
+            return;
+        }
+
+        $this->database->query('ALTER TABLE ' . $table . ' ADD INDEX ' . $indexName . ' ' . $columnsSql);
     }
 
     public function fixSkuCollation(string $collation = 'utf8mb4_unicode_ci'): array
@@ -177,6 +223,30 @@ class EmpikStorageRepository
         return $this->database->fetchAll('SELECT * FROM empik_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
     }
 
+    /**
+     * Active accounts ordered so the one synced longest ago (or never synced) comes first.
+     * Used by the maintenance cron when it must sync several accounts within one time-boxed
+     * request: a fixed alphabetical order would let an early account starve the later ones
+     * whenever there isn't enough of the request's time budget left to reach them all.
+     */
+    public function accountsDueForSync(): array
+    {
+        return $this->database->fetchAll(
+            'SELECT * FROM empik_accounts WHERE is_active = 1'
+            . ' ORDER BY (last_sync_at IS NULL) DESC, last_sync_at ASC, id ASC'
+        );
+    }
+
+    public function updateAccountSyncOffset(int $accountId, int $offset): void
+    {
+        $this->database->update(
+            'empik_accounts',
+            array('sync_offset' => max(0, $offset)),
+            'id = :id',
+            array('id' => $accountId)
+        );
+    }
+
     public function findAccountById(int $id)
     {
         return $this->database->fetch('SELECT * FROM empik_accounts WHERE id = :id LIMIT 1', array('id' => $id));
@@ -216,17 +286,62 @@ class EmpikStorageRepository
 
     public function upsertOffer(array $data): void
     {
-        $existing = $this->database->fetch(
-            'SELECT id FROM empik_offers WHERE account_id = :account_id AND offer_id = :offer_id LIMIT 1',
-            array('account_id' => $data['account_id'], 'offer_id' => $data['offer_id'])
-        );
+        $this->upsertOffers(array($data));
+    }
 
-        if ($existing) {
-            $this->database->update('empik_offers', $data, 'id = :id', array('id' => (int) $existing['id']));
-            return;
+    /**
+     * Batched atomic upsert for a page of synced offers. The previous implementation did a
+     * SELECT followed by an INSERT/UPDATE per offer, i.e. two DB round-trips per row - for a
+     * sync job that re-reads the whole catalog on every ~10 minute cron tick that's thousands
+     * of extra queries and a real bottleneck. A single multi-row INSERT ... ON DUPLICATE KEY
+     * UPDATE per page (up to 100 offers) is both faster and race-free, mirroring the same fix
+     * already applied to putCache() below.
+     */
+    public function upsertOffers(array $rows): int
+    {
+        $rows = array_values(array_filter($rows, static function ($row): bool {
+            return is_array($row) && (int) ($row['account_id'] ?? 0) > 0 && (int) ($row['offer_id'] ?? 0) > 0;
+        }));
+
+        if ($rows === array()) {
+            return 0;
         }
 
-        $this->database->insert('empik_offers', $data);
+        $columns = array(
+            'account_id', 'offer_id', 'shop_sku', 'product_sku', 'product_id', 'product_title',
+            'description', 'category_code', 'category_label', 'state_code', 'active', 'quantity',
+            'price', 'total_price', 'currency_iso_code', 'min_shipping_price', 'leadtime_to_ship',
+            'offer_json', 'last_synced_at',
+        );
+
+        $valueGroups = array();
+        $params = array();
+
+        foreach ($rows as $rowIndex => $row) {
+            $placeholders = array();
+            foreach ($columns as $column) {
+                $paramName = $column . '_' . $rowIndex;
+                $placeholders[] = ':' . $paramName;
+                $params[$paramName] = array_key_exists($column, $row) ? $row[$column] : null;
+            }
+            $valueGroups[] = '(' . implode(', ', $placeholders) . ')';
+        }
+
+        $updateAssignments = array();
+        foreach ($columns as $column) {
+            if ($column === 'account_id' || $column === 'offer_id') {
+                continue;
+            }
+            $updateAssignments[] = $column . ' = VALUES(' . $column . ')';
+        }
+
+        $this->database->query(
+            'INSERT INTO empik_offers (' . implode(', ', $columns) . ') VALUES ' . implode(', ', $valueGroups)
+            . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateAssignments),
+            $params
+        );
+
+        return count($rows);
     }
 
     public function countOffers(array $filters = array()): int
@@ -440,6 +555,96 @@ class EmpikStorageRepository
         return $queued;
     }
 
+    /**
+     * Offers eligible for an automated warehouse-sync operation (set_price_from_product /
+     * set_stock_from_product), skipping any offer that already has an unresolved queue entry
+     * for that exact operation and prioritising offers that were queued for it longest ago
+     * (or never). Without this, a maintenance cron always re-selecting "top N offers by id"
+     * would enqueue the same handful of offers every ~10 minutes forever while the rest of
+     * a large, active+linked catalog never gets its price/stock refreshed, and would keep
+     * piling up duplicate queue rows for offers still waiting to be processed.
+     */
+    public function offersDueForOperation(array $filters, string $operation, int $limit): array
+    {
+        $params = array('due_operation' => $operation, 'due_operation_history' => $operation);
+        $analysis = $this->analyzeOfferFilters($filters);
+
+        // Both "is there already an unresolved queue entry for this offer+operation" and
+        // "when was this offer last queued for this operation" are expressed as per-offer
+        // correlated subqueries (backed by idx_empik_offer_change_queue_offer_operation)
+        // rather than a JOIN against a derived table that GROUPs the *entire* queue history
+        // by offer_row_id. The derived-table version scanned the whole, ever-growing
+        // empik_offer_change_queue table on every maintenance tick regardless of how many
+        // offers actually match the filters - on a queue table that accumulates "done"/
+        // "error" rows over months, that query got slower every day and, combined with
+        // set_time_limit() being unable to interrupt a single running SQL statement, was
+        // able to tie up a web worker (and the whole shared-hosting panel) for minutes.
+        $sql = 'SELECT offers.id, offers.account_id,'
+            . '   (SELECT MAX(history_queue.created_at) FROM empik_offer_change_queue history_queue'
+            . '     WHERE history_queue.offer_row_id = offers.id AND history_queue.operation = :due_operation_history'
+            . '   ) AS last_queued_at'
+            . ' FROM empik_offers offers'
+            . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id';
+
+        if ($analysis['needs_warehouse']) {
+            $sql .= $this->liveWarehouseJoinSql();
+        }
+
+        if ($analysis['needs_shared_stock']) {
+            $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+        }
+
+        $where = $this->buildOfferWhere($filters, $params);
+        $sql .= $where
+            . ' AND NOT EXISTS ('
+            . '   SELECT 1 FROM empik_offer_change_queue active_queue'
+            . '   WHERE active_queue.offer_row_id = offers.id'
+            . '     AND active_queue.operation = :due_operation'
+            . '     AND active_queue.status IN ("pending", "processing", "retry")'
+            . ' )'
+            . ' ORDER BY (last_queued_at IS NULL) DESC, last_queued_at ASC, offers.id ASC'
+            . ' LIMIT ' . max(1, min(5000, $limit));
+
+        // Belt-and-braces cap in case the filters (e.g. the "linked" warehouse match) still
+        // turn out to be expensive on a particular install: a slow query here should degrade
+        // to "skip this round, try again next tick" (caught in EmpikService), never to a
+        // multi-minute request.
+        return $this->database->withStatementTimeoutMs(8000, function () use ($sql, $params) {
+            return $this->database->fetchAll($sql, $params);
+        });
+    }
+
+    /**
+     * Recovers queue rows left stuck in "processing" because the worker that claimed them
+     * died mid-operation (PHP execution-time limit, fatal error, OOM, server restart) - none
+     * of those trigger the try/catch in EmpikService::processQueue(), so without this the row
+     * would sit in "processing" forever: fetchQueueBatch() only ever selects "pending"/"retry".
+     * Rows past the attempt cap are given up on (status=error) instead of retried forever.
+     */
+    public function reclaimStaleProcessing(int $staleAfterSeconds = 300, int $maxAttempts = 5): array
+    {
+        $threshold = date('Y-m-d H:i:s', time() - max(30, $staleAfterSeconds));
+        $now = date('Y-m-d H:i:s');
+
+        $errored = $this->database->query(
+            'UPDATE empik_offer_change_queue'
+            . ' SET status = "error", finished_at = :now,'
+            . '     error_message = "Przerwano: worker zakonczyl sie w trakcie przetwarzania (limit prob wyczerpany)."'
+            . ' WHERE status = "processing" AND started_at IS NOT NULL AND started_at < :threshold AND attempts >= :max_attempts',
+            array('now' => $now, 'threshold' => $threshold, 'max_attempts' => $maxAttempts)
+        )->rowCount();
+
+        $retried = $this->database->query(
+            'UPDATE empik_offer_change_queue'
+            . ' SET status = "retry", attempts = attempts + 1, available_at = :now,'
+            . '     error_message = "Wznowiono: worker zakonczyl sie w trakcie poprzedniego przetwarzania."'
+            . ' WHERE status = "processing" AND started_at IS NOT NULL AND started_at < :threshold AND attempts < :max_attempts',
+            array('now' => $now, 'threshold' => $threshold, 'max_attempts' => $maxAttempts)
+        )->rowCount();
+
+        return array('errored' => $errored, 'retried' => $retried);
+    }
+
     public function fetchQueueBatch(int $limit = 100, ?int $accountId = null): array
     {
         $params = array('now' => date('Y-m-d H:i:s'));
@@ -628,22 +833,17 @@ class EmpikStorageRepository
     public function putCache(string $key, array $payload, int $ttl): void
     {
         $expiresAt = date('Y-m-d H:i:s', time() + max(60, $ttl));
-        $data = array(
-            'cache_key' => $key,
-            'payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'expires_at' => $expiresAt,
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        // Atomic upsert on purpose: the previous "SELECT then INSERT/UPDATE" approach
+        // raced under concurrent requests (cron worker + a browser search hitting the
+        // same cache_key at once) and threw "Duplicate entry ... for key 'PRIMARY'",
+        // which crashed the request before any JSON could be returned to the UI.
+        $this->database->query(
+            'INSERT INTO empik_cache (cache_key, payload, expires_at) VALUES (:cache_key, :payload, :expires_at) '
+            . 'ON DUPLICATE KEY UPDATE payload = VALUES(payload), expires_at = VALUES(expires_at)',
+            array('cache_key' => $key, 'payload' => $payloadJson, 'expires_at' => $expiresAt)
         );
-
-        $existing = $this->database->fetch('SELECT cache_key FROM empik_cache WHERE cache_key = :cache_key LIMIT 1', array('cache_key' => $key));
-        if ($existing) {
-            $this->database->update('empik_cache', array(
-                'payload' => $data['payload'],
-                'expires_at' => $data['expires_at'],
-            ), 'cache_key = :cache_key', array('cache_key' => $key));
-            return;
-        }
-
-        $this->database->insert('empik_cache', $data);
     }
 
     private function analyzeOfferFilters(array $filters, string $sortBy = ''): array

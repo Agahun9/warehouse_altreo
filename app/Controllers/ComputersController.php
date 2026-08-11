@@ -13,6 +13,7 @@ use App\Models\ErliStorageRepository;
 use App\Models\MoreleStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
+use App\Services\HtmlStructureFixer;
 use App\Services\MoreleService;
 use App\Services\ValueResolver;
 use RuntimeException;
@@ -119,6 +120,7 @@ class ComputersController extends Controller
         $filterUpdatedTo = $this->normalizeDateFilterInput($this->input('filter_updated_to', ''));
         $filterNoImages = (string) $this->input('filter_no_images', '') === '1';
         $filterNoEan = (string) $this->input('filter_no_ean', '') === '1';
+        $filterPriceMismatch = (string) $this->input('filter_price_mismatch', '') === '1';
         $filterMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('filter_market_accounts', array()));
         $filterOfferStatus = $this->input('filter_status_offer', '');
         if ($filterMarketAccounts === array() && $filterOfferStatus !== '') {
@@ -132,6 +134,10 @@ class ComputersController extends Controller
         $empikMarketAccounts = $this->markSelectedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
         $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
         $moreleMarketAccounts = $this->markSelectedMarketAccounts($moreleMarketAccounts, 'morele', $filterMarketAccounts);
+        $allegroMarketAccounts = $this->markExcludedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
+        $empikMarketAccounts = $this->markExcludedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
+        $erliMarketAccounts = $this->markExcludedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
+        $moreleMarketAccounts = $this->markExcludedMarketAccounts($moreleMarketAccounts, 'morele', $filterMarketAccounts);
 
         $allowedPerPage = array(10, 20, 50, 100, 1000, 10000);
         $perPage = (int) $this->input('per_page', 10);
@@ -150,6 +156,7 @@ class ComputersController extends Controller
             'market_accounts' => $filterMarketAccounts,
             'no_images' => $filterNoImages,
             'no_ean' => $filterNoEan,
+            'price_mismatch' => $filterPriceMismatch,
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
         $totalProducts = (int) $this->db()->fetchColumn(
@@ -230,6 +237,7 @@ class ComputersController extends Controller
             'filterUpdatedTo' => $filterUpdatedTo,
             'filterNoImages' => $filterNoImages,
             'filterNoEan' => $filterNoEan,
+            'filterPriceMismatch' => $filterPriceMismatch,
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
@@ -605,39 +613,8 @@ class ComputersController extends Controller
 
     private function priceMarketAccountsForSelection(): void
     {
-        $productIds = $this->selectedComputerProductIdsFromRequest();
-        $accounts = array();
-
-        foreach (array_chunk($productIds, 500) as $chunk) {
-            if ($chunk === array()) {
-                continue;
-            }
-
-            $params = array();
-            $placeholders = array();
-            foreach ($chunk as $index => $productId) {
-                $key = 'product_id_' . $index;
-                $placeholders[] = ':' . $key;
-                $params[$key] = (int) $productId;
-            }
-
-            $products = $this->db()->fetchAll(
-                'SELECT * FROM ' . self::PRODUCTS_TABLE . ' WHERE id IN (' . implode(',', $placeholders) . ')',
-                $params
-            );
-            $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products))));
-
-            foreach ($products as $product) {
-                if (!is_array($product)) {
-                    continue;
-                }
-
-                $this->collectPriceMarketAccounts($accounts, (array) ($product['allegro_accounts'] ?? array()), 'allegro', 'Allegro');
-                $this->collectPriceMarketAccounts($accounts, (array) ($product['empik_accounts'] ?? array()), 'empik', 'Empik');
-                $this->collectPriceMarketAccounts($accounts, (array) ($product['erli_accounts'] ?? array()), 'erli', 'Erli');
-                $this->collectPriceMarketAccounts($accounts, (array) ($product['morele_accounts'] ?? array()), 'morele', 'Morele');
-            }
-        }
+        $skus = $this->selectedComputerProductSkusFromRequest();
+        $accounts = $this->marketAccountsForSkus($skus);
 
         uasort($accounts, static function (array $left, array $right): int {
             return strcmp((string) $left['label'], (string) $right['label']);
@@ -648,25 +625,147 @@ class ComputersController extends Controller
         exit;
     }
 
-    private function collectPriceMarketAccounts(array &$accounts, array $offers, string $market, string $labelPrefix): void
+    /**
+     * Lightweight lookup used only to populate the marketplace-price-update account
+     * picker: it needs just the distinct (market, account) pairs that currently have
+     * an active offer for one of the given SKUs, not full offer rows.
+     *
+     * Rather than chunking the (potentially tens-of-thousands-long) selected SKU list
+     * into "sku IN (...)" queries, this fetches each marketplace's currently-active
+     * offers ONCE (a handful of cheap, non-correlated, plain-indexed queries - same
+     * approach already proven in activeMarketFilterProductIds()/*IdentifierAccounts()
+     * below for the same O(products x offers)-per-row pitfall) and matches them
+     * against the selected SKUs in PHP via a hash lookup. Total DB round trips stay
+     * constant (4 queries) no matter how many products are selected.
+     */
+    private function marketAccountsForSkus(array $skus): array
     {
-        foreach ($offers as $offer) {
-            if (!is_array($offer)) {
+        $accounts = array();
+        if ($skus === array()) {
+            return $accounts;
+        }
+
+        $skuLookup = array_fill_keys($skus, true);
+
+        $this->collectAllegroMarketAccountsForSkus($accounts, $skuLookup);
+        $this->collectEmpikMarketAccountsForSkus($accounts, $skuLookup);
+        $this->collectErliMarketAccountsForSkus($accounts, $skuLookup);
+        $this->collectMoreleMarketAccountsForSkus($accounts, $skuLookup);
+
+        return $accounts;
+    }
+
+    private function addPriceMarketAccount(array &$accounts, string $market, string $labelPrefix, int $accountId, string $accountName): void
+    {
+        if ($accountId <= 0) {
+            return;
+        }
+
+        $value = $market . ':' . $accountId;
+        if (!isset($accounts[$value])) {
+            $accounts[$value] = array(
+                'value' => $value,
+                'label' => $labelPrefix . ' ' . $accountName,
+            );
+        }
+    }
+
+    /** @param array<string, true> $skuLookup */
+    private function collectAllegroMarketAccountsForSkus(array &$accounts, array $skuLookup): void
+    {
+        if ($skuLookup === array() || !$this->tableExists('allegro_offers') || !$this->tableExists('allegro_accounts')) {
+            return;
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT offers.sku AS sku, accounts.id AS account_id, accounts.name AS account_name'
+            . ' FROM allegro_offers offers'
+            . ' INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . " WHERE accounts.is_active = 1 AND offers.publication_status = 'ACTIVE'"
+            . " AND offers.sku IS NOT NULL AND offers.sku <> ''"
+        );
+
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '' || !isset($skuLookup[$sku])) {
                 continue;
             }
+            $this->addPriceMarketAccount($accounts, 'allegro', 'Allegro', (int) ($row['account_id'] ?? 0), (string) ($row['account_name'] ?? ''));
+        }
+    }
 
-            $accountId = (int) ($offer['account_id'] ?? 0);
-            if ($accountId <= 0) {
+    /** @param array<string, true> $skuLookup */
+    private function collectEmpikMarketAccountsForSkus(array &$accounts, array $skuLookup): void
+    {
+        if ($skuLookup === array() || !$this->tableExists('empik_offers') || !$this->tableExists('empik_accounts')) {
+            return;
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT offers.shop_sku AS shop_sku, offers.product_sku AS product_sku, accounts.id AS account_id, accounts.name AS account_name'
+            . ' FROM empik_offers offers'
+            . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id'
+            . ' WHERE accounts.is_active = 1 AND offers.active = 1'
+            . " AND ((offers.shop_sku IS NOT NULL AND offers.shop_sku <> '') OR (offers.product_sku IS NOT NULL AND offers.product_sku <> ''))"
+        );
+
+        foreach ($rows as $row) {
+            $shopSku = trim((string) ($row['shop_sku'] ?? ''));
+            $productSku = trim((string) ($row['product_sku'] ?? ''));
+            if (!isset($skuLookup[$shopSku]) && !isset($skuLookup[$productSku])) {
                 continue;
             }
+            $this->addPriceMarketAccount($accounts, 'empik', 'Empik', (int) ($row['account_id'] ?? 0), (string) ($row['account_name'] ?? ''));
+        }
+    }
 
-            $value = $market . ':' . $accountId;
-            if (!isset($accounts[$value])) {
-                $accounts[$value] = array(
-                    'value' => $value,
-                    'label' => $labelPrefix . ' ' . (string) ($offer['account_name'] ?? ''),
-                );
+    /** @param array<string, true> $skuLookup */
+    private function collectErliMarketAccountsForSkus(array &$accounts, array $skuLookup): void
+    {
+        if ($skuLookup === array() || !$this->tableExists('erli_products') || !$this->tableExists('erli_accounts')) {
+            return;
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT products.sku AS sku, accounts.id AS account_id, accounts.name AS account_name'
+            . ' FROM erli_products products'
+            . ' INNER JOIN erli_accounts accounts ON accounts.id = products.account_id'
+            . " WHERE accounts.is_active = 1 AND products.sku IS NOT NULL AND products.sku <> ''"
+            . ' AND (CASE'
+            . " WHEN products.status_override IS NOT NULL AND products.status_override <> '' THEN LOWER(products.status_override)"
+            . " WHEN products.remote_status IS NOT NULL AND products.remote_status <> '' THEN LOWER(products.remote_status)"
+            . " WHEN COALESCE(products.stock_override, products.quantity, 0) > 0 THEN 'active'"
+            . " ELSE 'inactive' END) = 'active'"
+        );
+
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '' || !isset($skuLookup[$sku])) {
+                continue;
             }
+            $this->addPriceMarketAccount($accounts, 'erli', 'Erli', (int) ($row['account_id'] ?? 0), (string) ($row['account_name'] ?? ''));
+        }
+    }
+
+    /** @param array<string, true> $skuLookup */
+    private function collectMoreleMarketAccountsForSkus(array &$accounts, array $skuLookup): void
+    {
+        if ($skuLookup === array() || !$this->tableExists('morele_offers')) {
+            return;
+        }
+
+        $rows = $this->db()->fetchAll(
+            "SELECT sku, account_id, account_name FROM morele_offers WHERE active = 1 AND sku IS NOT NULL AND sku <> ''"
+        );
+
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '' || !isset($skuLookup[$sku])) {
+                continue;
+            }
+            $accountId = (int) ($row['account_id'] ?? 0);
+            $accountName = (string) ($row['account_name'] ?? '');
+            $this->addPriceMarketAccount($accounts, 'morele', 'Morele', $accountId > 0 ? $accountId : 1, $accountName !== '' ? $accountName : 'ALTREO');
         }
     }
 
@@ -811,6 +910,41 @@ class ComputersController extends Controller
         ));
     }
 
+    public function exportcomponentsxml(): void
+    {
+        $this->requireModule('computers');
+        $componentIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('component_ids', array())))));
+        $this->streamComponentsXml($componentIds);
+    }
+
+    public function exportcomponentscsv(): void
+    {
+        $this->requireModule('computers');
+        $componentIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('component_ids', array())))));
+        $this->streamComponentsCsv($componentIds);
+    }
+
+    public function importcomponents(): void
+    {
+        $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=components');
+        }
+
+        try {
+            $result = $this->importComponentsFile();
+            $message = 'Import zakonczony. Zaktualizowano: ' . $result['updated'] . ', dodano: ' . $result['created'] . '.';
+            if ($result['skipped'] > 0) {
+                $message .= ' Pominieto rekordow: ' . $result['skipped'] . '.';
+            }
+            $this->setFlash('success', $message);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', json_encode(array($exception->getMessage())));
+        }
+
+        $this->redirect('./index.php?controller=computers&action=components');
+    }
+
     private function productsRedirectUrl(): string
     {
         $queryParams = $_GET;
@@ -842,14 +976,9 @@ class ComputersController extends Controller
         }
     }
 
-    private function selectedComputerProductIdsFromRequest(): array
+    private function selectionFiltersFromRequest(): array
     {
-        $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
-        if ((string) $this->input('selection_scope', '') !== 'filtered') {
-            return $productIds;
-        }
-
-        $filters = array(
+        return array(
             'components' => array_values(array_filter(array_map('intval', (array) $this->input('selection_filter_components', array())))),
             'name' => trim((string) $this->input('selection_filter_name', '')),
             'ean_sku' => trim((string) $this->input('selection_filter_ean_sku', '')),
@@ -862,8 +991,18 @@ class ComputersController extends Controller
             'updated_to' => $this->normalizeDateFilterInput($this->input('selection_filter_updated_to', '')),
             'no_images' => (string) $this->input('selection_filter_no_images', '') === '1',
             'no_ean' => (string) $this->input('selection_filter_no_ean', '') === '1',
+            'price_mismatch' => (string) $this->input('selection_filter_price_mismatch', '') === '1',
         );
-        list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
+    }
+
+    private function selectedComputerProductIdsFromRequest(): array
+    {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
+        if ((string) $this->input('selection_scope', '') !== 'filtered') {
+            return $productIds;
+        }
+
+        list($filterSql, $filterParams) = $this->computerProductFilterSql($this->selectionFiltersFromRequest());
         $rows = $this->db()->fetchAll(
             'SELECT products.id FROM ' . self::PRODUCTS_TABLE . ' products' . $filterSql . ' ORDER BY products.id DESC',
             $filterParams
@@ -881,6 +1020,79 @@ class ComputersController extends Controller
         }
 
         return array_values(array_filter($productIds));
+    }
+
+    /**
+     * Same selection resolution as selectedComputerProductIdsFromRequest(), but returns
+     * distinct SKUs directly instead of ids. For the 'filtered' scope this fetches
+     * id+sku in the single filter query instead of resolving ids first and then
+     * round-tripping again with a chunked "WHERE id IN (...)" just to look up sku -
+     * that extra round trip is what made opening the marketplace-price-update picker
+     * slow once a selection spans a large chunk of the catalog (tens of thousands of
+     * products).
+     */
+    private function selectedComputerProductSkusFromRequest(): array
+    {
+        if ((string) $this->input('selection_scope', '') !== 'filtered') {
+            $productIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('product_ids', array())))));
+
+            return $this->productSkusByIds($productIds);
+        }
+
+        list($filterSql, $filterParams) = $this->computerProductFilterSql($this->selectionFiltersFromRequest());
+        $rows = $this->db()->fetchAll(
+            'SELECT products.id, products.sku FROM ' . self::PRODUCTS_TABLE . ' products' . $filterSql,
+            $filterParams
+        );
+
+        $excludedIds = array_fill_keys(array_map('intval', (array) $this->input('excluded_product_ids', array())), true);
+
+        $skus = array();
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id > 0 && isset($excludedIds[$id])) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku !== '') {
+                $skus[$sku] = true;
+            }
+        }
+
+        return array_keys($skus);
+    }
+
+    private function productSkusByIds(array $productIds): array
+    {
+        $skus = array();
+
+        foreach (array_chunk($productIds, 2000) as $chunk) {
+            if ($chunk === array()) {
+                continue;
+            }
+
+            $params = array();
+            $placeholders = array();
+            foreach ($chunk as $index => $productId) {
+                $key = 'product_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = (int) $productId;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT sku FROM ' . self::PRODUCTS_TABLE . ' WHERE id IN (' . implode(',', $placeholders) . ')',
+                $params
+            );
+
+            foreach ($rows as $row) {
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku !== '') {
+                    $skus[$sku] = true;
+                }
+            }
+        }
+
+        return array_keys($skus);
     }
 
     private function createVariants(): void
@@ -1418,10 +1630,11 @@ class ComputersController extends Controller
                     $product['id'] ?? '',
                     $product['name'] ?? '',
                     $product['profit'] ?? '',
+                    $product['price'] ?? '',
                     $product['EAN'] ?? '',
                 );
             }
-            $this->streamCsv('EAN_export_' . date('Ymd_His') . '.csv', array('IDENTITY', 'NAME', 'profit', 'EAN'), $rows);
+            $this->streamCsv('EAN_export_' . date('Ymd_His') . '.csv', array('IDENTITY', 'NAME', 'profit','price', 'EAN'), $rows);
         } elseif ($bulkAction === 'import_ean') {
             $this->importEanCsv();
             return;
@@ -1713,9 +1926,9 @@ class ComputersController extends Controller
             'name' => $name,
             'name_title' => trim((string) $this->input('name_title', '')),
             'price' => $this->normalizeDecimalInput($this->input('price', 0)),
-            'description' => trim((string) $this->input('description', '')),
-            'description_morele' => trim((string) $this->input('description_morele', '')),
-            'description_empik' => trim((string) $this->input('description_empik', '')),
+            'description' => HtmlStructureFixer::fix(trim((string) $this->input('description', ''))),
+            'description_morele' => HtmlStructureFixer::fix(trim((string) $this->input('description_morele', ''))),
+            'description_empik' => HtmlStructureFixer::fix(trim((string) $this->input('description_empik', ''))),
             'parameters_eu' => $this->postedComponentParamsJson(
                 'params_eu_loaded',
                 $this->collectMarketParams((array) $this->input('param', array()), (array) $this->input('param_type', array())),
@@ -1837,6 +2050,306 @@ class ComputersController extends Controller
             $result[(int) ($row['id'] ?? 0)] = $row;
         }
         return $result;
+    }
+
+    private function componentExportColumns(): array
+    {
+        return array(
+            'id', 'category', 'name', 'name_title', 'name_spec', 'price',
+            'description', 'description_morele', 'description_empik',
+            'parameters_eu', 'parameters_morele', 'parameters_empik',
+            'img', 'img_morele', 'img_empik',
+            'created_at', 'updated_at',
+        );
+    }
+
+    private function componentsForExport(array $componentIds): array
+    {
+        if ($componentIds === array()) {
+            return $this->db()->fetchAll('SELECT * FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category ASC, name ASC');
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($componentIds as $index => $componentId) {
+            $key = 'id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $componentId;
+        }
+
+        return $this->db()->fetchAll(
+            'SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id IN (' . implode(',', $placeholders) . ') ORDER BY category ASC, name ASC',
+            $params
+        );
+    }
+
+    private function streamComponentsXml(array $componentIds): void
+    {
+        $components = $this->componentsForExport($componentIds);
+        $columns = $this->componentExportColumns();
+
+        $xml = new \XMLWriter();
+        $xml->openMemory();
+        $xml->setIndent(true);
+        $xml->setIndentString('  ');
+        $xml->startDocument('1.0', 'UTF-8');
+        $xml->startElement('komponenty');
+        $xml->writeAttribute('wygenerowano', date('c'));
+        $xml->writeAttribute('liczba', (string) count($components));
+
+        foreach ($components as $component) {
+            if (!is_array($component)) {
+                continue;
+            }
+            $component = $this->normalizeComponentTextFields($component);
+            $component = $this->normalizeComponentImageFields($component);
+
+            $xml->startElement('komponent');
+            $xml->writeAttribute('id', (string) ($component['id'] ?? ''));
+            foreach ($columns as $column) {
+                if ($column === 'id') {
+                    continue;
+                }
+                $xml->startElement($column);
+                $xml->writeCdata((string) ($component[$column] ?? ''));
+                $xml->endElement();
+            }
+
+            foreach (array('img' => 'zdjecia_allegro_url', 'img_morele' => 'zdjecia_morele_url', 'img_empik' => 'zdjecia_empik_url') as $field => $wrapperName) {
+                $xml->startElement($wrapperName);
+                foreach ($this->computerComponentImageUrls($component, $field) as $url) {
+                    $xml->writeElement('url', $url);
+                }
+                $xml->endElement();
+            }
+
+            $xml->endElement();
+        }
+
+        $xml->endElement();
+        $xml->endDocument();
+
+        $filename = 'komponenty_export_' . date('Y-m-d_His') . '.xml';
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        echo $xml->outputMemory();
+        exit;
+    }
+
+    private function streamComponentsCsv(array $componentIds): void
+    {
+        $components = $this->componentsForExport($componentIds);
+        $columns = $this->componentExportColumns();
+
+        $rows = array();
+        foreach ($components as $component) {
+            if (!is_array($component)) {
+                continue;
+            }
+            $component = $this->normalizeComponentTextFields($component);
+            $component = $this->normalizeComponentImageFields($component);
+            $row = array();
+            foreach ($columns as $column) {
+                $row[] = (string) ($component[$column] ?? '');
+            }
+            $rows[] = $row;
+        }
+
+        $filename = 'komponenty_export_' . date('Y-m-d_His') . '.csv';
+        $this->streamCsv($filename, $columns, $rows);
+    }
+
+    private function importComponentsFile(): array
+    {
+        if (!isset($_FILES['components_import_file']) || (int) ($_FILES['components_import_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('Blad przesylania pliku importu.');
+        }
+
+        $file = $_FILES['components_import_file'];
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $tmpPath = (string) ($file['tmp_name'] ?? '');
+        if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+            throw new RuntimeException('Nie mozna odczytac przeslanego pliku.');
+        }
+
+        if ($extension === 'xml') {
+            $records = $this->parseComponentsXmlFile($tmpPath);
+        } elseif ($extension === 'csv') {
+            $records = $this->parseComponentsCsvFile($tmpPath);
+        } else {
+            throw new RuntimeException('Obslugiwane sa tylko pliki .xml oraz .csv.');
+        }
+
+        if ($records === array()) {
+            throw new RuntimeException('Plik nie zawiera zadnych rekordow do importu.');
+        }
+
+        return $this->applyComponentImportRecords($records);
+    }
+
+    private function parseComponentsXmlFile(string $path): array
+    {
+        $previousState = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path);
+        libxml_use_internal_errors($previousState);
+        if ($xml === false) {
+            throw new RuntimeException('Nieprawidlowy plik XML.');
+        }
+
+        $allowedColumns = $this->componentExportColumns();
+        $records = array();
+        foreach ($xml->komponent as $node) {
+            $record = array();
+            $id = (int) ($node['id'] ?? 0);
+            if ($id > 0) {
+                $record['id'] = $id;
+            }
+            foreach ($allowedColumns as $column) {
+                if ($column === 'id') {
+                    continue;
+                }
+                if (isset($node->$column)) {
+                    $record[$column] = (string) $node->$column;
+                }
+            }
+            if ($record !== array()) {
+                $records[] = $record;
+            }
+        }
+
+        return $records;
+    }
+
+    private function parseComponentsCsvFile(string $path): array
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new RuntimeException('Nie mozna otworzyc pliku CSV.');
+        }
+
+        $delimiter = ';';
+        $headers = fgetcsv($handle, 0, $delimiter);
+        if ($headers === false || $headers === null) {
+            fclose($handle);
+            throw new RuntimeException('Nieprawidlowy plik CSV.');
+        }
+        if (count($headers) <= 1) {
+            rewind($handle);
+            $delimiter = ',';
+            $headers = fgetcsv($handle, 0, $delimiter);
+        }
+        if ($headers === false || $headers === null) {
+            fclose($handle);
+            throw new RuntimeException('Nieprawidlowy plik CSV.');
+        }
+        $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $headers[0]);
+        $headers = array_map('trim', $headers);
+
+        $allowedColumns = $this->componentExportColumns();
+        $records = array();
+        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            if ($row === null || count($row) !== count($headers)) {
+                continue;
+            }
+            $data = array_combine($headers, $row);
+            if (!is_array($data)) {
+                continue;
+            }
+
+            $record = array();
+            foreach ($allowedColumns as $column) {
+                if (!array_key_exists($column, $data)) {
+                    continue;
+                }
+                if ($column === 'id') {
+                    $id = (int) $data['id'];
+                    if ($id > 0) {
+                        $record['id'] = $id;
+                    }
+                    continue;
+                }
+                $record[$column] = (string) $data[$column];
+            }
+            if ($record !== array()) {
+                $records[] = $record;
+            }
+        }
+        fclose($handle);
+
+        return $records;
+    }
+
+    private function applyComponentImportRecords(array $records): array
+    {
+        $updated = 0;
+        $created = 0;
+        $skipped = 0;
+        $touchedComponentIds = array();
+
+        $this->db()->transaction(function () use ($records, &$updated, &$created, &$skipped, &$touchedComponentIds) {
+            foreach ($records as $record) {
+                $id = (int) ($record['id'] ?? 0);
+                unset($record['id']);
+
+                $payload = array();
+                foreach ($record as $column => $value) {
+                    if ($column === 'price') {
+                        $payload[$column] = $this->normalizeDecimalInput($value);
+                        continue;
+                    }
+                    if (in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik'), true)) {
+                        $payload[$column] = $this->normalizeJsonMapString((string) $value);
+                        continue;
+                    }
+                    if (in_array($column, array('img', 'img_morele', 'img_empik'), true)) {
+                        $payload[$column] = implode(',', $this->existingComponentImages((string) $value));
+                        continue;
+                    }
+                    if (in_array($column, array('created_at', 'updated_at'), true)) {
+                        continue;
+                    }
+                    $payload[$column] = trim((string) $value);
+                }
+
+                if ($payload === array()) {
+                    $skipped++;
+                    continue;
+                }
+
+                $existingId = $id > 0 ? (int) $this->db()->fetchColumn(
+                    'SELECT COUNT(*) FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id',
+                    array('id' => $id)
+                ) : 0;
+
+                if ($existingId > 0) {
+                    $this->db()->update(self::COMPONENTS_TABLE, $payload, 'id = :id', array('id' => $id));
+                    $touchedComponentIds[] = $id;
+                    $updated++;
+                    continue;
+                }
+
+                if (trim((string) ($payload['name'] ?? '')) === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                if ($id > 0) {
+                    $payload['id'] = $id;
+                    $this->db()->insert(self::COMPONENTS_TABLE, $payload);
+                    $touchedComponentIds[] = $id;
+                } else {
+                    $newId = (int) $this->db()->insert(self::COMPONENTS_TABLE, $payload);
+                    $touchedComponentIds[] = $newId;
+                }
+                $created++;
+            }
+        });
+
+        foreach (array_unique($touchedComponentIds) as $componentId) {
+            $this->refreshPricesForProductsUsingComponent((int) $componentId);
+        }
+
+        return array('updated' => $updated, 'created' => $created, 'skipped' => $skipped);
     }
 
     private function productById(int $productId): ?array
@@ -2129,7 +2642,7 @@ class ComputersController extends Controller
         $selected = array();
         foreach ($values as $value) {
             $value = trim((string) $value);
-            if ($value === '1' || $value === '0' || preg_match('/^(allegro|empik|erli|morele):\d+$/', $value) === 1) {
+            if ($value === '1' || $value === '0' || preg_match('/^!?(allegro|empik|erli|morele):\d+$/', $value) === 1) {
                 $selected[] = $value;
             }
         }
@@ -2149,9 +2662,15 @@ class ComputersController extends Controller
 
         $eanSku = trim((string) ($filters['ean_sku'] ?? ''));
         if ($eanSku !== '') {
-            $where[] = '(products.EAN LIKE :computer_filter_ean OR products.sku LIKE :computer_filter_sku)';
-            $params['computer_filter_ean'] = '%' . $eanSku . '%';
-            $params['computer_filter_sku'] = '%' . $eanSku . '%';
+            // Legacy (id<=1000) products keep their bare-id sku (see backfillMissingProductSkus
+            // in AltreoSqlImportService), but some were exported to marketplaces using the
+            // 'ALTREO_'+id code instead (product.code in the CSV export templates) - so a
+            // search must also accept that derived form, not just the raw sku column.
+            $where[] = "(products.EAN = :computer_filter_ean OR products.sku = :computer_filter_sku"
+                . " OR CONCAT('ALTREO_', products.id) = :computer_filter_code)";
+            $params['computer_filter_ean'] = $eanSku;
+            $params['computer_filter_sku'] = $eanSku;
+            $params['computer_filter_code'] = $eanSku;
         }
 
         $componentIds = array_values(array_unique(array_filter(array_map(
@@ -2210,8 +2729,22 @@ class ComputersController extends Controller
             if ($matchedProductIds === array()) {
                 $where[] = '0 = 1';
             } else {
-                $this->populateComputerMarketMatchTempTable($matchedProductIds);
+                $this->populateComputerIdMatchTempTable('computers_market_filter_match', $matchedProductIds);
                 $where[] = 'products.id IN (SELECT product_id FROM computers_market_filter_match)';
+            }
+        }
+
+        if (!empty($filters['price_mismatch'])) {
+            // Same non-correlated fetch-then-match-in-PHP approach as the market_accounts
+            // filter above (see the comment on that block): marketplace prices live in
+            // separate per-marketplace tables keyed by products.sku, so a correlated
+            // per-row comparison would hit the same full-scan problem that filter had.
+            $mismatchProductIds = $this->priceMismatchFilterProductIds();
+            if ($mismatchProductIds === array()) {
+                $where[] = '0 = 1';
+            } else {
+                $this->populateComputerIdMatchTempTable('computers_price_mismatch_match', $mismatchProductIds);
+                $where[] = 'products.id IN (SELECT product_id FROM computers_price_mismatch_match)';
             }
         }
 
@@ -2238,10 +2771,11 @@ class ComputersController extends Controller
         $wantsMorele = $wantsAny;
 
         foreach ($marketFilters as $marketFilter) {
-            if ($marketFilter === '1' || $marketFilter === '0' || strpos($marketFilter, ':') === false) {
+            $normalizedFilter = ltrim((string) $marketFilter, '!');
+            if ($normalizedFilter === '1' || $normalizedFilter === '0' || strpos($normalizedFilter, ':') === false) {
                 continue;
             }
-            list($market) = explode(':', $marketFilter, 2);
+            list($market) = explode(':', $normalizedFilter, 2);
             $wantsAllegro = $wantsAllegro || $market === 'allegro';
             $wantsEmpik = $wantsEmpik || $market === 'empik';
             $wantsErli = $wantsErli || $market === 'erli';
@@ -2382,14 +2916,162 @@ class ComputersController extends Controller
         return array_values($accounts);
     }
 
-    private function populateComputerMarketMatchTempTable(array $productIds): void
+    /**
+     * Ids of products whose warehouse price (products.price) doesn't match at least one of
+     * their currently-active marketplace offer prices (Allegro/Empik/Erli/Morele - whichever
+     * one). Uses the same non-correlated "fetch each marketplace's active prices once, match
+     * in PHP" approach as activeMarketFilterProductIds() above, for the same reason: a
+     * correlated per-row price comparison against the marketplace tables was what made the
+     * market_accounts filter take 10+ minutes before that fix.
+     */
+    private function priceMismatchFilterProductIds(): array
+    {
+        $allegroPrices = $this->activeAllegroIdentifierPrices();
+        $empikPrices = $this->activeEmpikIdentifierPrices();
+        $erliPrices = $this->activeErliIdentifierPrices();
+        $morelePrices = $this->activeMoreleIdentifierPrices();
+
+        if ($allegroPrices === array() && $empikPrices === array() && $erliPrices === array() && $morelePrices === array()) {
+            return array();
+        }
+
+        $products = $this->db()->fetchAll('SELECT id, sku, price FROM ' . self::PRODUCTS_TABLE);
+
+        $matchedIds = array();
+        foreach ($products as $product) {
+            $candidates = $this->computerProductSkuCandidates($product);
+            if ($candidates === array()) {
+                continue;
+            }
+
+            $warehousePrice = round((float) ($product['price'] ?? 0), 2);
+            $marketPrices = array();
+            foreach ($candidates as $candidate) {
+                foreach (array($allegroPrices, $empikPrices, $erliPrices, $morelePrices) as $priceMap) {
+                    foreach (($priceMap[$candidate] ?? array()) as $marketPrice) {
+                        $marketPrices[] = $marketPrice;
+                    }
+                }
+            }
+
+            foreach ($marketPrices as $marketPrice) {
+                if (abs(round($marketPrice, 2) - $warehousePrice) > 0.01) {
+                    $matchedIds[] = (int) ($product['id'] ?? 0);
+                    break;
+                }
+            }
+        }
+
+        return $matchedIds;
+    }
+
+    /** @return array<string, array<int, float>> identifier => active offer prices on that marketplace */
+    private function activeAllegroIdentifierPrices(): array
+    {
+        if (!$this->tableExists('allegro_offers') || !$this->tableExists('allegro_accounts')) {
+            return array();
+        }
+
+        (new AllegroStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierPrices($this->db()->fetchAll(
+            'SELECT ao.sku AS identifier, ao.price_amount AS price_amount FROM allegro_offers ao'
+            . ' INNER JOIN allegro_accounts aa ON aa.id = ao.account_id'
+            . " WHERE ao.publication_status = 'ACTIVE' AND aa.is_active = 1"
+            . " AND ao.sku IS NOT NULL AND ao.sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, float>> */
+    private function activeEmpikIdentifierPrices(): array
+    {
+        if (!$this->tableExists('empik_offers') || !$this->tableExists('empik_accounts')) {
+            return array();
+        }
+
+        (new EmpikStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierPrices($this->db()->fetchAll(
+            'SELECT eo.shop_sku AS identifier, COALESCE(eo.price, eo.total_price) AS price_amount FROM empik_offers eo'
+            . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
+            . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.shop_sku IS NOT NULL AND eo.shop_sku <> ''"
+            . ' UNION ALL'
+            . ' SELECT eo.product_sku AS identifier, COALESCE(eo.price, eo.total_price) AS price_amount FROM empik_offers eo'
+            . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
+            . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.product_sku IS NOT NULL AND eo.product_sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, float>> */
+    private function activeErliIdentifierPrices(): array
+    {
+        if (!$this->tableExists('erli_products') || !$this->tableExists('erli_accounts')) {
+            return array();
+        }
+
+        (new ErliStorageRepository($this->db()))->ensureSchema();
+
+        $rows = $this->db()->fetchAll(
+            'SELECT ep.sku AS identifier, COALESCE(ep.price_override, ep.price) AS price_amount FROM erli_products ep'
+            . ' INNER JOIN erli_accounts ea ON ea.id = ep.account_id'
+            . " WHERE ea.is_active = 1 AND ep.sku IS NOT NULL AND ep.sku <> ''"
+            . ' AND (CASE'
+            . " WHEN ep.status_override IS NOT NULL AND ep.status_override <> '' THEN LOWER(ep.status_override)"
+            . " WHEN ep.remote_status IS NOT NULL AND ep.remote_status <> '' THEN LOWER(ep.remote_status)"
+            . " WHEN COALESCE(ep.stock_override, ep.quantity, 0) > 0 THEN 'active'"
+            . " ELSE 'inactive' END) = 'active'"
+        );
+
+        $map = array();
+        foreach ($rows as $row) {
+            $identifier = trim((string) ($row['identifier'] ?? ''));
+            $price = $this->normalizeErliDisplayPrice($row['price_amount'] ?? null);
+            if ($identifier === '' || $price === null) {
+                continue;
+            }
+            $map[$identifier][] = $price;
+        }
+
+        return $map;
+    }
+
+    /** @return array<string, array<int, float>> */
+    private function activeMoreleIdentifierPrices(): array
+    {
+        if (!$this->tableExists('morele_offers')) {
+            return array();
+        }
+
+        (new MoreleStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierPrices($this->db()->fetchAll(
+            "SELECT sku AS identifier, COALESCE(price_override, price) AS price_amount FROM morele_offers WHERE active = 1 AND sku IS NOT NULL AND sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, float>> */
+    private function groupIdentifierPrices(array $rows): array
+    {
+        $map = array();
+        foreach ($rows as $row) {
+            $identifier = trim((string) ($row['identifier'] ?? ''));
+            if ($identifier === '' || $row['price_amount'] === null || trim((string) $row['price_amount']) === '') {
+                continue;
+            }
+            $map[$identifier][] = (float) $row['price_amount'];
+        }
+
+        return $map;
+    }
+
+    private function populateComputerIdMatchTempTable(string $tableName, array $productIds): void
     {
         $this->db()->query(
-            'CREATE TEMPORARY TABLE IF NOT EXISTS computers_market_filter_match ('
+            'CREATE TEMPORARY TABLE IF NOT EXISTS ' . $tableName . ' ('
             . 'product_id INT UNSIGNED NOT NULL, PRIMARY KEY (product_id)'
             . ') ENGINE=MEMORY'
         );
-        $this->db()->query('TRUNCATE TABLE computers_market_filter_match');
+        $this->db()->query('TRUNCATE TABLE ' . $tableName);
 
         foreach (array_chunk(array_values(array_unique($productIds)), 1000) as $chunk) {
             $placeholders = array();
@@ -2400,7 +3082,7 @@ class ComputersController extends Controller
                 $params[$key] = $productId;
             }
             $this->db()->query(
-                'INSERT INTO computers_market_filter_match (product_id) VALUES (' . implode('),(', $placeholders) . ')',
+                'INSERT INTO ' . $tableName . ' (product_id) VALUES (' . implode('),(', $placeholders) . ')',
                 $params
             );
         }
@@ -2431,49 +3113,61 @@ class ComputersController extends Controller
         return $dateObject->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
     }
 
+    /**
+     * A filter value of 'market:id' requires an active offer on that account; a value
+     * prefixed with '!' ('!market:id') excludes products that have one, regardless of
+     * whether any positive filter also matches - negation always wins.
+     */
     private function productMatchesMarketAccountFilters(array $product, array $filters): bool
     {
-        $hasAnyOffer = in_array('1', $filters, true);
-        $hasNoOffer = in_array('0', $filters, true);
+        $positiveFilters = array();
+        $negativeFilters = array();
+        foreach ($filters as $filter) {
+            $filter = (string) $filter;
+            if (strpos($filter, '!') === 0) {
+                $negativeFilters[] = substr($filter, 1);
+            } else {
+                $positiveFilters[] = $filter;
+            }
+        }
+
+        $accountsByMarket = array(
+            'allegro' => (array) ($product['allegro_accounts'] ?? array()),
+            'erli' => (array) ($product['erli_accounts'] ?? array()),
+            'empik' => (array) ($product['empik_accounts'] ?? array()),
+            'morele' => (array) ($product['morele_accounts'] ?? array()),
+        );
+
+        if ($negativeFilters !== array()) {
+            foreach ($accountsByMarket as $market => $accounts) {
+                foreach ($accounts as $account) {
+                    if (!is_array($account)) {
+                        continue;
+                    }
+                    if (in_array($market . ':' . (int) ($account['account_id'] ?? 0), $negativeFilters, true)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        if ($positiveFilters === array()) {
+            return true;
+        }
+
+        $hasAnyOffer = in_array('1', $positiveFilters, true);
+        $hasNoOffer = in_array('0', $positiveFilters, true);
         $hasActiveOffer = false;
 
-        foreach ((array) ($product['allegro_accounts'] ?? array()) as $account) {
-            if (!is_array($account)) {
-                continue;
-            }
-            $hasActiveOffer = true;
-            if (in_array('allegro:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
-                return true;
-            }
-        }
-
-        foreach ((array) ($product['erli_accounts'] ?? array()) as $account) {
-            if (!is_array($account)) {
-                continue;
-            }
-            $hasActiveOffer = true;
-            if (in_array('erli:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
-                return true;
-            }
-        }
-
-        foreach ((array) ($product['empik_accounts'] ?? array()) as $account) {
-            if (!is_array($account)) {
-                continue;
-            }
-            $hasActiveOffer = true;
-            if (in_array('empik:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
-                return true;
-            }
-        }
-
-        foreach ((array) ($product['morele_accounts'] ?? array()) as $account) {
-            if (!is_array($account)) {
-                continue;
-            }
-            $hasActiveOffer = true;
-            if (in_array('morele:' . (int) ($account['account_id'] ?? 0), $filters, true)) {
-                return true;
+        foreach ($accountsByMarket as $market => $accounts) {
+            foreach ($accounts as $account) {
+                if (!is_array($account)) {
+                    continue;
+                }
+                $hasActiveOffer = true;
+                if (in_array($market . ':' . (int) ($account['account_id'] ?? 0), $positiveFilters, true)) {
+                    return true;
+                }
             }
         }
 
@@ -2490,6 +3184,17 @@ class ComputersController extends Controller
             $value = $market . ':' . (int) ($account['id'] ?? 0);
             $accounts[$index]['filter_value'] = $value;
             $accounts[$index]['selected'] = in_array($value, $filters, true);
+        }
+
+        return $accounts;
+    }
+
+    private function markExcludedMarketAccounts(array $accounts, string $market, array $filters): array
+    {
+        foreach ($accounts as $index => $account) {
+            $value = '!' . $market . ':' . (int) ($account['id'] ?? 0);
+            $accounts[$index]['exclude_value'] = $value;
+            $accounts[$index]['excluded'] = in_array($value, $filters, true);
         }
 
         return $accounts;

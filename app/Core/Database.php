@@ -18,17 +18,25 @@ class Database
     /** @var PDO */
     private $pdo;
 
+    /** @var array */
+    private $config;
+
     private function __construct()
     {
-        $config = Config::get('database');
-        $driver = isset($config['driver']) ? (string) $config['driver'] : 'mysql';
+        $this->config = Config::get('database');
+        $this->connect();
+    }
+
+    private function connect(): void
+    {
+        $driver = isset($this->config['driver']) ? (string) $this->config['driver'] : 'mysql';
 
         try {
             $this->pdo = new PDO(
-                $this->buildDsn($config),
-                isset($config['username']) ? (string) $config['username'] : '',
-                isset($config['password']) ? (string) $config['password'] : '',
-                $this->buildOptions($config)
+                $this->buildDsn($this->config),
+                isset($this->config['username']) ? (string) $this->config['username'] : '',
+                isset($this->config['password']) ? (string) $this->config['password'] : '',
+                $this->buildOptions($this->config)
             );
         } catch (PDOException $exception) {
             throw new RuntimeException(
@@ -55,10 +63,30 @@ class Database
 
     public function query(string $sql, array $params = array()): PDOStatement
     {
-        $statement = $this->pdo->prepare($sql);
-        $statement->execute($params);
+        try {
+            $statement = $this->pdo->prepare($sql);
+            $statement->execute($params);
 
-        return $statement;
+            return $statement;
+        } catch (PDOException $exception) {
+            if (!$this->isGoneAwayException($exception) || $this->pdo->inTransaction()) {
+                throw $exception;
+            }
+
+            $this->connect();
+
+            $statement = $this->pdo->prepare($sql);
+            $statement->execute($params);
+
+            return $statement;
+        }
+    }
+
+    private function isGoneAwayException(PDOException $exception): bool
+    {
+        $driverCode = isset($exception->errorInfo[1]) ? (int) $exception->errorInfo[1] : 0;
+
+        return in_array($driverCode, array(2006, 2013), true);
     }
 
     public function fetchAll(string $sql, array $params = array()): array
@@ -79,6 +107,40 @@ class Database
     public function execute(string $sql, array $params = array()): bool
     {
         return $this->query($sql, $params)->rowCount() >= 0;
+    }
+
+    /**
+     * Runs $callback with a hard MySQL-side cap on how long any single statement inside it
+     * may run, then restores the previous (unlimited) setting. PHP's own set_time_limit()
+     * cannot help here: it only fires between opcodes, never while execution is blocked
+     * inside a single query - a query that turns out to be much more expensive than expected
+     * (missing index, unexpectedly large table, ...) can otherwise tie up a web worker, and
+     * on shared hosting with a small worker pool / shared MySQL instance, that alone can make
+     * the whole site feel frozen for everyone. Requires MySQL 5.7.8+/MariaDB 10.1.1+; on
+     * older servers the SET is a no-op (silently ignored) and $callback just runs unbounded.
+     */
+    public function withStatementTimeoutMs(int $milliseconds, callable $callback)
+    {
+        $applied = false;
+
+        try {
+            $this->pdo->exec('SET SESSION MAX_EXECUTION_TIME = ' . max(0, $milliseconds));
+            $applied = true;
+        } catch (PDOException $exception) {
+            // Server doesn't support MAX_EXECUTION_TIME (e.g. MariaDB) - proceed without it.
+        }
+
+        try {
+            return $callback();
+        } finally {
+            if ($applied) {
+                try {
+                    $this->pdo->exec('SET SESSION MAX_EXECUTION_TIME = 0');
+                } catch (PDOException $exception) {
+                    // Best-effort restore; nothing sensible to do if this fails too.
+                }
+            }
+        }
     }
 
     public function insert(string $table, array $data): string

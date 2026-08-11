@@ -146,6 +146,10 @@
                       <input type="checkbox" class="form-check-input" id="filter_no_ean" name="filter_no_ean" value="1" {if $filterNoEan}checked{/if} />
                       <label for="filter_no_ean" class="form-check-label">Bez EAN</label>
                     </div>
+                    <div class="form-check">
+                      <input type="checkbox" class="form-check-input" id="filter_price_mismatch" name="filter_price_mismatch" value="1" {if $filterPriceMismatch}checked{/if} />
+                      <label for="filter_price_mismatch" class="form-check-label">Cena różni się od magazynu (dowolny marketplace)</label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -194,6 +198,39 @@
                   </optgroup>
                 </select>
                 <div class="form-text">Ctrl/Cmd pozwala wybrac kilka kont.</div>
+
+                <label for="filter_market_accounts_exclude" class="form-label fw-bold mt-3">Wykluczone konta (NIE wystawione)</label>
+                <select id="filter_market_accounts_exclude" name="filter_market_accounts[]" class="form-control computers-filter-select" multiple size="7">
+                  <optgroup label="Allegro">
+                    {foreach from=$allegroMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.exclude_value|escape:'html'}" {if $marketAccount.excluded}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Allegro</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Empik">
+                    {foreach from=$empikMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.exclude_value|escape:'html'}" {if $marketAccount.excluded}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Empik</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Erli">
+                    {foreach from=$erliMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.exclude_value|escape:'html'}" {if $marketAccount.excluded}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych kont Erli</option>
+                    {/foreach}
+                  </optgroup>
+                  <optgroup label="Morele">
+                    {foreach from=$moreleMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.exclude_value|escape:'html'}" {if $marketAccount.excluded}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}
+                      <option value="" disabled>Brak aktywnych ofert Morele</option>
+                    {/foreach}
+                  </optgroup>
+                </select>
+                <div class="form-text">Produkt wystawiony na wybranym tu koncie zostanie wykluczony z wyników, niezależnie od pozostałych filtrów.</div>
               </div>
             </div>
             <div class="col-12 col-md-6 col-xl-2">
@@ -337,6 +374,7 @@
             <input type="hidden" name="selection_filter_updated_to" value="{$filterUpdatedTo|escape:'html'}" />
             <input type="hidden" name="selection_filter_no_images" value="{if $filterNoImages}1{else}0{/if}" />
             <input type="hidden" name="selection_filter_no_ean" value="{if $filterNoEan}1{else}0{/if}" />
+            <input type="hidden" name="selection_filter_price_mismatch" value="{if $filterPriceMismatch}1{else}0{/if}" />
             <div id="excluded_product_ids"></div>
             <div id="all_filtered_selection_notice" class="alert alert-primary py-2 px-3 mb-3 d-none" role="status">
               Zaznaczono wszystkie produkty zgodne z bieżącymi filtrami: <strong>{$total_products}</strong>.
@@ -556,7 +594,13 @@
                         <div class="d-flex align-items-center mb-2 mb-md-0">
                           <input type="checkbox" name="product_ids[]" value="{$prod.id}" class="product_checkbox me-2" data-price-market-accounts="{foreach from=$prod.allegro_accounts item=allegroAccount}allegro:{$allegroAccount.account_id|escape:'html'}|Allegro {$allegroAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.empik_accounts item=empikAccount}empik:{$empikAccount.account_id|escape:'html'}|Empik {$empikAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.erli_accounts item=erliAccount}erli:{$erliAccount.account_id|escape:'html'}|Erli {$erliAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.morele_accounts item=moreleAccount}morele:{$moreleAccount.account_id|escape:'html'}|Morele {$moreleAccount.account_name|escape:'html'}||{/foreach}" />
                           <span class="text-muted small me-3">ID: {$prod.id}</span>
-                        
+                          {if $prod.sku != ''}
+                          <span class="d-inline-flex align-items-center me-3">
+                            <span class="text-muted small me-1">SKU: {$prod.sku|escape:'html'}</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 copy-product-sku" data-sku="{$prod.sku|escape:'html'}" title="Kopiuj SKU"><i class="bi bi-clipboard"></i></button>
+                          </span>
+                          {/if}
+
               {if $prod.offerid != '' && $prod.offerid != 0}<a href="https://allegro.pl/oferta/{$prod.offerid}"><strong class="product-title" data-prod-id="{$prod.id}">{$prod.name|escape:'html'}</strong> -- {$prod.offerid}</a>
               {else}
                 <strong class="product-title" data-prod-id="{$prod.id}">{$prod.name|escape:'html'}</strong>
@@ -1518,6 +1562,26 @@
         setTimeout(() => alert.remove(), 1000);
       }
     }, 5000);
+
+    // Kopiuj SKU
+    document.querySelectorAll('.copy-product-sku').forEach(function(btn) {
+      btn.addEventListener('click', async function() {
+        const sku = this.getAttribute('data-sku') || '';
+        try {
+          await navigator.clipboard.writeText(sku);
+        } catch (error) {
+          const tempInput = document.createElement('input');
+          tempInput.value = sku;
+          document.body.appendChild(tempInput);
+          tempInput.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempInput);
+        }
+        const original = this.innerHTML;
+        this.innerHTML = '<i class="bi bi-check-lg"></i>';
+        window.setTimeout(() => { this.innerHTML = original; }, 1200);
+      });
+    });
 
     // Checkbox "Zaznacz wszystko"
     var checkAll = document.getElementById('check_all');

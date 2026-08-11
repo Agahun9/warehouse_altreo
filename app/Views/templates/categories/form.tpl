@@ -26,70 +26,126 @@
         <div class="alert alert-danger">{$flashError|escape}</div>
       {/if}
 
-      <div class="card card-primary card-outline">
-        <div class="card-header">
-          <h3 class="card-title">Formularz kategorii</h3>
-        </div>
-        <form method="post" action="{if isset($category.id)}{$baseUrl}?controller=categories&action=update&id={$category.id}{else}{$baseUrl}?controller=categories&action=store{/if}">
-          {if isset($category.id)}
-            <input type="hidden" name="id" value="{$category.id}">
-          {/if}
+      <form method="post" action="{if isset($category.id)}{$baseUrl}?controller=categories&action=update&id={$category.id}{else}{$baseUrl}?controller=categories&action=store{/if}">
+        {if isset($category.id)}
+          <input type="hidden" name="id" value="{$category.id}">
+        {/if}
+
+        <div class="card card-primary card-outline mb-4">
+          <div class="card-header">
+            <h3 class="card-title">Podstawowe dane</h3>
+          </div>
           <div class="card-body">
             <div class="row g-3">
-              <div class="col-md-6">
+              <div class="col-md-5">
                 <label for="name" class="form-label">Nazwa kategorii</label>
                 <input type="text" class="form-control" id="name" name="name" value="{$category.name|default:''|escape}" required>
               </div>
-              <div class="col-md-6">
+              <div class="col-md-3">
                 <label for="sku_prefix" class="form-label">Przedrostek SKU</label>
                 <input type="text" class="form-control" id="sku_prefix" name="sku_prefix" value="{$category.sku_prefix|default:''|escape}" placeholder="np. AGD" required>
-                <div class="form-text">Uzywany do automatycznego nadawania SKU, np. AGD-000123.</div>
+                <div class="form-text">Np. AGD-000123.</div>
               </div>
-              <div class="col-md-6">
-                <label for="end_offers_below_quantity" class="form-label">Zakanczaj aukcje przy sztuk tyle i mniej</label>
+              <div class="col-md-4">
+                <label for="end_offers_below_quantity" class="form-label">Zakanczaj aukcje przy sztuk</label>
                 <input type="number" min="0" step="1" class="form-control" id="end_offers_below_quantity" name="end_offers_below_quantity" value="{$category.end_offers_below_quantity|default:''|escape}" placeholder="np. 2">
-                <div class="form-text">Na razie tylko zapis do kategorii. Pozniej podepniemy pod automatyzacje Allegro.</div>
+                <div class="form-text">Na razie tylko zapis do kategorii.</div>
               </div>
-              <div class="col-md-6">
+              <div class="col-md-5">
+                <label class="form-label">Slug</label>
+                <input type="text" class="form-control" value="Generowany automatycznie na podstawie nazwy" disabled>
+              </div>
+              <div class="col-12">
+                <label for="description" class="form-label">Opis</label>
+                <textarea class="form-control" id="description" name="description" rows="4" placeholder="Opcjonalny opis kategorii">{$category.description|default:''|escape}</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-outline border-primary-subtle mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title mb-0">Mapowanie Allegro</h3>
+            <span class="badge text-bg-primary">Allegro</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-8">
                 <label for="allegro_category_search" class="form-label">Wyszukaj kategorie Allegro</label>
                 <div class="input-group">
                   <input type="text" class="form-control" id="allegro_category_search" placeholder="np. laptop, koszulka">
                   <button type="button" class="btn btn-outline-primary" id="allegro_category_search_btn">Szukaj</button>
                 </div>
               </div>
-              <div class="col-md-6">
+              <div class="col-md-4">
                 <label for="allegro_category_id" class="form-label">Allegro category ID</label>
                 <input type="text" class="form-control" id="allegro_category_id" name="allegro_category_id" value="{$category.allegro_category_id|default:''|escape}" placeholder="ID kategorii Allegro">
-                <div class="form-text">Mozesz wpisac ID recznie lub wybrac z listy ponizej.</div>
+              </div>
+              <div class="col-12">
+                <div id="allegro_category_selected" class="small text-secondary"></div>
               </div>
               <div class="col-md-6">
+                <div class="border rounded p-2 h-100">
+                  <div class="small fw-semibold mb-2">Wyniki</div>
+                  <div id="allegro_category_results" class="list-group"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 h-100">
+                  <div class="small fw-semibold mb-2">Drzewko wynikow</div>
+                  <div id="allegro_category_tree" class="small"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-outline border-success-subtle mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title mb-0">Mapowanie Empik</h3>
+            <span class="badge text-bg-success">Empik</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-8">
                 <label for="empik_category_search" class="form-label">Wyszukaj kategorie Empik</label>
                 <div class="input-group">
                   <input type="text" class="form-control" id="empik_category_search" placeholder="np. etui, portfel, kubek">
                   <button type="button" class="btn btn-outline-success" id="empik_category_search_btn">Szukaj Empik</button>
                 </div>
-              </div>
-              <div class="col-md-6">
-                <label for="empik_category_id" class="form-label">Empik category ID</label>
-                <input type="text" class="form-control" id="empik_category_id" name="empik_category_id" value="{$category.empik_category_id|default:''|escape}" placeholder="Kod kategorii Empik">
                 <div class="form-text">Wyszukiwanie jest budowane z drzewa kategorii Mirakl/Empik.</div>
               </div>
-              <div class="col-12">
-                <div id="allegro_category_selected" class="small text-secondary mb-2"></div>
+              <div class="col-md-4">
+                <label for="empik_category_id" class="form-label">Empik category ID</label>
+                <input type="text" class="form-control" id="empik_category_id" name="empik_category_id" value="{$category.empik_category_id|default:''|escape}" placeholder="Kod kategorii Empik">
               </div>
               <div class="col-12">
-                <div id="empik_category_selected" class="small text-secondary mb-2"></div>
+                <div id="empik_category_selected" class="small text-secondary"></div>
               </div>
-              <div class="col-12">
-                <hr class="my-2">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                  <div>
-                    <label for="temu_category_id" class="form-label mb-1">Mapowanie Temu</label>
-                    <div class="small text-secondary">Na razie bez pobierania ofert. Tutaj zapisujemy polaczenie kategorii Temu z kategoria magazynowa i surowe parametry kategorii.</div>
-                  </div>
-                  <span class="badge text-bg-warning">Manualne mapowanie</span>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-success-subtle h-100">
+                  <div class="small fw-semibold mb-2">Wyniki Empik</div>
+                  <div id="empik_category_results" class="list-group"></div>
                 </div>
               </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-success-subtle h-100">
+                  <div class="small fw-semibold mb-2">Drzewko Empik</div>
+                  <div id="empik_category_tree" class="small"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-outline border-warning-subtle mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title mb-0">Mapowanie Temu</h3>
+            <span class="badge text-bg-warning">Manualne mapowanie</span>
+          </div>
+          <div class="card-body">
+            <div class="small text-secondary mb-3">Na razie bez pobierania ofert. Tutaj zapisujemy polaczenie kategorii Temu z kategoria magazynowa i surowe parametry kategorii.</div>
+            <div class="row g-3">
               <div class="col-md-4">
                 <label for="temu_category_id" class="form-label">Temu category ID</label>
                 <input type="text" class="form-control" id="temu_category_id" name="temu_category_id" value="{$category.temu_category_id|default:''|escape}" placeholder="np. 123456789">
@@ -104,50 +160,21 @@
               </div>
               <div class="col-12">
                 <label for="temu_category_parameters" class="form-label">Parametry kategorii Temu (JSON)</label>
-                <textarea class="form-control font-monospace" id="temu_category_parameters" name="temu_category_parameters" rows="10">{$category.temu_category_parameters|default:''|escape}</textarea>
-                <div class="form-text">Zapisujemy tutaj surowa definicje parametrow kategorii Temu do dalszej rozbudowy integracji. Pole jest opcjonalne, ale jesli je wypelnisz, JSON musi byc poprawny.</div>
+                <textarea class="form-control font-monospace" id="temu_category_parameters" name="temu_category_parameters" rows="8">{$category.temu_category_parameters|default:''|escape}</textarea>
+                <div class="form-text">Pole jest opcjonalne, ale jesli je wypelnisz, JSON musi byc poprawny.</div>
                 <div class="form-text"><code>[&#123;"id":"color","name":"Kolor","required":true,"type":"enum","values":["Czarny","Bezowy"]&#125;]</code></div>
-              </div>
-              <div class="col-md-6">
-                <div class="border rounded p-2">
-                  <div class="small fw-semibold mb-2">Wyniki</div>
-                  <div id="allegro_category_results" class="list-group"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="border rounded p-2">
-                  <div class="small fw-semibold mb-2">Drzewko wynikow</div>
-                  <div id="allegro_category_tree" class="small"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="border rounded p-2 border-success-subtle">
-                  <div class="small fw-semibold mb-2">Wyniki Empik</div>
-                  <div id="empik_category_results" class="list-group"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="border rounded p-2 border-success-subtle">
-                  <div class="small fw-semibold mb-2">Drzewko Empik</div>
-                  <div id="empik_category_tree" class="small"></div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Slug</label>
-                <input type="text" class="form-control" value="Generowany automatycznie na podstawie nazwy" disabled>
-              </div>
-              <div class="col-12">
-                <label for="description" class="form-label">Opis</label>
-                <textarea class="form-control" id="description" name="description" rows="5" placeholder="Opcjonalny opis kategorii">{$category.description|default:''|escape}</textarea>
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="card">
           <div class="card-footer d-flex justify-content-between">
             <a href="{$baseUrl}?controller=categories&action=index" class="btn btn-outline-secondary">Wroc do listy</a>
             <button type="submit" class="btn btn-primary">Zapisz kategorie</button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   </div>
 </main>
@@ -304,7 +331,26 @@
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
           signal: currentController ? currentController.signal : undefined
         })
-          .then(function (response) { return response.json(); })
+          .then(function (response) {
+            return response.text().then(function (raw) {
+              var data = null;
+              try {
+                data = raw ? JSON.parse(raw) : null;
+              } catch (parseError) {
+                var message = 'Serwer zwrocil nieoczekiwana odpowiedz (HTTP ' + response.status + ').';
+                if (raw) {
+                  message += ' ' + raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 200);
+                }
+                throw new Error(message);
+              }
+
+              if (!response.ok && (!data || !data.error)) {
+                throw new Error('Serwer zwrocil blad HTTP ' + response.status + '.');
+              }
+
+              return data || {};
+            });
+          })
           .then(function (data) {
             if (data && data.error) {
               results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(data.error) + '</div>';
@@ -318,7 +364,8 @@
             if (error && error.name === 'AbortError') {
               return;
             }
-            results.innerHTML = '<div class="list-group-item text-danger">Blad pobierania danych z ' + escapeHtml(config.marketName) + '.</div>';
+            var detail = error && error.message ? error.message : ('Blad pobierania danych z ' + config.marketName + '.');
+            results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(detail) + '</div>';
             tree.innerHTML = '<div class="text-danger">Blad budowania drzewa.</div>';
           })
           .finally(function () {
