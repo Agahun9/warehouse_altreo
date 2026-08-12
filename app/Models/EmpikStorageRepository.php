@@ -140,10 +140,8 @@ class EmpikStorageRepository
         // safe to run automatically here.
         $this->ensureColumnExists('empik_accounts', 'sync_offset', 'INT UNSIGNED NOT NULL DEFAULT 0');
 
-        // Backs offersDueForOperation()'s per-offer correlated subqueries (is there an
-        // unresolved queue entry for this offer+operation? when was it last queued for this
-        // operation?) with a single covering index instead of a full scan of the whole,
-        // ever-growing queue history on every maintenance tick.
+        // Backs offersDueForOperation()'s check for an unresolved entry for an exact
+        // offer+operation without scanning the ever-growing queue history.
         $this->ensureIndexExists(
             'empik_offer_change_queue',
             'idx_empik_offer_change_queue_offer_operation',
@@ -287,6 +285,39 @@ class EmpikStorageRepository
     public function upsertOffer(array $data): void
     {
         $this->upsertOffers(array($data));
+    }
+
+    /**
+     * Returns the current local values for a page downloaded from Empik. This lets the
+     * sync response distinguish new, changed and merely refreshed rows without issuing a
+     * SELECT for every offer.
+     *
+     * @return array<int, array>
+     */
+    public function offersForSyncComparison(int $accountId, array $offerIds): array
+    {
+        $offerIds = array_values(array_unique(array_filter(array_map('intval', $offerIds))));
+        if ($accountId <= 0 || $offerIds === array()) {
+            return array();
+        }
+
+        $params = array('sync_account_id' => $accountId);
+        $placeholders = $this->buildIntegerPlaceholders('sync_offer_id', $offerIds, $params);
+        $rows = $this->database->fetchAll(
+            'SELECT account_id, offer_id, shop_sku, product_sku, product_id, product_title,'
+            . ' description, category_code, category_label, state_code, active, quantity,'
+            . ' price, total_price, currency_iso_code, min_shipping_price, leadtime_to_ship'
+            . ' FROM empik_offers'
+            . ' WHERE account_id = :sync_account_id AND offer_id IN (' . implode(', ', $placeholders) . ')',
+            $params
+        );
+
+        $result = array();
+        foreach ($rows as $row) {
+            $result[(int) ($row['offer_id'] ?? 0)] = $row;
+        }
+
+        return $result;
     }
 
     /**
@@ -476,9 +507,18 @@ class EmpikStorageRepository
     public function findOfferByRowId(int $id)
     {
         return $this->database->fetch(
-            'SELECT offers.*, accounts.name AS account_name, accounts.slug AS account_slug, accounts.api_url, accounts.api_key, accounts.shop_id, accounts.locale'
+            'SELECT offers.*, accounts.name AS account_name, accounts.slug AS account_slug, accounts.api_url, accounts.api_key, accounts.shop_id, accounts.locale,'
+            . ' COALESCE(warehouse.id, warehouse_altreo_shop.id, warehouse_altreo_product.id) AS warehouse_product_live_id,'
+            . ' COALESCE(warehouse.sku, warehouse_altreo_shop.sku, warehouse_altreo_product.sku) AS warehouse_sku,'
+            . ' COALESCE(warehouse.price_gross, warehouse_altreo_shop.price, warehouse_altreo_product.price) AS warehouse_price_gross,'
+            . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity'
             . ' FROM empik_offers offers'
             . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id'
+            . $this->liveWarehouseJoinSql()
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
+            . ' LEFT JOIN pr_products_altreo warehouse_altreo_shop ON warehouse_altreo_shop.sku = offers.shop_sku'
+            . ' LEFT JOIN pr_products_altreo warehouse_altreo_product'
+            . '   ON warehouse_altreo_shop.id IS NULL AND warehouse_altreo_product.sku = offers.product_sku'
             . ' WHERE offers.id = :id LIMIT 1',
             array('id' => $id)
         );
@@ -525,6 +565,58 @@ class EmpikStorageRepository
         return $result;
     }
 
+    public function warehouseUpdateDiagnostics(): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT offers.active, COALESCE(offers.state_code, "") AS state_code, COUNT(*) AS total'
+            . ' FROM empik_offers offers'
+            . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id AND accounts.is_active = 1'
+            . ' GROUP BY offers.active, offers.state_code'
+            . ' ORDER BY total DESC'
+        );
+
+        $result = array('offers' => 0, 'active' => 0, 'states' => array());
+        foreach ($rows as $row) {
+            $count = (int) ($row['total'] ?? 0);
+            $result['offers'] += $count;
+            if ((int) ($row['active'] ?? 0) === 1) {
+                $result['active'] += $count;
+            }
+            $state = trim((string) ($row['state_code'] ?? ''));
+            $key = ($state !== '' ? $state : '(brak)') . '|active=' . (int) ($row['active'] ?? 0);
+            $result['states'][$key] = $count;
+        }
+
+        $unresolvedRows = $this->database->fetchAll(
+            'SELECT operation, status, COUNT(*) AS total FROM empik_offer_change_queue'
+            . ' WHERE status IN ("pending", "processing", "retry")'
+            . ' GROUP BY operation, status ORDER BY operation, status'
+        );
+        $result['unresolved_queue'] = array();
+        foreach ($unresolvedRows as $row) {
+            $result['unresolved_queue'][] = array(
+                'operation' => (string) ($row['operation'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'total' => (int) ($row['total'] ?? 0),
+            );
+        }
+
+        $historyRows = $this->database->fetchAll(
+            'SELECT operation, status, COUNT(*) AS total FROM empik_offer_change_queue'
+            . ' GROUP BY operation, status ORDER BY operation, status'
+        );
+        $result['queue_history'] = array();
+        foreach ($historyRows as $row) {
+            $result['queue_history'][] = array(
+                'operation' => (string) ($row['operation'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'total' => (int) ($row['total'] ?? 0),
+            );
+        }
+
+        return $result;
+    }
+
     public function enqueueOfferChanges(array $targets, string $operation, array $payload, ?string $availableAt = null): int
     {
         if ($targets === array()) {
@@ -555,63 +647,106 @@ class EmpikStorageRepository
         return $queued;
     }
 
+    public function unresolvedQueueCount(string $operation, ?int $accountId = null): int
+    {
+        $params = array('operation' => $operation);
+        $sql = 'SELECT COUNT(*) FROM empik_offer_change_queue'
+            . ' WHERE operation = :operation AND status IN ("pending", "processing", "retry")';
+        if ($accountId !== null) {
+            $sql .= ' AND account_id = :account_id';
+            $params['account_id'] = $accountId;
+        }
+
+        return (int) $this->database->fetchColumn($sql, $params);
+    }
+
+    public function cancelUnresolvedWarehouseUpdates(): int
+    {
+        return $this->database->update(
+            'empik_offer_change_queue',
+            array(
+                'status' => 'cancelled',
+                'error_message' => 'Anulowano: maintenance Empik dziala w trybie tylko do odczytu.',
+                'finished_at' => date('Y-m-d H:i:s'),
+            ),
+            'operation IN ("set_price_from_product", "set_stock_from_product")'
+                . ' AND status IN ("pending", "processing", "retry")',
+            array()
+        );
+    }
+
     /**
      * Offers eligible for an automated warehouse-sync operation (set_price_from_product /
      * set_stock_from_product), skipping any offer that already has an unresolved queue entry
-     * for that exact operation and prioritising offers that were queued for it longest ago
-     * (or never). Without this, a maintenance cron always re-selecting "top N offers by id"
-     * would enqueue the same handful of offers every ~10 minutes forever while the rest of
-     * a large, active+linked catalog never gets its price/stock refreshed, and would keep
-     * piling up duplicate queue rows for offers still waiting to be processed.
+     * for that exact operation. A persisted offer-id cursor rotates through the whole
+     * catalog without sorting the complete queue history on every maintenance tick.
      */
     public function offersDueForOperation(array $filters, string $operation, int $limit): array
     {
-        $params = array('due_operation' => $operation, 'due_operation_history' => $operation);
-        $analysis = $this->analyzeOfferFilters($filters);
+        $params = array('due_operation' => $operation);
+        $linkedWarehouseOnly = trim((string) ($filters['linked'] ?? '')) === '1';
+        // Target selection only needs to prove that a warehouse product exists; it does
+        // not need to materialize all warehouse columns. Removing this filter here avoids
+        // the much heavier liveWarehouseJoinSql() correlated join, while the indexed EXISTS
+        // joins below use indexed current- and legacy-SKU lookups without running a nested
+        // products/custom-fields scan separately for every offer.
+        unset($filters['linked']);
 
-        // Both "is there already an unresolved queue entry for this offer+operation" and
-        // "when was this offer last queued for this operation" are expressed as per-offer
-        // correlated subqueries (backed by idx_empik_offer_change_queue_offer_operation)
-        // rather than a JOIN against a derived table that GROUPs the *entire* queue history
-        // by offer_row_id. The derived-table version scanned the whole, ever-growing
-        // empik_offer_change_queue table on every maintenance tick regardless of how many
-        // offers actually match the filters - on a queue table that accumulates "done"/
-        // "error" rows over months, that query got slower every day and, combined with
-        // set_time_limit() being unable to interrupt a single running SQL statement, was
-        // able to tie up a web worker (and the whole shared-hosting panel) for minutes.
-        $sql = 'SELECT offers.id, offers.account_id,'
-            . '   (SELECT MAX(history_queue.created_at) FROM empik_offer_change_queue history_queue'
-            . '     WHERE history_queue.offer_row_id = offers.id AND history_queue.operation = :due_operation_history'
-            . '   ) AS last_queued_at'
+        $sql = 'SELECT offers.id, offers.account_id, offers.shop_sku, offers.product_sku'
             . ' FROM empik_offers offers'
             . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id';
 
-        if ($analysis['needs_warehouse']) {
-            $sql .= $this->liveWarehouseJoinSql();
-        }
-
-        if ($analysis['needs_shared_stock']) {
-            $sql .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
-        }
-
         $where = $this->buildOfferWhere($filters, $params);
-        $sql .= $where
-            . ' AND NOT EXISTS ('
+        $sql .= $where;
+
+        $sql .= ' AND NOT EXISTS ('
             . '   SELECT 1 FROM empik_offer_change_queue active_queue'
             . '   WHERE active_queue.offer_row_id = offers.id'
             . '     AND active_queue.operation = :due_operation'
             . '     AND active_queue.status IN ("pending", "processing", "retry")'
-            . ' )'
-            . ' ORDER BY (last_queued_at IS NULL) DESC, last_queued_at ASC, offers.id ASC'
-            . ' LIMIT ' . max(1, min(5000, $limit));
+            . ' )';
 
-        // Belt-and-braces cap in case the filters (e.g. the "linked" warehouse match) still
-        // turn out to be expensive on a particular install: a slow query here should degrade
-        // to "skip this round, try again next tick" (caught in EmpikService), never to a
-        // multi-minute request.
-        return $this->database->withStatementTimeoutMs(8000, function () use ($sql, $params) {
-            return $this->database->fetchAll($sql, $params);
+        // Cross-table SKU joins use incompatible historical collations on production and
+        // make MySQL scan the product table once per offer. Load both indexed tables once
+        // and match in PHP instead (O(products + offers)), then rotate through the result.
+        $skuLookup = $linkedWarehouseOnly ? $this->warehouseSkuLookupForOperation($operation) : array();
+        $accountScope = trim((string) ($filters['account_id'] ?? ''));
+        $cursorKey = 'empik_warehouse_cursor_v1_' . md5($operation . '|' . $accountScope);
+        $cursorPayload = $this->getCache($cursorKey);
+        $cursor = is_array($cursorPayload) ? max(0, (int) ($cursorPayload['offer_id'] ?? 0)) : 0;
+        $targetLimit = max(1, min(5000, $limit));
+
+        $rows = $this->database->withStatementTimeoutMs(8000, function () use ($sql, $params) {
+            return $this->database->fetchAll($sql . ' ORDER BY offers.id ASC LIMIT 100000', $params);
         });
+        $rotatedRows = array_merge(
+            array_values(array_filter($rows, static function (array $row) use ($cursor): bool {
+                return (int) ($row['id'] ?? 0) > $cursor;
+            })),
+            array_values(array_filter($rows, static function (array $row) use ($cursor): bool {
+                return (int) ($row['id'] ?? 0) <= $cursor;
+            }))
+        );
+
+        $targets = array();
+        foreach ($rotatedRows as $row) {
+            $shopSku = trim((string) ($row['shop_sku'] ?? ''));
+            $productSku = trim((string) ($row['product_sku'] ?? ''));
+            if ($linkedWarehouseOnly && !isset($skuLookup[$shopSku]) && !isset($skuLookup[$productSku])) {
+                continue;
+            }
+            $targets[] = array('id' => (int) $row['id'], 'account_id' => (int) $row['account_id']);
+            if (count($targets) >= $targetLimit) {
+                break;
+            }
+        }
+
+        if ($targets !== array()) {
+            $last = end($targets);
+            $this->putCache($cursorKey, array('offer_id' => (int) ($last['id'] ?? 0)), 2592000);
+        }
+
+        return $targets;
     }
 
     /**
@@ -698,6 +833,67 @@ class EmpikStorageRepository
             'id = :id',
             array('id' => $queueId)
         );
+    }
+
+    /**
+     * Keeps a submitted asynchronous Mirakl import in the runnable queue without counting
+     * ordinary remote processing time as a failed attempt. The next maintenance tick checks
+     * the saved import instead of submitting the same price/stock update again.
+     */
+    public function markQueueWaiting(int $queueId, string $remoteImportId, string $remoteImportType, int $delaySeconds = 10, array $logPayload = array()): void
+    {
+        $payloadJson = null;
+        if ($logPayload !== array()) {
+            $current = $this->database->fetchColumn(
+                'SELECT payload_json FROM empik_offer_change_queue WHERE id = :id LIMIT 1',
+                array('id' => $queueId)
+            );
+            $payload = json_decode(is_string($current) ? $current : '', true);
+            $payload = is_array($payload) ? $payload : array();
+            $payload['_maintenance_log'] = $logPayload;
+            $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        $data = array(
+            'status' => 'retry',
+            'error_message' => 'Import Empik przyjety; oczekiwanie na potwierdzenie.',
+            'remote_import_id' => $remoteImportId,
+            'remote_import_type' => $remoteImportType,
+            'available_at' => date('Y-m-d H:i:s', time() + max(5, $delaySeconds)),
+        );
+        if ($payloadJson !== null) {
+            $data['payload_json'] = $payloadJson;
+        }
+
+        $this->database->update(
+            'empik_offer_change_queue',
+            $data,
+            'id = :id',
+            array('id' => $queueId)
+        );
+    }
+
+    public function recentQueueEntries(int $limit = 50): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT queue.id AS queue_id, queue.offer_row_id, queue.operation, queue.status,'
+            . ' queue.payload_json, queue.error_message, queue.remote_import_id, queue.remote_import_type,'
+            . ' queue.created_at, queue.updated_at, queue.finished_at,'
+            . ' offers.offer_id, offers.shop_sku, offers.product_sku, offers.product_title,'
+            . ' accounts.name AS account_name'
+            . ' FROM empik_offer_change_queue queue'
+            . ' INNER JOIN empik_offers offers ON offers.id = queue.offer_row_id'
+            . ' INNER JOIN empik_accounts accounts ON accounts.id = queue.account_id'
+            . ' ORDER BY queue.id DESC LIMIT ' . max(1, min(200, $limit))
+        );
+
+        foreach ($rows as $index => $row) {
+            $payload = json_decode((string) ($row['payload_json'] ?? ''), true);
+            $rows[$index]['payload'] = is_array($payload) ? $payload : array();
+            unset($rows[$index]['payload_json']);
+        }
+
+        return $rows;
     }
 
     public function markQueueRetry(int $queueId, string $message, int $delaySeconds = 60, ?string $remoteImportId = null, ?string $remoteImportType = null): void
@@ -1002,6 +1198,42 @@ class EmpikStorageRepository
 
         $column = isset($map[$sortBy]) ? $map[$sortBy] : $map['synced'];
         return $column . ' ' . $sortDir . ', offers.id DESC';
+    }
+
+    /** @return array<string, true> */
+    private function warehouseSkuLookupForOperation(string $operation): array
+    {
+        $lookup = array();
+        $rows = $this->database->fetchAll(
+            'SELECT sku FROM products WHERE deleted_at IS NULL AND sku IS NOT NULL AND sku <> ""'
+        );
+
+        $legacyRows = $this->database->fetchAll(
+            'SELECT values_table.value AS sku'
+            . ' FROM product_custom_field_values values_table'
+            . ' INNER JOIN product_custom_field_definitions definitions'
+            . '   ON definitions.id = values_table.definition_id AND definitions.slug = "old_sku"'
+            . ' INNER JOIN products ON products.id = values_table.product_id AND products.deleted_at IS NULL'
+            . ' WHERE values_table.value IS NOT NULL AND values_table.value <> ""'
+        );
+        $rows = array_merge($rows, $legacyRows);
+
+        // The computers warehouse uses pr_products_altreo.price and has no quantity field,
+        // so it is a valid source for price maintenance only.
+        if ($operation === 'set_price_from_product') {
+            $rows = array_merge($rows, $this->database->fetchAll(
+                'SELECT sku FROM pr_products_altreo WHERE sku IS NOT NULL AND sku <> ""'
+            ));
+        }
+
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku !== '') {
+                $lookup[$sku] = true;
+            }
+        }
+
+        return $lookup;
     }
 
     private function liveWarehouseJoinSql(): string

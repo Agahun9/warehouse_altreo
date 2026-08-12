@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Models\SettingRepository;
 use App\Services\EmpikRateLimitException;
 use App\Services\EmpikService;
 use Throwable;
 
 class EmpikController extends Controller
 {
-    private const MAINTENANCE_LOCK_TTL_SECONDS = 900;
+    private const MAINTENANCE_LOCK_NAME = 'altreo_empik_maintenance';
+    private const QUEUE_LOCK_NAME = 'altreo_empik_queue_worker';
 
     /** @var EmpikService */
     private $empik;
@@ -224,7 +224,7 @@ class EmpikController extends Controller
         }
 
         try {
-            $result = $this->empik->processQueue(array(
+            $result = $this->processEmpikQueue(array(
                 'account' => $this->input('account', ''),
                 'limit' => (int) $this->input('limit', 20),
                 'max_runtime' => max(5, min(280, (int) $this->input('max_runtime', 45))),
@@ -254,12 +254,13 @@ class EmpikController extends Controller
         }
         $this->releaseSessionLock();
 
-        // Sync + enqueue + queue processing below are all individually time-boxed (see
-        // EmpikService) and kept short on purpose: this runs inside a normal web worker
+        // This endpoint is intentionally read-only toward Empik: it only downloads offers
+        // and stores them locally. enqueue/queue_limit parameters in old cron URLs are
+        // ignored. The sync is time-boxed because this runs inside a normal web worker
         // (PHP-FPM/Apache), and shared hosting typically only has a handful of those. A
         // multi-minute request here ties one up for its whole duration and, with a small
         // worker pool, can make the entire admin panel unresponsive for everyone else. The
-        // sync/queue work is fully resumable, so many short cron ticks make the same
+        // sync is fully resumable, so many short cron ticks make the same
         // progress as one long one without blocking the panel. set_time_limit is a safety
         // margin above the sum of the budgets below, not the primary control - harmless
         // no-op if the host disables it.
@@ -267,15 +268,45 @@ class EmpikController extends Controller
             @set_time_limit(90);
         }
 
-        $settings = new SettingRepository($this->db());
-        $settings->ensureSchema();
-        $lockKey = 'empik_maintenance_lock';
-        $lockedAt = (int) $settings->get($lockKey, '0');
+        // A timestamp stored in app_settings used to guard this endpoint. If PHP-FPM killed
+        // the request (timeout/OOM/restart), its finally block never cleared that timestamp
+        // and every following cron tick was incorrectly skipped for up to 15 minutes. A
+        // MySQL advisory lock is tied to this request's DB connection and is automatically
+        // released by MySQL even when the worker dies.
+        $database = $this->db();
+        $lockAcquired = $database->acquireAdvisoryLock(self::MAINTENANCE_LOCK_NAME);
+        $lockRecovered = false;
 
-        if ($lockedAt > 0 && (time() - $lockedAt) < self::MAINTENANCE_LOCK_TTL_SECONDS) {
-            $message = 'Poprzednie zadanie maintenance Empik jeszcze trwa (start: ' . date('H:i:s', $lockedAt) . '), pomijam to wywolanie.';
+        // Explicit recovery is deliberately narrow: interrupt only statements run by the
+        // connection which currently owns this exact Empik lock. This is useful once after
+        // deploying the server-side statement timeout while a pre-deployment query is still
+        // stuck. KILL QUERY leaves the connection alive, so its finally block can clean up.
+        if (!$lockAcquired && $this->input('force', '0') === '1') {
+            $recoveryDeadline = microtime(true) + 12;
+            while (!$lockAcquired && microtime(true) < $recoveryDeadline) {
+                $owner = $database->advisoryLockOwner(self::MAINTENANCE_LOCK_NAME);
+                if ($owner !== null) {
+                    try {
+                        $database->interruptConnectionQuery($owner);
+                        $lockRecovered = true;
+                    } catch (Throwable $exception) {
+                        // The owner may have completed between IS_USED_LOCK and KILL QUERY.
+                    }
+                }
+                usleep(250000);
+                $lockAcquired = $database->acquireAdvisoryLock(self::MAINTENANCE_LOCK_NAME);
+            }
+        }
+
+        if (!$lockAcquired) {
+            $message = 'Inne zadanie maintenance Empik rzeczywiscie jest teraz uruchomione; pomijam tylko to wywolanie.';
             if ($this->wantsJson()) {
-                $this->jsonResponse(array('skipped' => true, 'reason' => $message));
+                $this->jsonResponse(array(
+                    'ok' => true,
+                    'skipped' => true,
+                    'reason' => $message,
+                    'checked_at' => date(DATE_ATOM),
+                ));
                 return;
             }
             $this->setFlash('error', $message);
@@ -283,14 +314,33 @@ class EmpikController extends Controller
             return;
         }
 
-        $settings->set($lockKey, (string) time());
-
+        $startedAt = microtime(true);
+        $runId = date('Ymd-His') . '-' . substr(uniqid('', true), -6);
         try {
             $accountSelector = trim((string) $this->input('account', ''));
             $result = array(
-                'queue' => null,
+                'ok' => true,
+                'mode' => 'sync_only',
+                'run_id' => $runId,
+                'started_at' => date(DATE_ATOM),
+                'recovered_previous_run' => $lockRecovered,
+                'queue' => array(
+                    'disabled' => true,
+                    'message' => 'Maintenance nie przetwarza kolejki i nie wysyla zmian do Empiku.',
+                ),
                 'sync' => array(),
-                'enqueue' => null,
+                'local_update_summary' => array(
+                    'inserted' => 0,
+                    'updated' => 0,
+                    'unchanged' => 0,
+                ),
+                'local_updates' => array(),
+                'rate_limited' => false,
+                'enqueue' => array(
+                    'disabled' => true,
+                    'message' => 'Parametr enqueue jest ignorowany; maintenance tylko pobiera oferty.',
+                ),
+                'remote_write_attempts' => 0,
             );
 
             $syncOptions = array(
@@ -344,24 +394,34 @@ class EmpikController extends Controller
                 }
             }
 
-            $enqueueOperations = $this->input('enqueue', '');
-            if (trim((string) $enqueueOperations) !== '') {
-                $operations = array_values(array_filter(array_map('trim', explode(',', (string) $enqueueOperations))));
-                $result['enqueue'] = $this->empik->enqueueWarehouseUpdates(
-                    $accountSelector,
-                    $operations,
-                    (int) $this->input('enqueue_limit', 500)
-                );
+            foreach ($result['sync'] as $syncResult) {
+                if (!is_array($syncResult)) {
+                    continue;
+                }
+
+                if (!empty($syncResult['rate_limited'])) {
+                    $result['rate_limited'] = true;
+                }
+
+                $summary = is_array($syncResult['local_update_summary'] ?? null)
+                    ? $syncResult['local_update_summary']
+                    : array();
+                foreach (array('inserted', 'updated', 'unchanged') as $status) {
+                    $result['local_update_summary'][$status] += (int) ($summary[$status] ?? 0);
+                }
+
+                $updates = is_array($syncResult['local_updates'] ?? null)
+                    ? $syncResult['local_updates']
+                    : array();
+                foreach ($updates as $update) {
+                    if (is_array($update)) {
+                        $result['local_updates'][] = $update;
+                    }
+                }
             }
 
-            $queueLimit = (int) $this->input('queue_limit', 50);
-            if ($queueLimit > 0) {
-                $result['queue'] = $this->empik->processQueue(array(
-                    'account' => $accountSelector,
-                    'limit' => $queueLimit,
-                    'max_runtime' => max(5, min(280, (int) $this->input('queue_max_runtime', 15))),
-                ));
-            }
+            $result['finished_at'] = date(DATE_ATOM);
+            $result['duration_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
 
             if ($this->wantsJson()) {
                 $this->jsonResponse($result);
@@ -371,12 +431,18 @@ class EmpikController extends Controller
             $this->setFlash('success', 'Maintenance Empik zakonczone. Sync kont: ' . count($result['sync']) . '.');
         } catch (Throwable $exception) {
             if ($this->wantsJson()) {
-                $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+                $this->jsonResponse(array(
+                    'ok' => false,
+                    'run_id' => $runId,
+                    'error' => $exception->getMessage(),
+                    'finished_at' => date(DATE_ATOM),
+                    'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                ), 500);
                 return;
             }
             $this->setFlash('error', $exception->getMessage());
         } finally {
-            $settings->set($lockKey, '');
+            $database->releaseAdvisoryLock(self::MAINTENANCE_LOCK_NAME);
         }
 
         $this->redirect('./index.php?controller=empik&action=index');
@@ -522,6 +588,24 @@ class EmpikController extends Controller
     private function wantsJson(): bool
     {
         return strtolower(trim((string) $this->input('format', ''))) === 'json';
+    }
+
+    private function processEmpikQueue(array $options): array
+    {
+        $database = $this->db();
+        if (!$database->acquireAdvisoryLock(self::QUEUE_LOCK_NAME)) {
+            return array(
+                'skipped' => true,
+                'reason' => 'Inny worker kolejki Empik jest teraz uruchomiony.',
+                'counts' => $this->empik->queueCounts(),
+            );
+        }
+
+        try {
+            return $this->empik->processQueue($options);
+        } finally {
+            $database->releaseAdvisoryLock(self::QUEUE_LOCK_NAME);
+        }
     }
 
     private function wantsQueueCron(): bool

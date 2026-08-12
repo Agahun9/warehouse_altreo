@@ -408,11 +408,11 @@
 </a></li>
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('set_ean'); return false;">
-    <i class="bi bi-file-earmark-bar-graph me-1"></i>Export CSV z do EAN
+    <i class="bi bi-file-earmark-bar-graph me-1"></i>Eksport CSV produktów do edycji
 </a></li>
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('import_ean'); return false;">
-    <i class="bi bi-file-earmark-arrow-up me-1"></i>Import CSV z EAN
+    <i class="bi bi-file-earmark-arrow-up me-1"></i>Import aktualizacji produktów z CSV
 </a></li>
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('update_price'); return false;">
@@ -503,12 +503,12 @@
                 <p class="mt-2 text-muted small">Zdjecia zostana zapisane w kolejnosci widocznej powyzej (numery 1, 2, 3...) dla wszystkich zaznaczonych produktow.</p>
               </div>
               <div id="import_ean_field" style="display:none; max-width: 400px;">
-                <label for="CSV_ean" class="form-label">Wybierz plik CSV z EAN:</label>
-                <input type="file" id="CSV_ean" type="file" name="csv_file" accept=".csv" class="form-control" />
-                <p class="mt-2 text-muted small">Wyślij plik CSV z EAN do systemu. Tej operacji nie można cofnąć!</p>
+                <label for="CSV_ean" class="form-label">Wybierz wyeksportowany plik CSV produktów:</label>
+                <input type="file" id="CSV_ean" name="csv_file" accept=".csv" class="form-control" />
+                <p class="mt-2 text-muted small">Z pliku zostaną zaktualizowane te same pola, które zawiera eksport: nazwa, marża, cena i EAN. Kolumna IDENTITY służy do wskazania produktu.</p>
               </div>
               <div id="set_ean_field" style="display:none; max-width: 400px;">
-                <p class="mb-2">Zaznaczone produkty zostaną wyeksportowane do pliku CSV (Do uzupełnienia EAN).</p>
+                <p class="mb-2">Zaznaczone produkty zostaną wyeksportowane do edytowalnego pliku CSV z nazwą, marżą, ceną i EAN.</p>
               </div>
               <div id="delete_field" style="display:none; max-width: 400px;">
                 <p class="mb-2 text-danger">Zaznaczone produkty zostaną trwale usunięte z systemu. Tej operacji nie można cofnąć!</p>
@@ -2409,6 +2409,17 @@
   if (productsBulkForm) {
     productsBulkForm.addEventListener('submit', function (event) {
       var actionInput = document.getElementById('bulk_action');
+      // Odpowiedz dla tego trybu jest pobieranym plikiem, a nie nowa strona.
+      // Globalny loader nie dostanie wiec zdarzenia "load" i nie moze byc tu wlaczany.
+      if (actionInput && actionInput.value === 'set_ean') {
+        productsBulkForm.setAttribute('data-no-page-loader', '1');
+        if (typeof window.hidePageLoader === 'function') {
+          window.hidePageLoader();
+        }
+        window.setTimeout(function () {
+          productsBulkForm.removeAttribute('data-no-page-loader');
+        }, 0);
+      }
       var selectedInputs = document.querySelectorAll('#price_marketplace_selected_inputs input[name="bulk_price_market_accounts[]"]');
       if (actionInput && actionInput.value === 'update_price' && selectedInputs.length === 0) {
         event.preventDefault();

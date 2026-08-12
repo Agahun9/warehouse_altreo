@@ -1620,21 +1620,21 @@ class ComputersController extends Controller
                 }
             }
         } elseif ($bulkAction === 'set_ean') {
+            $columns = $this->editableProductCsvColumns();
+            $headers = array_column($columns, 'header');
             $rows = array();
             foreach ($productIds as $productId) {
                 $product = $this->productById($productId);
                 if ($product === null) {
                     continue;
                 }
-                $rows[] = array(
-                    $product['id'] ?? '',
-                    $product['name'] ?? '',
-                    $product['profit'] ?? '',
-                    $product['price'] ?? '',
-                    $product['EAN'] ?? '',
-                );
+                $row = array();
+                foreach ($columns as $column) {
+                    $row[] = (string) ($product[$column['product_key']] ?? '');
+                }
+                $rows[] = $row;
             }
-            $this->streamCsv('EAN_export_' . date('Ymd_His') . '.csv', array('IDENTITY', 'NAME', 'profit','price', 'EAN'), $rows);
+            $this->streamCsv('produkty_export_' . date('Ymd_His') . '.csv', $headers, $rows);
         } elseif ($bulkAction === 'import_ean') {
             $this->importEanCsv();
             return;
@@ -4475,6 +4475,24 @@ class ComputersController extends Controller
         return trim((string) $value, '_') !== '' ? trim((string) $value, '_') : 'computers_export';
     }
 
+    /**
+     * One definition is intentionally shared by the editable-products export and
+     * import. This prevents the two operations from silently drifting apart when a
+     * column is added to the file in the future.
+     *
+     * @return array<int, array{header: string, product_key: string, type: string, editable: bool}>
+     */
+    private function editableProductCsvColumns(): array
+    {
+        return array(
+            array('header' => 'IDENTITY', 'product_key' => 'id', 'type' => 'integer', 'editable' => false),
+            array('header' => 'NAME', 'product_key' => 'name', 'type' => 'string', 'editable' => true),
+            array('header' => 'profit', 'product_key' => 'profit', 'type' => 'decimal', 'editable' => true),
+            array('header' => 'price', 'product_key' => 'price', 'type' => 'decimal', 'editable' => true),
+            array('header' => 'EAN', 'product_key' => 'EAN', 'type' => 'string', 'editable' => true),
+        );
+    }
+
     private function importEanCsv(): void
     {
         if (!isset($_FILES['csv_file']) || (int) ($_FILES['csv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -4493,26 +4511,56 @@ class ComputersController extends Controller
             $this->setFlash('error', json_encode(array('Nieprawidlowy plik CSV.')));
             $this->redirect($this->productsRedirectUrl());
         }
+        $headers = array_map(static function ($header): string {
+            return trim((string) $header);
+        }, $headers);
         $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $headers[0]);
 
+        $columns = $this->editableProductCsvColumns();
+        $headerIndexes = array_flip($headers);
+        $missingHeaders = array();
+        foreach ($columns as $column) {
+            if (!array_key_exists($column['header'], $headerIndexes)) {
+                $missingHeaders[] = $column['header'];
+            }
+        }
+        if ($missingHeaders !== array()) {
+            fclose($handle);
+            $this->setFlash('error', json_encode(array(
+                'Brakuje kolumn wymaganych przez eksport produktow: ' . implode(', ', $missingHeaders) . '.',
+            )));
+            $this->redirect($this->productsRedirectUrl());
+        }
+
         $updatedCount = 0;
+        $skippedCount = 0;
         while (($row = fgetcsv($handle, 0, ';')) !== false) {
-            $data = array_combine($headers, $row);
-            if (!is_array($data)) {
-                continue;
-            }
-            $id = (int) ($data['IDENTITY'] ?? 0);
+            $id = (int) ($row[$headerIndexes['IDENTITY']] ?? 0);
             if ($id <= 0) {
+                $skippedCount++;
                 continue;
             }
-            $this->db()->update(self::PRODUCTS_TABLE, array(
-                'profit' => (float) ($data['profit'] ?? 0),
-                'EAN' => trim((string) ($data['EAN'] ?? '')),
-            ), 'id = :id', array('id' => $id));
+
+            $payload = array();
+            foreach ($columns as $column) {
+                if (!$column['editable']) {
+                    continue;
+                }
+                $value = $row[$headerIndexes[$column['header']]] ?? '';
+                $payload[$column['product_key']] = $column['type'] === 'decimal'
+                    ? $this->normalizeDecimalInput($value)
+                    : trim((string) $value);
+            }
+
+            $this->db()->update(self::PRODUCTS_TABLE, $payload, 'id = :id', array('id' => $id));
             $updatedCount++;
         }
         fclose($handle);
-        $this->setFlash('success', 'Import EAN zakonczony. Zaktualizowano ' . $updatedCount . ' rekordow.');
+        $message = 'Import CSV produktow zakonczony. Zaktualizowano ' . $updatedCount . ' rekordow (nazwa, marza, cena i EAN).';
+        if ($skippedCount > 0) {
+            $message .= ' Pominieto wierszy bez poprawnego ID: ' . $skippedCount . '.';
+        }
+        $this->setFlash('success', $message);
         $this->redirect($this->productsRedirectUrl());
     }
 

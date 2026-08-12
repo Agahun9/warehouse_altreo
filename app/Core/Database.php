@@ -110,6 +110,70 @@ class Database
     }
 
     /**
+     * Acquires a connection-scoped MySQL advisory lock without waiting. MySQL releases
+     * this lock automatically when the request/connection dies, which makes it suitable
+     * for web workers that may be killed by PHP-FPM before a finally block can run.
+     */
+    public function acquireAdvisoryLock(string $name): bool
+    {
+        $driver = isset($this->config['driver']) ? (string) $this->config['driver'] : 'mysql';
+        if ($driver !== 'mysql') {
+            return true;
+        }
+
+        $result = $this->fetchColumn(
+            'SELECT GET_LOCK(:lock_name, 0)',
+            array('lock_name' => substr($name, 0, 64))
+        );
+
+        return (int) $result === 1;
+    }
+
+    public function releaseAdvisoryLock(string $name): void
+    {
+        $driver = isset($this->config['driver']) ? (string) $this->config['driver'] : 'mysql';
+        if ($driver !== 'mysql') {
+            return;
+        }
+
+        $this->fetchColumn(
+            'SELECT RELEASE_LOCK(:lock_name)',
+            array('lock_name' => substr($name, 0, 64))
+        );
+    }
+
+    public function advisoryLockOwner(string $name): ?int
+    {
+        $driver = isset($this->config['driver']) ? (string) $this->config['driver'] : 'mysql';
+        if ($driver !== 'mysql') {
+            return null;
+        }
+
+        $owner = $this->fetchColumn(
+            'SELECT IS_USED_LOCK(:lock_name)',
+            array('lock_name' => substr($name, 0, 64))
+        );
+
+        return $owner === false || $owner === null ? null : (int) $owner;
+    }
+
+    /** Interrupts the active statement without dropping/reconnecting the owning worker. */
+    public function interruptConnectionQuery(int $connectionId): bool
+    {
+        if ($connectionId <= 0) {
+            return false;
+        }
+
+        $currentId = (int) $this->fetchColumn('SELECT CONNECTION_ID()');
+        if ($currentId === $connectionId) {
+            return false;
+        }
+
+        $this->pdo->exec('KILL QUERY ' . $connectionId);
+        return true;
+    }
+
+    /**
      * Runs $callback with a hard MySQL-side cap on how long any single statement inside it
      * may run, then restores the previous (unlimited) setting. PHP's own set_time_limit()
      * cannot help here: it only fires between opcodes, never while execution is blocked
@@ -121,21 +185,32 @@ class Database
      */
     public function withStatementTimeoutMs(int $milliseconds, callable $callback)
     {
-        $applied = false;
+        $timeoutMode = '';
 
         try {
             $this->pdo->exec('SET SESSION MAX_EXECUTION_TIME = ' . max(0, $milliseconds));
-            $applied = true;
+            $timeoutMode = 'mysql';
         } catch (PDOException $exception) {
-            // Server doesn't support MAX_EXECUTION_TIME (e.g. MariaDB) - proceed without it.
+            // MariaDB uses max_statement_time (seconds) instead of MySQL's
+            // MAX_EXECUTION_TIME (milliseconds). Without this fallback, the Empik target
+            // selection query could remain inside MariaDB long after PHP's time limit.
+            try {
+                $seconds = max(0, $milliseconds) / 1000;
+                $this->pdo->exec('SET SESSION max_statement_time = ' . number_format($seconds, 3, '.', ''));
+                $timeoutMode = 'mariadb';
+            } catch (PDOException $mariaDbException) {
+                // Older/other database: proceed without a server-side statement timeout.
+            }
         }
 
         try {
             return $callback();
         } finally {
-            if ($applied) {
+            if ($timeoutMode !== '') {
                 try {
-                    $this->pdo->exec('SET SESSION MAX_EXECUTION_TIME = 0');
+                    $this->pdo->exec($timeoutMode === 'mysql'
+                        ? 'SET SESSION MAX_EXECUTION_TIME = 0'
+                        : 'SET SESSION max_statement_time = 0');
                 } catch (PDOException $exception) {
                     // Best-effort restore; nothing sensible to do if this fails too.
                 }

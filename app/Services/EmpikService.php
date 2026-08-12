@@ -187,8 +187,11 @@ class EmpikService
         $summary = array(
             'processed' => 0,
             'done' => 0,
+            'submitted' => 0,
+            'waiting' => 0,
             'error' => 0,
             'retry' => 0,
+            'log' => array(),
             'counts' => array(),
         );
 
@@ -204,20 +207,67 @@ class EmpikService
 
             $summary['processed']++;
             $this->storage->markQueueProcessing($queueId);
+            $logEntry = $this->queueLogEntry($row);
 
             try {
                 $offer = $this->storage->findOfferByRowId((int) ($row['offer_row_id'] ?? 0));
                 if (!$offer) {
                     throw new RuntimeException('Nie znaleziono oferty Empik do przetworzenia.');
                 }
+                $logEntry = $this->queueLogEntry($row, $offer);
+
+                $remoteImportId = trim((string) ($row['remote_import_id'] ?? ''));
+                $remoteImportType = trim((string) ($row['remote_import_type'] ?? ''));
+
+                // A previous tick already submitted this update. Check that exact import
+                // instead of sending a duplicate price/stock change on every retry.
+                if ($remoteImportId !== '' && $remoteImportType !== '') {
+                    $importState = $this->inspectImport($offer, $remoteImportType, $remoteImportId);
+                    $logEntry['import_id'] = $remoteImportId;
+                    $logEntry['import_type'] = $remoteImportType;
+                    $logEntry['remote_status'] = $importState['status'];
+
+                    if (!$importState['complete']) {
+                        $this->storage->markQueueWaiting($queueId, $remoteImportId, $remoteImportType);
+                        $summary['waiting']++;
+                        $logEntry['status'] = 'waiting';
+                        $logEntry['message'] = 'Empik nadal przetwarza import; status zostanie sprawdzony ponownie.';
+                        $summary['log'][] = $logEntry;
+                        continue;
+                    }
+
+                    $this->storage->markQueueDone($queueId, $remoteImportId, $remoteImportType);
+                    $summary['done']++;
+                    $logEntry['status'] = 'updated';
+                    $logEntry['message'] = 'Empik potwierdzil aktualizacje oferty.';
+                    $summary['log'][] = $logEntry;
+                    continue;
+                }
 
                 $result = $this->executeQueueOperation($offer, (string) ($row['operation'] ?? ''), is_array($row['payload'] ?? null) ? $row['payload'] : array());
-                $this->storage->markQueueDone(
+                $remoteImportId = trim((string) ($result['import_id'] ?? ''));
+                $remoteImportType = trim((string) ($result['import_type'] ?? ''));
+                if ($remoteImportId === '' || $remoteImportType === '') {
+                    throw new RuntimeException('Empik nie zwrocil danych potrzebnych do sprawdzenia importu.');
+                }
+
+                $this->storage->markQueueWaiting(
                     $queueId,
-                    isset($result['import_id']) ? (string) $result['import_id'] : null,
-                    isset($result['import_type']) ? (string) $result['import_type'] : null
+                    $remoteImportId,
+                    $remoteImportType,
+                    10,
+                    array(
+                        'previous_value' => $logEntry['previous_value'],
+                        'requested_value' => $logEntry['requested_value'],
+                        'submitted_at' => date(DATE_ATOM),
+                    )
                 );
-                $summary['done']++;
+                $summary['submitted']++;
+                $logEntry['status'] = 'submitted';
+                $logEntry['import_id'] = $remoteImportId;
+                $logEntry['import_type'] = $remoteImportType;
+                $logEntry['message'] = 'Aktualizacja zostala przyjeta przez Empik; potwierdzenie nastapi w kolejnym przebiegu.';
+                $summary['log'][] = $logEntry;
             } catch (EmpikRateLimitException $exception) {
                 $attempts = isset($row['attempts']) ? (int) $row['attempts'] : 0;
                 if ($attempts < self::RATE_LIMIT_MAX_ATTEMPTS) {
@@ -227,29 +277,43 @@ class EmpikService
                         $this->rateLimitRetryDelay($attempts, $exception->getRetryAfterSeconds())
                     );
                     $summary['retry']++;
+                    $logEntry['status'] = 'retry';
                 } else {
                     $this->storage->markQueueError($queueId, $exception->getMessage());
                     $summary['error']++;
+                    $logEntry['status'] = 'error';
                 }
+                $logEntry['message'] = $exception->getMessage();
+                $summary['log'][] = $logEntry;
             } catch (RuntimeException $exception) {
                 $attempts = isset($row['attempts']) ? (int) $row['attempts'] : 0;
                 if ($attempts < 1) {
                     $this->storage->markQueueRetry($queueId, $exception->getMessage(), 90);
                     $summary['retry']++;
+                    $logEntry['status'] = 'retry';
                 } else {
                     $this->storage->markQueueError($queueId, $exception->getMessage());
                     $summary['error']++;
+                    $logEntry['status'] = 'error';
                 }
+                $logEntry['message'] = $exception->getMessage();
+                $summary['log'][] = $logEntry;
             }
         }
 
         $summary['counts'] = $this->storage->queueCounts();
+        $summary['recent_log'] = $this->recentQueueLog(25);
         return $summary;
     }
 
     public function clearWholeQueue(): array
     {
         return $this->storage->clearWholeQueue();
+    }
+
+    public function cancelAutomatedWarehouseUpdates(): int
+    {
+        return $this->storage->cancelUnresolvedWarehouseUpdates();
     }
 
     public function clearQueueStatuses(bool $keepPending = true): array
@@ -262,8 +326,8 @@ class EmpikService
         $base = rtrim($baseUrl, '?&');
         $links = array(
             'queue_worker' => $base . '?controller=empik&action=processqueue&format=json&limit=50',
-            'sync_worker' => $base . '?controller=empik&action=maintenance&format=json&sync=1&queue_limit=50',
-            'maintenance' => $base . '?controller=empik&action=maintenance&format=json&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50',
+            'sync_worker' => $base . '?controller=empik&action=maintenance&format=json&sync=1',
+            'maintenance' => $base . '?controller=empik&action=maintenance&format=json&sync=1',
             'accounts' => array(),
         );
 
@@ -276,7 +340,7 @@ class EmpikService
                 'is_active' => (int) ($account['is_active'] ?? 0) === 1,
                 'sync' => $base . '?controller=empik&action=sync&format=json&account=' . $accountSlug,
                 'queue_only' => $base . '?controller=empik&action=processqueue&format=json&account=' . $accountSlug . '&limit=50',
-                'maintenance' => $base . '?controller=empik&action=maintenance&format=json&account=' . $accountSlug . '&sync=1&enqueue=set_price_from_product,set_stock_from_product&enqueue_limit=500&queue_limit=50',
+                'maintenance' => $base . '?controller=empik&action=maintenance&format=json&account=' . $accountSlug . '&sync=1',
             );
         }
 
@@ -315,39 +379,81 @@ class EmpikService
         $perOperationLimit = max(1, min(5000, $limit));
         $queued = 0;
         $offersConsidered = 0;
+        $log = array();
 
         // Each operation gets its own rotating target list via offersDueForOperation()
         // instead of reusing one shared "top N offers by id" batch for all operations: with
         // a 10-minute cron and a large active+linked catalog, always grabbing the same
         // highest-id rows meant most of the catalog never had its price/stock refreshed, and
         // offers already sitting in the queue for that operation would get queued again on
-        // every tick. offersDueForOperation() excludes offers with an unresolved queue entry
-        // for the operation and prioritises the ones queued longest ago (or never), so
-        // repeated runs sweep through the whole eligible set over time.
+        // every tick. offersDueForOperation() excludes unresolved entries and advances a
+        // persisted cursor, so repeated runs sweep through the whole eligible set. The
+        // backlog cap below prevents enqueue_limit=500 / queue_limit=50 from growing the
+        // pending queue by 450 rows on every cron tick.
         foreach ($operations as $operation) {
+            $queueAccountId = isset($filters['account_id']) ? (int) $filters['account_id'] : null;
+            $unresolved = $this->storage->unresolvedQueueCount($operation, $queueAccountId);
+            $availableSlots = max(0, $perOperationLimit - $unresolved);
+            if ($availableSlots <= 0) {
+                $log[] = array(
+                    'operation' => $operation,
+                    'status' => 'backlog_full',
+                    'offers' => 0,
+                    'queued' => 0,
+                    'backlog' => $unresolved,
+                    'message' => 'Kolejka ma juz limit oczekujacych wpisow; nowe oferty wejda po jej oproznieniu.',
+                );
+                continue;
+            }
+
             try {
                 // offersDueForOperation() runs under a DB-side statement timeout - if it
                 // still trips (e.g. an unexpectedly expensive "linked" warehouse match on
                 // this install), skip this operation for this tick rather than let it take
                 // the whole maintenance run down; nothing was queued, so it's picked back up
                 // automatically on the next cron tick.
-                $targets = $this->storage->offersDueForOperation($filters, $operation, $perOperationLimit);
+                $targets = $this->storage->offersDueForOperation($filters, $operation, $availableSlots);
             } catch (\Throwable $exception) {
+                $log[] = array(
+                    'operation' => $operation,
+                    'status' => 'error',
+                    'offers' => 0,
+                    'queued' => 0,
+                    'message' => $exception->getMessage(),
+                );
                 continue;
             }
 
             if ($targets === array()) {
+                $log[] = array(
+                    'operation' => $operation,
+                    'status' => 'nothing_to_enqueue',
+                    'offers' => 0,
+                    'queued' => 0,
+                    'message' => 'Brak nowych kwalifikujacych sie ofert dla tej operacji.',
+                );
                 continue;
             }
 
             $offersConsidered += count($targets);
-            $queued += $this->storage->enqueueOfferChanges($targets, $operation, array());
+            $operationQueued = $this->storage->enqueueOfferChanges($targets, $operation, array());
+            $queued += $operationQueued;
+            $log[] = array(
+                'operation' => $operation,
+                'status' => 'queued',
+                'offers' => count($targets),
+                'queued' => $operationQueued,
+                'backlog_before' => $unresolved,
+                'message' => 'Oferty dodane do kolejki aktualizacji Empik.',
+            );
         }
 
         return array(
             'operations' => $operations,
             'offers' => $offersConsidered,
             'queued' => $queued,
+            'log' => $log,
+            'diagnostics' => $this->storage->warehouseUpdateDiagnostics(),
             'counts' => $this->storage->queueCounts(),
         );
     }
@@ -363,6 +469,13 @@ class EmpikService
         $limit = 100;
         $synced = 0;
         $total = null;
+        $localUpdates = array();
+        $localUpdateSummary = array(
+            'inserted' => 0,
+            'updated' => 0,
+            'unchanged' => 0,
+        );
+        $rateLimit = null;
 
         // Mirakl's synchronous offer listing (used here) has no "updated since" filter -
         // only the asynchronous export endpoint (OF52) supports differential mode - so a
@@ -400,8 +513,21 @@ class EmpikService
                 }
 
                 if ($rows !== array()) {
+                    $existingRows = $this->storage->offersForSyncComparison(
+                        $accountId,
+                        array_column($rows, 'offer_id')
+                    );
+                    $pageUpdates = $this->buildLocalUpdateLog($rows, $existingRows, $account);
                     $this->storage->upsertOffers($rows);
                     $synced += count($rows);
+
+                    foreach ($pageUpdates as $pageUpdate) {
+                        $status = (string) ($pageUpdate['local_status'] ?? 'unchanged');
+                        if (isset($localUpdateSummary[$status])) {
+                            $localUpdateSummary[$status]++;
+                        }
+                        $localUpdates[] = $pageUpdate;
+                    }
                 }
 
                 $offset += count($offers);
@@ -418,22 +544,45 @@ class EmpikService
             }
 
             $this->storage->markAccountSyncSuccess($accountId);
+        } catch (EmpikRateLimitException $exception) {
+            // Pages committed before the limit was reached remain valid local updates. Do
+            // not discard their report and do not retry aggressively from this web request;
+            // requestApi() stores a shared cooldown respected by subsequent workers.
+            $this->storage->markAccountSyncError($accountId, $exception->getMessage());
+            $retryAfter = max(1, (int) ($exception->getRetryAfterSeconds() ?? 60));
+            $rateLimit = array(
+                'message' => $exception->getMessage(),
+                'retry_after_seconds' => $retryAfter,
+                'retry_at' => date(DATE_ATOM, time() + $retryAfter),
+            );
         } catch (RuntimeException $exception) {
             $this->storage->markAccountSyncError($accountId, $exception->getMessage());
             throw $exception;
         }
 
-        return array(
+        $result = array(
             'account' => array(
                 'id' => $accountId,
                 'name' => (string) $account['name'],
                 'slug' => (string) $account['slug'],
             ),
+            'status' => $rateLimit !== null
+                ? ($synced > 0 ? 'partially_synced_rate_limited' : 'rate_limited')
+                : ($finishedCycle ? 'completed' : 'partially_synced'),
             'synced_offers' => $synced,
             'total_count' => $total !== null ? $total : $synced,
             'finished_cycle' => $finishedCycle,
             'resume_offset' => $finishedCycle ? 0 : $offset,
+            'local_update_summary' => $localUpdateSummary,
+            'local_updates' => $localUpdates,
         );
+
+        if ($rateLimit !== null) {
+            $result['rate_limited'] = true;
+            $result['rate_limit'] = $rateLimit;
+        }
+
+        return $result;
     }
 
     public function searchCategories(string $search, bool $forceRefresh = false, ?int $accountId = null): array
@@ -1251,6 +1400,161 @@ class EmpikService
         );
     }
 
+    /**
+     * Builds a compact audit list returned by sync-only maintenance. Every downloaded row
+     * is listed: "inserted" and "updated" describe business-data changes, while
+     * "unchanged" means only last_synced_at was refreshed locally.
+     */
+    private function buildLocalUpdateLog(array $rows, array $existingRows, array $account): array
+    {
+        $comparisonFields = array(
+            'shop_sku', 'product_sku', 'product_id', 'product_title', 'description',
+            'category_code', 'category_label', 'state_code', 'active', 'quantity', 'price',
+            'total_price', 'currency_iso_code', 'min_shipping_price', 'leadtime_to_ship',
+        );
+        $result = array();
+
+        foreach ($rows as $row) {
+            $offerId = (int) ($row['offer_id'] ?? 0);
+            $previous = $existingRows[$offerId] ?? null;
+            $changedFields = array();
+
+            if (is_array($previous)) {
+                foreach ($comparisonFields as $field) {
+                    if (!$this->sameSyncedValue($field, $previous[$field] ?? null, $row[$field] ?? null)) {
+                        $changedFields[] = $field;
+                    }
+                }
+            }
+
+            $result[] = array(
+                'account_id' => (int) ($account['id'] ?? 0),
+                'account' => (string) ($account['slug'] ?? ''),
+                'offer_id' => (string) $offerId,
+                'shop_sku' => (string) ($row['shop_sku'] ?? ''),
+                'product_sku' => (string) ($row['product_sku'] ?? ''),
+                'title' => (string) ($row['product_title'] ?? ''),
+                'local_status' => $previous === null
+                    ? 'inserted'
+                    : ($changedFields !== array() ? 'updated' : 'unchanged'),
+                'changed_fields' => $changedFields,
+                'active' => (int) ($row['active'] ?? 0) === 1,
+                'quantity' => isset($row['quantity']) ? (int) $row['quantity'] : null,
+                'price' => $row['price'] ?? null,
+                'state_code' => (string) ($row['state_code'] ?? ''),
+                'synced_at' => (string) ($row['last_synced_at'] ?? ''),
+            );
+        }
+
+        return $result;
+    }
+
+    private function sameSyncedValue(string $field, $previous, $current): bool
+    {
+        if ($previous === null || $current === null) {
+            return $previous === null && $current === null;
+        }
+
+        if (in_array($field, array('active', 'quantity', 'leadtime_to_ship'), true)) {
+            return (int) $previous === (int) $current;
+        }
+
+        if (in_array($field, array('price', 'total_price', 'min_shipping_price'), true)) {
+            return number_format((float) $previous, 2, '.', '') === number_format((float) $current, 2, '.', '');
+        }
+
+        return (string) $previous === (string) $current;
+    }
+
+    private function queueLogEntry(array $row, array $offer = array()): array
+    {
+        $source = $offer !== array() ? $offer : $row;
+        $operation = trim((string) ($row['operation'] ?? ''));
+        $payload = is_array($row['payload'] ?? null) ? $row['payload'] : array();
+        $requestedValue = null;
+        $previousValue = null;
+
+        switch ($operation) {
+            case 'set_price':
+                $requestedValue = isset($payload['value']) ? (string) $payload['value'] : null;
+                $previousValue = isset($source['price']) ? (string) $source['price'] : null;
+                break;
+            case 'set_price_from_product':
+                $requestedValue = isset($source['warehouse_price_gross']) && $source['warehouse_price_gross'] !== null
+                    ? number_format((float) $source['warehouse_price_gross'], 2, '.', '')
+                    : null;
+                $previousValue = isset($source['price']) ? (string) $source['price'] : null;
+                break;
+            case 'set_stock_from_product':
+                $requestedValue = isset($source['warehouse_quantity']) && $source['warehouse_quantity'] !== null
+                    ? (int) $source['warehouse_quantity']
+                    : null;
+                $previousValue = isset($source['quantity']) ? (int) $source['quantity'] : null;
+                break;
+            case 'set_description':
+                $requestedValue = isset($payload['value']) ? (string) $payload['value'] : null;
+                break;
+            case 'replace_description':
+                $requestedValue = array(
+                    'search' => (string) ($payload['search'] ?? ''),
+                    'replace' => (string) ($payload['replace'] ?? ''),
+                );
+                break;
+            case 'end_offer':
+                $requestedValue = false;
+                break;
+            case 'resume_offer':
+                $requestedValue = true;
+                break;
+        }
+
+        return array(
+            'queue_id' => (int) ($row['id'] ?? 0),
+            'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+            'offer_id' => (string) ($source['offer_id'] ?? ''),
+            'shop_sku' => (string) ($source['shop_sku'] ?? ''),
+            'product_sku' => (string) ($source['product_sku'] ?? ''),
+            'title' => (string) ($source['product_title'] ?? ''),
+            'account' => (string) ($source['account_name'] ?? ''),
+            'operation' => $operation,
+            'previous_value' => $previousValue,
+            'requested_value' => $requestedValue,
+        );
+    }
+
+    private function recentQueueLog(int $limit): array
+    {
+        $result = array();
+        foreach ($this->storage->recentQueueEntries($limit) as $row) {
+            $payload = is_array($row['payload'] ?? null) ? $row['payload'] : array();
+            $maintenanceLog = is_array($payload['_maintenance_log'] ?? null)
+                ? $payload['_maintenance_log']
+                : array();
+            $status = strtolower(trim((string) ($row['status'] ?? '')));
+
+            $result[] = array(
+                'queue_id' => (int) ($row['queue_id'] ?? 0),
+                'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+                'offer_id' => (string) ($row['offer_id'] ?? ''),
+                'shop_sku' => (string) ($row['shop_sku'] ?? ''),
+                'product_sku' => (string) ($row['product_sku'] ?? ''),
+                'title' => (string) ($row['product_title'] ?? ''),
+                'account' => (string) ($row['account_name'] ?? ''),
+                'operation' => (string) ($row['operation'] ?? ''),
+                'status' => $status === 'done' ? 'updated' : $status,
+                'previous_value' => $maintenanceLog['previous_value'] ?? null,
+                'requested_value' => $maintenanceLog['requested_value'] ?? ($payload['value'] ?? null),
+                'import_id' => (string) ($row['remote_import_id'] ?? ''),
+                'import_type' => (string) ($row['remote_import_type'] ?? ''),
+                'error' => (string) ($row['error_message'] ?? ''),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+                'finished_at' => (string) ($row['finished_at'] ?? ''),
+            );
+        }
+
+        return $result;
+    }
+
     private function normalizeQueueOperation(string $operation): string
     {
         $operation = trim($operation);
@@ -1356,14 +1660,6 @@ class EmpikService
             throw new RuntimeException('Empik nie zwrocil identyfikatora importu cen.');
         }
 
-        $status = $this->waitForImportCompletion($offer, 'price', $importId);
-        if (!empty($status['has_error_report'])) {
-            $error = $this->fetchImportErrorReport($offer, 'price', $importId);
-            if ($error !== '') {
-                throw new RuntimeException($error);
-            }
-        }
-
         return array('import_id' => $importId, 'import_type' => 'price');
     }
 
@@ -1381,14 +1677,6 @@ class EmpikService
         $importId = trim((string) ($response['import_id'] ?? ''));
         if ($importId === '') {
             throw new RuntimeException('Empik nie zwrocil identyfikatora importu stanow.');
-        }
-
-        $status = $this->waitForImportCompletion($offer, 'stock', $importId);
-        if (!empty($status['has_error_report'])) {
-            $error = $this->fetchImportErrorReport($offer, 'stock', $importId);
-            if ($error !== '') {
-                throw new RuntimeException($error);
-            }
         }
 
         return array('import_id' => $importId, 'import_type' => 'stock');
@@ -1421,14 +1709,6 @@ class EmpikService
             throw new RuntimeException('Empik nie zwrocil identyfikatora importu ofert.');
         }
 
-        $status = $this->waitForImportCompletion($offer, 'offer', $importId);
-        if (!empty($status['has_error_report'])) {
-            $error = $this->fetchImportErrorReport($offer, 'offer', $importId);
-            if ($error !== '') {
-                throw new RuntimeException($error);
-            }
-        }
-
         return array('import_id' => $importId, 'import_type' => 'offer');
     }
 
@@ -1456,30 +1736,31 @@ class EmpikService
         }
     }
 
-    private function waitForImportCompletion(array $offer, string $type, string $importId): array
+    /**
+     * Checks one already-submitted import. It deliberately does not sleep/poll: maintenance
+     * must return promptly, and the queue row retains the import id for the next cron tick.
+     */
+    private function inspectImport(array $offer, string $type, string $importId): array
     {
-        $attempts = 8;
-        $status = array();
+        $status = $this->fetchImportStatus($offer, $type, $importId);
+        $state = strtoupper(trim((string) ($status['status'] ?? '')));
 
-        for ($i = 0; $i < $attempts; $i++) {
-            if ($i > 0) {
-                sleep(1);
-            }
+        if ($state === 'FAILED') {
+            $error = $this->fetchImportErrorReport($offer, $type, $importId);
+            throw new RuntimeException($error !== '' ? $error : ('Import Empik zakonczyl sie statusem FAILED (' . $type . ').'));
+        }
 
-            $status = $this->fetchImportStatus($offer, $type, $importId);
-            $state = strtoupper(trim((string) ($status['status'] ?? '')));
-
-            if ($state === 'COMPLETE') {
-                return $status;
-            }
-
-            if ($state === 'FAILED') {
-                $error = $this->fetchImportErrorReport($offer, $type, $importId);
-                throw new RuntimeException($error !== '' ? $error : ('Import Empik zakonczyl sie statusem FAILED (' . $type . ').'));
+        if ($state === 'COMPLETE' && !empty($status['has_error_report'])) {
+            $error = $this->fetchImportErrorReport($offer, $type, $importId);
+            if ($error !== '') {
+                throw new RuntimeException($error);
             }
         }
 
-        throw new RuntimeException('Import Empik nadal jest w toku (' . $type . ', import ' . $importId . '). Sprobuj ponownie za chwile.');
+        return array(
+            'complete' => $state === 'COMPLETE',
+            'status' => $state !== '' ? $state : 'UNKNOWN',
+        );
     }
 
     private function fetchImportStatus(array $offer, string $type, string $importId): array
@@ -1592,6 +1873,7 @@ class EmpikService
             $url .= '?' . http_build_query($query);
         }
 
+        $this->enforceApiCooldown($account);
         $this->throttleBeforeRequest();
 
         $ch = curl_init($url);
@@ -1601,8 +1883,8 @@ class EmpikService
 
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(5, min(30, (int) $this->configValue('request_timeout_seconds', 15))));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(2, min(15, (int) $this->configValue('connect_timeout_seconds', 5))));
         $headers = array(
             'Accept: ' . (string) $this->configValue('accept', 'application/json'),
             'Authorization: ' . (string) ($account['api_key'] ?? ''),
@@ -1643,9 +1925,12 @@ class EmpikService
         }
 
         if ($httpCode === 429) {
+            $retryAfter = $this->parseRetryAfterSeconds($responseHeaders);
+            $retryAfter = $this->rememberApiCooldown($account, $retryAfter);
             throw new EmpikRateLimitException(
-                'Empik API zwrocilo blad HTTP 429: przekroczono limit zapytan.',
-                $this->parseRetryAfterSeconds($responseHeaders)
+                'Empik API zwrocilo HTTP 429. Kolejne wywolanie API dla tego konta zostalo wstrzymane do '
+                    . date(DATE_ATOM, time() + $retryAfter) . '.',
+                $retryAfter
             );
         }
 
@@ -1686,6 +1971,7 @@ class EmpikService
             $url .= '?' . http_build_query($query);
         }
 
+        $this->enforceApiCooldown($account);
         $this->throttleBeforeRequest();
 
         $ch = curl_init($url);
@@ -1695,8 +1981,8 @@ class EmpikService
 
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(5, min(30, (int) $this->configValue('request_timeout_seconds', 15))));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(2, min(15, (int) $this->configValue('connect_timeout_seconds', 5))));
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
             'Accept: text/plain, text/csv, application/octet-stream',
             'Authorization: ' . (string) ($account['api_key'] ?? ''),
@@ -1723,9 +2009,12 @@ class EmpikService
         }
 
         if ($httpCode === 429) {
+            $retryAfter = $this->parseRetryAfterSeconds($responseHeaders);
+            $retryAfter = $this->rememberApiCooldown($account, $retryAfter);
             throw new EmpikRateLimitException(
-                'Empik API zwrocilo blad HTTP 429: przekroczono limit zapytan.',
-                $this->parseRetryAfterSeconds($responseHeaders)
+                'Empik API zwrocilo HTTP 429. Kolejne wywolanie API dla tego konta zostalo wstrzymane do '
+                    . date(DATE_ATOM, time() + $retryAfter) . '.',
+                $retryAfter
             );
         }
 
@@ -1738,7 +2027,10 @@ class EmpikService
 
     private function throttleBeforeRequest(): void
     {
-        $minIntervalMicros = max(0, (int) $this->configValue('min_request_interval_ms', 350)) * 1000;
+        // Keep the protection in tracked application code as well as configuration. The
+        // config directory is deployment-specific on this installation, so an older
+        // production config must not silently restore the former ~3 requests/second pace.
+        $minIntervalMicros = max(1100, (int) $this->configValue('min_request_interval_ms', 1100)) * 1000;
         if ($minIntervalMicros <= 0) {
             return;
         }
@@ -1751,6 +2043,45 @@ class EmpikService
         }
 
         self::$lastRequestAtMicros = microtime(true);
+    }
+
+    private function enforceApiCooldown(array $account): void
+    {
+        $accountId = (int) ($account['id'] ?? 0);
+        if ($accountId <= 0) {
+            return;
+        }
+
+        $cached = $this->storage->getCache('empik:api-rate-limit:account:' . $accountId);
+        $retryAt = is_array($cached) ? (int) ($cached['retry_at'] ?? 0) : 0;
+        $remaining = $retryAt - time();
+        if ($remaining <= 0) {
+            return;
+        }
+
+        throw new EmpikRateLimitException(
+            'Empik API pozostaje w okresie ochronnym po HTTP 429 do ' . date(DATE_ATOM, $retryAt) . '.',
+            $remaining
+        );
+    }
+
+    private function rememberApiCooldown(array $account, ?int $retryAfterSeconds): int
+    {
+        $retryAfter = max(
+            60,
+            min(86400, (int) ($retryAfterSeconds ?? $this->configValue('rate_limit_cooldown_seconds', 120)))
+        );
+        $accountId = (int) ($account['id'] ?? 0);
+
+        if ($accountId > 0) {
+            $this->storage->putCache(
+                'empik:api-rate-limit:account:' . $accountId,
+                array('retry_at' => time() + $retryAfter),
+                $retryAfter
+            );
+        }
+
+        return $retryAfter;
     }
 
     private function rateLimitRetryDelay(int $attempts, ?int $retryAfterSeconds): int
