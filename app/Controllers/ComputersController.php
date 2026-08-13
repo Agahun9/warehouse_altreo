@@ -754,13 +754,23 @@ class ComputersController extends Controller
             return;
         }
 
+        $moreleSkuLookup = array();
+        foreach (array_keys($skuLookup) as $sku) {
+            $matches = array();
+            if (preg_match('/^ALTREO_([1-9][0-9]*)$/', $sku, $matches) === 1 && (int) $matches[1] < 1000) {
+                $moreleSkuLookup[$matches[1]] = true;
+                continue;
+            }
+            $moreleSkuLookup[$sku] = true;
+        }
+
         $rows = $this->db()->fetchAll(
             "SELECT sku, account_id, account_name FROM morele_offers WHERE active = 1 AND sku IS NOT NULL AND sku <> ''"
         );
 
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?? ''));
-            if ($sku === '' || !isset($skuLookup[$sku])) {
+            if ($sku === '' || !isset($moreleSkuLookup[$sku])) {
                 continue;
             }
             $accountId = (int) ($row['account_id'] ?? 0);
@@ -2799,7 +2809,7 @@ class ComputersController extends Controller
                 ? $this->matchIdentifierAccounts($genericCandidates, $erliIdentifiers)
                 : array();
             $product['morele_accounts'] = $wantsMorele
-                ? $this->matchIdentifierAccounts($genericCandidates, $moreleIdentifiers)
+                ? $this->matchIdentifierAccounts($this->moreleSkuCandidatesForComputerProduct($product), $moreleIdentifiers)
                 : array();
             $product['empik_accounts'] = $wantsEmpik
                 ? $this->matchIdentifierAccounts($this->empikSkuCandidatesForComputerProduct($product), $empikIdentifiers)
@@ -2939,18 +2949,24 @@ class ComputersController extends Controller
 
         $matchedIds = array();
         foreach ($products as $product) {
-            $candidates = $this->computerProductSkuCandidates($product);
-            if ($candidates === array()) {
+            $genericCandidates = $this->computerProductSkuCandidates($product);
+            $moreleCandidates = $this->moreleSkuCandidatesForComputerProduct($product);
+            if ($genericCandidates === array() && $moreleCandidates === array()) {
                 continue;
             }
 
             $warehousePrice = round((float) ($product['price'] ?? 0), 2);
             $marketPrices = array();
-            foreach ($candidates as $candidate) {
-                foreach (array($allegroPrices, $empikPrices, $erliPrices, $morelePrices) as $priceMap) {
+            foreach ($genericCandidates as $candidate) {
+                foreach (array($allegroPrices, $empikPrices, $erliPrices) as $priceMap) {
                     foreach (($priceMap[$candidate] ?? array()) as $marketPrice) {
                         $marketPrices[] = $marketPrice;
                     }
+                }
+            }
+            foreach ($moreleCandidates as $candidate) {
+                foreach (($morelePrices[$candidate] ?? array()) as $marketPrice) {
+                    $marketPrices[] = $marketPrice;
                 }
             }
 
@@ -3461,7 +3477,7 @@ class ComputersController extends Controller
                 continue;
             }
 
-            foreach ($this->allegroSkuCandidatesForComputerProduct($product) as $sku) {
+            foreach ($this->moreleSkuCandidatesForComputerProduct($product) as $sku) {
                 if (!isset($skuMap[$sku])) {
                     $skuMap[$sku] = array();
                 }
@@ -3699,6 +3715,20 @@ class ComputersController extends Controller
 
     private function empikSkuCandidatesForComputerProduct(array $product): array
     {
+        return $this->computerProductSkuCandidates($product);
+    }
+
+    /**
+     * Legacy Morele offers for products below id 1000 use the bare numeric product id.
+     * Every other marketplace, and newer Morele products, keep the stored ALTREO_<id> SKU.
+     */
+    private function moreleSkuCandidatesForComputerProduct(array $product): array
+    {
+        $productId = (int) ($product['id'] ?? 0);
+        if ($productId > 0 && $productId < 1000) {
+            return array((string) $productId);
+        }
+
         return $this->computerProductSkuCandidates($product);
     }
 

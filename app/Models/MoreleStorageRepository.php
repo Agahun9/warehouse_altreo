@@ -420,11 +420,10 @@ class MoreleStorageRepository
             . " WHEN offer.status IS NOT NULL AND offer.status <> '' THEN LOWER(offer.status)\n"
             . " WHEN offer.active = 1 THEN 'active' ELSE 'inactive' END AS effective_status,\n"
             . "(SELECT q.status FROM morele_offer_change_queue q WHERE q.offer_row_id = offer.id ORDER BY q.id DESC LIMIT 1) AS queue_status,\n"
-            . "(SELECT p.id FROM pr_products_altreo p WHERE p.sku COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci"
-            . " OR CAST(p.id AS CHAR) COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci"
-            . " OR CAST(p.offerid AS CHAR) COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci"
-            . " OR CONCAT('ALTREO_', p.id) COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci"
-            . " OR CONCAT('ALTREO_', p.offerid) COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci LIMIT 1) AS warehouse_product_id\n"
+            . "(SELECT p.id FROM pr_products_altreo p WHERE"
+            . " (p.id < 1000 AND CAST(p.id AS CHAR) COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci)"
+            . " OR (p.id >= 1000 AND p.sku COLLATE utf8mb4_unicode_ci = offer.sku COLLATE utf8mb4_unicode_ci)"
+            . " LIMIT 1) AS warehouse_product_id\n"
             . "FROM morele_offers offer";
     }
 

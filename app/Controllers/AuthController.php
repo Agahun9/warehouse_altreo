@@ -15,6 +15,8 @@ use Throwable;
 
 class AuthController extends Controller
 {
+    private const REMEMBER_ME_TTL = 2592000;
+
     /** @var UserRepository */
     private $users;
 
@@ -188,9 +190,17 @@ class AuthController extends Controller
             $this->redirect($this->authUrl('login'));
         }
 
-        $token = $this->jwt->issue(array('user_id' => (int) $user['id'], 'email' => (string) $user['email'], 'role' => (string) $user['role']));
         $config = Config::get('app');
-        setcookie((string) $config['jwt_cookie'], $token, time() + (int) $config['jwt_ttl'], '/', '', false, true);
+        $rememberMe = (string) $this->input('remember_me', '') === '1';
+        $tokenTtl = $rememberMe
+            ? (int) ($config['remember_me_ttl'] ?? self::REMEMBER_ME_TTL)
+            : (int) $config['jwt_ttl'];
+        $token = $this->jwt->issue(
+            array('user_id' => (int) $user['id'], 'email' => (string) $user['email'], 'role' => (string) $user['role']),
+            $tokenTtl
+        );
+
+        $this->setAuthCookie($token, $rememberMe ? time() + $tokenTtl : 0);
 
         $this->setFlash('success', 'Zalogowano pomyslnie.');
         $this->redirect($this->appUrl('index'));
@@ -198,8 +208,7 @@ class AuthController extends Controller
 
     public function logout(): void
     {
-        $config = Config::get('app');
-        setcookie((string) $config['jwt_cookie'], '', time() - 3600, '/', '', false, true);
+        $this->setAuthCookie('', time() - 3600);
         $this->setFlash('success', 'Wylogowano.');
         $this->redirect($this->authUrl('login'));
     }
@@ -365,6 +374,21 @@ class AuthController extends Controller
     private function authUrl(string $action, array $params = array()): string
     {
         return $this->appUrl('auth', $action, $params);
+    }
+
+    private function setAuthCookie(string $token, int $expires): void
+    {
+        $config = Config::get('app');
+        $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+
+        setcookie((string) $config['jwt_cookie'], $token, array(
+            'expires' => $expires,
+            'path' => '/',
+            'secure' => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ));
     }
 
     private function appUrl(string $controller, string $action = '', array $params = array()): string

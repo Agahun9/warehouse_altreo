@@ -362,7 +362,7 @@
             <div class="col-xl-2 col-md-6">
               <label class="form-label">Szukaj</label>
               <input type="text" name="q" value="{$filters.q|escape}" class="form-control" placeholder='offer id / nazwa / SKU, kilka ID oddziel przecinkiem'>
-              <div class="form-text">Mozesz wkleic kilka ID oddzielonych przecinkiem lub srednikiem. Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
+              <div class="form-text">Kilka Offer ID oddziel przecinkiem lub srednikiem (dopasowanie dokladne). Negacja: wpisz <code>-etui</code>, <code>!etui</code> albo <code>-"iphone 15"</code>, aby wykluczyc fraze z wynikow.</div>
             </div>
             <div class="col-xl-2 col-md-4">
               <label class="form-label">SKU</label>

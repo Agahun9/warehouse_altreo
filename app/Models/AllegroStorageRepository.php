@@ -1887,42 +1887,35 @@ class AllegroStorageRepository
         $query = isset($filters['q']) ? trim((string) $filters['q']) : '';
         if ($query !== '') {
             $searchTokens = $this->splitOfferSearchTokens($query);
-            $includeClauses = array();
-            foreach ($searchTokens['include'] as $index => $token) {
-                $tokenKey = 'q_in_' . $index;
-                if (!empty($searchTokens['list_mode'])) {
-                    $exactClauses = array(
-                        'offers.sku = :' . $tokenKey . '_offer_sku_exact',
-                        'warehouse.sku = :' . $tokenKey . '_warehouse_sku_exact',
-                    );
-                    $params[$tokenKey . '_offer_sku_exact'] = $token;
-                    $params[$tokenKey . '_warehouse_sku_exact'] = $token;
-
-                    if (ctype_digit($token)) {
-                        $exactClauses[] = 'offers.offer_id = :' . $tokenKey . '_offer_id_exact';
-                        $params[$tokenKey . '_offer_id_exact'] = $token;
-                    }
-
-                    $includeClauses[] = '(' . implode(' OR ', $exactClauses) . ')';
-                    continue;
+            if (!empty($searchTokens['list_mode']) && $searchTokens['include'] !== array()) {
+                $offerIdPlaceholders = array();
+                foreach ($searchTokens['include'] as $index => $offerId) {
+                    $paramKey = 'q_offer_id_' . $index;
+                    $offerIdPlaceholders[] = ':' . $paramKey;
+                    $params[$paramKey] = $offerId;
                 }
 
-                $includeClauses[] = '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
-                    . ' OR offers.sku LIKE :' . $tokenKey . '_offer_sku'
-                    . ' OR offers.name LIKE :' . $tokenKey . '_offer_name'
-                    . ' OR warehouse.sku LIKE :' . $tokenKey . '_warehouse_sku'
-                    . ' OR warehouse.product_name LIKE :' . $tokenKey . '_warehouse_name)';
-                $tokenLike = '%' . $token . '%';
-                $params[$tokenKey . '_offer_id'] = $tokenLike;
-                $params[$tokenKey . '_offer_sku'] = $tokenLike;
-                $params[$tokenKey . '_offer_name'] = $tokenLike;
-                $params[$tokenKey . '_warehouse_sku'] = $tokenLike;
-                $params[$tokenKey . '_warehouse_name'] = $tokenLike;
-            }
+                $whereParts[] = 'offers.offer_id IN (' . implode(', ', $offerIdPlaceholders) . ')';
+            } else {
+                $includeClauses = array();
+                foreach ($searchTokens['include'] as $index => $token) {
+                    $tokenKey = 'q_in_' . $index;
+                    $includeClauses[] = '(offers.offer_id LIKE :' . $tokenKey . '_offer_id'
+                        . ' OR offers.sku LIKE :' . $tokenKey . '_offer_sku'
+                        . ' OR offers.name LIKE :' . $tokenKey . '_offer_name'
+                        . ' OR warehouse.sku LIKE :' . $tokenKey . '_warehouse_sku'
+                        . ' OR warehouse.product_name LIKE :' . $tokenKey . '_warehouse_name)';
+                    $tokenLike = '%' . $token . '%';
+                    $params[$tokenKey . '_offer_id'] = $tokenLike;
+                    $params[$tokenKey . '_offer_sku'] = $tokenLike;
+                    $params[$tokenKey . '_offer_name'] = $tokenLike;
+                    $params[$tokenKey . '_warehouse_sku'] = $tokenLike;
+                    $params[$tokenKey . '_warehouse_name'] = $tokenLike;
+                }
 
-            if ($includeClauses !== array()) {
-                $glue = !empty($searchTokens['list_mode']) ? ' OR ' : ' AND ';
-                $whereParts[] = '(' . implode($glue, $includeClauses) . ')';
+                if ($includeClauses !== array()) {
+                    $whereParts[] = '(' . implode(' AND ', $includeClauses) . ')';
+                }
             }
 
             foreach ($searchTokens['exclude'] as $index => $token) {
