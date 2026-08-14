@@ -29,6 +29,10 @@ class CsvExportService
             ? $tpl['description_templates']
             : array();
         $exportOptions['csv_generated_images_settings'] = $this->generatedImagesColumnSettings($tpl['columns']);
+        $exportOptions['csv_description_images_settings'] = $this->descriptionImagesColumnSettings(
+            $tpl['columns'],
+            $exportOptions['csv_generated_images_settings']
+        );
 
         $stream = fopen('php://temp', 'r+');
         $headers = array();
@@ -157,6 +161,27 @@ class CsvExportService
         }
 
         return $firstMatch;
+    }
+
+    private function descriptionImagesColumnSettings(array $columns, array $fallback): array
+    {
+        foreach ($columns as $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $sourceType = strtolower(trim((string) ($column['source_type'] ?? 'field')));
+            $sourceValue = strtolower(trim((string) ($column['source_value'] ?? '')));
+            if ($sourceType !== 'field' || !in_array($sourceValue, array('images', 'generated_images', 'product.generated_images'), true)) {
+                continue;
+            }
+
+            return isset($column['settings']) && is_array($column['settings'])
+                ? $column['settings']
+                : array();
+        }
+
+        return $fallback;
     }
 
     private function hasCustomizedGeneratedImagesSettings(array $settings): bool

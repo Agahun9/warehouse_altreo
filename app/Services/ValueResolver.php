@@ -1328,13 +1328,20 @@ class ValueResolver
 
         $imageUrl = '';
         if ($source === 'IMG_EU') {
-            $settings = isset($exportOptions['csv_generated_images_settings']) && is_array($exportOptions['csv_generated_images_settings'])
-                ? $exportOptions['csv_generated_images_settings']
-                : array();
-            $images = $this->generateImageExportFlatCatalog($product, $exportOptions, $settings);
-            if (isset($images[$index - 1])) {
-                $imageUrl = trim((string) $images[$index - 1]);
+            // Keep description images in exactly the same order and row context as
+            // the "Generowane sciezki obrazow (EU)" field. The flat catalog groups
+            // all thumbnails first, which makes description slots point at
+            // thumbnails instead of the mockup/media/grid URLs for the CSV row.
+            $descriptionExportOptions = $exportOptions;
+            if (isset($exportOptions['csv_description_images_settings']) && is_array($exportOptions['csv_description_images_settings'])) {
+                $descriptionExportOptions['csv_generated_images_settings'] = $exportOptions['csv_description_images_settings'];
             }
+
+            $imageUrl = trim((string) $this->resolveFieldValue(
+                $product,
+                'generated_images[' . $index . ']',
+                $descriptionExportOptions
+            ));
         }
 
         if ($imageUrl === '') {

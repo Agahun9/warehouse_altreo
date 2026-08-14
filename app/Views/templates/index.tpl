@@ -1,16 +1,27 @@
-<main class="app-main">
+<main class="app-main dashboard-page">
   <div class="app-content-header">
     <div class="container-fluid">
-      <div class="row">
-        <div class="col-sm-6">
-          <h3 class="mb-0">{$contentTitle|escape}</h3>
-          <p class="text-secondary mb-0">{$pageDescription|escape}</p>
+      <div class="dashboard-hero">
+        <div class="dashboard-hero-copy">
+          <div class="dashboard-eyebrow"><i class="bi bi-grid-1x2-fill"></i> Centrum operacyjne</div>
+          <h1>{$contentTitle|escape}</h1>
+          <p>{$pageDescription|escape}</p>
         </div>
-        <div class="col-sm-6">
-          <ol class="breadcrumb float-sm-end">
+        <div class="dashboard-hero-side">
+          <ol class="breadcrumb dashboard-breadcrumb justify-content-lg-end">
             <li class="breadcrumb-item"><a href="{$baseUrl}?controller=index">Start</a></li>
             <li class="breadcrumb-item active" aria-current="page">{$breadcrumbCurrent|escape}</li>
           </ol>
+          <div class="dashboard-clock ms-lg-auto" aria-label="Aktualna data i godzina w Warszawie">
+            <div class="dashboard-clock-icon" aria-hidden="true">
+              <i class="bi bi-clock"></i>
+            </div>
+            <div class="dashboard-clock-copy">
+              <time class="dashboard-clock-time" id="dashboardClockTime">--:--:--</time>
+              <div class="dashboard-clock-date" id="dashboardClockDate">Ładowanie daty…</div>
+            </div>
+            <span class="dashboard-clock-zone">Warszawa</span>
+          </div>
         </div>
       </div>
     </div>
@@ -36,6 +47,358 @@
       {/if}
 
       <style>
+        .dashboard-page {
+          --dashboard-ink: #0f172a;
+          --dashboard-muted: #64748b;
+          --dashboard-border: rgba(148, 163, 184, 0.2);
+        }
+
+        .dashboard-page .app-content-header {
+          padding-bottom: 0.75rem;
+        }
+
+        .dashboard-page .app-content {
+          padding-top: 0.5rem;
+        }
+
+        .dashboard-hero {
+          position: relative;
+          isolation: isolate;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 2rem;
+          overflow: hidden;
+          min-height: 12rem;
+          padding: 2rem 2.25rem;
+          border-radius: 1.5rem;
+          color: #fff;
+          background:
+            radial-gradient(circle at 82% 12%, rgba(96, 165, 250, 0.36), transparent 28%),
+            linear-gradient(125deg, #0f172a 0%, #172554 48%, #1d4ed8 100%);
+          box-shadow: 0 24px 50px rgba(15, 23, 42, 0.18);
+        }
+
+        .dashboard-hero::before,
+        .dashboard-hero::after {
+          content: '';
+          position: absolute;
+          z-index: -1;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 50%;
+        }
+
+        .dashboard-hero::before {
+          width: 18rem;
+          height: 18rem;
+          right: -7rem;
+          bottom: -12rem;
+        }
+
+        .dashboard-hero::after {
+          width: 10rem;
+          height: 10rem;
+          right: 28%;
+          top: -7rem;
+        }
+
+        .dashboard-hero-copy {
+          max-width: 46rem;
+        }
+
+        .dashboard-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.75rem;
+          color: #bfdbfe;
+          font-size: 0.75rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .dashboard-hero h1 {
+          margin: 0;
+          font-size: clamp(2rem, 4vw, 3.2rem);
+          font-weight: 800;
+          letter-spacing: -0.045em;
+        }
+
+        .dashboard-hero p {
+          max-width: 38rem;
+          margin: 0.7rem 0 0;
+          color: rgba(255, 255, 255, 0.72);
+          font-size: 1rem;
+        }
+
+        .dashboard-hero-side {
+          flex: 0 0 auto;
+        }
+
+        .dashboard-breadcrumb {
+          margin: 0 0 0.65rem;
+          font-size: 0.78rem;
+        }
+
+        .dashboard-breadcrumb .breadcrumb-item,
+        .dashboard-breadcrumb .breadcrumb-item.active,
+        .dashboard-breadcrumb .breadcrumb-item::before {
+          color: rgba(255, 255, 255, 0.58);
+        }
+
+        .dashboard-breadcrumb a {
+          color: #dbeafe;
+          text-decoration: none;
+        }
+
+        .dashboard-clock {
+          display: flex;
+          align-items: center;
+          gap: 0.8rem;
+          width: fit-content;
+          max-width: 100%;
+          padding: 0.7rem 0.85rem;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 1rem;
+          background: rgba(255, 255, 255, 0.1);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+          backdrop-filter: blur(10px);
+        }
+
+        .dashboard-clock-icon {
+          display: grid;
+          place-items: center;
+          width: 2.6rem;
+          height: 2.6rem;
+          flex: 0 0 auto;
+          border-radius: 0.8rem;
+          color: #fff;
+          background: linear-gradient(135deg, #3b82f6, #6366f1);
+          box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+          font-size: 1.25rem;
+        }
+
+        .dashboard-clock-copy {
+          min-width: 8.5rem;
+        }
+
+        .dashboard-clock-time {
+          display: block;
+          color: #fff;
+          font-size: 1.45rem;
+          font-weight: 800;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: 0.04em;
+          line-height: 1.05;
+        }
+
+        .dashboard-clock-date {
+          margin-top: 0.2rem;
+          color: rgba(255, 255, 255, 0.66);
+          font-size: 0.78rem;
+          font-weight: 500;
+          white-space: nowrap;
+        }
+
+        .dashboard-clock-zone {
+          align-self: flex-start;
+          padding: 0.2rem 0.48rem;
+          border-radius: 999px;
+          color: #dbeafe;
+          background: rgba(255, 255, 255, 0.1);
+          font-size: 0.68rem;
+          font-weight: 700;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+        }
+
+        .dashboard-section-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          margin: 1.5rem 0 0.85rem;
+        }
+
+        .dashboard-section-heading h2 {
+          margin: 0;
+          color: var(--dashboard-ink);
+          font-size: 1.05rem;
+          font-weight: 800;
+          letter-spacing: -0.015em;
+        }
+
+        .dashboard-section-heading span {
+          color: var(--dashboard-muted);
+          font-size: 0.8rem;
+        }
+
+        .dashboard-stat-card {
+          --dashboard-accent: #2563eb;
+          --dashboard-accent-soft: rgba(37, 99, 235, 0.11);
+          position: relative;
+          overflow: hidden;
+          height: calc(100% - 1rem);
+          min-height: 9.5rem;
+          margin-bottom: 1rem;
+          padding: 1.25rem;
+          border: 1px solid var(--dashboard-border);
+          border-radius: 1.2rem;
+          background: rgba(255, 255, 255, 0.94);
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .dashboard-stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 36px rgba(15, 23, 42, 0.11);
+        }
+
+        .dashboard-stat-card::after {
+          content: '';
+          position: absolute;
+          width: 7rem;
+          height: 7rem;
+          right: -3.25rem;
+          bottom: -3.25rem;
+          border-radius: 50%;
+          background: var(--dashboard-accent-soft);
+        }
+
+        .dashboard-stat-success { --dashboard-accent: #059669; --dashboard-accent-soft: rgba(5, 150, 105, 0.1); }
+        .dashboard-stat-warning { --dashboard-accent: #d97706; --dashboard-accent-soft: rgba(217, 119, 6, 0.1); }
+        .dashboard-stat-danger { --dashboard-accent: #dc2626; --dashboard-accent-soft: rgba(220, 38, 38, 0.1); }
+        .dashboard-stat-info { --dashboard-accent: #0891b2; --dashboard-accent-soft: rgba(8, 145, 178, 0.1); }
+        .dashboard-stat-secondary { --dashboard-accent: #64748b; --dashboard-accent-soft: rgba(100, 116, 139, 0.1); }
+        .dashboard-stat-dark { --dashboard-accent: #334155; --dashboard-accent-soft: rgba(51, 65, 85, 0.1); }
+
+        .dashboard-stat-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+
+        .dashboard-stat-icon {
+          display: grid;
+          place-items: center;
+          width: 3rem;
+          height: 3rem;
+          flex: 0 0 auto;
+          border-radius: 0.9rem;
+          color: var(--dashboard-accent);
+          background: var(--dashboard-accent-soft);
+          font-size: 1.4rem;
+        }
+
+        .dashboard-stat-value {
+          color: var(--dashboard-ink);
+          font-size: 2rem;
+          font-weight: 800;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: -0.04em;
+          line-height: 1;
+        }
+
+        .dashboard-stat-label {
+          margin-top: 0.55rem;
+          color: var(--dashboard-muted);
+          font-size: 0.86rem;
+          font-weight: 600;
+        }
+
+        .dashboard-stat-status {
+          position: absolute;
+          left: 1.25rem;
+          bottom: 1rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          color: var(--dashboard-accent);
+          font-size: 0.7rem;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+
+        .dashboard-stat-status::before {
+          content: '';
+          width: 0.42rem;
+          height: 0.42rem;
+          border-radius: 50%;
+          background: currentColor;
+          box-shadow: 0 0 0 3px var(--dashboard-accent-soft);
+        }
+
+        .dashboard-page .card:not(.dashboard-focus-card) {
+          overflow: hidden;
+          border: 1px solid var(--dashboard-border);
+          border-radius: 1.15rem;
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+        }
+
+        .dashboard-page .card:not(.dashboard-focus-card) > .card-header {
+          padding: 1rem 1.15rem;
+          border-bottom-color: var(--dashboard-border);
+          background: rgba(248, 250, 252, 0.72);
+        }
+
+        .dashboard-page .card-title {
+          color: var(--dashboard-ink);
+          font-weight: 750;
+        }
+
+        .dashboard-page .table > :not(caption) > * > * {
+          padding: 0.78rem 0.85rem;
+          border-color: rgba(148, 163, 184, 0.16);
+        }
+
+        .dashboard-page .table thead th {
+          color: #475569;
+          background: #f8fafc;
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.055em;
+          text-transform: uppercase;
+        }
+
+        .dashboard-page .table-hover > tbody > tr:hover > * {
+          background: rgba(239, 246, 255, 0.72);
+        }
+
+        @media (max-width: 991.98px) {
+          .dashboard-hero {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 1.25rem;
+          }
+
+          .dashboard-hero-side {
+            width: 100%;
+          }
+
+          .dashboard-breadcrumb {
+            justify-content: flex-start !important;
+          }
+        }
+
+        @media (max-width: 575.98px) {
+          .dashboard-hero {
+            min-height: 0;
+            padding: 1.4rem;
+            border-radius: 1.2rem;
+          }
+
+          .dashboard-clock {
+            width: 100%;
+          }
+
+          .dashboard-clock-zone {
+            margin-left: auto;
+          }
+        }
+
         .dashboard-focus-card {
           position: relative;
           overflow: hidden;
@@ -259,19 +622,31 @@
         }
       </style>
 
-      <div class="row">
+      <div class="dashboard-section-heading">
+        <h2>Przegląd magazynu</h2>
+        <span>Dane operacyjne w jednym miejscu</span>
+      </div>
+
+      <div class="row g-3">
         {foreach $stats as $stat}
           <div class="col-xl-3 col-lg-4 col-sm-6">
-            <div class="small-box text-bg-{$stat.theme|escape}">
-              <div class="inner">
-                <h3>{$stat.value|escape}</h3>
-                <p>{$stat.label|escape}</p>
+            <div class="dashboard-stat-card dashboard-stat-{$stat.theme|escape}">
+              <div class="dashboard-stat-top">
+                <div>
+                  <div class="dashboard-stat-value">{$stat.value|escape}</div>
+                  <div class="dashboard-stat-label">{$stat.label|escape}</div>
+                </div>
+                <div class="dashboard-stat-icon"><i class="bi {$stat.icon|escape}"></i></div>
               </div>
-              <div class="small-box-icon"><i class="bi {$stat.icon|escape}"></i></div>
-              <a href="{$baseUrl}?controller=index" class="small-box-footer link-light link-underline-opacity-0">Szczegoly <i class="bi bi-arrow-right-short"></i></a>
+              <div class="dashboard-stat-status">Stan bieżący</div>
             </div>
           </div>
         {/foreach}
+      </div>
+
+      <div class="dashboard-section-heading">
+        <h2>Operacje i aktywność</h2>
+        <span>Najważniejsze procesy oraz ostatnie zmiany</span>
       </div>
 
       <div class="row">
@@ -563,3 +938,46 @@
     </div>
   </div>
 </main>
+
+<script>
+  (function () {
+    var timeElement = document.getElementById('dashboardClockTime');
+    var dateElement = document.getElementById('dashboardClockDate');
+
+    if (!timeElement || !dateElement) {
+      return;
+    }
+
+    var clockFormatter = new Intl.DateTimeFormat('pl-PL', {
+      timeZone: 'Europe/Warsaw',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    });
+    var dateFormatter = new Intl.DateTimeFormat('pl-PL', {
+      timeZone: 'Europe/Warsaw',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    var lastDate = '';
+
+    function updateDashboardClock() {
+      var now = new Date();
+      var formattedDate = dateFormatter.format(now);
+
+      timeElement.textContent = clockFormatter.format(now);
+      timeElement.setAttribute('datetime', now.toISOString());
+
+      if (formattedDate !== lastDate) {
+        dateElement.textContent = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+        lastDate = formattedDate;
+      }
+    }
+
+    updateDashboardClock();
+    window.setInterval(updateDashboardClock, 1000);
+  })();
+</script>
