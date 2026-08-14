@@ -362,6 +362,18 @@ class SellasistService
         ));
     }
 
+    public function addOrderNote(int $orderId, string $text): array
+    {
+        $this->ensureConfigured();
+
+        $response = $this->request('POST', '/api/v1/notes', array(
+            'order_id' => $orderId,
+            'text' => $text,
+        ));
+
+        return is_array($response) ? $response : array();
+    }
+
     public function pickingStatusId(): int
     {
         return $this->normalizeStatusId(
