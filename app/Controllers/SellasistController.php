@@ -146,8 +146,8 @@ class SellasistController extends Controller
 
         try {
             $order = $this->sellasist->getOrderById($orderId);
-            $note = $this->buildComputerSpecificationNote($order);
-            $this->sellasist->addOrderNote($orderId, $note);
+            $notes = $this->buildComputerSpecificationNotes($order);
+            $this->sellasist->replaceFirstTwoOrderNotes($orderId, $notes['html'], $notes['plain_text']);
             echo 'OK';
         } catch (Throwable $exception) {
             http_response_code(502);
@@ -155,7 +155,7 @@ class SellasistController extends Controller
         }
     }
 
-    private function buildComputerSpecificationNote(array $order): string
+    private function buildComputerSpecificationNotes(array $order): array
     {
         $items = array();
         foreach (array('carts', 'products', 'items', 'order_products') as $key) {
@@ -165,7 +165,8 @@ class SellasistController extends Controller
             }
         }
 
-        $sections = array();
+        $htmlSections = array();
+        $plainTextSections = array();
         foreach ($items as $item) {
             if (!is_array($item)) {
                 continue;
@@ -185,17 +186,21 @@ class SellasistController extends Controller
             }
 
             $components = $this->computerComponents((string) ($product['id_components'] ?? ''));
-            $sections[] = $this->computerSpecificationSection($product, $components, $sku);
+            $htmlSections[] = $this->computerSpecificationSection($product, $components, $sku);
+            $plainTextSections[] = $this->computerPlainTextSpecification($components);
         }
 
-        if ($sections === array()) {
+        if ($htmlSections === array()) {
             throw new RuntimeException('Nie znaleziono komputera magazynowego dla SKU z zamówienia.');
         }
 
-        return '<div style="font-family:Arial,sans-serif;color:#1f2937">'
-            . '<div style="font-size:18px;font-weight:700;margin-bottom:12px">Specyfikacja zamówienia</div>'
-            . implode('<div style="height:12px"></div>', $sections)
-            . '</div>';
+        return array(
+            'html' => '<div style="font-family:Arial,sans-serif;color:#1f2937">'
+                . '<div style="font-size:18px;font-weight:700;margin-bottom:12px">Specyfikacja zamówienia</div>'
+                . implode('<div style="height:12px"></div>', $htmlSections)
+                . '</div>',
+            'plain_text' => implode("\n", $plainTextSections),
+        );
     }
 
     private function findComputerProductBySku(string $sku)
@@ -342,6 +347,29 @@ class SellasistController extends Controller
             . '<strong>Sugerowana cena magazynowa: ' . $price . ' zł</strong>'
             . '</div>'
             . '</div>';
+    }
+
+    private function computerPlainTextSpecification(array $components): string
+    {
+        $values = array();
+        foreach ($components as $component) {
+            $specification = trim((string) ($component['name_spec'] ?? ''));
+            if ($specification === '') {
+                $specification = trim((string) ($component['name'] ?? ''));
+            }
+            if ($specification === '') {
+                $specification = trim((string) ($component['name_title'] ?? ''));
+            }
+            if ($specification !== '') {
+                $values[] = $specification;
+            }
+        }
+
+        if ($values === array()) {
+            return 'Specyfikacja';
+        }
+
+        return 'Specyfikacja ' . implode(' / ', $values);
     }
 
     private function escapeNoteHtml(string $value): string

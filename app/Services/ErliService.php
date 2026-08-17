@@ -313,8 +313,24 @@ class ErliService
         $cycle = $currentCycle !== '' ? $currentCycle : $this->uuidV4();
         $after = $afterExternalId !== '' ? $afterExternalId : null;
         $finishedCycle = false;
+        $recentlyRefreshed = 0;
         try {
             $this->storage->markAccountSyncStarted($accountId, $cycle, $after);
+
+            // A full snapshot is intentionally paged by externalId and can take many
+            // maintenance runs. Refresh the newest remote changes first so that newly
+            // created and recently edited ERLI products are visible locally at once.
+            // This remains a read-only ERLI operation: POST /products/_search followed
+            // only by local database upserts.
+            $recentItems = $this->fetchRemoteProductBatch($account, null, $pageLimit, 'updated', 'DESC');
+            foreach ($recentItems as $item) {
+                if (!is_array($item) || trim((string) ($item['externalId'] ?? '')) === '') {
+                    continue;
+                }
+
+                $this->storage->upsertRemoteProductSnapshot($accountId, $item, $cycle);
+                $recentlyRefreshed++;
+            }
 
             for ($batch = 0; $batch < $maxBatches; $batch++) {
                 $items = $this->fetchRemoteProductBatch($account, $after, $pageLimit);
@@ -366,6 +382,7 @@ class ErliService
             ),
             'synced_products' => $synced,
             'pages_processed' => $pagesProcessed,
+            'recently_refreshed' => $recentlyRefreshed,
             'finished_cycle' => $finishedCycle,
             'next_after' => $finishedCycle ? null : $after,
         );
@@ -602,13 +619,21 @@ class ErliService
         );
     }
 
-    private function fetchRemoteProductBatch(array $account, ?string $after, int $pageLimit): array
+    private function fetchRemoteProductBatch(
+        array $account,
+        ?string $after,
+        int $pageLimit,
+        string $sortField = 'externalId',
+        string $order = 'ASC'
+    ): array
     {
+        $sortField = in_array($sortField, array('externalId', 'updated'), true) ? $sortField : 'externalId';
+        $order = strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
         $body = array(
             'pagination' => array(
                 'limit' => max(1, min(100, $pageLimit)),
-                'order' => 'ASC',
-                'sortField' => 'externalId',
+                'order' => $order,
+                'sortField' => $sortField,
             ),
             'filter' => array(
                 'field' => 'archived',

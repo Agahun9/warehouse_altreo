@@ -374,6 +374,35 @@ class SellasistService
         return is_array($response) ? $response : array();
     }
 
+    public function replaceFirstTwoOrderNotes(int $orderId, string $htmlNote, string $plainTextNote): void
+    {
+        $this->ensureConfigured();
+
+        $notes = $this->request('GET', '/api/v1/notes/' . $orderId, null, true);
+        if (!is_array($notes)) {
+            $notes = array();
+        }
+
+        usort($notes, static function ($left, $right): int {
+            $leftId = is_array($left) ? (int) ($left['id'] ?? 0) : 0;
+            $rightId = is_array($right) ? (int) ($right['id'] ?? 0) : 0;
+
+            return $rightId <=> $leftId;
+        });
+
+        foreach (array_slice($notes, 0, 2) as $note) {
+            $noteId = is_array($note) ? (int) ($note['id'] ?? 0) : 0;
+            if ($noteId > 0) {
+                $this->request('DELETE', '/api/v1/notes/' . $noteId);
+            }
+        }
+
+        // Sellasist pokazuje najnowsza notatke jako pierwsza. HTML zapisujemy jako drugi,
+        // aby po utworzeniu znalazl sie nad wersja tekstowa.
+        $this->addOrderNote($orderId, $plainTextNote);
+        $this->addOrderNote($orderId, $htmlNote);
+    }
+
     public function pickingStatusId(): int
     {
         return $this->normalizeStatusId(
