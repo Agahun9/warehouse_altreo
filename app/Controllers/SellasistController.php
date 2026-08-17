@@ -360,6 +360,9 @@ class SellasistController extends Controller
             if ($specification === '') {
                 $specification = trim((string) ($component['name_title'] ?? ''));
             }
+            if (mb_strtoupper($specification, 'UTF-8') === 'BRAK') {
+                $specification = 'SAM KOMPUTER';
+            }
             if ($specification !== '') {
                 $values[] = $specification;
             }
@@ -369,7 +372,7 @@ class SellasistController extends Controller
             return 'Specyfikacja';
         }
 
-        return 'Specyfikacja ' . implode(' / ', $values);
+        return "Specyfikacja\n" . implode(" /\n", $values) . ' /';
     }
 
     private function escapeNoteHtml(string $value): string
