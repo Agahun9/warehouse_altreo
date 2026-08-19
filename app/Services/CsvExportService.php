@@ -129,7 +129,6 @@ class CsvExportService
     private function generatedImagesColumnSettings(array $columns): array
     {
         $firstMatch = array();
-        $configuredMatch = array();
 
         foreach ($columns as $column) {
             if (!is_array($column)) {
@@ -152,12 +151,11 @@ class CsvExportService
             }
 
             if ($this->hasCustomizedGeneratedImagesSettings($settings)) {
-                $configuredMatch = $settings;
+                // Image settings are shared by every generated_images column.
+                // The editor tells the user to configure them in the first such
+                // column, so later (possibly stale) settings must not override it.
+                return $settings;
             }
-        }
-
-        if ($configuredMatch !== array()) {
-            return $configuredMatch;
         }
 
         return $firstMatch;
