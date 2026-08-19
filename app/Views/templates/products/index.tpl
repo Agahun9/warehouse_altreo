@@ -1112,12 +1112,12 @@
                 <input type="text" name="image_collection_code" class="form-control form-control-sm" placeholder="np. A100">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Zakres kolejki <span class="csv-help-icon" tabindex="0" role="button" title="Zakres do gridow i tokenow kolejki, np. A100-A250. Na tej podstawie auto wylicza grid." data-bs-toggle="tooltip">i</span></label>
-                <input type="text" name="image_queue_range" class="form-control form-control-sm" placeholder="np. A100-A250">
+                <label class="form-label small">Zakres kolejki <span class="csv-help-icon" tabindex="0" role="button" title="Zakres do gridow i tokenow kolejki, np. A100-A250 albo TT510B-TT550B. Na tej podstawie auto wylicza grid i liczbe zdjec." data-bs-toggle="tooltip">i</span></label>
+                <input type="text" name="image_queue_range" class="form-control form-control-sm" placeholder="np. TT510B-TT550B">
               </div>
               <div class="col-md-4">
-                <label class="form-label small">Wzory miniatur <span class="csv-help-icon" tabindex="0" role="button" title="Lista albo zakres wzorow dla tokenu {ldelim}{ldelim}queue_item{rdelim}{rdelim}, np. A100 A200 A234 albo AK020-AK040. Zakres AK020-AK040 da wszystkie wzory po kolei." data-bs-toggle="tooltip">i</span></label>
-                <input type="text" name="thumbnail_pattern_list" class="form-control form-control-sm" placeholder="np. AK020-AK040 lub A100 A200 A234">
+                <label class="form-label small">Wzory miniatur <span class="csv-help-icon" tabindex="0" role="button" title="Lista albo zakres wzorow dla tokenu {ldelim}{ldelim}queue_item{rdelim}{rdelim}, np. A100 A200 A234, AK020-AK040 albo TB510B-TB522B. Zakres da wszystkie wzory po kolei." data-bs-toggle="tooltip">i</span></label>
+                <input type="text" name="thumbnail_pattern_list" class="form-control form-control-sm" placeholder="np. TB510B-TB522B lub A100 A200 A234">
               </div>
               <div class="col-md-4">
                 <label class="form-label small">Grid <span class="csv-help-icon" tabindex="0" role="button" title="Uklad grafik w gridzie, np. 3x2. Przycisk Auto dobiera grid do zakresu kolejki." data-bs-toggle="tooltip">i</span></label>
@@ -1514,22 +1514,24 @@ document.addEventListener('DOMContentLoaded', function() {
       return { range: '', from: '', to: '', count: 0 };
     }
 
-    var match = normalized.match(/^([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)$/);
+    var match = normalized.match(/^([A-Z]*)(\d+)([A-Z]*)\s*-\s*([A-Z]*)(\d+)([A-Z]*)$/);
     if (!match) {
       return { range: normalized, from: normalized, to: normalized, count: 1 };
     }
 
     var prefixFrom = String(match[1] || '');
-    var prefixTo = String(match[3] || prefixFrom);
+    var suffixFrom = String(match[3] || '');
+    var prefixTo = String(match[4] || prefixFrom);
     var numberFrom = Number(match[2] || 0);
-    var numberTo = Number(match[4] || 0);
+    var numberTo = Number(match[5] || 0);
+    var suffixTo = String(match[6] || '');
 
-    if (prefixFrom !== prefixTo || numberTo < numberFrom) {
+    if (prefixFrom !== prefixTo || suffixFrom !== suffixTo || numberTo < numberFrom) {
       return { range: normalized, from: normalized, to: normalized, count: 1 };
     }
 
-    var fromValue = prefixFrom + String(match[2] || '');
-    var toValue = prefixTo + String(match[4] || '');
+    var fromValue = prefixFrom + String(match[2] || '') + suffixFrom;
+    var toValue = prefixTo + String(match[5] || '') + suffixTo;
     return {
       range: fromValue + '-' + toValue,
       from: fromValue,
@@ -1558,13 +1560,13 @@ document.addEventListener('DOMContentLoaded', function() {
       uniqueItems.push(normalizedItem);
     }
 
-    function addRange(prefix, fromNumber, toNumber, padLength) {
+    function addRange(prefix, fromNumber, toNumber, padLength, suffix) {
       for (var number = fromNumber; number <= toNumber; number++) {
-        var suffix = String(number);
-        while (suffix.length < padLength) {
-          suffix = '0' + suffix;
+        var numberPart = String(number);
+        while (numberPart.length < padLength) {
+          numberPart = '0' + numberPart;
         }
-        addItem(prefix + suffix);
+        addItem(prefix + numberPart + String(suffix || ''));
       }
     }
 
@@ -1574,14 +1576,16 @@ document.addEventListener('DOMContentLoaded', function() {
         continue;
       }
 
-      var rangeMatch = item.match(/^([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)$/);
+      var rangeMatch = item.match(/^([A-Z]*)(\d+)([A-Z]*)\s*-\s*([A-Z]*)(\d+)([A-Z]*)$/);
       if (rangeMatch) {
         var prefixFrom = String(rangeMatch[1] || '');
-        var prefixTo = String(rangeMatch[3] || prefixFrom);
+        var suffixFrom = String(rangeMatch[3] || '');
+        var prefixTo = String(rangeMatch[4] || prefixFrom);
         var numberFrom = Number(rangeMatch[2] || 0);
-        var numberTo = Number(rangeMatch[4] || 0);
-        if (prefixFrom === prefixTo && numberTo >= numberFrom) {
-          addRange(prefixFrom, numberFrom, numberTo, String(rangeMatch[2] || '').length);
+        var numberTo = Number(rangeMatch[5] || 0);
+        var suffixTo = String(rangeMatch[6] || '');
+        if (prefixFrom === prefixTo && suffixFrom === suffixTo && numberTo >= numberFrom) {
+          addRange(prefixFrom, numberFrom, numberTo, String(rangeMatch[2] || '').length, suffixFrom);
           continue;
         }
       }

@@ -2950,22 +2950,24 @@ class CsvTemplateController extends Controller
             );
         }
 
-        if (preg_match('/^\s*([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)\s*$/', $value, $matches) === 1) {
+        if (preg_match('/^\s*([A-Z]*)(\d+)([A-Z]*)\s*-\s*([A-Z]*)(\d+)([A-Z]*)\s*$/', $value, $matches) === 1) {
             $prefixFrom = (string) $matches[1];
             $numberFrom = (int) $matches[2];
-            $prefixTo = (string) ($matches[3] !== '' ? $matches[3] : $prefixFrom);
-            $numberTo = (int) $matches[4];
+            $suffixFrom = (string) $matches[3];
+            $prefixTo = (string) ($matches[4] !== '' ? $matches[4] : $prefixFrom);
+            $numberTo = (int) $matches[5];
+            $suffixTo = (string) $matches[6];
 
-            if ($prefixFrom === $prefixTo && $numberTo >= $numberFrom) {
-                $from = $prefixFrom . $matches[2];
-                $to = $prefixTo . $matches[4];
+            if ($prefixFrom === $prefixTo && $suffixFrom === $suffixTo && $numberTo >= $numberFrom) {
+                $from = $prefixFrom . $matches[2] . $suffixFrom;
+                $to = $prefixTo . $matches[5] . $suffixTo;
 
                 return array(
                     'range' => $from . '-' . $to,
                     'from' => $from,
                     'to' => $to,
                     'count' => ($numberTo - $numberFrom) + 1,
-                    'items' => $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2])),
+                    'items' => $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2]), $suffixFrom),
                 );
             }
         }
@@ -2999,14 +3001,16 @@ class CsvTemplateController extends Controller
                 continue;
             }
 
-            if (preg_match('/^\s*([A-Z]*)(\d+)\s*-\s*([A-Z]*)(\d+)\s*$/', $part, $matches) === 1) {
+            if (preg_match('/^\s*([A-Z]*)(\d+)([A-Z]*)\s*-\s*([A-Z]*)(\d+)([A-Z]*)\s*$/', $part, $matches) === 1) {
                 $prefixFrom = (string) $matches[1];
                 $numberFrom = (int) $matches[2];
-                $prefixTo = (string) ($matches[3] !== '' ? $matches[3] : $prefixFrom);
-                $numberTo = (int) $matches[4];
+                $suffixFrom = (string) $matches[3];
+                $prefixTo = (string) ($matches[4] !== '' ? $matches[4] : $prefixFrom);
+                $numberTo = (int) $matches[5];
+                $suffixTo = (string) $matches[6];
 
-                if ($prefixFrom === $prefixTo && $numberTo >= $numberFrom) {
-                    $items = array_merge($items, $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2])));
+                if ($prefixFrom === $prefixTo && $suffixFrom === $suffixTo && $numberTo >= $numberFrom) {
+                    $items = array_merge($items, $this->expandQueueRangeItems($prefixFrom, $numberFrom, $numberTo, strlen((string) $matches[2]), $suffixFrom));
                     continue;
                 }
             }
@@ -3017,7 +3021,7 @@ class CsvTemplateController extends Controller
         return array_values(array_unique($items));
     }
 
-    private function expandQueueRangeItems(string $prefix, int $from, int $to, int $padLength = 0): array
+    private function expandQueueRangeItems(string $prefix, int $from, int $to, int $padLength = 0, string $suffix = ''): array
     {
         $items = array();
         if ($to < $from) {
@@ -3025,8 +3029,8 @@ class CsvTemplateController extends Controller
         }
 
         for ($number = $from; $number <= $to; $number++) {
-            $suffix = $padLength > 0 ? str_pad((string) $number, $padLength, '0', STR_PAD_LEFT) : (string) $number;
-            $items[] = $prefix . $suffix;
+            $numberPart = $padLength > 0 ? str_pad((string) $number, $padLength, '0', STR_PAD_LEFT) : (string) $number;
+            $items[] = $prefix . $numberPart . $suffix;
         }
 
         return $items;

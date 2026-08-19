@@ -563,7 +563,7 @@ class ProductController extends Controller
         $queueRange = strtoupper(trim((string) $this->input('image_queue_range', '')));
         $queueFrom = $queueRange;
         $queueTo = $queueRange;
-        if (preg_match('/^\s*([A-Z]*\d+)\s*-\s*([A-Z]*\d+)\s*$/', $queueRange, $queueMatches) === 1) {
+        if (preg_match('/^\s*([A-Z]*\d+[A-Z]*)\s*-\s*([A-Z]*\d+[A-Z]*)\s*$/', $queueRange, $queueMatches) === 1) {
             $queueFrom = (string) $queueMatches[1];
             $queueTo = (string) $queueMatches[2];
         }

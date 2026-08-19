@@ -47,10 +47,7 @@ class CsvExportService
             $rows = array_slice($products, 0, $previewLimit);
         }
 
-        $queueItems = isset($exportOptions['image_queue_items']) && is_array($exportOptions['image_queue_items'])
-            ? array_values($exportOptions['image_queue_items'])
-            : array();
-        $queueItemIndex = 0;
+        $queueItems = $this->queueItemsForRows($exportOptions);
 
         foreach ($rows as $product) {
             $resolvedColumns = array();
@@ -81,7 +78,7 @@ class CsvExportService
                 for ($rowIndex = 0; $rowIndex < $rowCount; $rowIndex++) {
                     $rowExportOptions = $exportOptions;
                     $rowExportOptions['csv_row_index'] = $rowIndex;
-                    $queueItem = isset($queueItems[$queueItemIndex + $rowIndex]) ? $queueItems[$queueItemIndex + $rowIndex] : '';
+                    $queueItem = isset($queueItems[$rowIndex]) ? $queueItems[$rowIndex] : '';
                     if ($queueItem !== '') {
                         $rowExportOptions['image_queue_item'] = $queueItem;
                     }
@@ -96,7 +93,7 @@ class CsvExportService
                 $line = array();
                 foreach ($resolvedColumns as $resolvedColumn) {
                     if (!empty($resolvedColumn['queue_item'])) {
-                        $line[] = isset($queueItems[$queueItemIndex]) ? $queueItems[$queueItemIndex] : '';
+                        $line[] = isset($queueItems[$rowIndex]) ? $queueItems[$rowIndex] : '';
                         continue;
                     }
 
@@ -104,7 +101,6 @@ class CsvExportService
                 }
 
                 fputcsv($stream, $line, $delimiter);
-                $queueItemIndex++;
             }
         }
 
@@ -124,6 +120,29 @@ class CsvExportService
         }
 
         return $csv;
+    }
+
+    private function queueItemsForRows(array $exportOptions): array
+    {
+        $items = isset($exportOptions['thumbnail_pattern_items']) && is_array($exportOptions['thumbnail_pattern_items'])
+            ? $exportOptions['thumbnail_pattern_items']
+            : array();
+
+        $items = array_values(array_filter(array_map('strval', $items), static function (string $item): bool {
+            return trim($item) !== '';
+        }));
+
+        if ($items !== array()) {
+            return $items;
+        }
+
+        $fallback = isset($exportOptions['image_queue_items']) && is_array($exportOptions['image_queue_items'])
+            ? $exportOptions['image_queue_items']
+            : array();
+
+        return array_values(array_filter(array_map('strval', $fallback), static function (string $item): bool {
+            return trim($item) !== '';
+        }));
     }
 
     private function generatedImagesColumnSettings(array $columns): array
