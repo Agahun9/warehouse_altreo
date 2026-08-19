@@ -366,6 +366,7 @@ class UserRepository
         // Media is part of the application itself. Keep it available even when
         // the environment-specific app/Config directory is not deployed from Git.
         $modules[] = array('code' => 'media', 'name' => 'Media');
+        $modules[] = array('code' => 'mediamarkt', 'name' => 'MediaMarkt');
         $normalized = array();
 
         foreach ($modules as $module) {

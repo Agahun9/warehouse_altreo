@@ -42,6 +42,7 @@ class CategoryRepository
             . "sku_prefix VARCHAR(20) NOT NULL DEFAULT 'PRD',\n"
             . "allegro_category_id VARCHAR(64) DEFAULT NULL,\n"
             . "empik_category_id VARCHAR(190) DEFAULT NULL,\n"
+            . "mediamarkt_category_id VARCHAR(190) DEFAULT NULL,\n"
             . "temu_category_id VARCHAR(190) DEFAULT NULL,\n"
             . "temu_category_name VARCHAR(255) DEFAULT NULL,\n"
             . "temu_category_path TEXT DEFAULT NULL,\n"
@@ -55,6 +56,7 @@ class CategoryRepository
             . "KEY idx_categories_name (name),\n"
             . "KEY idx_categories_allegro (allegro_category_id),\n"
             . "KEY idx_categories_empik (empik_category_id),\n"
+            . "KEY idx_categories_mediamarkt (mediamarkt_category_id),\n"
             . "KEY idx_categories_temu (temu_category_id)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
@@ -87,13 +89,22 @@ class CategoryRepository
                 $this->database->query("ALTER TABLE categories ADD COLUMN empik_category_id VARCHAR(190) NULL AFTER allegro_category_id");
             }
 
+            $hasMediaMarktColumn = (int) $this->database->fetchColumn(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+                array('schema' => $databaseName, 'table' => 'categories', 'column' => 'mediamarkt_category_id')
+            ) > 0;
+
+            if (!$hasMediaMarktColumn) {
+                $this->database->query("ALTER TABLE categories ADD COLUMN mediamarkt_category_id VARCHAR(190) NULL AFTER empik_category_id");
+            }
+
             $hasTemuIdColumn = (int) $this->database->fetchColumn(
                 'SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column',
                 array('schema' => $databaseName, 'table' => 'categories', 'column' => 'temu_category_id')
             ) > 0;
 
             if (!$hasTemuIdColumn) {
-                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_id VARCHAR(190) NULL AFTER empik_category_id");
+                $this->database->query("ALTER TABLE categories ADD COLUMN temu_category_id VARCHAR(190) NULL AFTER mediamarkt_category_id");
             }
 
             $hasTemuNameColumn = (int) $this->database->fetchColumn(
@@ -221,6 +232,7 @@ class CategoryRepository
             'sku_prefix' => 'PRD',
             'allegro_category_id' => null,
             'empik_category_id' => null,
+            'mediamarkt_category_id' => null,
             'temu_category_id' => null,
             'temu_category_name' => null,
             'temu_category_path' => null,
@@ -278,6 +290,11 @@ class CategoryRepository
         $value = trim((string) $value);
 
         return $value !== '' ? mb_substr($value, 0, 190, 'UTF-8') : null;
+    }
+
+    public function normalizeMediaMarktCategoryId($value)
+    {
+        return $this->normalizeEmpikCategoryId($value);
     }
 
     public function normalizeEndOffersBelowQuantity($value)

@@ -139,6 +139,7 @@
                       <td>{$template.created_at|default:'-'|escape}</td>
                       <td>{$template.updated_at|default:'-'|escape}</td>
                       <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-outline-dark csv-template-csv-btn" data-bs-toggle="modal" data-bs-target="#csvTemplateCsvModal" data-template-id="{$template.id}" data-template-name="{$template.name|escape}">CSV</button>
                         {if $canWriteCsvTemplates}
                           <a href="{$baseUrl}?controller=csvtemplates&action=edit&id={$template.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
                           <form method="post" action="{$baseUrl}?controller=csvtemplates&action=duplicate" class="d-inline">
@@ -197,3 +198,52 @@
   </div>
 </div>
 {/if}
+
+<div class="modal fade" id="csvTemplateCsvModal" tabindex="-1" aria-labelledby="csvTemplateCsvModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="csvTemplateCsvModalLabel">Zapisz ustawienia do CSV</h5>
+          <div class="small text-secondary" id="csvTemplateCsvName"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Czy plik ma zawierac opisy?</p>
+        <div class="small text-secondary">Wariant z opisami zawiera pole <strong>Opis</strong> oraz rozbudowane <strong>Szablony opisu</strong>. Wariant bez opisow jest krotszy i latwiejszy do wklejenia.</div>
+      </div>
+      <div class="modal-footer justify-content-between flex-wrap gap-2">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="#" class="btn btn-outline-primary" id="csvTemplateCsvWithoutDescriptions">Bez opisow</a>
+          <a href="#" class="btn btn-primary" id="csvTemplateCsvWithDescriptions">Z opisami</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var modal = document.getElementById('csvTemplateCsvModal');
+  if (!modal) {
+    return;
+  }
+
+  modal.addEventListener('show.bs.modal', function (event) {
+    var button = event.relatedTarget;
+    if (!button) {
+      return;
+    }
+
+    var templateId = String(button.getAttribute('data-template-id') || '');
+    var templateName = String(button.getAttribute('data-template-name') || '');
+    var exportUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exporttemplatecsv&id=' + encodeURIComponent(templateId) + '&include_descriptions=';
+
+    document.getElementById('csvTemplateCsvName').textContent = templateName;
+    document.getElementById('csvTemplateCsvWithoutDescriptions').href = exportUrl + '0';
+    document.getElementById('csvTemplateCsvWithDescriptions').href = exportUrl + '1';
+  });
+}());
+</script>

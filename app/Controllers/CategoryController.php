@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Models\CategoryRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
+use App\Services\MediaMarktService;
 use RuntimeException;
 use Throwable;
 
@@ -22,12 +23,16 @@ class CategoryController extends Controller
     /** @var EmpikService */
     private $empik;
 
+    /** @var MediaMarktService */
+    private $mediamarkt;
+
     public function __construct()
     {
         $this->categories = new CategoryRepository($this->db());
         $this->categories->ensureSchema();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
+        $this->mediamarkt = new MediaMarktService();
     }
 
     public function index(): void
@@ -55,6 +60,7 @@ class CategoryController extends Controller
             'sku_prefix' => '',
             'allegro_category_id' => '',
             'empik_category_id' => '',
+            'mediamarkt_category_id' => '',
             'temu_category_id' => '',
             'temu_category_name' => '',
             'temu_category_path' => '',
@@ -77,6 +83,7 @@ class CategoryController extends Controller
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
             $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
+            $mediamarktCategoryId = $this->categories->normalizeMediaMarktCategoryId($this->input('mediamarkt_category_id', ''));
             $temuCategoryId = $this->categories->normalizeTemuCategoryId($this->input('temu_category_id', ''));
             $temuCategoryName = $this->categories->normalizeTemuCategoryName($this->input('temu_category_name', ''));
             $temuCategoryPath = $this->categories->normalizeTemuCategoryPath($this->input('temu_category_path', ''));
@@ -102,6 +109,7 @@ class CategoryController extends Controller
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
                 'empik_category_id' => $empikCategoryId,
+                'mediamarkt_category_id' => $mediamarktCategoryId,
                 'temu_category_id' => $temuCategoryId,
                 'temu_category_name' => $temuCategoryName,
                 'temu_category_path' => $temuCategoryPath,
@@ -117,6 +125,7 @@ class CategoryController extends Controller
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
                 'empik_category_id' => (string) $this->input('empik_category_id', ''),
+                'mediamarkt_category_id' => (string) $this->input('mediamarkt_category_id', ''),
                 'temu_category_id' => (string) $this->input('temu_category_id', ''),
                 'temu_category_name' => (string) $this->input('temu_category_name', ''),
                 'temu_category_path' => (string) $this->input('temu_category_path', ''),
@@ -161,6 +170,7 @@ class CategoryController extends Controller
             $skuPrefix = $this->categories->normalizeSkuPrefix($this->input('sku_prefix', ''));
             $allegroCategoryId = $this->categories->normalizeAllegroCategoryId($this->input('allegro_category_id', ''));
             $empikCategoryId = $this->categories->normalizeEmpikCategoryId($this->input('empik_category_id', ''));
+            $mediamarktCategoryId = $this->categories->normalizeMediaMarktCategoryId($this->input('mediamarkt_category_id', ''));
             $temuCategoryId = $this->categories->normalizeTemuCategoryId($this->input('temu_category_id', ''));
             $temuCategoryName = $this->categories->normalizeTemuCategoryName($this->input('temu_category_name', ''));
             $temuCategoryPath = $this->categories->normalizeTemuCategoryPath($this->input('temu_category_path', ''));
@@ -186,6 +196,7 @@ class CategoryController extends Controller
                 'sku_prefix' => $skuPrefix,
                 'allegro_category_id' => $allegroCategoryId,
                 'empik_category_id' => $empikCategoryId,
+                'mediamarkt_category_id' => $mediamarktCategoryId,
                 'temu_category_id' => $temuCategoryId,
                 'temu_category_name' => $temuCategoryName,
                 'temu_category_path' => $temuCategoryPath,
@@ -202,6 +213,7 @@ class CategoryController extends Controller
                 'sku_prefix' => (string) $this->input('sku_prefix', ''),
                 'allegro_category_id' => (string) $this->input('allegro_category_id', ''),
                 'empik_category_id' => (string) $this->input('empik_category_id', ''),
+                'mediamarkt_category_id' => (string) $this->input('mediamarkt_category_id', ''),
                 'temu_category_id' => (string) $this->input('temu_category_id', ''),
                 'temu_category_name' => (string) $this->input('temu_category_name', ''),
                 'temu_category_path' => (string) $this->input('temu_category_path', ''),
@@ -279,6 +291,37 @@ class CategoryController extends Controller
 
             $this->categories->updateById($id, array('empik_category_id' => $empikCategoryId));
             $this->setFlash('success', 'Mapowanie Empik zostalo zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=categories&action=edit&id=' . $id);
+    }
+
+    public function setmediamarkt(): void
+    {
+        $this->requireModuleWrite('categories');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=categories&action=index');
+        }
+
+        $id = (int) $this->input('id', 0);
+        $category = $this->categories->findById($id);
+        if (!$category) {
+            $this->setFlash('error', 'Nie znaleziono kategorii.');
+            $this->redirect('./index.php?controller=categories&action=index');
+        }
+
+        $categoryId = $this->categories->normalizeMediaMarktCategoryId($this->input('mediamarkt_category_id', ''));
+        try {
+            if ($categoryId !== null) {
+                $matches = $this->mediamarkt->searchCategories($categoryId, false);
+                if ($matches === array()) {
+                    $this->mediamarkt->searchCategories($categoryId, true);
+                }
+            }
+            $this->categories->updateById($id, array('mediamarkt_category_id' => $categoryId));
+            $this->setFlash('success', 'Mapowanie MediaMarkt zostalo zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }

@@ -101,7 +101,7 @@
               <div class="form-text">Zaznacz kilka komponentów (np. warianty dysku), aby warunek był prawdziwy, gdy produkt ma <strong>którykolwiek</strong> z nich, np. <code>{ldelim}% if has_component_in(29,28,27,26) %{rdelim}</code>.</div>
             </div>
             <div class="border rounded bg-light p-2 mb-2">
-              <div class="small fw-semibold mb-2">Parametry Allegro, Empik i Morele</div>
+              <div class="small fw-semibold mb-2">Parametry Allegro, Empik, MediaMarkt i Morele</div>
               <div class="d-flex flex-wrap gap-2">
                 <input type="search" class="form-control form-control-sm" id="descriptionParameterSearch" style="max-width:300px" placeholder="Szukaj parametru, kategorii lub ID...">
                 <select class="form-select form-select-sm" id="descriptionParameterSelect" style="max-width:440px">

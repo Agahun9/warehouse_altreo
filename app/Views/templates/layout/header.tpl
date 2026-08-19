@@ -347,6 +347,14 @@
                   </a>
                 </li>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('mediamarkt', $currentUser.modules)}
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=mediamarkt&action=index" class="nav-link{if $currentController eq 'mediamarkt'} active{/if}">
+                    <i class="nav-icon bi bi-tv"></i>
+                    <p>MediaMarkt</p>
+                  </a>
+                </li>
+              {/if}
               {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
                 <li class="nav-item">
                   <a href="{$baseUrl}?controller=erli&action=index" class="nav-link{if $currentController eq 'erli'} active{/if}">

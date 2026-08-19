@@ -13,12 +13,14 @@ use App\Models\ProductAllegroParameterRepository;
 use App\Models\ProductChangeLogRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductEmpikParameterRepository;
+use App\Models\ProductMediaMarktParameterRepository;
 use App\Models\ProductTemuParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SettingRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
+use App\Services\MediaMarktService;
 use App\Services\ValueResolver;
 use RuntimeException;
 use Throwable;
@@ -37,6 +39,9 @@ class ProductController extends Controller
     /** @var ProductEmpikParameterRepository */
     private $empikParameters;
 
+    /** @var ProductMediaMarktParameterRepository */
+    private $mediamarktParameters;
+
     /** @var ProductTemuParameterRepository */
     private $temuParameters;
 
@@ -54,6 +59,9 @@ class ProductController extends Controller
 
     /** @var EmpikService */
     private $empik;
+
+    /** @var MediaMarktService */
+    private $mediamarkt;
 
     /** @var SharedStockGroupRepository */
     private $sharedStockGroups;
@@ -74,6 +82,8 @@ class ProductController extends Controller
         $this->allegroParameters->ensureSchema();
         $this->empikParameters = new ProductEmpikParameterRepository($this->db());
         $this->empikParameters->ensureSchema();
+        $this->mediamarktParameters = new ProductMediaMarktParameterRepository($this->db());
+        $this->mediamarktParameters->ensureSchema();
         $this->temuParameters = new ProductTemuParameterRepository($this->db());
         $this->temuParameters->ensureSchema();
         $this->csvTemplates = new CsvTemplateRepository($this->db());
@@ -90,6 +100,7 @@ class ProductController extends Controller
         $this->settings->ensureSchema();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
+        $this->mediamarkt = new MediaMarktService();
     }
 
     public function index(): void
@@ -676,6 +687,41 @@ class ProductController extends Controller
         }
     }
 
+    public function mediamarktparameters(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        if ($categoryId <= 0) {
+            $this->jsonResponse(array('items' => array(), 'hidden_keys' => $this->hiddenMediaMarktParameterKeys()));
+            return;
+        }
+
+        try {
+            $definitions = $this->mediamarktDefinitionsForCategory($categoryId);
+            $values = array();
+
+            $includeValues = $this->shouldIncludeCurrentValues();
+            $productId = (int) $this->input('id', 0);
+
+            if ($includeValues && $productId > 0) {
+                $product = $this->products->find($productId);
+                if ($product && (int) $product['category_id'] === $categoryId) {
+                    $values = $this->mediamarktParameters->allForProduct($productId);
+                }
+            }
+
+            $this->jsonResponse(array(
+                'items' => $definitions,
+                'values' => $values,
+                'hidden_keys' => $this->hiddenMediaMarktParameterKeys(),
+            ));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
+
     public function allegrocompatibilitysupport(): void
     {
         $this->requireModule('products');
@@ -827,6 +873,49 @@ class ProductController extends Controller
         ));
     }
 
+    public function mediamarktparametervisibility(): void
+    {
+        $this->requireModuleWrite('products');
+
+        if (!$this->isPost()) {
+            $this->jsonResponse(array('error' => 'Niedozwolona metoda.'), 405);
+            return;
+        }
+
+        $name = trim((string) $this->input('name', ''));
+        $id = trim((string) $this->input('id', ''));
+        $hidden = $this->input('hidden', '1');
+        $hidden = in_array(strtolower(trim((string) $hidden)), array('1', 'true', 'yes', 'tak'), true);
+        $key = $this->mediamarktParameterVisibilityKey($name, $id);
+
+        if ($key === '') {
+            $this->jsonResponse(array('error' => 'Brak poprawnego parametru MediaMarkt.'), 422);
+            return;
+        }
+
+        $keys = $this->hiddenMediaMarktParameterKeys();
+        if ($hidden) {
+            if (!in_array($key, $keys, true)) {
+                $keys[] = $key;
+            }
+        } else {
+            $keys = array_values(array_filter($keys, static function (string $item) use ($key): bool {
+                return $item !== $key;
+            }));
+        }
+
+        sort($keys);
+        $this->settings->set('products_mediamarkt_hidden_parameters', json_encode($keys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        $this->jsonResponse(array(
+            'ok' => true,
+            'hidden' => $hidden,
+            'key' => $key,
+            'hidden_keys' => $keys,
+        ));
+    }
+
+
     public function empikparameteroptions(): void
     {
         $this->requireModule('products');
@@ -860,6 +949,41 @@ class ProductController extends Controller
             $this->jsonResponse(array('error' => $exception->getMessage()), 500);
         }
     }
+
+    public function mediamarktparameteroptions(): void
+    {
+        $this->requireModule('products');
+
+        $categoryId = (int) $this->input('category_id', 0);
+        $attributeId = trim((string) $this->input('attribute_id', ''));
+        $query = trim((string) $this->input('q', ''));
+        $limit = max(1, min(400, (int) $this->input('limit', 10)));
+
+        if ($categoryId <= 0 || $attributeId === '') {
+            $this->jsonResponse(array('items' => array()));
+            return;
+        }
+
+        try {
+            $category = $this->categories->findById($categoryId);
+            if (!$category) {
+                $this->jsonResponse(array('items' => array()));
+                return;
+            }
+
+            $mediamarktCategoryId = isset($category['mediamarkt_category_id']) ? trim((string) $category['mediamarkt_category_id']) : '';
+            if ($mediamarktCategoryId === '') {
+                $this->jsonResponse(array('items' => array()));
+                return;
+            }
+
+            $items = $this->mediamarkt->searchAttributeOptions($mediamarktCategoryId, $attributeId, $query, $limit);
+            $this->jsonResponse(array('items' => $items));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
 
     public function copyproducts(): void
     {
@@ -1065,6 +1189,14 @@ class ProductController extends Controller
                 $this->empikParameters->replaceForProduct($productId, $empikValues);
             }
 
+            if ($this->shouldClearMediaMarktParameters()) {
+                $this->mediamarktParameters->replaceForProduct($productId, array());
+            } else {
+                $definitions = $this->mediamarktDefinitionsForCategory((int) $data['category_id']);
+                $values = $this->extractMediaMarktParameters($definitions);
+                $this->mediamarktParameters->replaceForProduct($productId, $values);
+            }
+
             $temuDefinitions = $this->temuDefinitionsForCategory((int) $data['category_id']);
             $temuValues = $this->extractTemuParameters($temuDefinitions);
             $this->temuParameters->replaceForProduct($productId, $temuValues);
@@ -1163,6 +1295,14 @@ class ProductController extends Controller
                 $definitions = $this->empikDefinitionsForCategory((int) $data['category_id']);
                 $empikValues = $this->extractEmpikParameters($definitions);
                 $this->empikParameters->replaceForProduct($id, $empikValues);
+            }
+
+            if ($this->shouldClearMediaMarktParameters() || $categoryChanged) {
+                $this->mediamarktParameters->replaceForProduct($id, array());
+            } else {
+                $definitions = $this->mediamarktDefinitionsForCategory((int) $data['category_id']);
+                $values = $this->extractMediaMarktParameters($definitions);
+                $this->mediamarktParameters->replaceForProduct($id, $values);
             }
 
             if ($categoryChanged) {
@@ -1435,6 +1575,7 @@ class ProductController extends Controller
                         ));
                         $this->allegroParameters->replaceForProduct($id, array());
                         $this->empikParameters->replaceForProduct($id, array());
+                        $this->mediamarktParameters->replaceForProduct($id, array());
                         $this->allegro->queueWarehouseProductSync(array($id), 180);
                         $updateCount++;
                     }
@@ -1536,6 +1677,11 @@ class ProductController extends Controller
         $categoryId = isset($product['category_id']) ? (int) $product['category_id'] : 0;
         $allegroDefinitions = array();
         $empikDefinitions = array();
+        $mediamarktDefinitions = array();
+        $mediamarktValues = $this->postedMediaMarktValues();
+        if ($mediamarktValues === array() && !empty($product['id'])) {
+            $mediamarktValues = $this->mediamarktParameters->allForProduct((int) $product['id']);
+        }
         $temuDefinitions = array();
         $productHistory = array();
         $productImages = $this->imageUrlsFromValue(isset($product['img']) ? (string) $product['img'] : '');
@@ -1561,6 +1707,14 @@ class ProductController extends Controller
 
             try {
                 $empikDefinitions = $this->empikDefinitionsForCategory($categoryId);
+            } catch (Throwable $exception) {
+                if ($flashError === null) {
+                    $flashError = $exception->getMessage();
+                }
+            }
+
+            try {
+                $mediamarktDefinitions = $this->mediamarktDefinitionsForCategory($categoryId);
             } catch (Throwable $exception) {
                 if ($flashError === null) {
                     $flashError = $exception->getMessage();
@@ -1602,6 +1756,10 @@ class ProductController extends Controller
             'empikValues' => $empikValues,
             'empikValuesJson' => json_encode($empikValues),
             'empikHiddenKeysJson' => json_encode($this->hiddenEmpikParameterKeys(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'mediamarktDefinitions' => $mediamarktDefinitions,
+            'mediamarktValues' => $mediamarktValues,
+            'mediamarktValuesJson' => json_encode($mediamarktValues),
+            'mediamarktHiddenKeysJson' => json_encode($this->hiddenMediaMarktParameterKeys(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             'temuDefinitions' => $temuDefinitions,
             'temuValues' => $temuValues,
             'temuValuesJson' => json_encode($temuValues),
@@ -1697,6 +1855,12 @@ class ProductController extends Controller
     private function postedEmpikValues(): array
     {
         $input = $this->input('empik_parameters', array());
+        return is_array($input) ? $input : array();
+    }
+
+    private function postedMediaMarktValues(): array
+    {
+        $input = $this->input('mediamarkt_parameters', array());
         return is_array($input) ? $input : array();
     }
 
@@ -1925,6 +2089,17 @@ class ProductController extends Controller
         return $this->empik->categoryAttributes($empikCategoryId);
     }
 
+    private function mediamarktDefinitionsForCategory(int $categoryId): array
+    {
+        $category = $this->categories->findById($categoryId);
+        if (!$category) {
+            return array();
+        }
+
+        $categoryId = trim((string) ($category['mediamarkt_category_id'] ?? ''));
+        return $categoryId !== '' ? $this->mediamarkt->categoryAttributes($categoryId) : array();
+    }
+
     private function temuDefinitionsForCategory(int $categoryId): array
     {
         $category = $this->categories->findById($categoryId);
@@ -1983,6 +2158,15 @@ class ProductController extends Controller
         }
 
         return $this->empik->validateAttributeValues($definitions, $input);
+    }
+
+    private function extractMediaMarktParameters(array $definitions): array
+    {
+        if ($definitions === array()) {
+            return array();
+        }
+        $input = $this->input('mediamarkt_parameters', array());
+        return $this->mediamarkt->validateAttributeValues($definitions, is_array($input) ? $input : array());
     }
 
     private function extractTemuParameters(array $definitions): array
@@ -2045,6 +2229,12 @@ class ProductController extends Controller
     private function shouldClearEmpikParameters(): bool
     {
         $value = $this->input('clear_empik_parameters', '0');
+        return $value === '1' || $value === 1 || $value === true || $value === 'true';
+    }
+
+    private function shouldClearMediaMarktParameters(): bool
+    {
+        $value = $this->input('clear_mediamarkt_parameters', '0');
         return $value === '1' || $value === 1 || $value === true || $value === 'true';
     }
 
@@ -3051,6 +3241,16 @@ class ProductController extends Controller
         return array_values(array_unique($keys));
     }
 
+    private function hiddenMediaMarktParameterKeys(): array
+    {
+        $raw = $this->settings->get('products_mediamarkt_hidden_parameters', '[]');
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return array();
+        }
+        return array_values(array_unique(array_filter(array_map('trim', $decoded))));
+    }
+
     private function empikParameterVisibilityKey(string $name, string $id = ''): string
     {
         $normalizedName = $this->normalizeEmpikParameterNameKey($name);
@@ -3080,6 +3280,37 @@ class ProductController extends Controller
 
         return trim((string) $value);
     }
+
+    private function mediamarktParameterVisibilityKey(string $name, string $id = ''): string
+    {
+        $normalizedName = $this->normalizeMediaMarktParameterNameKey($name);
+        if ($normalizedName !== '') {
+            return $normalizedName;
+        }
+
+        return $this->normalizeMediaMarktParameterNameKey($id);
+    }
+
+    private function normalizeMediaMarktParameterNameKey(string $value): string
+    {
+        $value = strtolower(trim($value));
+        $value = preg_replace('/\s*\(\s*\d+\s*\)\s*$/', '', $value);
+        $value = strtr($value, array(
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' => 'z',
+            'ż' => 'z',
+        ));
+        $value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+
+        return trim((string) $value);
+    }
+
 
     private function jsonResponse(array $payload, int $status = 200): void
     {

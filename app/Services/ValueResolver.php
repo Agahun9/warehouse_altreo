@@ -27,11 +27,21 @@ class ValueResolver
     /** @var array */
     private $empikCategoryDefinitionsCache = array();
 
+    /** @var MediaMarktService */
+    private $mediamarkt;
+
+    /** @var array */
+    private $mediamarktDefinitionCache = array();
+
+    /** @var array */
+    private $mediamarktCategoryDefinitionsCache = array();
+
     public function __construct()
     {
         $this->computed = new ComputedFunctions();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
+        $this->mediamarkt = new MediaMarktService();
     }
 
     public function resolveField(array $product, string $path, string $arraySeparator = '|', array $exportOptions = array())
@@ -80,6 +90,14 @@ class ValueResolver
 
         if (strpos($normalized, 'empik_parameter.') === 0) {
             return $this->singleEmpikParameterValue($product, substr($normalized, 16));
+        }
+
+        if (in_array($normalized, array('mediamarkt_parameters', 'mediamarkt_parameters_text'), true)) {
+            return $this->formatMediaMarktParameters($product);
+        }
+
+        if (strpos($normalized, 'mediamarkt_parameter.') === 0) {
+            return $this->singleMediaMarktParameterValue($product, substr($normalized, 22));
         }
 
         if (in_array($normalized, array('collection_name', 'export_collection', 'csv_collection'), true)) {
@@ -216,6 +234,7 @@ class ValueResolver
             'category_slug' => 'category_slug',
             'category_id_allegro' => 'allegro_category_id',
             'category_id_empik' => 'empik_category_id',
+            'category_id_mediamarkt' => 'mediamarkt_category_id',
             'product.name' => 'product_name',
             'product.title' => 'product_name',
             'product.category.name' => 'category_name',
@@ -223,6 +242,7 @@ class ValueResolver
             'product.category.id' => 'category_id',
             'product.category_id_allegro' => 'category_allegro_id',
             'product.category_id_empik' => 'category_empik_id',
+            'product.category_id_mediamarkt' => 'category_mediamarkt_id',
             'product.image' => 'img',
             'product.image.url' => 'img',
             'product.price' => 'price_gross',
@@ -246,6 +266,7 @@ class ValueResolver
             'allegro_compatibility_list' => 'allegro_compatibility_list',
             'allegro_parameters_eu' => 'allegro_parameters_eu',
             'empik_parameters' => 'empik_parameters',
+            'mediamarkt_parameters' => 'mediamarkt_parameters',
             'categories.name' => 'category_name',
             'categories.slug' => 'category_slug',
             'categories.allegro_id' => 'allegro_category_id',
@@ -588,6 +609,106 @@ class ValueResolver
         $this->empikCategoryDefinitionsCache[$categoryEmpikId] = is_array($definitions) ? $definitions : array();
         return $this->empikCategoryDefinitionsCache[$categoryEmpikId];
     }
+
+    private function formatMediaMarktParameters(array $product): string
+    {
+        $raw = isset($product['mediamarkt_parameters_raw']) && is_array($product['mediamarkt_parameters_raw']) ? $product['mediamarkt_parameters_raw'] : array();
+        if ($raw === array()) {
+            return '';
+        }
+
+        $categoryMediaMarktId = isset($product['category_mediamarkt_id']) ? (string) $product['category_mediamarkt_id'] : '';
+        $nameMap = $this->mediamarktParameterNameMap($categoryMediaMarktId);
+        $lines = array();
+
+        foreach ($raw as $parameterId => $value) {
+            $label = isset($nameMap[$parameterId]) ? $nameMap[$parameterId] : (string) $parameterId;
+            $formattedValue = $this->formatMediaMarktParameterValue($value);
+            if ($formattedValue === '') {
+                continue;
+            }
+
+            $lines[] = $label . ': ' . $formattedValue;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function singleMediaMarktParameterValue(array $product, string $parameterId): string
+    {
+        $raw = isset($product['mediamarkt_parameters_raw']) && is_array($product['mediamarkt_parameters_raw']) ? $product['mediamarkt_parameters_raw'] : array();
+        if ($parameterId === '' || !array_key_exists($parameterId, $raw)) {
+            return '';
+        }
+
+        return $this->formatMediaMarktParameterValue($raw[$parameterId]);
+    }
+
+    private function formatMediaMarktParameterValue($value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $parts[] = $item;
+                }
+            }
+
+            return implode('|', $parts);
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        return trim((string) $value);
+    }
+
+    private function mediamarktParameterNameMap(string $categoryMediaMarktId): array
+    {
+        if ($categoryMediaMarktId === '') {
+            return array();
+        }
+
+        if (isset($this->mediamarktDefinitionCache[$categoryMediaMarktId])) {
+            return $this->mediamarktDefinitionCache[$categoryMediaMarktId];
+        }
+
+        $map = array();
+
+        foreach ($this->mediamarktCategoryDefinitions($categoryMediaMarktId) as $definition) {
+            if (!is_array($definition) || empty($definition['id'])) {
+                continue;
+            }
+
+            $map[(string) $definition['id']] = isset($definition['name']) ? (string) $definition['name'] : (string) $definition['id'];
+        }
+
+        $this->mediamarktDefinitionCache[$categoryMediaMarktId] = $map;
+        return $map;
+    }
+
+    private function mediamarktCategoryDefinitions(string $categoryMediaMarktId): array
+    {
+        if ($categoryMediaMarktId === '') {
+            return array();
+        }
+
+        if (isset($this->mediamarktCategoryDefinitionsCache[$categoryMediaMarktId])) {
+            return $this->mediamarktCategoryDefinitionsCache[$categoryMediaMarktId];
+        }
+
+        try {
+            $definitions = $this->mediamarkt->categoryAttributes($categoryMediaMarktId);
+        } catch (\Throwable $exception) {
+            $definitions = array();
+        }
+
+        $this->mediamarktCategoryDefinitionsCache[$categoryMediaMarktId] = is_array($definitions) ? $definitions : array();
+        return $this->mediamarktCategoryDefinitionsCache[$categoryMediaMarktId];
+    }
+
 
     private function allegroParameterDefinition(string $categoryAllegroId, string $parameterId): array
     {

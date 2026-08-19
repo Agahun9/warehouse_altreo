@@ -9,10 +9,12 @@ use App\Models\AllegroStorageRepository;
 use App\Models\ComputerCsvTitleTemplateRepository;
 use App\Models\ComputerCsvTemplateRepository;
 use App\Models\EmpikStorageRepository;
+use App\Models\MediaMarktStorageRepository;
 use App\Models\ErliStorageRepository;
 use App\Models\MoreleStorageRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
+use App\Services\MediaMarktService;
 use App\Services\HtmlStructureFixer;
 use App\Services\MoreleService;
 use App\Services\ValueResolver;
@@ -128,14 +130,17 @@ class ComputersController extends Controller
         }
         $allegroMarketAccounts = $this->activeComputerAllegroAccounts();
         $empikMarketAccounts = $this->activeComputerEmpikAccounts();
+        $mediamarktMarketAccounts = $this->activeComputerMediaMarktAccounts();
         $erliMarketAccounts = $this->activeComputerErliAccounts();
         $moreleMarketAccounts = $this->activeComputerMoreleAccounts();
         $allegroMarketAccounts = $this->markSelectedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
         $empikMarketAccounts = $this->markSelectedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
+        $mediamarktMarketAccounts = $this->markSelectedMarketAccounts($mediamarktMarketAccounts, 'mediamarkt', $filterMarketAccounts);
         $erliMarketAccounts = $this->markSelectedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
         $moreleMarketAccounts = $this->markSelectedMarketAccounts($moreleMarketAccounts, 'morele', $filterMarketAccounts);
         $allegroMarketAccounts = $this->markExcludedMarketAccounts($allegroMarketAccounts, 'allegro', $filterMarketAccounts);
         $empikMarketAccounts = $this->markExcludedMarketAccounts($empikMarketAccounts, 'empik', $filterMarketAccounts);
+        $mediamarktMarketAccounts = $this->markExcludedMarketAccounts($mediamarktMarketAccounts, 'mediamarkt', $filterMarketAccounts);
         $erliMarketAccounts = $this->markExcludedMarketAccounts($erliMarketAccounts, 'erli', $filterMarketAccounts);
         $moreleMarketAccounts = $this->markExcludedMarketAccounts($moreleMarketAccounts, 'morele', $filterMarketAccounts);
 
@@ -175,7 +180,7 @@ class ComputersController extends Controller
             . ' ORDER BY products.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset,
             $filterParams
         );
-        $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products))));
+        $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveMediaMarktOffers($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products)))));
         $pagedProducts = array();
         foreach ($products as $product) {
             $product = $this->normalizeProductImageFields($product);
@@ -187,6 +192,9 @@ class ComputersController extends Controller
             }
             if (!isset($product['empik_accounts']) || !is_array($product['empik_accounts'])) {
                 $product['empik_accounts'] = array();
+            }
+            if (!isset($product['mediamarkt_accounts']) || !is_array($product['mediamarkt_accounts'])) {
+                $product['mediamarkt_accounts'] = array();
             }
             if (!isset($product['morele_accounts']) || !is_array($product['morele_accounts'])) {
                 $product['morele_accounts'] = array();
@@ -240,6 +248,7 @@ class ComputersController extends Controller
             'filterPriceMismatch' => $filterPriceMismatch,
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
+            'mediamarktMarketAccounts' => $mediamarktMarketAccounts,
             'erliMarketAccounts' => $erliMarketAccounts,
             'moreleMarketAccounts' => $moreleMarketAccounts,
             'current_page' => $currentPage,
@@ -274,6 +283,36 @@ class ComputersController extends Controller
 
         try {
             $service = new EmpikService();
+            echo json_encode(array(
+                'items' => $service->searchAttributeOptions($categoryId, $attributeId, $query, $limit),
+            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $exception) {
+            http_response_code(500);
+            echo json_encode(array(
+                'items' => array(),
+                'error' => $exception->getMessage(),
+            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        exit;
+    }
+
+    public function mediamarktparameteroptions(): void
+    {
+        $this->requireModule('computers');
+        $attributeId = trim((string) $this->input('attribute_id', ''));
+        $query = trim((string) $this->input('q', ''));
+        $limit = max(1, min(100, (int) $this->input('limit', 40)));
+        $payload = $this->loadMediaMarktParameterPayload();
+        $categoryId = trim((string) ($payload['meta']['category_id'] ?? ''));
+
+        header('Content-Type: application/json; charset=utf-8');
+        if ($categoryId === '' || $attributeId === '') {
+            echo json_encode(array('items' => array()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        try {
+            $service = new MediaMarktService();
             echo json_encode(array(
                 'items' => $service->searchAttributeOptions($categoryId, $attributeId, $query, $limit),
             ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -588,7 +627,7 @@ class ComputersController extends Controller
         if ($query !== '') {
             $like = '%' . $query . '%';
             $rows = $this->db()->fetchAll(
-                'SELECT id, sku, name, EAN, price, img, img_morele, img_empik'
+                'SELECT id, sku, name, EAN, price, img, img_morele, img_empik, img_mediamarkt'
                 . ' FROM ' . self::PRODUCTS_TABLE
                 . ' WHERE CAST(id AS CHAR) LIKE :id_query'
                 . ' OR name LIKE :name_query'
@@ -636,7 +675,7 @@ class ComputersController extends Controller
      * approach already proven in activeMarketFilterProductIds()/*IdentifierAccounts()
      * below for the same O(products x offers)-per-row pitfall) and matches them
      * against the selected SKUs in PHP via a hash lookup. Total DB round trips stay
-     * constant (4 queries) no matter how many products are selected.
+     * constant no matter how many products are selected.
      */
     private function marketAccountsForSkus(array $skus): array
     {
@@ -649,6 +688,7 @@ class ComputersController extends Controller
 
         $this->collectAllegroMarketAccountsForSkus($accounts, $skuLookup);
         $this->collectEmpikMarketAccountsForSkus($accounts, $skuLookup);
+        $this->collectMediaMarktMarketAccountsForSkus($accounts, $skuLookup);
         $this->collectErliMarketAccountsForSkus($accounts, $skuLookup);
         $this->collectMoreleMarketAccountsForSkus($accounts, $skuLookup);
 
@@ -716,6 +756,31 @@ class ComputersController extends Controller
                 continue;
             }
             $this->addPriceMarketAccount($accounts, 'empik', 'Empik', (int) ($row['account_id'] ?? 0), (string) ($row['account_name'] ?? ''));
+        }
+    }
+
+    /** @param array<string, true> $skuLookup */
+    private function collectMediaMarktMarketAccountsForSkus(array &$accounts, array $skuLookup): void
+    {
+        if ($skuLookup === array() || !$this->tableExists('mediamarkt_offers') || !$this->tableExists('mediamarkt_accounts')) {
+            return;
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT offers.shop_sku AS shop_sku, offers.product_sku AS product_sku, accounts.id AS account_id, accounts.name AS account_name'
+            . ' FROM mediamarkt_offers offers'
+            . ' INNER JOIN mediamarkt_accounts accounts ON accounts.id = offers.account_id'
+            . ' WHERE accounts.is_active = 1 AND offers.active = 1'
+            . " AND ((offers.shop_sku IS NOT NULL AND offers.shop_sku <> '') OR (offers.product_sku IS NOT NULL AND offers.product_sku <> ''))"
+        );
+
+        foreach ($rows as $row) {
+            $shopSku = trim((string) ($row['shop_sku'] ?? ''));
+            $productSku = trim((string) ($row['product_sku'] ?? ''));
+            if (!isset($skuLookup[$shopSku]) && !isset($skuLookup[$productSku])) {
+                continue;
+            }
+            $this->addPriceMarketAccount($accounts, 'mediamarkt', 'MediaMarkt', (int) ($row['account_id'] ?? 0), (string) ($row['account_name'] ?? ''));
         }
     }
 
@@ -886,7 +951,7 @@ class ComputersController extends Controller
         }
 
         $items = $this->db()->fetchAll(
-            'SELECT *, JSON_LENGTH(parameters_morele) AS parameters_morele_count, JSON_LENGTH(parameters_eu) AS parameters_eu_count, JSON_LENGTH(parameters_empik) AS parameters_empik_count
+            'SELECT *, JSON_LENGTH(parameters_morele) AS parameters_morele_count, JSON_LENGTH(parameters_eu) AS parameters_eu_count, JSON_LENGTH(parameters_empik) AS parameters_empik_count, JSON_LENGTH(parameters_mediamarkt) AS parameters_mediamarkt_count
              FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category ASC, name ASC'
         );
         foreach ($items as $index => $item) {
@@ -1258,6 +1323,7 @@ class ComputersController extends Controller
         $img = $this->mergeProductImages((string) ($data['img_old'] ?? ''), (array) ($data['remove_img'] ?? array()), $productId, 'img_file', 'prod_');
         $imgMorele = $this->mergeProductImages((string) ($data['img_morele_old'] ?? ''), (array) ($data['remove_img_morele'] ?? array()), $productId, 'img_morele_file', 'prod_morele_');
         $imgEmpik = $this->mergeProductImages((string) ($data['img_empik_old'] ?? ''), (array) ($data['remove_img_empik'] ?? array()), $productId, 'img_empik_file', 'prod_empik_');
+        $imgMediaMarkt = $this->mergeProductImages((string) ($data['img_mediamarkt_old'] ?? ''), (array) ($data['remove_img_mediamarkt'] ?? array()), $productId, 'img_mediamarkt_file', 'prod_mediamarkt_');
 
         $this->db()->update(self::PRODUCTS_TABLE, array(
             'name' => trim((string) ($data['name'] ?? '')),
@@ -1268,6 +1334,7 @@ class ComputersController extends Controller
             'img' => $img,
             'img_morele' => $imgMorele,
             'img_empik' => $imgEmpik,
+            'img_mediamarkt' => $imgMediaMarkt,
         ), 'id = :id', array('id' => $productId));
 
         $this->setFlash('success', 'Produkt zostal zapisany.');
@@ -1353,6 +1420,7 @@ class ComputersController extends Controller
         $allegroParameters = array();
         $allegroParameterLines = array();
         $empikParameters = array();
+        $mediamarktParameters = array();
 
         foreach ($components as $component) {
             $category = trim((string) ($component['category'] ?? ''));
@@ -1380,6 +1448,11 @@ class ComputersController extends Controller
                     $empikParameters[$name] = $value;
                 }
             }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt'] ?? '')) as $name => $value) {
+                if (!array_key_exists($name, $mediamarktParameters)) {
+                    $mediamarktParameters[$name] = $value;
+                }
+            }
         }
 
         foreach ($allegroParameters as $name => $value) {
@@ -1403,6 +1476,7 @@ class ComputersController extends Controller
             }, (array) ($product['images'] ?? array())),
             'allegro_parameters' => implode("\n", $allegroParameterLines),
             'empik_parameters' => $this->computerTitleParametersText($empikParameters),
+            'mediamarkt_parameters' => $this->computerTitleParametersText($mediamarktParameters),
             'components' => $componentMap,
             'component_names' => implode(', ', array_values(array_filter($componentNames))),
         );
@@ -1518,6 +1592,7 @@ class ComputersController extends Controller
             '{{field:product.components.OBUDOWA}}' => 'Komponent Obudowa',
             '{{field:product.allegro_parameters}}' => 'Parametry Allegro z komponentow',
             '{{field:product.empik_parameters}}' => 'Parametry Empik z komponentow',
+            '{{field:product.mediamarkt_parameters}}' => 'Parametry MediaMarkt z komponentow',
             '{{field:product.ean}}' => 'EAN produktu',
             '{{field:product.id_components}}' => 'ID komponentow',
         );
@@ -1625,10 +1700,10 @@ class ComputersController extends Controller
             }
         } elseif ($bulkAction === 'change_images') {
             $target = trim((string) $this->input('bulk_img_target', 'img'));
-            if (!in_array($target, array('img', 'img_morele', 'img_empik', 'all'), true)) {
+            if (!in_array($target, array('img', 'img_morele', 'img_empik', 'img_mediamarkt', 'all'), true)) {
                 $target = 'img';
             }
-            $targetColumns = $target === 'all' ? array('img', 'img_morele', 'img_empik') : array($target);
+            $targetColumns = $target === 'all' ? array('img', 'img_morele', 'img_empik', 'img_mediamarkt') : array($target);
             $mode = trim((string) $this->input('bulk_img_mode', 'replace'));
             if (!in_array($mode, array('replace', 'append'), true)) {
                 $mode = 'replace';
@@ -1691,12 +1766,15 @@ class ComputersController extends Controller
             $marketQueuedCounts = array(
                 'allegro' => 0,
                 'empik' => 0,
+                'mediamarkt' => 0,
                 'erli' => 0,
                 'morele' => 0,
             );
             $empikBatchUpdates = array();
+            $mediamarktBatchUpdates = array();
             $successfulProductIds = array();
             $empikBatchRequests = 0;
+            $mediamarktBatchRequests = 0;
             foreach ($productIds as $productId) {
                 if ($selectedMarketAccounts === array()) {
                     break;
@@ -1705,7 +1783,7 @@ class ComputersController extends Controller
                 if ($product === null) {
                     continue;
                 }
-                $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts, $empikBatchUpdates);
+                $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts, $empikBatchUpdates, $mediamarktBatchUpdates);
                 foreach (array('allegro', 'erli', 'morele') as $market) {
                     $marketQueuedCounts[$market] += (int) ($queuedCounts[$market] ?? 0);
                 }
@@ -1729,13 +1807,29 @@ class ComputersController extends Controller
                 }
             }
 
+            if ($mediamarktBatchUpdates !== array()) {
+                try {
+                    $mediamarktResult = (new MediaMarktService())->submitPriceUpdatesBatch(array_values($mediamarktBatchUpdates));
+                    $marketQueuedCounts['mediamarkt'] = (int) ($mediamarktResult['offers'] ?? 0);
+                    $mediamarktBatchRequests = (int) ($mediamarktResult['requests'] ?? 0);
+                    foreach ($mediamarktBatchUpdates as $update) {
+                        foreach ((array) ($update['product_ids'] ?? array()) as $productId) {
+                            $successfulProductIds[(int) $productId] = true;
+                        }
+                    }
+                } catch (Throwable $exception) {
+                    $errors[] = 'MediaMarkt: ' . $exception->getMessage();
+                }
+            }
+
             $successCount = count($successfulProductIds);
             $totalQueued = array_sum($marketQueuedCounts);
             if ($totalQueued > 0) {
                 $successMessage = 'Przygotowano aktualizacje cen dla ' . $successCount . ' produktow. Allegro: ' . $marketQueuedCounts['allegro']
                     . ' w kolejce, Empik: ' . $marketQueuedCounts['empik'] . ' ofert w ' . $empikBatchRequests
+                    . ' zbiorczym imporcie, MediaMarkt: ' . $marketQueuedCounts['mediamarkt'] . ' ofert w ' . $mediamarktBatchRequests
                     . ' zbiorczym imporcie, Erli: ' . $marketQueuedCounts['erli'] . ' w kolejce, Morele: ' . $marketQueuedCounts['morele'] . ' w kolejce.';
-            } elseif ($selectedMarketAccounts !== array() && $empikBatchUpdates === array()) {
+            } elseif ($selectedMarketAccounts !== array() && $empikBatchUpdates === array() && $mediamarktBatchUpdates === array()) {
                 $successCount = 0;
                 $errors[] = 'Nie znaleziono aktywnych ofert na wybranych kontach dla zaznaczonych produktow.';
             }
@@ -1922,6 +2016,7 @@ class ComputersController extends Controller
                     $copy['img'] = $this->copyComponentImageList((string) ($copy['img'] ?? ''), 'comp_copy_');
                     $copy['img_morele'] = $this->copyComponentImageList((string) ($copy['img_morele'] ?? ''), 'comp_morele_copy_');
                     $copy['img_empik'] = $this->copyComponentImageList((string) ($copy['img_empik'] ?? ''), 'comp_empik_copy_');
+                    $copy['img_mediamarkt'] = $this->copyComponentImageList((string) ($copy['img_mediamarkt'] ?? ''), 'comp_mediamarkt_copy_');
 
                     $this->db()->insert(self::COMPONENTS_TABLE, $copy);
                     $updated++;
@@ -1936,6 +2031,7 @@ class ComputersController extends Controller
             'assign_image' => array('file' => 'bulk_img', 'column' => 'img', 'prefix' => 'comp_bulk_'),
             'assign_image_morele' => array('file' => 'bulk_img_morele', 'column' => 'img_morele', 'prefix' => 'comp_morele_bulk_'),
             'assign_image_empik' => array('file' => 'bulk_img_empik', 'column' => 'img_empik', 'prefix' => 'comp_empik_bulk_'),
+            'assign_image_mediamarkt' => array('file' => 'bulk_img_mediamarkt', 'column' => 'img_mediamarkt', 'prefix' => 'comp_mediamarkt_bulk_'),
         );
         if (!isset($fieldMap[$bulkAction])) {
             $this->setFlash('error', json_encode(array('Nieznana akcja masowa komponentow.')));
@@ -1983,9 +2079,11 @@ class ComputersController extends Controller
         $oldImg = trim((string) $this->input('img_old', ''));
         $oldImgMorele = trim((string) $this->input('img_morele_old', ''));
         $oldImgEmpik = trim((string) $this->input('img_empik_old', ''));
+        $oldImgMediaMarkt = trim((string) $this->input('img_mediamarkt_old', ''));
         $img = $this->mergeComponentImages($oldImg, (array) $this->input('remove_img', array()), 'img_file', 'comp_', $id);
         $imgMorele = $this->mergeComponentImages($oldImgMorele, (array) $this->input('remove_img_morele', array()), 'img_file_morele', 'comp_morele_', $id);
         $imgEmpik = $this->mergeComponentImages($oldImgEmpik, (array) $this->input('remove_img_empik', array()), 'img_file_empik', 'comp_empik_', $id);
+        $imgMediaMarkt = $this->mergeComponentImages($oldImgMediaMarkt, (array) $this->input('remove_img_mediamarkt', array()), 'img_file_mediamarkt', 'comp_mediamarkt_', $id);
 
         $payload = array(
             'name' => $name,
@@ -1994,6 +2092,7 @@ class ComputersController extends Controller
             'description' => HtmlStructureFixer::fix(trim((string) $this->input('description', ''))),
             'description_morele' => HtmlStructureFixer::fix(trim((string) $this->input('description_morele', ''))),
             'description_empik' => HtmlStructureFixer::fix(trim((string) $this->input('description_empik', ''))),
+            'description_mediamarkt' => HtmlStructureFixer::fix(trim((string) $this->input('description_mediamarkt', ''))),
             'parameters_eu' => $this->postedComponentParamsJson(
                 'params_eu_loaded',
                 $this->collectMarketParams((array) $this->input('param', array()), (array) $this->input('param_type', array())),
@@ -2012,10 +2111,17 @@ class ComputersController extends Controller
                 $existingComponent,
                 'parameters_empik'
             ),
+            'parameters_mediamarkt' => $this->postedComponentParamsJson(
+                'params_mediamarkt_loaded',
+                $this->collectMediaMarktParams(),
+                $existingComponent,
+                'parameters_mediamarkt'
+            ),
             'name_spec' => trim((string) $this->input('name_spec', '')),
             'img' => $img,
             'img_morele' => $imgMorele,
             'img_empik' => $imgEmpik,
+            'img_mediamarkt' => $imgMediaMarkt,
             'category' => trim((string) $this->input('category', '')),
         );
 
@@ -2072,6 +2178,16 @@ class ComputersController extends Controller
             ));
             return;
         }
+        if ($which === 'mediamarkt') {
+            $payload = $this->loadMediaMarktParameterPayload($componentCategory);
+            $this->partial('computers/partials/params_mediamarkt', array(
+                'product' => $product,
+                'mediamarkt_parameters' => $payload['items'],
+                'mediamarkt_parameters_error' => $payload['error'],
+                'mediamarkt_parameters_meta' => $payload['meta'],
+            ));
+            return;
+        }
         if ($which === 'eu') {
             $payload = $this->loadEuParameterPayload($componentCategory);
             $this->partial('computers/partials/params_eu', array(
@@ -2121,9 +2237,9 @@ class ComputersController extends Controller
     {
         return array(
             'id', 'category', 'name', 'name_title', 'name_spec', 'price',
-            'description', 'description_morele', 'description_empik',
-            'parameters_eu', 'parameters_morele', 'parameters_empik',
-            'img', 'img_morele', 'img_empik',
+            'description', 'description_morele', 'description_empik', 'description_mediamarkt',
+            'parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt',
+            'img', 'img_morele', 'img_empik', 'img_mediamarkt',
             'created_at', 'updated_at',
         );
     }
@@ -2180,7 +2296,7 @@ class ComputersController extends Controller
                 $xml->endElement();
             }
 
-            foreach (array('img' => 'zdjecia_allegro_url', 'img_morele' => 'zdjecia_morele_url', 'img_empik' => 'zdjecia_empik_url') as $field => $wrapperName) {
+            foreach (array('img' => 'zdjecia_allegro_url', 'img_morele' => 'zdjecia_morele_url', 'img_empik' => 'zdjecia_empik_url', 'img_mediamarkt' => 'zdjecia_mediamarkt_url') as $field => $wrapperName) {
                 $xml->startElement($wrapperName);
                 foreach ($this->computerComponentImageUrls($component, $field) as $url) {
                     $xml->writeElement('url', $url);
@@ -2366,7 +2482,7 @@ class ComputersController extends Controller
                         $payload[$column] = $this->normalizeJsonMapString((string) $value);
                         continue;
                     }
-                    if (in_array($column, array('img', 'img_morele', 'img_empik'), true)) {
+                    if (in_array($column, array('img', 'img_morele', 'img_empik', 'img_mediamarkt'), true)) {
                         $payload[$column] = implode(',', $this->existingComponentImages((string) $value));
                         continue;
                     }
@@ -2423,12 +2539,13 @@ class ComputersController extends Controller
         return is_array($product) ? $this->normalizeProductImageFields($product) : null;
     }
 
-    private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts, array &$empikBatchUpdates = array()): array
+    private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts, array &$empikBatchUpdates = array(), array &$mediamarktBatchUpdates = array()): array
     {
         // Price updates must reach every offer with the matching SKU, including
         // offers whose locally synchronized status is currently inactive.
         $attachedProducts = $this->attachActiveAllegroOffers(array($product), false);
         $attachedProducts = $this->attachActiveEmpikOffers($attachedProducts, false);
+        $attachedProducts = $this->attachActiveMediaMarktOffers($attachedProducts, false);
         $attachedProducts = $this->attachActiveErliProducts($attachedProducts, false);
         $attachedProducts = $this->attachActiveMoreleOffers($attachedProducts, false);
         $attachedProduct = isset($attachedProducts[0]) && is_array($attachedProducts[0]) ? $attachedProducts[0] : $product;
@@ -2436,6 +2553,7 @@ class ComputersController extends Controller
         return array(
             'allegro' => $this->queueAllegroPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
             'empik' => $this->collectEmpikPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts, $empikBatchUpdates),
+            'mediamarkt' => $this->collectMediaMarktPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts, $mediamarktBatchUpdates),
             'erli' => $this->queueErliPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
             'morele' => $this->queueMorelePriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
         );
@@ -2523,6 +2641,59 @@ class ComputersController extends Controller
             if (isset($updates[$key])) {
                 if ((string) $updates[$key]['price'] !== (string) $price) {
                     throw new RuntimeException('Oferta Empik ' . $shopSku . ' pasuje do produktow z roznymi cenami.');
+                }
+                $updates[$key]['product_ids'][] = (int) ($product['id'] ?? 0);
+                $updates[$key]['product_ids'] = array_values(array_unique(array_filter($updates[$key]['product_ids'])));
+                continue;
+            }
+
+            $updates[$key] = array(
+                'account_id' => $accountId,
+                'shop_sku' => $shopSku,
+                'price' => $price,
+                'product_ids' => array((int) ($product['id'] ?? 0)),
+            );
+            $collected++;
+        }
+
+        return $collected;
+    }
+
+    private function collectMediaMarktPriceUpdatesForProduct(array $product, array $selectedMarketAccounts, array &$updates): int
+    {
+        $offers = isset($product['mediamarkt_accounts']) && is_array($product['mediamarkt_accounts'])
+            ? $product['mediamarkt_accounts']
+            : array();
+
+        if ($offers === array()) {
+            return 0;
+        }
+
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        if ($price === null) {
+            return 0;
+        }
+
+        $collected = 0;
+        foreach ($offers as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+
+            $offerRowId = (int) ($offer['offer_row_id'] ?? 0);
+            $accountId = (int) ($offer['account_id'] ?? 0);
+            $shopSku = trim((string) ($offer['shop_sku'] ?? ''));
+            if ($offerRowId <= 0 || $accountId <= 0 || $shopSku === '') {
+                continue;
+            }
+            if ($selectedMarketAccounts !== array() && !in_array('mediamarkt:' . $accountId, $selectedMarketAccounts, true)) {
+                continue;
+            }
+
+            $key = $accountId . ':' . $shopSku;
+            if (isset($updates[$key])) {
+                if ((string) $updates[$key]['price'] !== (string) $price) {
+                    throw new RuntimeException('Oferta MediaMarkt ' . $shopSku . ' pasuje do produktow z roznymi cenami.');
                 }
                 $updates[$key]['product_ids'][] = (int) ($product['id'] ?? 0);
                 $updates[$key]['product_ids'] = array_values(array_unique(array_filter($updates[$key]['product_ids'])));
@@ -2652,7 +2823,7 @@ class ComputersController extends Controller
 
     private function normalizeProductImageFields(array $product): array
     {
-        foreach (array('img', 'img_morele', 'img_empik') as $field) {
+        foreach (array('img', 'img_morele', 'img_empik', 'img_mediamarkt') as $field) {
             if (array_key_exists($field, $product)) {
                 $images = $this->existingProductImages((string) $product[$field]);
                 $product[$field] = implode(',', $images);
@@ -2715,7 +2886,7 @@ class ComputersController extends Controller
         $selected = array();
         foreach ($values as $value) {
             $value = trim((string) $value);
-            if ($value === '1' || $value === '0' || preg_match('/^!?(allegro|empik|erli|morele):\d+$/', $value) === 1) {
+            if ($value === '1' || $value === '0' || preg_match('/^!?(allegro|empik|mediamarkt|erli|morele):\d+$/', $value) === 1) {
                 $selected[] = $value;
             }
         }
@@ -2781,7 +2952,7 @@ class ComputersController extends Controller
         }
 
         if (!empty($filters['no_images'])) {
-            $where[] = "(TRIM(COALESCE(products.img, '')) = '' AND TRIM(COALESCE(products.img_morele, '')) = '' AND TRIM(COALESCE(products.img_empik, '')) = '')";
+            $where[] = "(TRIM(COALESCE(products.img, '')) = '' AND TRIM(COALESCE(products.img_morele, '')) = '' AND TRIM(COALESCE(products.img_empik, '')) = '' AND TRIM(COALESCE(products.img_mediamarkt, '')) = '')";
         }
 
         if (!empty($filters['no_ean'])) {
@@ -2840,6 +3011,7 @@ class ComputersController extends Controller
         $wantsAny = in_array('1', $marketFilters, true) || in_array('0', $marketFilters, true);
         $wantsAllegro = $wantsAny;
         $wantsEmpik = $wantsAny;
+        $wantsMediaMarkt = $wantsAny;
         $wantsErli = $wantsAny;
         $wantsMorele = $wantsAny;
 
@@ -2851,12 +3023,14 @@ class ComputersController extends Controller
             list($market) = explode(':', $normalizedFilter, 2);
             $wantsAllegro = $wantsAllegro || $market === 'allegro';
             $wantsEmpik = $wantsEmpik || $market === 'empik';
+            $wantsMediaMarkt = $wantsMediaMarkt || $market === 'mediamarkt';
             $wantsErli = $wantsErli || $market === 'erli';
             $wantsMorele = $wantsMorele || $market === 'morele';
         }
 
         $allegroIdentifiers = $wantsAllegro ? $this->activeAllegroIdentifierAccounts() : array();
         $empikIdentifiers = $wantsEmpik ? $this->activeEmpikIdentifierAccounts() : array();
+        $mediamarktIdentifiers = $wantsMediaMarkt ? $this->activeMediaMarktIdentifierAccounts() : array();
         $erliIdentifiers = $wantsErli ? $this->activeErliIdentifierAccounts() : array();
         $moreleIdentifiers = $wantsMorele ? $this->activeMoreleIdentifierAccounts() : array();
 
@@ -2876,6 +3050,9 @@ class ComputersController extends Controller
                 : array();
             $product['empik_accounts'] = $wantsEmpik
                 ? $this->matchIdentifierAccounts($this->empikSkuCandidatesForComputerProduct($product), $empikIdentifiers)
+                : array();
+            $product['mediamarkt_accounts'] = $wantsMediaMarkt
+                ? $this->matchIdentifierAccounts($this->mediaMarktSkuCandidatesForComputerProduct($product), $mediamarktIdentifiers)
                 : array();
 
             if ($this->productMatchesMarketAccountFilters($product, $marketFilters)) {
@@ -2920,6 +3097,26 @@ class ComputersController extends Controller
             . ' SELECT eo.product_sku AS identifier, eo.account_id AS account_id FROM empik_offers eo'
             . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
             . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.product_sku IS NOT NULL AND eo.product_sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, true>> */
+    private function activeMediaMarktIdentifierAccounts(): array
+    {
+        if (!$this->tableExists('mediamarkt_offers') || !$this->tableExists('mediamarkt_accounts')) {
+            return array();
+        }
+
+        (new MediaMarktStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierAccounts($this->db()->fetchAll(
+            'SELECT mo.shop_sku AS identifier, mo.account_id AS account_id FROM mediamarkt_offers mo'
+            . ' INNER JOIN mediamarkt_accounts ma ON ma.id = mo.account_id'
+            . " WHERE mo.active = 1 AND ma.is_active = 1 AND mo.shop_sku IS NOT NULL AND mo.shop_sku <> ''"
+            . ' UNION ALL'
+            . ' SELECT mo.product_sku AS identifier, mo.account_id AS account_id FROM mediamarkt_offers mo'
+            . ' INNER JOIN mediamarkt_accounts ma ON ma.id = mo.account_id'
+            . " WHERE mo.active = 1 AND ma.is_active = 1 AND mo.product_sku IS NOT NULL AND mo.product_sku <> ''"
         ));
     }
 
@@ -2991,7 +3188,7 @@ class ComputersController extends Controller
 
     /**
      * Ids of products whose warehouse price (products.price) doesn't match at least one of
-     * their currently-active marketplace offer prices (Allegro/Empik/Erli/Morele - whichever
+     * their currently-active marketplace offer prices (Allegro/Empik/MediaMarkt/Erli/Morele - whichever
      * one). Uses the same non-correlated "fetch each marketplace's active prices once, match
      * in PHP" approach as activeMarketFilterProductIds() above, for the same reason: a
      * correlated per-row price comparison against the marketplace tables was what made the
@@ -3001,10 +3198,11 @@ class ComputersController extends Controller
     {
         $allegroPrices = $this->activeAllegroIdentifierPrices();
         $empikPrices = $this->activeEmpikIdentifierPrices();
+        $mediamarktPrices = $this->activeMediaMarktIdentifierPrices();
         $erliPrices = $this->activeErliIdentifierPrices();
         $morelePrices = $this->activeMoreleIdentifierPrices();
 
-        if ($allegroPrices === array() && $empikPrices === array() && $erliPrices === array() && $morelePrices === array()) {
+        if ($allegroPrices === array() && $empikPrices === array() && $mediamarktPrices === array() && $erliPrices === array() && $morelePrices === array()) {
             return array();
         }
 
@@ -3021,7 +3219,7 @@ class ComputersController extends Controller
             $warehousePrice = round((float) ($product['price'] ?? 0), 2);
             $marketPrices = array();
             foreach ($genericCandidates as $candidate) {
-                foreach (array($allegroPrices, $empikPrices, $erliPrices) as $priceMap) {
+                foreach (array($allegroPrices, $empikPrices, $mediamarktPrices, $erliPrices) as $priceMap) {
                     foreach (($priceMap[$candidate] ?? array()) as $marketPrice) {
                         $marketPrices[] = $marketPrice;
                     }
@@ -3078,6 +3276,26 @@ class ComputersController extends Controller
             . ' SELECT eo.product_sku AS identifier, COALESCE(eo.price, eo.total_price) AS price_amount FROM empik_offers eo'
             . ' INNER JOIN empik_accounts ea ON ea.id = eo.account_id'
             . " WHERE eo.active = 1 AND ea.is_active = 1 AND eo.product_sku IS NOT NULL AND eo.product_sku <> ''"
+        ));
+    }
+
+    /** @return array<string, array<int, float>> */
+    private function activeMediaMarktIdentifierPrices(): array
+    {
+        if (!$this->tableExists('mediamarkt_offers') || !$this->tableExists('mediamarkt_accounts')) {
+            return array();
+        }
+
+        (new MediaMarktStorageRepository($this->db()))->ensureSchema();
+
+        return $this->groupIdentifierPrices($this->db()->fetchAll(
+            'SELECT mo.shop_sku AS identifier, COALESCE(mo.price, mo.total_price) AS price_amount FROM mediamarkt_offers mo'
+            . ' INNER JOIN mediamarkt_accounts ma ON ma.id = mo.account_id'
+            . " WHERE mo.active = 1 AND ma.is_active = 1 AND mo.shop_sku IS NOT NULL AND mo.shop_sku <> ''"
+            . ' UNION ALL'
+            . ' SELECT mo.product_sku AS identifier, COALESCE(mo.price, mo.total_price) AS price_amount FROM mediamarkt_offers mo'
+            . ' INNER JOIN mediamarkt_accounts ma ON ma.id = mo.account_id'
+            . " WHERE mo.active = 1 AND ma.is_active = 1 AND mo.product_sku IS NOT NULL AND mo.product_sku <> ''"
         ));
     }
 
@@ -3214,6 +3432,7 @@ class ComputersController extends Controller
             'allegro' => (array) ($product['allegro_accounts'] ?? array()),
             'erli' => (array) ($product['erli_accounts'] ?? array()),
             'empik' => (array) ($product['empik_accounts'] ?? array()),
+            'mediamarkt' => (array) ($product['mediamarkt_accounts'] ?? array()),
             'morele' => (array) ($product['morele_accounts'] ?? array()),
         );
 
@@ -3304,6 +3523,15 @@ class ComputersController extends Controller
         }
 
         return $this->db()->fetchAll('SELECT id, name, slug FROM empik_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
+    }
+
+    private function activeComputerMediaMarktAccounts(): array
+    {
+        if (!$this->tableExists('mediamarkt_accounts')) {
+            return array();
+        }
+
+        return $this->db()->fetchAll('SELECT id, name, slug FROM mediamarkt_accounts WHERE is_active = 1 ORDER BY name ASC, id ASC');
     }
 
     private function activeComputerMoreleAccounts(): array
@@ -3702,6 +3930,103 @@ class ComputersController extends Controller
         return $products;
     }
 
+    private function attachActiveMediaMarktOffers(array $products, bool $onlyActive = true): array
+    {
+        foreach ($products as $index => $product) {
+            if (is_array($product)) {
+                $products[$index]['mediamarkt_accounts'] = array();
+            }
+        }
+
+        if ($products === array() || !$this->tableExists('mediamarkt_offers') || !$this->tableExists('mediamarkt_accounts')) {
+            return $products;
+        }
+
+        $skuMap = array();
+        foreach ($products as $index => $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            foreach ($this->mediaMarktSkuCandidatesForComputerProduct($product) as $sku) {
+                if (!isset($skuMap[$sku])) {
+                    $skuMap[$sku] = array();
+                }
+                $skuMap[$sku][] = $index;
+            }
+        }
+
+        if ($skuMap === array()) {
+            return $products;
+        }
+
+        $attachedOffers = array();
+        foreach (array_chunk(array_keys($skuMap), 500) as $skuChunk) {
+            $params = array();
+            $shopSkuPlaceholders = array();
+            $productSkuPlaceholders = array();
+            foreach ($skuChunk as $index => $sku) {
+                $shopKey = 'mediamarkt_shop_sku_' . $index;
+                $productKey = 'mediamarkt_product_sku_' . $index;
+                $shopSkuPlaceholders[] = ':' . $shopKey;
+                $productSkuPlaceholders[] = ':' . $productKey;
+                $params[$shopKey] = $sku;
+                $params[$productKey] = $sku;
+            }
+
+            $rows = $this->db()->fetchAll(
+                'SELECT offers.id AS offer_row_id, offers.account_id, offers.offer_id, offers.shop_sku, offers.product_sku, offers.product_title,'
+                . ' offers.price, offers.total_price, offers.currency_iso_code, offers.quantity, offers.last_synced_at, accounts.name AS account_name, accounts.slug AS account_slug'
+                . ' FROM mediamarkt_offers offers'
+                . ' INNER JOIN mediamarkt_accounts accounts ON accounts.id = offers.account_id'
+                . ' WHERE accounts.is_active = 1'
+                . ($onlyActive ? ' AND offers.active = 1' : '')
+                . ' AND (offers.shop_sku IN (' . implode(',', $shopSkuPlaceholders) . ') OR offers.product_sku IN (' . implode(',', $productSkuPlaceholders) . '))'
+                . ' ORDER BY accounts.name ASC, offers.updated_at DESC, offers.id DESC',
+                $params
+            );
+
+            foreach ($rows as $row) {
+                $matchedSkus = array_unique(array_filter(array(
+                    trim((string) ($row['shop_sku'] ?? '')),
+                    trim((string) ($row['product_sku'] ?? '')),
+                )));
+
+                foreach ($matchedSkus as $sku) {
+                    if ($sku === '' || empty($skuMap[$sku])) {
+                        continue;
+                    }
+
+                    foreach ($skuMap[$sku] as $productIndex) {
+                        $offerKey = $productIndex . ':' . (string) ($row['account_slug'] ?? '') . ':' . (string) ($row['offer_id'] ?? '');
+                        if (isset($attachedOffers[$offerKey])) {
+                            continue;
+                        }
+
+                        $products[$productIndex]['mediamarkt_accounts'][] = array(
+                            'offer_row_id' => (int) ($row['offer_row_id'] ?? 0),
+                            'account_id' => (int) ($row['account_id'] ?? 0),
+                            'account_name' => (string) ($row['account_name'] ?? ''),
+                            'account_slug' => (string) ($row['account_slug'] ?? ''),
+                            'offer_id' => trim((string) ($row['offer_id'] ?? '')),
+                            'price_amount' => $row['price'] !== null ? (float) $row['price'] : ($row['total_price'] !== null ? (float) $row['total_price'] : null),
+                            'currency' => (string) ($row['currency_iso_code'] ?? ''),
+                            'quantity' => $row['quantity'] !== null ? (int) $row['quantity'] : null,
+                            'sku' => $sku,
+                            'shop_sku' => trim((string) ($row['shop_sku'] ?? '')),
+                            'product_sku' => trim((string) ($row['product_sku'] ?? '')),
+                            'mediamarkt_url' => './index.php?controller=mediamarkt&action=offer&id=' . (int) ($row['offer_row_id'] ?? 0),
+                            'last_synced_at' => (string) ($row['last_synced_at'] ?? ''),
+                        );
+                        $attachedOffers[$offerKey] = true;
+                    }
+                }
+            }
+        }
+
+        return $products;
+    }
+
     private function normalizeErliDisplayPrice($value): ?float
     {
         if ($value === null || trim((string) $value) === '') {
@@ -3781,6 +4106,11 @@ class ComputersController extends Controller
         return $this->computerProductSkuCandidates($product);
     }
 
+    private function mediaMarktSkuCandidatesForComputerProduct(array $product): array
+    {
+        return $this->computerProductSkuCandidates($product);
+    }
+
     /**
      * Legacy Morele offers for products below id 1000 use the bare numeric product id.
      * Every other marketplace, and newer Morele products, keep the stored ALTREO_<id> SKU.
@@ -3811,7 +4141,7 @@ class ComputersController extends Controller
 
     private function normalizeComponentImageFields(array $component): array
     {
-        foreach (array('img', 'img_morele', 'img_empik') as $field) {
+        foreach (array('img', 'img_morele', 'img_empik', 'img_mediamarkt') as $field) {
             if (array_key_exists($field, $component)) {
                 $images = $this->existingComponentImages((string) $component[$field]);
                 $component[$field] = implode(',', $images);
@@ -3830,7 +4160,7 @@ class ComputersController extends Controller
             }
         }
 
-        foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik') as $field) {
+        foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt') as $field) {
             if (array_key_exists($field, $component)) {
                 $component[$field] = $this->normalizeJsonMapString((string) $component[$field]);
             }
@@ -4141,18 +4471,31 @@ class ComputersController extends Controller
         $imagesEasy = $this->computerExportImages($product, $components, 'easy');
         $imagesMorele = $this->computerExportImages($product, $components, 'morele');
         $imagesEmpik = $this->computerExportImages($product, $components, 'empik');
+        $imagesMediaMarkt = $this->computerExportImages($product, $components, 'mediamarkt');
         $mainEmpikImage = '';
         $productEmpikImages = $this->existingProductImages((string) ($product['img_empik'] ?? ''));
+        $productMediaMarktImages = $this->existingProductImages((string) ($product['img_mediamarkt'] ?? ''));
         if ($productEmpikImages !== array()) {
             $mainEmpikImage = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImages[0]);
         } elseif ($imagesEmpik !== array()) {
             $mainEmpikImage = (string) $imagesEmpik[0];
         }
+        $mainMediaMarktImage = '';
+        $productMediaMarktImages = $this->existingProductImages((string) ($product['img_mediamarkt'] ?? ''));
+        if ($productMediaMarktImages !== array()) {
+            $mainMediaMarktImage = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productMediaMarktImages[0]);
+        } elseif ($imagesMediaMarkt !== array()) {
+            $mainMediaMarktImage = (string) $imagesMediaMarkt[0];
+        }
         $empikParams = array();
+        $mediamarktParams = array();
         $moreleParams = array();
         foreach ($components as $component) {
             foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $key => $value) {
                 $empikParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
+            }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt'] ?? '')) as $key => $value) {
+                $mediamarktParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_morele'] ?? '')) as $key => $value) {
                 if (!array_key_exists($key, $moreleParams)) {
@@ -4168,10 +4511,10 @@ class ComputersController extends Controller
             if ($category === '') {
                 continue;
             }
-            foreach (array('name', 'name_title', 'name_spec', 'description', 'description_morele', 'description_empik') as $field) {
+            foreach (array('name', 'name_title', 'name_spec', 'description', 'description_morele', 'description_empik', 'description_mediamarkt') as $field) {
                 $componentValues[$category . '.' . $field] = (string) ($component[$field] ?? '');
             }
-            foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik') as $channel => $imageField) {
+            foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik', 'mediamarkt' => 'img_mediamarkt') as $channel => $imageField) {
                 $images = array();
                 foreach (preg_split('/\s*\|\s*|\s*,\s*|\r\n|\r|\n/', (string) ($component[$imageField] ?? '')) ?: array() as $image) {
                     $url = $this->publicImageUrl($this->publicAppBaseUrl(), 'img_components', trim((string) $image));
@@ -4191,8 +4534,11 @@ class ComputersController extends Controller
             'images.easy' => $imagesEasy,
             'images.morele' => $imagesMorele,
             'images.empik' => $imagesEmpik,
+            'images.mediamarkt' => $imagesMediaMarkt,
             'main_image.empik' => $mainEmpikImage,
+            'main_image.mediamarkt' => $mainMediaMarktImage,
             'empik_params' => $empikParams,
+            'mediamarkt_params' => $mediamarktParams,
             'parameters.easy' => $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? '')),
             'parameters.morele' => implode("|\n", array_values($moreleParams)),
             'description' => $this->renderComputerDescription($product, $components, $descriptionTemplate),
@@ -4216,13 +4562,13 @@ class ComputersController extends Controller
 
     private function computerExportImages(array $product, array $components, string $channel): array
     {
-        $productField = $channel === 'morele' ? 'img_morele' : ($channel === 'empik' ? 'img_empik' : 'img');
+        $productField = $channel === 'morele' ? 'img_morele' : ($channel === 'empik' ? 'img_empik' : ($channel === 'mediamarkt' ? 'img_mediamarkt' : 'img'));
         $componentField = $productField;
         $images = array();
         $base = $this->publicAppBaseUrl();
         $productImages = $this->existingProductImages((string) ($product[$productField] ?? ''));
-        if ($channel === 'empik' && $productImages !== array()) {
-            // Pierwsze zdjecie Empik jest uzywane osobno jako main_image.empik.
+        if (in_array($channel, array('empik', 'mediamarkt'), true) && $productImages !== array()) {
+            // Pierwsze zdjecie Mirakl jest uzywane osobno jako main_image.<market>.
             $productImages = array_slice($productImages, 1);
         }
         foreach ($productImages as $file) {
@@ -4334,12 +4680,12 @@ class ComputersController extends Controller
         if (strpos($source, 'component.') === 0) {
             return (string) ($context['component_values'][substr($source, 10)] ?? '');
         }
-        if (preg_match('/^component_image\.(easy|morele|empik)\.([A-Z0-9_-]+)\.(\d+)$/', $source, $matches) === 1) {
+        if (preg_match('/^component_image\.(easy|morele|empik|mediamarkt)\.([A-Z0-9_-]+)\.(\d+)$/', $source, $matches) === 1) {
             $images = $context['component_images'][$matches[1] . '.' . $matches[2]] ?? array();
             return (string) ($images[max(0, (int) $matches[3] - 1)] ?? '');
         }
-        if (preg_match('/^product_image\.(easy|morele|empik)\.(\d+)$/', $source, $matches) === 1) {
-            $field = $matches[1] === 'morele' ? 'img_morele' : ($matches[1] === 'empik' ? 'img_empik' : 'img');
+        if (preg_match('/^product_image\.(easy|morele|empik|mediamarkt)\.(\d+)$/', $source, $matches) === 1) {
+            $field = $matches[1] === 'morele' ? 'img_morele' : ($matches[1] === 'empik' ? 'img_empik' : ($matches[1] === 'mediamarkt' ? 'img_mediamarkt' : 'img'));
             $images = $this->existingProductImages((string) ($product[$field] ?? ''));
             $file = $images[max(0, (int) $matches[2] - 1)] ?? '';
             if ($file === '') {
@@ -4350,6 +4696,9 @@ class ComputersController extends Controller
         if (strpos($source, 'empik_param:') === 0) {
             return (string) ($context['empik_params'][substr($source, 12)] ?? '');
         }
+        if (strpos($source, 'mediamarkt_param:') === 0) {
+            return (string) ($context['mediamarkt_params'][substr($source, 18)] ?? '');
+        }
         if ($source === 'description') {
             return (string) $context['description'];
         }
@@ -4359,11 +4708,14 @@ class ComputersController extends Controller
         if ($source === 'main_image.empik') {
             return (string) $context['main_image.empik'];
         }
-        if (preg_match('/^image\\.(easy|morele|empik)\\.(\\d+)$/', $source, $matches) === 1) {
+        if ($source === 'main_image.mediamarkt') {
+            return (string) $context['main_image.mediamarkt'];
+        }
+        if (preg_match('/^image\\.(easy|morele|empik|mediamarkt)\\.(\\d+)$/', $source, $matches) === 1) {
             $images = $context['images.' . $matches[1]];
             return (string) ($images[max(0, (int) $matches[2] - 1)] ?? '');
         }
-        if (preg_match('/^images\\.(easy|morele|empik)$/', $source, $matches) === 1) {
+        if (preg_match('/^images\\.(easy|morele|empik|mediamarkt)$/', $source, $matches) === 1) {
             $separator = $matches[1] === 'easy' ? "\n" : ($matches[1] === 'morele' ? ',' : '|');
             return implode($separator, $context[$source]);
         }
@@ -4391,13 +4743,16 @@ class ComputersController extends Controller
             'main_img_empik' => $productEmpikImages !== array()
                 ? (string) ($this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productEmpikImages[0]) ?? '')
                 : '',
+            'main_img_mediamarkt' => $productMediaMarktImages !== array()
+                ? (string) ($this->publicImageUrl($this->publicAppBaseUrl(), 'img_computers_products', $productMediaMarktImages[0]) ?? '')
+                : '',
             'product.id' => (string) ($product['id'] ?? ''),
             'product.code' => 'ALTREO_' . (string) ($product['id'] ?? ''),
             'product.name' => (string) ($product['name'] ?? ''),
             'product.price' => (string) ($product['price'] ?? ''),
             'product.EAN' => (string) ($product['EAN'] ?? ''),
         );
-        foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik') as $channel => $imageField) {
+        foreach (array('easy' => 'img', 'morele' => 'img_morele', 'empik' => 'img_empik', 'mediamarkt' => 'img_mediamarkt') as $channel => $imageField) {
             $productChannelImages = $this->existingProductImages((string) ($product[$imageField] ?? ''));
             foreach ($productChannelImages as $index => $file) {
                 $vars['product_image.' . $channel . '.' . ($index + 1)] = (string) ($this->publicImageUrl(
@@ -4407,7 +4762,7 @@ class ComputersController extends Controller
                 ) ?? '');
             }
         }
-        foreach (array('easy', 'morele', 'empik') as $channel) {
+        foreach (array('easy', 'morele', 'empik', 'mediamarkt') as $channel) {
             $descriptionImages = $this->computerExportImages($product, $components, $channel);
             foreach ($descriptionImages as $index => $imageUrl) {
                 $vars['image.' . $channel . '.' . ($index + 1)] = $imageUrl;
@@ -4431,6 +4786,7 @@ class ComputersController extends Controller
                 'allegro' => 'parameters_eu',
                 'morele' => 'parameters_morele',
                 'empik' => 'parameters_empik',
+                'mediamarkt' => 'parameters_mediamarkt',
             ) as $market => $parameterField) {
                 foreach ($this->decodeJsonMap((string) ($component[$parameterField] ?? '')) as $parameterKey => $parameterValue) {
                     $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
@@ -4441,12 +4797,12 @@ class ComputersController extends Controller
                         = $this->computerDescriptionParameterValue($market, $parameterValue);
                 }
             }
-            foreach (array('img', 'img_morele', 'img_empik') as $imageField) {
+            foreach (array('img', 'img_morele', 'img_empik', 'img_mediamarkt') as $imageField) {
                 $images = array_values(array_filter(array_map('trim', preg_split('/,|\\r\\n|\\r|\\n/', (string) ($component[$imageField] ?? '')) ?: array())));
                 foreach ($images as $index => $image) {
                     $imageUrl = (string) $this->publicImageUrl($this->publicAppBaseUrl(), 'img_components', $image);
                     $vars[$category . '_' . $imageField . '[' . $index . ']'] = $imageUrl;
-                    $channel = $imageField === 'img_morele' ? 'morele' : ($imageField === 'img_empik' ? 'empik' : 'easy');
+                    $channel = $imageField === 'img_morele' ? 'morele' : ($imageField === 'img_empik' ? 'empik' : ($imageField === 'img_mediamarkt' ? 'mediamarkt' : 'easy'));
                     $vars['component_image.' . $channel . '.' . strtoupper($category) . '.' . ($index + 1)] = $imageUrl;
                 }
             }
@@ -4896,6 +5252,127 @@ class ComputersController extends Controller
         return $value;
     }
 
+    private function collectMediaMarktParams(): array
+    {
+        $result = $this->collectStructuredMediaMarktParams();
+        $names = (array) $this->input('mediamarkt_custom_name', array());
+        $values = (array) $this->input('mediamarkt_custom_value', array());
+        foreach ($names as $index => $name) {
+            $name = trim((string) $name);
+            $value = trim((string) ($values[$index] ?? ''));
+            if ($name === '' || $value === '') {
+                continue;
+            }
+            $result[$name] = $value;
+        }
+        return $result;
+    }
+
+    private function collectStructuredMediaMarktParams(): array
+    {
+        $input = $this->input('mediamarkt_parameters', array());
+        if (!is_array($input)) {
+            return array();
+        }
+
+        $payload = $this->loadMediaMarktParameterPayload();
+        $definitions = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : array();
+        if ($definitions === array()) {
+            return array();
+        }
+
+        $result = array();
+        foreach ($definitions as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+
+            $id = trim((string) ($definition['id'] ?? ''));
+            $name = trim((string) ($definition['name'] ?? $id));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+
+            $rawValue = array_key_exists($id, $input) ? $input[$id] : null;
+            $normalized = $this->normalizeMediaMarktPostedValue($definition, $rawValue);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+
+            $result[$name] = $normalized;
+        }
+
+        return $result;
+    }
+
+    private function normalizeMediaMarktPostedValue(array $definition, $rawValue): ?string
+    {
+        $type = strtolower(trim((string) ($definition['type'] ?? 'text')));
+        $multiple = !empty($definition['multiple']);
+        $dictionary = isset($definition['dictionary']) && is_array($definition['dictionary']) ? $definition['dictionary'] : array();
+        $labelsById = array();
+
+        foreach ($dictionary as $option) {
+            if (!is_array($option)) {
+                continue;
+            }
+
+            $optionId = trim((string) ($option['id'] ?? ''));
+            $optionLabel = trim((string) ($option['value'] ?? $optionId));
+            if ($optionId !== '') {
+                $labelsById[$optionId] = $optionLabel !== '' ? $optionLabel : $optionId;
+            }
+        }
+
+        if ($multiple) {
+            $values = is_array($rawValue) ? $rawValue : ($rawValue !== null && trim((string) $rawValue) !== '' ? preg_split('/\r\n|\r|\n|\|/', (string) $rawValue) : array());
+            $values = is_array($values) ? $values : array();
+            $normalized = array();
+
+            foreach ($values as $value) {
+                $value = trim((string) $value);
+                if ($value === '') {
+                    continue;
+                }
+
+                $normalized[] = isset($labelsById[$value]) ? $labelsById[$value] : $value;
+            }
+
+            $normalized = array_values(array_unique(array_filter($normalized, static function (string $value): bool {
+                return trim($value) !== '';
+            })));
+
+            return $normalized !== array() ? implode(' | ', $normalized) : null;
+        }
+
+        if (is_array($rawValue)) {
+            return null;
+        }
+
+        $value = trim((string) $rawValue);
+        if ($value === '') {
+            return null;
+        }
+
+        if (isset($labelsById[$value])) {
+            return $labelsById[$value];
+        }
+
+        if ($type === 'dictionary') {
+            $lowerValue = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+            foreach ($labelsById as $optionId => $optionLabel) {
+                $lowerId = function_exists('mb_strtolower') ? mb_strtolower($optionId, 'UTF-8') : strtolower($optionId);
+                $lowerLabel = function_exists('mb_strtolower') ? mb_strtolower($optionLabel, 'UTF-8') : strtolower($optionLabel);
+                if ($lowerValue === $lowerId || $lowerValue === $lowerLabel) {
+                    return $optionLabel;
+                }
+            }
+        }
+
+        return $value;
+    }
+
+
     private function decodeJsonMap(string $json): array
     {
         $decoded = json_decode($json, true);
@@ -4931,9 +5408,11 @@ class ComputersController extends Controller
         $row['param'] = $this->decodeJsonMap((string) ($row['parameters_eu'] ?? ''));
         $row['param_morele'] = $this->decodeJsonMap((string) ($row['parameters_morele'] ?? ''));
         $row['param_empik'] = $this->decodeJsonMap((string) ($row['parameters_empik'] ?? ''));
+        $row['param_mediamarkt'] = $this->decodeJsonMap((string) ($row['parameters_mediamarkt'] ?? ''));
         $row['param_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param']) && is_array($row['param']) ? $row['param'] : array());
         $row['param_morele_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param_morele']) && is_array($row['param_morele']) ? $row['param_morele'] : array());
         $row['param_empik_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_empik']) && is_array($row['param_empik']) ? $row['param_empik'] : array());
+        $row['param_mediamarkt_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_mediamarkt']) && is_array($row['param_mediamarkt']) ? $row['param_mediamarkt'] : array());
 
         return $row;
     }
@@ -5143,9 +5622,105 @@ class ComputersController extends Controller
         return $hasImageWord && $hasManualWord;
     }
 
+    private function loadMediaMarktParameterPayload(string $componentCategory = ''): array
+    {
+        $meta = array(
+            'label' => 'MediaMarkt',
+            'category_id' => '',
+            'source' => '',
+        );
+
+        try {
+            $categoryId = trim($this->settings ? $this->settings->get('computers_mediamarkt_category_id', '') : '');
+            $meta['source'] = $categoryId !== '' ? 'Ustawienia administracji' : '';
+
+            if ($categoryId === '') {
+                return array(
+                    'items' => array(),
+                    'error' => 'Najpierw wpisz ID kategorii MediaMarkt w Administracja → Automatyzacja → Morele.',
+                    'meta' => $meta,
+                );
+            }
+
+            $meta['category_id'] = $categoryId;
+            $service = new MediaMarktService();
+
+            $items = $service->categoryAttributes($categoryId);
+            foreach ($items as $index => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                if ($this->mediamarktAttributeRequiresManualInput($item)) {
+                    $items[$index]['option_lookup'] = false;
+                    $items[$index]['dictionary'] = array();
+                    $items[$index]['type'] = !empty($item['multiple']) ? 'textarea' : 'text';
+                }
+            }
+            $items = $this->markUsedComputerParameters(
+                $items,
+                $this->computerParameterUsage('parameters_mediamarkt', $componentCategory),
+                'name'
+            );
+            $meta['component_category'] = $componentCategory;
+
+            return array(
+                'items' => $items,
+                'error' => '',
+                'meta' => $this->parameterUsageMeta($meta, $items),
+            );
+        } catch (Throwable $exception) {
+            return array(
+                'items' => array(),
+                'error' => 'Nie udalo sie pobrac parametrow MediaMarkt z API: ' . $exception->getMessage(),
+                'meta' => $meta,
+            );
+        }
+    }
+
+    private function mediamarktAttributeRequiresManualInput(array $attribute): bool
+    {
+        $value = $this->normalizeLookupText(
+            (string) ($attribute['name'] ?? '') . ' ' . (string) ($attribute['id'] ?? '')
+        );
+        if ($value === '') {
+            return false;
+        }
+
+        foreach (array(
+            'dodatkowe zdjecia',
+            'dodatkowe zdjęcia',
+            'zdjecia dodatkowe',
+            'zdjęcia dodatkowe',
+            'additional images',
+            'additional image',
+            'extra images',
+            'extra image',
+            'image url',
+            'image urls',
+            'adres zdjecia',
+            'adres zdjęcia',
+            'url zdjecia',
+            'url zdjęcia',
+        ) as $phrase) {
+            if (strpos($value, $this->normalizeLookupText($phrase)) !== false) {
+                return true;
+            }
+        }
+
+        $hasImageWord = strpos($value, 'zdjec') !== false
+            || strpos($value, 'zdję') !== false
+            || strpos($value, 'image') !== false;
+        $hasManualWord = strpos($value, 'dodatk') !== false
+            || strpos($value, 'additional') !== false
+            || strpos($value, 'extra') !== false
+            || strpos($value, 'url') !== false;
+
+        return $hasImageWord && $hasManualWord;
+    }
+
     private function computerParameterUsage(string $column, string $componentCategory = ''): array
     {
-        if (!in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik'), true)) {
+        if (!in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt'), true)) {
             return array();
         }
 
@@ -5168,7 +5743,7 @@ class ComputersController extends Controller
                     continue;
                 }
                 $identifier = trim((string) $key);
-                if ($column !== 'parameters_empik') {
+                if (!in_array($column, array('parameters_empik', 'parameters_mediamarkt'), true)) {
                     $identifier = trim((string) (explode('|', $identifier)[0] ?? ''));
                 }
                 $identifier = $this->normalizeLookupText($identifier);
@@ -5368,7 +5943,7 @@ class ComputersController extends Controller
 
     private function findDesktopCategoryMapping(): array
     {
-        $rows = $this->db()->fetchAll('SELECT id, name, slug, allegro_category_id, empik_category_id FROM categories ORDER BY name ASC');
+        $rows = $this->db()->fetchAll('SELECT id, name, slug, allegro_category_id, empik_category_id, mediamarkt_category_id FROM categories ORDER BY name ASC');
         if ($rows === array()) {
             return array();
         }
@@ -5399,6 +5974,9 @@ class ComputersController extends Controller
                 $score += 15;
             }
             if (trim((string) ($row['empik_category_id'] ?? '')) !== '') {
+                $score += 15;
+            }
+            if (trim((string) ($row['mediamarkt_category_id'] ?? '')) !== '') {
                 $score += 15;
             }
 
@@ -5520,24 +6098,26 @@ class ComputersController extends Controller
 
     private function deleteComponentFiles(int $componentId): void
     {
-        $row = $this->db()->fetch('SELECT img, img_morele, img_empik FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $componentId));
+        $row = $this->db()->fetch('SELECT img, img_morele, img_empik, img_mediamarkt FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $componentId));
         if (!is_array($row)) {
             return;
         }
         $this->deleteImageList((string) ($row['img'] ?? ''), $this->componentUploadDir());
         $this->deleteImageList((string) ($row['img_morele'] ?? ''), $this->componentUploadDir());
         $this->deleteImageList((string) ($row['img_empik'] ?? ''), $this->componentUploadDir());
+        $this->deleteImageList((string) ($row['img_mediamarkt'] ?? ''), $this->componentUploadDir());
     }
 
     private function deleteProductFiles(int $productId): void
     {
-        $row = $this->db()->fetch('SELECT img, img_morele, img_empik FROM ' . self::PRODUCTS_TABLE . ' WHERE id = :id', array('id' => $productId));
+        $row = $this->db()->fetch('SELECT img, img_morele, img_empik, img_mediamarkt FROM ' . self::PRODUCTS_TABLE . ' WHERE id = :id', array('id' => $productId));
         if (!is_array($row)) {
             return;
         }
         $this->deleteImageList((string) ($row['img'] ?? ''), $this->productUploadDir());
         $this->deleteImageList((string) ($row['img_morele'] ?? ''), $this->productUploadDir());
         $this->deleteImageList((string) ($row['img_empik'] ?? ''), $this->productUploadDir());
+        $this->deleteImageList((string) ($row['img_mediamarkt'] ?? ''), $this->productUploadDir());
     }
 
     private function deleteImageList(string $csv, string $dir): void
@@ -5585,16 +6165,17 @@ class ComputersController extends Controller
             'parameters.easy' => 'Parametry EasyUploader',
             'parameters.morele' => 'Parametry Morele',
             'main_image.empik' => 'Empik — zdjecie produktu 1 (zgodnosc ze starym szablonem)',
+            'main_image.mediamarkt' => 'MediaMarkt — zdjecie produktu 1',
             'date.today' => 'Dzisiejsza data',
         );
         $productImageLimits = $this->computerProductImageLimits();
-        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt') as $channel => $channelLabel) {
             for ($index = 1; $index <= $productImageLimits[$channel]; $index++) {
                 $options['product_image.' . $channel . '.' . $index] = $channelLabel . ' — zdjecie produktu ' . $index;
             }
         }
         $componentImageLimits = $this->computerComponentImageLimits();
-        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt') as $channel => $channelLabel) {
             foreach (($componentImageLimits[$channel] ?? array()) as $category => $maxImages) {
                 for ($index = 1; $index <= $maxImages; $index++) {
                     $options['component_image.' . $channel . '.' . $category . '.' . $index]
@@ -5610,12 +6191,16 @@ class ComputersController extends Controller
                 'description' => 'opis EasyUploader',
                 'description_morele' => 'opis Morele',
                 'description_empik' => 'opis Empik',
+                'description_mediamarkt' => 'opis MediaMarkt',
             ) as $field => $label) {
                 $options['component.' . $category . '.' . $field] = $category . ': ' . $label;
             }
         }
         foreach ($this->empikComputerParameterNames() as $name) {
             $options['empik_param:' . $name] = 'Empik parametr: ' . $name;
+        }
+        foreach ($this->mediaMarktComputerParameterNames() as $name) {
+            $options['mediamarkt_param:' . $name] = 'MediaMarkt parametr: ' . $name;
         }
         return $options;
     }
@@ -5626,7 +6211,8 @@ class ComputersController extends Controller
             'SELECT '
             . 'MAX(CASE WHEN img IS NOT NULL AND img <> "" THEN (LENGTH(img) - LENGTH(REPLACE(img, ",", "")) + 1) ELSE 0 END) AS max_easy, '
             . 'MAX(CASE WHEN img_morele IS NOT NULL AND img_morele <> "" THEN (LENGTH(img_morele) - LENGTH(REPLACE(img_morele, ",", "")) + 1) ELSE 0 END) AS max_morele, '
-            . 'MAX(CASE WHEN img_empik IS NOT NULL AND img_empik <> "" THEN (LENGTH(img_empik) - LENGTH(REPLACE(img_empik, ",", "")) + 1) ELSE 0 END) AS max_empik '
+            . 'MAX(CASE WHEN img_empik IS NOT NULL AND img_empik <> "" THEN (LENGTH(img_empik) - LENGTH(REPLACE(img_empik, ",", "")) + 1) ELSE 0 END) AS max_empik, '
+            . 'MAX(CASE WHEN img_mediamarkt IS NOT NULL AND img_mediamarkt <> "" THEN (LENGTH(img_mediamarkt) - LENGTH(REPLACE(img_mediamarkt, ",", "")) + 1) ELSE 0 END) AS max_mediamarkt '
             . 'FROM ' . self::PRODUCTS_TABLE
         );
 
@@ -5634,6 +6220,7 @@ class ComputersController extends Controller
             'easy' => max(1, min(16, (int) ($row['max_easy'] ?? 0))),
             'morele' => max(1, min(16, (int) ($row['max_morele'] ?? 0))),
             'empik' => max(1, min(16, (int) ($row['max_empik'] ?? 0))),
+            'mediamarkt' => max(1, min(16, (int) ($row['max_mediamarkt'] ?? 0))),
         );
     }
 
@@ -5643,14 +6230,16 @@ class ComputersController extends Controller
             'easy' => array(),
             'morele' => array(),
             'empik' => array(),
+            'mediamarkt' => array(),
         );
         $fields = array(
             'easy' => 'img',
             'morele' => 'img_morele',
             'empik' => 'img_empik',
+            'mediamarkt' => 'img_mediamarkt',
         );
         $rows = $this->db()->fetchAll(
-            'SELECT category, img, img_morele, img_empik FROM ' . self::COMPONENTS_TABLE
+            'SELECT category, img, img_morele, img_empik, img_mediamarkt FROM ' . self::COMPONENTS_TABLE
             . ' WHERE category IS NOT NULL AND category <> ""'
         );
 
@@ -5689,9 +6278,10 @@ class ComputersController extends Controller
             'main_img_allegro' => 'EasyUploader: glowne zdjecie produktu',
             'main_img_morele' => 'Morele: glowne zdjecie produktu',
             'main_img_empik' => 'Empik: glowne zdjecie produktu (img_empik produktu)',
+            'main_img_mediamarkt' => 'MediaMarkt: glowne zdjecie produktu (img_mediamarkt produktu)',
         );
         $productImageLimits = $this->computerProductImageLimits();
-        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $channelLabel) {
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt') as $channel => $channelLabel) {
             for ($index = 1; $index <= $productImageLimits[$channel]; $index++) {
                 $tokens['product_image.' . $channel . '.' . $index] = $channelLabel . ' — zdjecie produktu ' . $index;
             }
@@ -5704,12 +6294,13 @@ class ComputersController extends Controller
                 'description' => 'opis',
                 'description_morele' => 'opis Morele',
                 'description_empik' => 'opis Empik',
+                'description_mediamarkt' => 'opis MediaMarkt',
             ) as $field => $label) {
                 $tokens['component.' . $category . '.' . $field] = $category . ': ' . $label;
             }
         }
         $componentImageLimits = $this->computerComponentImageLimits();
-        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik') as $channel => $label) {
+        foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt') as $channel => $label) {
             foreach (($componentImageLimits[$channel] ?? array()) as $category => $maxImages) {
                 for ($index = 1; $index <= $maxImages; $index++) {
                     $tokens['component_image.' . $channel . '.' . $category . '.' . $index]
@@ -5744,11 +6335,12 @@ class ComputersController extends Controller
     {
         $tokens = array();
         $rows = $this->db()->fetchAll(
-            'SELECT category, parameters_eu, parameters_morele, parameters_empik'
+            'SELECT category, parameters_eu, parameters_morele, parameters_empik, parameters_mediamarkt'
             . ' FROM ' . self::COMPONENTS_TABLE
             . " WHERE (parameters_eu IS NOT NULL AND parameters_eu <> '' AND parameters_eu <> '{}')"
             . " OR (parameters_morele IS NOT NULL AND parameters_morele <> '' AND parameters_morele <> '{}')"
             . " OR (parameters_empik IS NOT NULL AND parameters_empik <> '' AND parameters_empik <> '{}')"
+            . " OR (parameters_mediamarkt IS NOT NULL AND parameters_mediamarkt <> '' AND parameters_mediamarkt <> '{}')"
             . ' ORDER BY category, id'
         );
 
@@ -5762,6 +6354,7 @@ class ComputersController extends Controller
                 'allegro' => array('field' => 'parameters_eu', 'label' => 'Allegro'),
                 'morele' => array('field' => 'parameters_morele', 'label' => 'Morele'),
                 'empik' => array('field' => 'parameters_empik', 'label' => 'Empik'),
+                'mediamarkt' => array('field' => 'parameters_mediamarkt', 'label' => 'MediaMarkt'),
             ) as $market => $config) {
                 foreach ($this->decodeJsonMap((string) ($row[$config['field']] ?? '')) as $parameterKey => $parameterValue) {
                     $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
@@ -5784,7 +6377,7 @@ class ComputersController extends Controller
         if ($key === '') {
             return '';
         }
-        if ($market !== 'empik') {
+        if (!in_array($market, array('empik', 'mediamarkt'), true)) {
             $key = trim((string) (explode('|', $key)[0] ?? ''));
         }
         return $this->computerDescriptionTokenPart($key);
@@ -5804,7 +6397,7 @@ class ComputersController extends Controller
 
     private function computerDescriptionParameterLabel(string $market, string $key, $value): string
     {
-        if ($market === 'empik') {
+        if (in_array($market, array('empik', 'mediamarkt'), true)) {
             return trim($key);
         }
         if ($market === 'morele') {
@@ -5864,6 +6457,17 @@ class ComputersController extends Controller
                 'add_bom' => 1,
                 'description_template' => $this->defaultComputerDescriptionTemplate(),
                 'columns' => $this->empikTemplateColumns(),
+            ),
+            array(
+                'slug' => 'mediamarkt',
+                'name' => 'MediaMarkt',
+                'description' => 'Eksport komputerow do MediaMarkt przez Mirakl.',
+                'filename_prefix' => 'mediamarkt_export',
+                'delimiter' => ';',
+                'encoding' => 'UTF-8',
+                'add_bom' => 1,
+                'description_template' => $this->defaultComputerDescriptionTemplate(),
+                'columns' => $this->mediaMarktTemplateColumns(),
             ),
             array(
                 'slug' => 'morele',
@@ -5995,6 +6599,79 @@ class ComputersController extends Controller
         return $columns;
     }
 
+    private function mediamarktTemplateColumns(): array
+    {
+        $headers = array(
+            'Certyfikaty i Instrukcje GPSR', 'description', 'ean', 'EAN', 'EAN13', 'img', 'Kategoria', 'KOD', 'name',
+            'Numer katalogowy', 'Opis', 'Opis oferty', 'Stawka VAT', 'STAW_VAT', 'Sygnatura', 'Tytul', 'TYTUŁ',
+            'Tytuł .com (pełny)', 'VAT', 'ZDJĘCIA', 'zdjecie_1', 'Zdjęcie okładki/produktu', 'Data premiery',
+            'Dla graczy', 'Dodatkowe zdjęcia (1)', 'Dodatkowe zdjęcia (10)', 'Dodatkowe zdjęcia (2)',
+            'Dodatkowe zdjęcia (3)', 'Dodatkowe zdjęcia (4)', 'Dodatkowe zdjęcia (5)', 'Dodatkowe zdjęcia (6)',
+            'Dodatkowe zdjęcia (7)', 'Dodatkowe zdjęcia (8)', 'Dodatkowe zdjęcia (9)', 'Dysk', 'Ekran dotykowy',
+            'Głębokość produktu (mm)', 'Głębokość w opak. (mm)', 'Gniazdo procesora (Socket)', 'Gwarancja',
+            'Karta dźwiękowa', 'Karta graficzna', 'Kod modelu', 'Kod producenta', 'Kolor główny',
+            'Kolor - szczegóły', 'Komunikacja urządzenia', 'Liczba rdzeni procesora Elektro', 'Liczba złączy HDMI',
+            'Liczba złączy USB', 'Marka', 'Marka procesora', 'Model procesora', 'Napędy/czytniki(2130_dict)',
+            'Pamięć karty graficznej', 'Pamięć RAM', 'Pamięć wewnętrzna', 'Producent(2100)', 'Przeznaczenie',
+            'Rodzaj obudowy', 'Rodzaj ogniw', 'Rozdzielczość(284)', 'Seria do konceptu', 'Seria procesorów',
+            'System operacyjny', 'Szerokość produktu (mm)', 'Szerokość w opak. (mm)', 'Taktowanie', 'Typ chipsetu',
+            'Typ dysku (SSD/HDD)', 'Typ pamięci', 'Waga produktu (g)', 'Waga produktu w opak. (g)',
+            'Wejścia/wyjścia(2161_dict)', 'Wielkość ekranu(2177)', 'Wymiary(665)', 'Wyposażenie urządzenia',
+            'Wysokość produktu (mm)', 'Zestaw', 'Zestaw bez kodu ean', 'Złącza połączeniowe', 'sku', 'product-id',
+            'product-id-type', 'offer-description', 'internal-description', 'price', 'price-additional-info',
+            'quantity', 'min-quantity-alert', 'state', 'available-start-date', 'available-end-date',
+            'logistic-class', 'favorite-rank', 'discount-price', 'discount-start-date', 'discount-end-date',
+            'leadtime-to-ship', 'update-delete', 'vatmargin', 'price-calibration-enabled', 'gpsr-entity-name',
+            'gpsr-address', 'gpsr-country', 'gpsr-city', 'gpsr-zip-code', 'gpsr-email', 'gpsr-phone',
+        );
+        $sources = array(
+            'description' => 'description', 'ean' => 'product.EAN', 'EAN' => 'product.EAN', 'EAN13' => 'product.EAN',
+            'img' => 'main_image.mediamarkt', 'KOD' => 'product.code', 'name' => 'product.name',
+            'Numer katalogowy' => 'product.code', 'Opis' => 'description', 'Opis oferty' => 'description',
+            'Sygnatura' => 'product.code', 'Tytul' => 'product.name', 'TYTUŁ' => 'product.name',
+            'Tytuł .com (pełny)' => 'product.name', 'ZDJĘCIA' => 'images.mediamarkt', 'zdjecie_1' => 'main_image.mediamarkt',
+            'Zdjęcie okładki/produktu' => 'main_image.mediamarkt', 'Kod producenta' => 'product.producer_code',
+            'sku' => 'product.code', 'product-id' => 'product.EAN', 'offer-description' => 'description',
+            'internal-description' => 'description', 'price' => 'product.price', 'available-start-date' => 'date.today',
+        );
+        $statics = array(
+            'Kategoria' => 'Komputery PC', 'Stawka VAT' => '23', 'STAW_VAT' => '23', 'VAT' => '23',
+            'product-id-type' => 'EAN', 'quantity' => '1000', 'state' => '11', 'logistic-class' => '3',
+            'leadtime-to-ship' => '1', 'update-delete' => 'aktualizuj', 'vatmargin' => 'true',
+            'gpsr-entity-name' => 'ACCRA Sp. z o.o.', 'gpsr-address' => 'LIPOWA 3D', 'gpsr-country' => 'Polska',
+            'gpsr-city' => 'Kraków', 'gpsr-zip-code' => '30-702', 'gpsr-email' => 'kontakt@altreo.pl',
+            'gpsr-phone' => '+48 660858061',
+        );
+        $paramAliases = array(
+            'Producent(2100)' => 'Marka', 'Rozdzielczość(284)' => 'Rozdzielczość',
+            'Wielkość ekranu(2177)' => 'Wielkość ekranu',
+        );
+        $imageNumbers = array(
+            'Dodatkowe zdjęcia (1)' => 1, 'Dodatkowe zdjęcia (2)' => 2, 'Dodatkowe zdjęcia (3)' => 3,
+            'Dodatkowe zdjęcia (4)' => 4, 'Dodatkowe zdjęcia (5)' => 5, 'Dodatkowe zdjęcia (6)' => 6,
+            'Dodatkowe zdjęcia (7)' => 7, 'Dodatkowe zdjęcia (8)' => 8, 'Dodatkowe zdjęcia (9)' => 9,
+            'Dodatkowe zdjęcia (10)' => 10,
+        );
+        $parameterNames = array_flip($this->mediamarktComputerParameterNames());
+        $columns = array();
+        foreach ($headers as $header) {
+            if (isset($sources[$header])) {
+                $columns[] = $this->csvSourceColumn($header, $sources[$header]);
+            } elseif (isset($statics[$header])) {
+                $columns[] = $this->csvStaticColumn($header, $statics[$header]);
+            } elseif (isset($imageNumbers[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'image.mediamarkt.' . $imageNumbers[$header]);
+            } elseif (isset($paramAliases[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'mediamarkt_param:' . $paramAliases[$header]);
+            } elseif (isset($parameterNames[$header])) {
+                $columns[] = $this->csvSourceColumn($header, 'mediamarkt_param:' . $header);
+            } else {
+                $columns[] = $this->csvStaticColumn($header, '');
+            }
+        }
+        return $columns;
+    }
+
     private function empikComputerParameterNames(): array
     {
         return array(
@@ -6006,6 +6683,13 @@ class ComputersController extends Controller
             'Taktowanie', 'Typ chipsetu', 'Typ dysku (SSD/HDD)', 'Typ pamięci', 'Wielkość ekranu',
             'Wyposażenie urządzenia', 'Zestaw', 'Złącza połączeniowe',
         );
+    }
+
+    private function mediaMarktComputerParameterNames(): array
+    {
+        // Oba kanaly Mirakl korzystaja z tej samej warstwy dynamicznych atrybutow;
+        // lista jest tylko zestawem startowych aliasow dla edytowalnego szablonu CSV.
+        return $this->empikComputerParameterNames();
     }
 
     private function csvSourceColumn(string $header, string $source): array
@@ -6052,6 +6736,7 @@ class ComputersController extends Controller
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
+            . "img_mediamarkt TEXT DEFAULT NULL,\n"
             . "offerid VARCHAR(64) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -6072,12 +6757,15 @@ class ComputersController extends Controller
             . "description MEDIUMTEXT DEFAULT NULL,\n"
             . "description_morele MEDIUMTEXT DEFAULT NULL,\n"
             . "description_empik MEDIUMTEXT DEFAULT NULL,\n"
+            . "description_mediamarkt MEDIUMTEXT DEFAULT NULL,\n"
             . "parameters_eu LONGTEXT DEFAULT NULL,\n"
             . "parameters_morele LONGTEXT DEFAULT NULL,\n"
             . "parameters_empik LONGTEXT DEFAULT NULL,\n"
+            . "parameters_mediamarkt LONGTEXT DEFAULT NULL,\n"
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
+            . "img_mediamarkt TEXT DEFAULT NULL,\n"
             . "category VARCHAR(120) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -6123,10 +6811,12 @@ class ComputersController extends Controller
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER EAN");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
-        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_empik");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");
+        $this->ensureTableColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_mediamarkt");
         $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img TEXT DEFAULT NULL");
         $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img_morele', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_morele TEXT DEFAULT NULL");
         $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img_empik', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_empik TEXT DEFAULT NULL");
+        $this->ensureTableColumnType(self::PRODUCTS_TABLE, 'img_mediamarkt', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_mediamarkt TEXT DEFAULT NULL");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'created_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER offerid");
         $this->ensureTableColumn(self::PRODUCTS_TABLE, 'updated_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
         $this->ensureTableIndex(
@@ -6147,13 +6837,16 @@ class ComputersController extends Controller
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'description', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description MEDIUMTEXT DEFAULT NULL AFTER price");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'description_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_morele MEDIUMTEXT DEFAULT NULL AFTER description");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'description_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_empik MEDIUMTEXT DEFAULT NULL AFTER description_morele");
-        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_eu', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_eu LONGTEXT DEFAULT NULL AFTER description_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'description_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_mediamarkt MEDIUMTEXT DEFAULT NULL AFTER description_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_eu', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_eu LONGTEXT DEFAULT NULL AFTER description_mediamarkt");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_morele LONGTEXT DEFAULT NULL AFTER parameters_eu");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_empik LONGTEXT DEFAULT NULL AFTER parameters_morele");
-        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt LONGTEXT DEFAULT NULL AFTER parameters_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
-        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'category', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN category VARCHAR(120) DEFAULT NULL AFTER img_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'category', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN category VARCHAR(120) DEFAULT NULL AFTER img_mediamarkt");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'created_at', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER category");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'updated_at', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
 

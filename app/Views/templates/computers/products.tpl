@@ -182,6 +182,11 @@
                       <option value="" disabled>Brak aktywnych kont Empik</option>
                     {/foreach}
                   </optgroup>
+                  <optgroup label="MediaMarkt">
+                    {foreach from=$mediamarktMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}<option value="" disabled>Brak aktywnych kont MediaMarkt</option>{/foreach}
+                  </optgroup>
                   <optgroup label="Erli">
                     {foreach from=$erliMarketAccounts item=marketAccount}
                       <option value="{$marketAccount.filter_value|escape:'html'}" {if $marketAccount.selected}selected{/if}>{$marketAccount.name|escape:'html'}</option>
@@ -214,6 +219,11 @@
                     {foreachelse}
                       <option value="" disabled>Brak aktywnych kont Empik</option>
                     {/foreach}
+                  </optgroup>
+                  <optgroup label="MediaMarkt">
+                    {foreach from=$mediamarktMarketAccounts item=marketAccount}
+                      <option value="{$marketAccount.exclude_value|escape:'html'}" {if $marketAccount.excluded}selected{/if}>{$marketAccount.name|escape:'html'}</option>
+                    {foreachelse}<option value="" disabled>Brak aktywnych kont MediaMarkt</option>{/foreach}
                   </optgroup>
                   <optgroup label="Erli">
                     {foreach from=$erliMarketAccounts item=marketAccount}
@@ -513,10 +523,11 @@
                 </div>
                 <div class="form-text mt-2">Wybierz cel aktualizacji obrazu:</div>
                 <select name="bulk_img_target" id="bulk_img_target" class="form-select form-select-sm mt-1" style="max-width:250px;">
-                  <option value="all">Wszystkie (Allegro + Morele + Empik)</option>
+                  <option value="all">Wszystkie (Allegro + Morele + Empik + MediaMarkt)</option>
                   <option value="img">ALLEGRO (img)</option>
                   <option value="img_morele">Morele (img_morele)</option>
                   <option value="img_empik">Empik (img_empik)</option>
+                  <option value="img_mediamarkt">MediaMarkt (img_mediamarkt)</option>
                 </select>
                 <div class="form-text mt-2">Tryb:</div>
                 <select name="bulk_img_mode" id="bulk_img_mode" class="form-select form-select-sm mt-1" style="max-width:250px;">
@@ -617,7 +628,7 @@
                     <div class="card-body p-3">
                       <div class="d-flex flex-wrap align-items-center justify-content-between">
                         <div class="d-flex align-items-center mb-2 mb-md-0">
-                          <input type="checkbox" name="product_ids[]" value="{$prod.id}" class="product_checkbox me-2" data-price-market-accounts="{foreach from=$prod.allegro_accounts item=allegroAccount}allegro:{$allegroAccount.account_id|escape:'html'}|Allegro {$allegroAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.empik_accounts item=empikAccount}empik:{$empikAccount.account_id|escape:'html'}|Empik {$empikAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.erli_accounts item=erliAccount}erli:{$erliAccount.account_id|escape:'html'}|Erli {$erliAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.morele_accounts item=moreleAccount}morele:{$moreleAccount.account_id|escape:'html'}|Morele {$moreleAccount.account_name|escape:'html'}||{/foreach}" />
+                          <input type="checkbox" name="product_ids[]" value="{$prod.id}" class="product_checkbox me-2" data-price-market-accounts="{foreach from=$prod.allegro_accounts item=allegroAccount}allegro:{$allegroAccount.account_id|escape:'html'}|Allegro {$allegroAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.empik_accounts item=empikAccount}empik:{$empikAccount.account_id|escape:'html'}|Empik {$empikAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.mediamarkt_accounts item=mediamarktAccount}mediamarkt:{$mediamarktAccount.account_id|escape:'html'}|MediaMarkt {$mediamarktAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.erli_accounts item=erliAccount}erli:{$erliAccount.account_id|escape:'html'}|Erli {$erliAccount.account_name|escape:'html'}||{/foreach}{foreach from=$prod.morele_accounts item=moreleAccount}morele:{$moreleAccount.account_id|escape:'html'}|Morele {$moreleAccount.account_name|escape:'html'}||{/foreach}" />
                           <span class="text-muted small me-3">ID: {$prod.id}</span>
                           {if $prod.sku != ''}
                           <span class="d-inline-flex align-items-center me-3">
@@ -662,6 +673,15 @@
                                   {if $empikAccount.price_amount != ''}
                                     {$empikAccount.price_amount|number_format:2:',':'.'} zl
                                   {/if}
+                                </a>
+                              {/foreach}
+                            </span>
+                          {/if}
+                          {if $prod.mediamarkt_accounts|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.mediamarkt_accounts item=mediamarktAccount}
+                                <a href="{$mediamarktAccount.mediamarkt_url|escape:'html'}" target="_blank" rel="noreferrer" class="badge text-bg-danger text-decoration-none" title="SKU: {$mediamarktAccount.sku|escape:'html'} | Oferta: {$mediamarktAccount.offer_id|escape:'html'}">
+                                  MediaMarkt {$mediamarktAccount.account_name|escape:'html'}{if $mediamarktAccount.price_amount != ''} {$mediamarktAccount.price_amount|number_format:2:',':'.'} zl{/if}
                                 </a>
                               {/foreach}
                             </span>
@@ -756,6 +776,24 @@
                               </div>
                             {/if}
                           </div>
+                          <div class="product-image-channel product-image-upload-widget" data-max-images="16">
+                            <div class="product-image-channel__label">MediaMarkt <span class="text-muted small">({$prod.img_mediamarkt_count|default:0})</span></div>
+                            <input type="hidden" name="products[{$prod.id}][img_mediamarkt_old]" class="product-image-order-input" value="{$prod.img_mediamarkt|escape:'html'}" />
+                            <div class="product-image-dropzone" tabindex="0" role="button"><i class="bi bi-cloud-arrow-up"></i><span>Dodaj zdjecia</span></div>
+                            <input type="file" name="products[{$prod.id}][img_mediamarkt_file][]" accept=".jpg,.jpeg,.png,.gif,.webp" class="product-image-file-input" multiple />
+                            <div class="product-new-image-preview"></div>
+                            {if $prod.img_mediamarkt}
+                              {assign var="channelImagesMediaMarkt" value=$prod.img_mediamarkt|split:","}
+                              <div class="product-image-sorter">
+                                {foreach from=$channelImagesMediaMarkt item=imgFile}{if $imgFile}
+                                  <div class="product-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                                    <img src="{$productsImageBase}/{$imgFile|escape:'html'}" alt="MediaMarkt" class="product-img-thumb" data-img="{$productsImageBase}/{$imgFile|escape:'html'}" />
+                                    <label class="product-image-thumb-remove"><input type="checkbox" name="products[{$prod.id}][remove_img_mediamarkt][]" value="{$imgFile|escape:'html'}" /> Usun</label>
+                                  </div>
+                                {/if}{/foreach}
+                              </div>
+                            {/if}
+                          </div>
                         </div>
                       </div>
                       <div class="row mt-2">
@@ -814,6 +852,14 @@
                   cena ?
                 {/if}
               </span>
+            </a>
+          {/foreach}
+
+          {foreach from=$prod.mediamarkt_accounts item=mediamarktAccount}
+            <a href="{$mediamarktAccount.mediamarkt_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--mediamarkt">
+              <span class="market-price-logo"><span class="badge bg-danger">MM</span></span>
+              <span class="market-price-name">MediaMarkt <strong>{$mediamarktAccount.account_name|escape:'html'}</strong></span>
+              <span class="market-price-value">{if $mediamarktAccount.price_amount != ''}{$mediamarktAccount.price_amount|number_format:2:',':'.'} zl{else}cena ?{/if}</span>
             </a>
           {/foreach}
 
@@ -1010,7 +1056,7 @@
       <div class="modal-body">
         <p class="mb-2">Wybierz konta, na ktorych zaktualizowac cene z magazynu.</p>
         <div id="priceMarketplaceAccounts" class="d-flex flex-column gap-2"></div>
-        <div class="form-text mt-2">Dla Empik wszystkie wybrane aukcje z jednego konta zostana wyslane w jednym zbiorczym imporcie cen, bez tworzenia osobnej kolejki dla kazdej aukcji.</div>
+        <div class="form-text mt-2">Dla Empik i MediaMarkt wszystkie wybrane aukcje z jednego konta zostana wyslane w jednym zbiorczym imporcie cen, bez tworzenia osobnej kolejki dla kazdej aukcji.</div>
         <div id="priceMarketplaceEmpty" class="alert alert-warning mb-0 d-none">
           Zaznaczone produkty nie maja aktywnych ofert na kontach marketplace.
         </div>
@@ -1215,6 +1261,10 @@
   }
   .market-price-row--empik {
     background: #f3fbff;
+  }
+  .market-price-row--mediamarkt {
+    border-left-color: #df0000;
+    background: #fff7f7;
   }
   .market-price-row--erli {
     background: #f3fff7;

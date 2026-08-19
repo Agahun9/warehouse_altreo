@@ -154,7 +154,7 @@ class ProductRepository
         $sql = 'SELECT products.*,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
-            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id';
@@ -921,7 +921,7 @@ class ProductRepository
         $sql = 'SELECT products.*,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
-            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
@@ -962,7 +962,7 @@ class ProductRepository
             $rows[$index]['images'] = $this->parseImages(isset($row['img']) ? (string) $row['img'] : '');
         }
 
-        return $this->attachCustomFields($this->attachSharedStock($this->attachEmpikParameters($this->attachAllegroParameters($rows))));
+        return $this->attachCustomFields($this->attachSharedStock($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows)))));
     }
 
     public function exportRowsFiltered(array $filters = array()): array
@@ -970,7 +970,7 @@ class ProductRepository
         $sql = 'SELECT products.*,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
-            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id';
@@ -1045,7 +1045,7 @@ class ProductRepository
             $rows[$index]['images'] = $this->parseImages(isset($row['img']) ? (string) $row['img'] : '');
         }
 
-        return $this->attachCustomFields($this->attachSharedStock($this->attachEmpikParameters($this->attachAllegroParameters($rows))));
+        return $this->attachCustomFields($this->attachSharedStock($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows)))));
     }
 
     private function parseImages(string $value): array
@@ -1181,6 +1181,57 @@ class ProductRepository
 
         return $rows;
     }
+
+    private function attachMediaMarktParameters(array $rows): array
+    {
+        if ($rows === array()) {
+            return $rows;
+        }
+
+        $productIds = array();
+        foreach ($rows as $row) {
+            if (isset($row['id'])) {
+                $productIds[] = (int) $row['id'];
+            }
+        }
+
+        $productIds = array_values(array_unique(array_filter($productIds)));
+        if ($productIds === array()) {
+            return $rows;
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($productIds as $index => $productId) {
+            $key = 'mediamarkt_product_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $productId;
+        }
+
+        $parameterRows = $this->database->fetchAll(
+            'SELECT product_id, parameter_id, value FROM product_mediamarkt_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') ORDER BY product_id ASC, parameter_id ASC',
+            $params
+        );
+
+        $parametersByProduct = array();
+        foreach ($parameterRows as $parameterRow) {
+            $productId = (int) $parameterRow['product_id'];
+            if (!isset($parametersByProduct[$productId])) {
+                $parametersByProduct[$productId] = array();
+            }
+
+            $decoded = json_decode((string) $parameterRow['value'], true);
+            $parametersByProduct[$productId][(string) $parameterRow['parameter_id']] = $decoded;
+        }
+
+        foreach ($rows as $index => $row) {
+            $productId = isset($row['id']) ? (int) $row['id'] : 0;
+            $rows[$index]['mediamarkt_parameters_raw'] = isset($parametersByProduct[$productId]) ? $parametersByProduct[$productId] : array();
+        }
+
+        return $rows;
+    }
+
 
     private function allegroSearchTokens(string $value): array
     {
@@ -1715,7 +1766,7 @@ class ProductRepository
             }
 
             $categories = $this->database->fetchAll(
-                'SELECT id, name, slug, sku_prefix, allegro_category_id, empik_category_id, temu_category_id, temu_category_name, temu_category_path, temu_category_parameters, end_offers_below_quantity, description, created_at, updated_at'
+                'SELECT id, name, slug, sku_prefix, allegro_category_id, empik_category_id, mediamarkt_category_id, temu_category_id, temu_category_name, temu_category_path, temu_category_parameters, end_offers_below_quantity, description, created_at, updated_at'
                 . ' FROM categories WHERE id IN (' . implode(', ', $placeholders) . ') ORDER BY id ASC',
                 $params
             );
@@ -1743,6 +1794,9 @@ class ProductRepository
         $empikParametersRows = $this->database->fetchAll(
             'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_empik_parameters ORDER BY id ASC'
         );
+        $mediamarktParametersRows = $this->database->fetchAll(
+            'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_mediamarkt_parameters ORDER BY id ASC'
+        );
         $temuParametersRows = $this->database->fetchAll(
             'SELECT id, product_id, parameter_id, value, created_at, updated_at FROM product_temu_parameters ORDER BY id ASC'
         );
@@ -1763,6 +1817,7 @@ class ProductRepository
                 'custom_field_values' => count($customFieldValues),
                 'allegro_parameters' => count($allegroParametersRows),
                 'empik_parameters' => count($empikParametersRows),
+                'mediamarkt_parameters' => count($mediamarktParametersRows),
                 'temu_parameters' => count($temuParametersRows),
                 'contour_names' => count($contourNames),
             ),
@@ -1775,6 +1830,7 @@ class ProductRepository
                 'product_custom_field_values' => $customFieldValues,
                 'product_allegro_parameters' => $allegroParametersRows,
                 'product_empik_parameters' => $empikParametersRows,
+                'product_mediamarkt_parameters' => $mediamarktParametersRows,
                 'product_temu_parameters' => $temuParametersRows,
                 self::CONTOUR_NAMES_TABLE => $contourNames,
             ),
@@ -1806,7 +1862,7 @@ class ProductRepository
         }
 
         $categories = $this->normalizeBackupRows($tables['categories'], array(
-            'id', 'name', 'slug', 'sku_prefix', 'allegro_category_id', 'empik_category_id', 'temu_category_id', 'temu_category_name', 'temu_category_path', 'temu_category_parameters', 'end_offers_below_quantity', 'description', 'created_at', 'updated_at',
+            'id', 'name', 'slug', 'sku_prefix', 'allegro_category_id', 'empik_category_id', 'mediamarkt_category_id', 'temu_category_id', 'temu_category_name', 'temu_category_path', 'temu_category_parameters', 'end_offers_below_quantity', 'description', 'created_at', 'updated_at',
         ));
         $products = $this->normalizeBackupRows($tables['products'], array(
             'id', 'sku', 'ean', 'product_name', 'description', 'category_id', 'quantity', 'localization', 'shared_stock_group_id', 'dimensions', 'contours', 'img', 'price_net', 'price_gross', 'vat_rate', 'created_at', 'updated_at', 'deleted_at',
@@ -1829,6 +1885,9 @@ class ProductRepository
         $empikParameters = $this->normalizeBackupRows($tables['product_empik_parameters'], array(
             'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
         ));
+        $mediamarktParameters = $this->normalizeBackupRows($tables['product_mediamarkt_parameters'] ?? array(), array(
+            'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
+        ));
         $temuParameters = $this->normalizeBackupRows($tables['product_temu_parameters'], array(
             'id', 'product_id', 'parameter_id', 'value', 'created_at', 'updated_at',
         ));
@@ -1845,6 +1904,7 @@ class ProductRepository
             $customFieldValues,
             $allegroParameters,
             $empikParameters,
+            $mediamarktParameters,
             $temuParameters,
             $contourNames
         ): void {
@@ -1853,6 +1913,7 @@ class ProductRepository
                 $database->delete('product_derived_stock_links', '1 = 1');
                 $database->delete('product_temu_parameters', '1 = 1');
                 $database->delete('product_empik_parameters', '1 = 1');
+                $database->delete('product_mediamarkt_parameters', '1 = 1');
                 $database->delete('product_allegro_parameters', '1 = 1');
                 $database->delete('product_custom_field_values', '1 = 1');
                 $database->delete('products', '1 = 1');
@@ -1890,6 +1951,9 @@ class ProductRepository
                 foreach ($empikParameters as $row) {
                     $database->insert('product_empik_parameters', $row);
                 }
+                foreach ($mediamarktParameters as $row) {
+                    $database->insert('product_mediamarkt_parameters', $row);
+                }
                 foreach ($temuParameters as $row) {
                     $database->insert('product_temu_parameters', $row);
                 }
@@ -1906,6 +1970,7 @@ class ProductRepository
                 $this->resetAutoIncrement('product_custom_field_definitions', $customFieldDefinitions);
                 $this->resetAutoIncrement('product_allegro_parameters', $allegroParameters);
                 $this->resetAutoIncrement('product_empik_parameters', $empikParameters);
+                $this->resetAutoIncrement('product_mediamarkt_parameters', $mediamarktParameters);
                 $this->resetAutoIncrement('product_temu_parameters', $temuParameters);
                 $this->resetAutoIncrement(self::CONTOUR_NAMES_TABLE, $contourNames);
             } finally {
@@ -1924,6 +1989,7 @@ class ProductRepository
             'custom_field_values' => count($customFieldValues),
             'allegro_parameters' => count($allegroParameters),
             'empik_parameters' => count($empikParameters),
+            'mediamarkt_parameters' => count($mediamarktParameters),
             'temu_parameters' => count($temuParameters),
             'contour_names' => count($contourNames),
         );

@@ -657,6 +657,8 @@
                   <li><code>product.allegro_parameters_eu</code> - wszystkie parametry Allegro w formacie EU: <code>parameter_id|type|value|</code></li>
                   <li><code>product.empik_parameters</code> - wszystkie parametry Empik w jednej komorce, kazdy w nowej linii</li>
                   <li><code>product.empik_parameter.600</code> - pojedynczy parametr Empik po ID, np. Producent</li>
+                  <li><code>product.mediamarkt_parameters</code> - wszystkie parametry MediaMarkt w jednej komorce</li>
+                  <li><code>product.mediamarkt_parameter.ID</code> - pojedynczy parametr MediaMarkt po ID</li>
                   <li><code>images</code> lub <code>product.generated_images</code> (oraz <code>product.generated_images[1..16]</code>) - generowana lista / pojedyncze sciezki obrazow EasyUploader. <strong>Uwaga:</strong> dzialaja tylko, gdy przy eksporcie CSV ustawisz liczby Zdjecia/Miniatury/Mockupy - sam szablon tego nie definiuje.</li>
                   <li><code>queue_item</code> - miniatura wpisywana podczas eksportu CSV</li>
                 </ul>
@@ -673,7 +675,7 @@
                   <pre class="bg-light border rounded p-2 small"><code>{ldelim}"separator":" | ","parts":["field:product.product_name","field:product.allegro_parameter.11748"]{rdelim}</code></pre>
                   <p class="mb-1"><strong>Przyklad upper:</strong></p>
                   <pre class="bg-light border rounded p-2 small"><code>{ldelim}"value":"field:product.product_name"{rdelim}</code></pre>
-                  <p class="mb-0 text-secondary">Dokladny klucz parametru bierzesz z listy pol ponizej. Przy polach Allegro i Empik pokazuje sie teraz nazwa parametru, jego ID oraz nazwy kategorii, z ktorych jest brany.</p>
+                  <p class="mb-0 text-secondary">Dokladny klucz parametru bierzesz z listy pol ponizej. Przy polach Allegro, Empik i MediaMarkt pokazuje sie nazwa parametru, jego ID oraz nazwy kategorii, z ktorych jest brany.</p>
                 </div>
                 </div>
               </div>
@@ -991,13 +993,15 @@
     var fieldLabel = String(label || fieldKey);
     var allegroMatch = fieldKey.match(/^product\.allegro_parameter\.([^.]+)$/);
     var empikMatch = fieldKey.match(/^product\.empik_parameter\.([^.]+)$/);
+    var mediamarktMatch = fieldKey.match(/^product\.mediamarkt_parameter\.([^.]+)$/);
 
-    if (allegroMatch || empikMatch) {
-      var marketplace = allegroMatch ? 'Allegro' : 'Empik';
-      var parameterId = allegroMatch ? allegroMatch[1] : empikMatch[1];
+    if (allegroMatch || empikMatch || mediamarktMatch) {
+      var marketplace = allegroMatch ? 'Allegro' : (empikMatch ? 'Empik' : 'MediaMarkt');
+      var parameterId = allegroMatch ? allegroMatch[1] : (empikMatch ? empikMatch[1] : mediamarktMatch[1]);
       var name = fieldLabel
         .replace(/^Allegro:\s*/i, '')
         .replace(/^Empik:\s*/i, '')
+        .replace(/^MediaMarkt:\s*/i, '')
         .replace(/\s*\[[^\]]+\].*$/, '')
         .replace(/\s*\|\s*Kategorie:.*$/, '')
         .trim();

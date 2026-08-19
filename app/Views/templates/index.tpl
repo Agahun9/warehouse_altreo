@@ -803,6 +803,9 @@
               {if $currentUser.role eq 'admin' or in_array('empik', $currentUser.modules)}
                 <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-sm btn-outline-light">Otworz Empik</a>
               {/if}
+              {if $currentUser.role eq 'admin' or in_array('mediamarkt', $currentUser.modules)}
+                <a href="{$baseUrl}?controller=mediamarkt&action=index" class="btn btn-sm btn-outline-light">Otworz MediaMarkt</a>
+              {/if}
               {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}
                 <a href="{$baseUrl}?controller=erli&action=index" class="btn btn-sm btn-outline-light">Otworz Erli</a>
               {/if}

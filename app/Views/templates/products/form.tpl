@@ -435,6 +435,10 @@
             <i class="bi bi-bag"></i>
             <span>Empik<small>Parametry kategorii</small></span>
           </button>
+          <button type="button" class="product-tab-button" data-product-tab-trigger="mediamarkt" aria-pressed="false">
+            <i class="bi bi-tv"></i>
+            <span>MediaMarkt<small>Parametry kategorii</small></span>
+          </button>
           <button type="button" class="product-tab-button" data-product-tab-trigger="temu" aria-pressed="false">
             <i class="bi bi-grid-3x3-gap"></i>
             <span>Temu<small>Parametry kategorii</small></span>
@@ -501,7 +505,7 @@
                           <select class="form-select" id="category_id" name="category_id" required>
                             <option value="">Wybierz kategorie</option>
                             {foreach $categories as $category}
-                              <option value="{$category.id}" data-sku-prefix="{$category.sku_prefix|default:'PRD'|escape}" data-allegro-category-id="{$category.allegro_category_id|default:''|escape}" data-empik-category-id="{$category.empik_category_id|default:''|escape}" data-temu-category-id="{$category.temu_category_id|default:''|escape}"{if $product.category_id|default:'' == $category.id} selected{/if}>{$category.name|escape}</option>
+                              <option value="{$category.id}" data-sku-prefix="{$category.sku_prefix|default:'PRD'|escape}" data-allegro-category-id="{$category.allegro_category_id|default:''|escape}" data-empik-category-id="{$category.empik_category_id|default:''|escape}" data-mediamarkt-category-id="{$category.mediamarkt_category_id|default:''|escape}" data-temu-category-id="{$category.temu_category_id|default:''|escape}"{if $product.category_id|default:'' == $category.id} selected{/if}>{$category.name|escape}</option>
                             {/foreach}
                           </select>
                         </div>
@@ -851,6 +855,21 @@
                 </div>
                 </div>
 
+                <div class="product-tab-panel" data-product-tab-panel="mediamarkt">
+                <div class="product-section-box">
+                  <div class="product-section-title">
+                    <div>
+                      <h5><i class="bi bi-tv me-2"></i>Parametry MediaMarkt</h5>
+                      <p>Sekcja laduje atrybuty Mirakl/MediaMarkt na podstawie przypisanego `mediamarkt_category_id` kategorii produktu.</p>
+                    </div>
+                    <span class="product-section-chip"><i class="bi bi-diagram-2"></i>Z kategorii MediaMarkt</span>
+                  </div>
+                  <div id="mediamarkt-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z MediaMarkt, aby zaladowac parametry.</div>
+                  <div id="mediamarkt-parameters-container"></div>
+                </div>
+                </div>
+
+
                 <div class="product-tab-panel" data-product-tab-panel="temu">
                 <div class="product-section-box">
                   <div class="product-section-title">
@@ -953,6 +972,8 @@
     var allegroCompatibilityListPayload = document.getElementById('allegroCompatibilityListPayload');
     var empikInfo = document.getElementById('empik-parameters-info');
     var empikContainer = document.getElementById('empik-parameters-container');
+    var mediamarktInfo = document.getElementById('mediamarkt-parameters-info');
+    var mediamarktContainer = document.getElementById('mediamarkt-parameters-container');
     var temuInfo = document.getElementById('temu-parameters-info');
     var temuContainer = document.getElementById('temu-parameters-container');
     var copyProductSearch = document.getElementById('copy-product-search');
@@ -995,12 +1016,16 @@
     var existingAllegroCompatibilityList = {$allegroCompatibilityListJson|default:'[]' nofilter};
     var existingEmpikValues = {$empikValuesJson|default:'{}'};
     var existingEmpikHiddenKeys = {$empikHiddenKeysJson|default:'[]' nofilter};
+    var existingMediaMarktValues = {$mediamarktValuesJson|default:'{}'};
+    var existingMediaMarktHiddenKeys = {$mediamarktHiddenKeysJson|default:'[]' nofilter};
     var existingTemuValues = {$temuValuesJson|default:'{}'};
     var currentAllegroItems = [];
     var currentAllegroCompatibilitySupport = null;
     var currentAllegroCompatibilityList = Array.isArray(existingAllegroCompatibilityList.items) ? existingAllegroCompatibilityList.items.slice() : [];
     var currentEmpikItems = [];
     var currentEmpikHiddenKeys = Array.isArray(existingEmpikHiddenKeys) ? existingEmpikHiddenKeys.slice() : [];
+    var currentMediaMarktItems = [];
+    var currentMediaMarktHiddenKeys = Array.isArray(existingMediaMarktHiddenKeys) ? existingMediaMarktHiddenKeys.slice() : [];
     var currentTemuItems = [];
 
     function toNumber(value) {
@@ -1479,6 +1504,50 @@
       var key = empikDisplayNameKey(item.name || item.id || '');
       return key !== '' && !!currentEmpikHiddenKeyMap()[key];
     }
+
+    function isMediaMarktFreeTextIdentityParameter(item) {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      var normalized = normalizeMarketplaceTokenText(String(item.id || '') + ' ' + String(item.name || ''));
+      var tokens = ['ean', 'gtin', 'isbn', 'issn', 'upc', 'sku', 'mpn'];
+      for (var i = 0; i < tokens.length; i++) {
+        var pattern = new RegExp('(^|[^a-z0-9])' + tokens[i] + '([^a-z0-9]|$)');
+        if (pattern.test(normalized)) {
+          return true;
+        }
+      }
+
+      return normalized.indexOf('kod producenta') !== -1
+        || normalized.indexOf('numer katalogowy') !== -1
+        || normalized.indexOf('kod kreskowy') !== -1;
+    }
+
+    function mediamarktDisplayNameKey(value) {
+      return normalizeMarketplaceTokenText(String(value || '').replace(/\s*\(\s*\d+\s*\)\s*$/, ''));
+    }
+
+    function currentMediaMarktHiddenKeyMap() {
+      var map = {};
+      for (var i = 0; i < currentMediaMarktHiddenKeys.length; i++) {
+        var key = String(currentMediaMarktHiddenKeys[i] || '').trim();
+        if (key !== '') {
+          map[key] = true;
+        }
+      }
+      return map;
+    }
+
+    function isMediaMarktParameterHidden(item) {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      var key = mediamarktDisplayNameKey(item.name || item.id || '');
+      return key !== '' && !!currentMediaMarktHiddenKeyMap()[key];
+    }
+
 
     function renderMarketplaceParameterFields(containerNode, infoNode, items, values, inputName, emptyLabel, loadedLabel, singleDictionaryMode) {
       if (!containerNode) {
@@ -2077,6 +2146,466 @@
       refreshEmpikHiddenCards();
     }
 
+    function renderMediaMarktComponentLikeParameterFields(containerNode, infoNode, items, values, emptyLabel, loadedLabel) {
+      if (!containerNode) {
+        return;
+      }
+
+      if (!items || !items.length) {
+        containerNode.innerHTML = '<div class="alert alert-light border mb-0">Brak parametrów MediaMarkt do wyświetlenia.</div>';
+        if (infoNode) {
+          infoNode.textContent = emptyLabel;
+        }
+        return;
+      }
+
+      var selectedOption = categoryInput && categoryInput.options ? categoryInput.options[categoryInput.selectedIndex] : null;
+      var mediamarktCategoryId = selectedOption ? String(selectedOption.getAttribute('data-mediamarkt-category-id') || '') : '';
+      var html = '';
+      var hiddenKeyMap = currentMediaMarktHiddenKeyMap();
+      var hiddenCount = 0;
+      for (var hiddenIndex = 0; hiddenIndex < items.length; hiddenIndex++) {
+        var hiddenItem = items[hiddenIndex] || {};
+        var hiddenKey = mediamarktDisplayNameKey(hiddenItem.name || hiddenItem.id || '');
+        if (hiddenKey !== '' && hiddenKeyMap[hiddenKey]) {
+          hiddenCount++;
+        }
+      }
+
+      html += '<div class="market-params market-params--mediamarkt" data-options-url="{$baseUrl|escape:"javascript"}?controller=products&action=mediamarktparameteroptions&category_id=' + encodeURIComponent(categoryInput ? categoryInput.value : '') + '">';
+      html += '<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">';
+      html += '<div><div class="fw-bold fs-6">Parametry MediaMarkt</div><div class="small text-muted">';
+      if (mediamarktCategoryId) {
+        html += 'Kategoria API: <code>' + escapeHtml(mediamarktCategoryId) + '</code>';
+      }
+      html += '</div></div>';
+      html += '<div class="d-flex flex-wrap align-items-center gap-2 js-mediamarkt-header-controls">';
+      html += '<div class="small text-muted">' + items.length + ' parametrów</div>';
+      if (hiddenCount > 0) {
+        html += '<button type="button" class="btn btn-sm btn-outline-secondary js-mediamarkt-toggle-hidden" data-show-hidden="0">Pokaż ukryte (' + hiddenCount + ')</button>';
+      }
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="mb-3">';
+      html += '<input type="text" class="form-control js-market-param-filter" data-target=".js-mediamarkt-param-card" placeholder="Szukaj po nazwie lub ID parametru MediaMarkt...">';
+      html += '</div>';
+      html += '<div class="row g-3 mb-4">';
+
+      var seenMediaMarktNames = {};
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i] || {};
+        var pid = String(item.id || '');
+        var pName = String(item.name || 'Parametr');
+        var displayNameKey = mediamarktDisplayNameKey(pName);
+        if (displayNameKey !== '' && seenMediaMarktNames[displayNameKey]) {
+          continue;
+        }
+        if (displayNameKey !== '') {
+          seenMediaMarktNames[displayNameKey] = true;
+        }
+        var pType = String(item.type || 'string').toLowerCase();
+        var restrictions = item.restrictions && typeof item.restrictions === 'object' ? item.restrictions : {};
+        var multiple = !!item.multiple || pType === 'multidictionary' || restrictions.multipleChoices === true || restrictions.multipleChoices === 1;
+        var dict = Array.isArray(item.dictionary) ? item.dictionary : [];
+        var optionLookup = !!item.option_lookup;
+        if (isMediaMarktFreeTextIdentityParameter(item)) {
+          pType = 'text';
+          multiple = false;
+          dict = [];
+          optionLookup = false;
+        }
+        var isHidden = displayNameKey !== '' && !!hiddenKeyMap[displayNameKey];
+        var rawValue = values && typeof values === 'object' && Object.prototype.hasOwnProperty.call(values, pid) ? values[pid] : '';
+        var selectedValues = normalizeSelectedArray(rawValue);
+        var storedValue = Array.isArray(rawValue) ? rawValue.join(' | ') : (rawValue === null || typeof rawValue === 'undefined' ? '' : String(rawValue));
+        var cardText = (pName + ' ' + pid + ' ' + pType).toLowerCase();
+
+        html += '<div class="col-12 col-xl-6 js-mediamarkt-param-card js-param-card' + (isHidden ? ' d-none' : '') + '" data-param-id="' + escapeHtml(pid) + '" data-param-key="' + escapeHtml(displayNameKey) + '" data-param-hidden-global="' + (isHidden ? '1' : '0') + '" data-param-type="' + escapeHtml(pType) + '" data-input-name="mediamarkt_parameters" data-filter-text="' + escapeHtml(cardText) + '">';
+        html += '<div class="border rounded-3 p-3 h-100 bg-white">';
+        html += '<div class="d-flex align-items-start justify-content-between gap-2 mb-2">';
+        html += '<label class="form-label fw-semibold mb-0" for="mediamarkt_param_' + escapeHtml(pid) + '">' + escapeHtml(pName) + '</label>';
+        html += '<div class="d-flex flex-wrap align-items-center justify-content-end gap-2">';
+        html += '<span class="badge bg-light text-dark border">ID ' + escapeHtml(pid) + '</span>';
+        html += '<button type="button" class="btn btn-sm ' + (isHidden ? 'btn-outline-success' : 'btn-outline-secondary') + ' js-mediamarkt-toggle-param-visibility" data-hidden="' + (isHidden ? '1' : '0') + '" data-param-id="' + escapeHtml(pid) + '" data-param-name="' + escapeHtml(pName) + '">' + (isHidden ? 'Przywróć' : 'Ukryj globalnie') + '</button>';
+        html += '</div>';
+        html += '</div>';
+
+        if (optionLookup) {
+          html += '<div class="mediamarkt-option-lookup" data-attribute-id="' + escapeHtml(pid) + '" data-multiple="' + (multiple ? '1' : '0') + '">';
+          html += '<div class="input-group">';
+          html += '<span class="input-group-text"><i class="bi bi-search"></i></span>';
+          html += '<input type="search" class="form-control js-mediamarkt-option-search" placeholder="Szukaj dostępnych wartości dla: ' + escapeHtml(pName) + '" autocomplete="off">';
+          html += '<button type="button" class="btn btn-outline-secondary js-mediamarkt-option-clear">Wyczyść</button>';
+          html += '</div>';
+          html += '<div class="form-text">Po kliknięciu pokazujemy dostępne propozycje. Wpisz tekst, aby zawęzić wyniki tylko dla tego parametru.</div>';
+          html += '<div class="list-group mt-2 js-mediamarkt-option-results d-none"></div>';
+          html += '<div class="mt-2 js-mediamarkt-option-selection">';
+          if (multiple) {
+            selectedValues.forEach(function (selectedValue) {
+              html += '<span class="badge text-bg-primary me-1 mb-1 mediamarkt-selected-option">';
+              html += '<span>' + escapeHtml(selectedValue) + '</span>';
+              html += '<input type="hidden" name="mediamarkt_parameters[' + escapeHtml(pid) + '][]" value="' + escapeHtml(selectedValue) + '">';
+              html += '<button type="button" class="btn-close btn-close-white ms-1 js-remove-mediamarkt-option" aria-label="Usuń"></button>';
+              html += '</span>';
+            });
+          } else {
+            html += '<input type="hidden" name="mediamarkt_parameters[' + escapeHtml(pid) + ']" class="js-mediamarkt-option-value" value="' + escapeHtml(storedValue) + '">';
+            html += '<div class="alert alert-light border py-2 px-3 mb-0 js-mediamarkt-single-selection ' + (storedValue === '' ? 'd-none' : '') + '">';
+            html += 'Wybrano: <strong class="js-mediamarkt-selected-label">' + escapeHtml(storedValue) + '</strong>';
+            html += '</div>';
+          }
+          html += '</div></div>';
+        } else if (pType === 'multidictionary' || (pType === 'dictionary' && multiple)) {
+          html += '<div class="param-option-box">';
+          for (var d = 0; d < dict.length; d++) {
+            var option = dict[d] || {};
+            var optId = String(option.id || '');
+            var optionLabel = String(option.value || optId);
+            var checked = isValueSelected(optId, selectedValues) || isValueSelected(optionLabel, selectedValues) ? ' checked' : '';
+            var inputId = 'mediamarkt_param_' + escapeHtml(pid) + '_' + d;
+            html += '<div class="form-check mb-1">';
+            html += '<input class="form-check-input" type="checkbox" name="mediamarkt_parameters[' + escapeHtml(pid) + '][]" id="' + inputId + '" value="' + escapeHtml(optId) + '"' + checked + '>';
+            html += '<label class="form-check-label" for="' + inputId + '">' + escapeHtml(optionLabel) + '</label>';
+            html += '</div>';
+          }
+          html += '</div><div class="form-text">Wielokrotny wybór z listy.</div>';
+        } else if (pType === 'dictionary' && dict.length) {
+          html += '<select name="mediamarkt_parameters[' + escapeHtml(pid) + ']" id="mediamarkt_param_' + escapeHtml(pid) + '" class="form-select">';
+          html += '<option value="">-- Wybierz --</option>';
+          for (var s = 0; s < dict.length; s++) {
+            var singleOption = dict[s] || {};
+            var singleId = String(singleOption.id || '');
+            var singleLabel = String(singleOption.value || singleId);
+            var selected = storedValue === singleId || storedValue === singleLabel ? ' selected' : '';
+            html += '<option value="' + escapeHtml(singleId) + '"' + selected + '>' + escapeHtml(singleLabel) + '</option>';
+          }
+          html += '</select>';
+        } else if (pType === 'integer' || pType === 'number') {
+          html += '<input type="number" step="any" class="form-control" name="mediamarkt_parameters[' + escapeHtml(pid) + ']" id="mediamarkt_param_' + escapeHtml(pid) + '" value="' + escapeHtml(storedValue) + '">';
+        } else if (pType === 'textarea') {
+          html += '<textarea class="form-control" name="mediamarkt_parameters[' + escapeHtml(pid) + ']" id="mediamarkt_param_' + escapeHtml(pid) + '" rows="3" placeholder="Wpisz wartości ręcznie, każdą w osobnej linii">' + escapeHtml(storedValue) + '</textarea>';
+        } else {
+          html += '<input type="text" class="form-control" name="mediamarkt_parameters[' + escapeHtml(pid) + ']" id="mediamarkt_param_' + escapeHtml(pid) + '" value="' + escapeHtml(storedValue) + '">';
+        }
+
+        html += '<div class="small text-secondary mt-2">Typ: ' + escapeHtml(pType) + (multiple ? ' | multiple' : '') + (optionLookup ? ' | lookup' : '') + '</div>';
+        html += '</div></div>';
+      }
+
+      html += '</div></div>';
+      containerNode.innerHTML = html;
+      bindMediaMarktComponentLikeControls(containerNode);
+      if (infoNode) {
+        infoNode.textContent = loadedLabel;
+      }
+    }
+
+    function bindMediaMarktComponentLikeControls(scopeNode) {
+      if (!scopeNode) {
+        return;
+      }
+
+      var root = scopeNode.querySelector('.market-params--mediamarkt');
+      var optionsUrl = root ? root.getAttribute('data-options-url') : '';
+      var showHidden = false;
+      var visibilityUrl = '{$baseUrl|escape:"javascript"}?controller=products&action=mediamarktparametervisibility';
+
+      function refreshMediaMarktHiddenCards() {
+        if (!root) {
+          return;
+        }
+
+        var hiddenCount = 0;
+        root.querySelectorAll('.js-mediamarkt-param-card').forEach(function (card) {
+          var hidden = card.getAttribute('data-param-hidden-global') === '1';
+          if (hidden) {
+            hiddenCount++;
+          }
+          card.classList.toggle('d-none', hidden && !showHidden);
+        });
+
+        var headerControls = root.querySelector('.js-mediamarkt-header-controls');
+        var toggleHiddenButton = root.querySelector('.js-mediamarkt-toggle-hidden');
+        if (!toggleHiddenButton && hiddenCount > 0 && headerControls) {
+          toggleHiddenButton = document.createElement('button');
+          toggleHiddenButton.type = 'button';
+          toggleHiddenButton.className = 'btn btn-sm btn-outline-secondary js-mediamarkt-toggle-hidden';
+          toggleHiddenButton.setAttribute('data-show-hidden', showHidden ? '1' : '0');
+          headerControls.appendChild(toggleHiddenButton);
+        }
+
+        if (!toggleHiddenButton) {
+          return;
+        }
+
+        if (hiddenCount <= 0) {
+          toggleHiddenButton.remove();
+          return;
+        }
+
+        toggleHiddenButton.textContent = showHidden ? 'Ukryj schowane (' + hiddenCount + ')' : 'Pokaż ukryte (' + hiddenCount + ')';
+        toggleHiddenButton.setAttribute('data-show-hidden', showHidden ? '1' : '0');
+      }
+
+      function applyMediaMarktHiddenKeys(nextKeys) {
+        currentMediaMarktHiddenKeys = Array.isArray(nextKeys) ? nextKeys.slice() : [];
+        var hiddenMap = currentMediaMarktHiddenKeyMap();
+
+        scopeNode.querySelectorAll('.js-mediamarkt-param-card').forEach(function (card) {
+          var key = String(card.getAttribute('data-param-key') || '').trim();
+          var hidden = key !== '' && !!hiddenMap[key];
+          card.setAttribute('data-param-hidden-global', hidden ? '1' : '0');
+
+          var button = card.querySelector('.js-mediamarkt-toggle-param-visibility');
+          if (button) {
+            button.setAttribute('data-hidden', hidden ? '1' : '0');
+            button.textContent = hidden ? 'Przywróć' : 'Ukryj globalnie';
+            button.classList.toggle('btn-outline-success', hidden);
+            button.classList.toggle('btn-outline-secondary', !hidden);
+          }
+        });
+
+        refreshMediaMarktHiddenCards();
+      }
+
+      function addSelectedOption(lookup, id, label) {
+        var multiple = lookup.getAttribute('data-multiple') === '1';
+        var selection = lookup.querySelector('.js-mediamarkt-option-selection');
+        if (!selection) {
+          return;
+        }
+
+        if (!multiple) {
+          var valueInput = selection.querySelector('.js-mediamarkt-option-value');
+          var notice = selection.querySelector('.js-mediamarkt-single-selection');
+          var labelNode = selection.querySelector('.js-mediamarkt-selected-label');
+          if (valueInput) {
+            valueInput.value = label;
+          }
+          if (labelNode) {
+            labelNode.textContent = label;
+          }
+          if (notice) {
+            notice.classList.remove('d-none');
+          }
+          return;
+        }
+
+        var exists = Array.prototype.slice.call(selection.querySelectorAll('input[type="hidden"]')).some(function (input) {
+          return input.value === label || input.getAttribute('data-option-id') === id;
+        });
+        if (exists) {
+          return;
+        }
+
+        var badge = document.createElement('span');
+        badge.className = 'badge text-bg-primary me-1 mb-1 mediamarkt-selected-option';
+        badge.innerHTML = '<span>' + escapeHtml(label) + '</span>'
+          + '<input type="hidden" name="mediamarkt_parameters[' + escapeHtml(lookup.getAttribute('data-attribute-id')) + '][]" value="' + escapeHtml(label) + '" data-option-id="' + escapeHtml(id) + '">'
+          + '<button type="button" class="btn-close btn-close-white ms-1 js-remove-mediamarkt-option" aria-label="Usuń"></button>';
+        selection.appendChild(badge);
+      }
+
+      scopeNode.querySelectorAll('.mediamarkt-option-lookup').forEach(function (lookup, lookupIndex) {
+        var input = lookup.querySelector('.js-mediamarkt-option-search');
+        var results = lookup.querySelector('.js-mediamarkt-option-results');
+        var clear = lookup.querySelector('.js-mediamarkt-option-clear');
+        var timer = null;
+        var requestNumber = 0;
+
+        function hideResults() {
+          if (!results) {
+            return;
+          }
+          results.classList.add('d-none');
+          results.innerHTML = '';
+        }
+
+        function search() {
+          if (!input || !results || !optionsUrl) {
+            hideResults();
+            return;
+          }
+
+          var phrase = String(input.value || '').trim();
+          var currentRequest = ++requestNumber;
+          results.classList.remove('d-none');
+          results.innerHTML = '<div class="list-group-item text-muted">Szukam...</div>';
+
+          var url = optionsUrl + '&attribute_id=' + encodeURIComponent(lookup.getAttribute('data-attribute-id'))
+            + '&q=' + encodeURIComponent(phrase)
+            + '&limit=' + (phrase === '' ? 10 : 400);
+
+          fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (response) {
+              return response.json().then(function (data) {
+                if (!response.ok) {
+                  throw new Error(data.error || 'Błąd pobierania wartości.');
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              if (currentRequest !== requestNumber) {
+                return;
+              }
+
+              var optionItems = Array.isArray(data.items) ? data.items : [];
+              results.innerHTML = '';
+              if (!optionItems.length) {
+                results.innerHTML = '<div class="list-group-item text-muted">Brak pasujących wartości.</div>';
+                return;
+              }
+
+              optionItems.forEach(function (option) {
+                var id = String(option.id || option.value || '');
+                var label = String(option.value || option.id || '');
+                var button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'list-group-item list-group-item-action d-flex justify-content-between gap-2';
+                button.innerHTML = '<span>' + escapeHtml(label) + '</span><small class="text-muted">' + escapeHtml(id) + '</small>';
+                button.addEventListener('click', function () {
+                  addSelectedOption(lookup, id, label);
+                  if (lookup.getAttribute('data-multiple') === '1') {
+                    button.classList.add('active');
+                    button.disabled = true;
+                    input.focus();
+                  } else {
+                    input.value = '';
+                    hideResults();
+                  }
+                });
+                results.appendChild(button);
+              });
+            })
+            .catch(function (error) {
+              if (currentRequest !== requestNumber) {
+                return;
+              }
+              results.innerHTML = '<div class="list-group-item text-danger">' + escapeHtml(error.message) + '</div>';
+            });
+        }
+
+        if (input) {
+          input.addEventListener('input', function () {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(search, 250);
+          });
+          input.addEventListener('focus', function () {
+            if (results && results.classList.contains('d-none')) {
+              search();
+            }
+          });
+        }
+
+        if (clear) {
+          clear.addEventListener('click', function () {
+            input.value = '';
+            hideResults();
+            var selection = lookup.querySelector('.js-mediamarkt-option-selection');
+            if (!selection) {
+              return;
+            }
+            if (lookup.getAttribute('data-multiple') === '1') {
+              selection.querySelectorAll('.mediamarkt-selected-option').forEach(function (badge) {
+                badge.remove();
+              });
+            } else {
+              var valueInput = selection.querySelector('.js-mediamarkt-option-value');
+              var notice = selection.querySelector('.js-mediamarkt-single-selection');
+              if (valueInput) {
+                valueInput.value = '';
+              }
+              if (notice) {
+                notice.classList.add('d-none');
+              }
+            }
+          });
+        }
+
+        lookup.addEventListener('click', function (event) {
+          var remove = event.target.closest('.js-remove-mediamarkt-option');
+          if (remove) {
+            var badge = remove.closest('.mediamarkt-selected-option');
+            if (badge) {
+              badge.remove();
+            }
+          }
+        });
+
+        window.setTimeout(search, 50 + (lookupIndex * 40));
+      });
+
+      scopeNode.querySelectorAll('.js-market-param-filter').forEach(function (input) {
+        input.addEventListener('input', function () {
+          var phrase = String(this.value || '').toLowerCase().trim();
+          var selector = this.getAttribute('data-target') || '';
+          var marketRoot = this.closest('.market-params');
+          if (!marketRoot || !selector) {
+            return;
+          }
+          marketRoot.querySelectorAll(selector).forEach(function (card) {
+            var text = String(card.getAttribute('data-filter-text') || '').toLowerCase();
+            card.classList.toggle('d-none', phrase !== '' && text.indexOf(phrase) === -1);
+          });
+        });
+      });
+
+      if (root) {
+        root.addEventListener('click', function (event) {
+          var toggleHiddenButton = event.target.closest('.js-mediamarkt-toggle-hidden');
+          if (toggleHiddenButton) {
+            showHidden = !showHidden;
+            refreshMediaMarktHiddenCards();
+            return;
+          }
+
+          var visibilityButton = event.target.closest('.js-mediamarkt-toggle-param-visibility');
+          if (!visibilityButton) {
+            return;
+          }
+
+          var nextHidden = visibilityButton.getAttribute('data-hidden') !== '1';
+          var payload = new URLSearchParams();
+          payload.set('id', String(visibilityButton.getAttribute('data-param-id') || ''));
+          payload.set('name', String(visibilityButton.getAttribute('data-param-name') || ''));
+          payload.set('hidden', nextHidden ? '1' : '0');
+
+          visibilityButton.disabled = true;
+          fetch(visibilityUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: payload.toString()
+          })
+            .then(function (response) {
+              return response.json().then(function (data) {
+                if (!response.ok) {
+                  throw new Error(data.error || 'Nie udalo sie zapisac ustawienia parametru.');
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              applyMediaMarktHiddenKeys(data.hidden_keys || []);
+            })
+            .catch(function (error) {
+              window.alert(error && error.message ? error.message : 'Nie udalo sie zapisac ustawienia parametru MediaMarkt.');
+            })
+            .finally(function () {
+              visibilityButton.disabled = false;
+            });
+        });
+      }
+
+      refreshMediaMarktHiddenCards();
+    }
+
+
     function readParameterCurrentValue(card) {
       if (!card) {
         return {
@@ -2209,6 +2738,12 @@
       renderEmpikComponentLikeParameterFields(empikContainer, empikInfo, items, values, 'Brak parametrow dla tej kategorii Empik.', 'Parametry Empik zaladowane.');
       currentEmpikItems = items || [];
     }
+
+    function renderMediaMarktParameterFields(items, values) {
+      renderMediaMarktComponentLikeParameterFields(mediamarktContainer, mediamarktInfo, items, values, 'Brak parametrow dla tej kategorii MediaMarkt.', 'Parametry MediaMarkt zaladowane.');
+      currentMediaMarktItems = items || [];
+    }
+
 
     function renderTemuParameterFields(items, values) {
       renderMarketplaceParameterFields(temuContainer, temuInfo, items, values, 'temu_parameters', 'Brak parametrow dla tej kategorii Temu.', 'Parametry Temu zaladowane.', 'select');
@@ -3300,6 +3835,53 @@
         });
     }
 
+    function loadMediaMarktParameters() {
+      if (!categoryInput || !mediamarktInfo || !mediamarktContainer) {
+        return;
+      }
+
+      var categoryId = categoryInput.value;
+      if (!categoryId) {
+        mediamarktInfo.textContent = 'Wybierz kategorie powiazana z MediaMarkt, aby zaladowac parametry.';
+        mediamarktContainer.innerHTML = '';
+        return;
+      }
+
+      var selected = categoryInput.options[categoryInput.selectedIndex];
+      var mediamarktCategoryId = selected ? (selected.getAttribute('data-mediamarkt-category-id') || '') : '';
+      if (!mediamarktCategoryId) {
+        mediamarktInfo.textContent = 'Ta kategoria nie ma przypisanego MediaMarkt category ID.';
+        mediamarktContainer.innerHTML = '';
+        return;
+      }
+
+      mediamarktInfo.textContent = 'Pobieranie parametrow MediaMarkt...';
+      var url = '{$baseUrl|escape:"javascript"}?controller=products&action=mediamarktparameters&category_id=' + encodeURIComponent(categoryId) + '&include_values=1';
+      if (productId) {
+        url += '&id=' + encodeURIComponent(productId);
+      }
+
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.error) {
+            mediamarktInfo.textContent = data.error;
+            mediamarktContainer.innerHTML = '';
+            return;
+          }
+
+          var items = data && data.items ? data.items : [];
+          var values = data && data.values ? data.values : existingMediaMarktValues;
+          currentMediaMarktHiddenKeys = Array.isArray(data && data.hidden_keys) ? data.hidden_keys.slice() : currentMediaMarktHiddenKeys;
+          renderMediaMarktParameterFields(items, values);
+        })
+        .catch(function () {
+          mediamarktInfo.textContent = 'Nie udalo sie pobrac parametrow MediaMarkt.';
+          mediamarktContainer.innerHTML = '';
+        });
+    }
+
+
     function loadTemuParameters() {
       if (!categoryInput || !temuInfo || !temuContainer) {
         return;
@@ -3485,6 +4067,7 @@
         loadAllegroParameters();
         loadAllegroCompatibilitySupport();
         loadEmpikParameters();
+        loadMediaMarktParameters();
         loadTemuParameters();
         syncSummary();
       });
@@ -3496,11 +4079,13 @@
       loadAllegroParameters();
       loadAllegroCompatibilitySupport();
       loadEmpikParameters();
+      loadMediaMarktParameters();
       loadTemuParameters();
     } else {
       loadAllegroParameters();
       loadAllegroCompatibilitySupport();
       loadEmpikParameters();
+      loadMediaMarktParameters();
       loadTemuParameters();
     }
 

@@ -138,6 +138,45 @@
           </div>
         </div>
 
+        <div class="card card-outline border-danger-subtle mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title mb-0">Mapowanie MediaMarkt</h3>
+            <span class="badge text-bg-danger">MediaMarkt</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-8">
+                <label for="mediamarkt_category_search" class="form-label">Wyszukaj kategorie MediaMarkt</label>
+                <div class="input-group">
+                  <input type="text" class="form-control" id="mediamarkt_category_search" placeholder="np. etui, portfel, kubek">
+                  <button type="button" class="btn btn-outline-danger" id="mediamarkt_category_search_btn">Szukaj MediaMarkt</button>
+                </div>
+                <div class="form-text">Wyszukiwanie jest budowane z drzewa kategorii Mirakl/MediaMarkt.</div>
+              </div>
+              <div class="col-md-4">
+                <label for="mediamarkt_category_id" class="form-label">MediaMarkt category ID</label>
+                <input type="text" class="form-control" id="mediamarkt_category_id" name="mediamarkt_category_id" value="{$category.mediamarkt_category_id|default:''|escape}" placeholder="Kod kategorii MediaMarkt">
+              </div>
+              <div class="col-12">
+                <div id="mediamarkt_category_selected" class="small text-secondary"></div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-danger-subtle h-100">
+                  <div class="small fw-semibold mb-2">Wyniki MediaMarkt</div>
+                  <div id="mediamarkt_category_results" class="list-group"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-danger-subtle h-100">
+                  <div class="small fw-semibold mb-2">Drzewko MediaMarkt</div>
+                  <div id="mediamarkt_category_tree" class="small"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
         <div class="card card-outline border-warning-subtle mb-4">
           <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h3 class="card-title mb-0">Mapowanie Temu</h3>
@@ -420,6 +459,17 @@
       treeId: 'empik_category_tree',
       selectedId: 'empik_category_selected',
       categoryInputId: 'empik_category_id'
+    });
+
+    initMarketplaceSearch({
+      controller: 'mediamarkt',
+      marketName: 'MediaMarkt',
+      inputId: 'mediamarkt_category_search',
+      buttonId: 'mediamarkt_category_search_btn',
+      resultsId: 'mediamarkt_category_results',
+      treeId: 'mediamarkt_category_tree',
+      selectedId: 'mediamarkt_category_selected',
+      categoryInputId: 'mediamarkt_category_id'
     });
 
     var temuPathInput = document.getElementById('temu_category_path');

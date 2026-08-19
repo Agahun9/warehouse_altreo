@@ -16,6 +16,7 @@ use App\Controllers\ErliController;
 use App\Controllers\IndexController;
 use App\Controllers\MoreleController;
 use App\Controllers\MediaController;
+use App\Controllers\MediaMarktController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
@@ -55,6 +56,9 @@ class Application
                 break;
             case 'empik':
                 $controller = new EmpikController();
+                break;
+            case 'mediamarkt':
+                $controller = new MediaMarktController();
                 break;
             case 'erli':
                 $controller = new ErliController();

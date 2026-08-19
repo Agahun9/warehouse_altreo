@@ -14,6 +14,7 @@ use App\Models\DerivedStockLinkRepository;
 use App\Models\ProductAllegroParameterRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductEmpikParameterRepository;
+use App\Models\ProductMediaMarktParameterRepository;
 use App\Models\ProductRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
@@ -34,6 +35,9 @@ class CsvTemplateController extends Controller
 
     /** @var ProductEmpikParameterRepository */
     private $empikParameters;
+
+    /** @var ProductMediaMarktParameterRepository */
+    private $mediamarktParameters;
 
     /** @var CsvExportService */
     private $exportService;
@@ -81,6 +85,8 @@ class CsvTemplateController extends Controller
 
         $this->empikParameters = new ProductEmpikParameterRepository($this->db());
         $this->empikParameters->ensureSchema();
+        $this->mediamarktParameters = new ProductMediaMarktParameterRepository($this->db());
+        $this->mediamarktParameters->ensureSchema();
 
         $this->customFields = new ProductCustomFieldRepository($this->db());
         $this->customFields->ensureSchema();
@@ -610,6 +616,135 @@ class CsvTemplateController extends Controller
         }
 
         $this->redirect('./index.php?controller=csvtemplates&action=index');
+    }
+
+    public function exporttemplatecsv(): void
+    {
+        $this->requireModule('csvtemplates');
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0) {
+                throw new RuntimeException('Nieprawidlowe ID szablonu.');
+            }
+
+            $template = $this->templates->findFullById($id);
+            if (!$template) {
+                throw new RuntimeException('Nie znaleziono szablonu.');
+            }
+
+            $includeDescriptions = (string) $this->input('include_descriptions', '0') === '1';
+            $categoryName = null;
+            foreach ($this->templates->allCategories() as $category) {
+                if ((int) ($category['id'] ?? 0) === (int) ($template['category_id'] ?? 0)) {
+                    $categoryName = (string) ($category['name'] ?? '');
+                    break;
+                }
+            }
+
+            $headers = array(
+                'template_name',
+                'category',
+                'delimiter',
+                'encoding',
+                'add_bom',
+                'array_separator',
+            );
+            if ($includeDescriptions) {
+                $headers[] = 'description';
+                $headers[] = 'description_templates_json';
+            }
+            $headers = array_merge($headers, array(
+                'column_order',
+                'header_name',
+                'source_type',
+                'source_value',
+                'settings_json',
+                'mappings_json',
+            ));
+
+            $descriptionTemplatesJson = '';
+            if ($includeDescriptions) {
+                $descriptionTemplatesJson = json_encode(
+                    isset($template['description_templates']) && is_array($template['description_templates'])
+                        ? $template['description_templates']
+                        : array(),
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+                );
+                if ($descriptionTemplatesJson === false) {
+                    throw new RuntimeException('Nie udalo sie zapisac szablonow opisu w CSV.');
+                }
+            }
+
+            $stream = fopen('php://temp', 'w+');
+            if ($stream === false) {
+                throw new RuntimeException('Nie udalo sie przygotowac pliku CSV szablonu.');
+            }
+            fputcsv($stream, $headers, ';', '"', '');
+
+            foreach (($template['columns'] ?? array()) as $index => $column) {
+                if (!is_array($column)) {
+                    continue;
+                }
+
+                $settingsJson = json_encode(
+                    isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array(),
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+                );
+                $mappingsJson = json_encode(
+                    isset($column['mappings']) && is_array($column['mappings']) ? $column['mappings'] : array(),
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+                );
+                if ($settingsJson === false || $mappingsJson === false) {
+                    fclose($stream);
+                    throw new RuntimeException('Nie udalo sie zapisac ustawien kolumn w CSV.');
+                }
+
+                $row = array(
+                    (string) ($template['name'] ?? ''),
+                    (string) ($categoryName ?? ''),
+                    (string) ($template['delimiter'] ?? ';'),
+                    (string) ($template['encoding'] ?? 'UTF-8'),
+                    !empty($template['add_bom']) ? '1' : '0',
+                    (string) ($template['array_separator'] ?? '|'),
+                );
+                if ($includeDescriptions) {
+                    $row[] = (string) ($template['description'] ?? '');
+                    $row[] = $descriptionTemplatesJson;
+                }
+                $row = array_merge($row, array(
+                    (string) ($index + 1),
+                    (string) ($column['header_name'] ?? ''),
+                    (string) ($column['source_type'] ?? 'field'),
+                    (string) ($column['source_value'] ?? ''),
+                    $settingsJson,
+                    $mappingsJson,
+                ));
+                fputcsv($stream, $row, ';', '"', '');
+            }
+
+            rewind($stream);
+            $csv = stream_get_contents($stream);
+            fclose($stream);
+            if ($csv === false) {
+                throw new RuntimeException('Nie udalo sie wygenerowac pliku CSV szablonu.');
+            }
+
+            $filenameBase = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($template['name'] ?? ''));
+            $filenameBase = trim((string) $filenameBase, '_');
+            if ($filenameBase === '') {
+                $filenameBase = 'csv_template_' . $id;
+            }
+
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filenameBase . '_settings.csv"');
+            header('Content-Length: ' . strlen($csv));
+            echo $csv;
+            exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
     }
 
     public function preview(): void
@@ -2261,6 +2396,7 @@ class CsvTemplateController extends Controller
             'product.allegro_compatibility_list' => 'Allegro Pasuje do (lista modeli telefonow)',
             'product.allegro_parameters_eu' => 'Parametry ALLEGRO EU (parameter_id|type|value|)',
             'product.empik_parameters' => 'Parametry Empik (nazwa: wartosc)',
+            'product.mediamarkt_parameters' => 'Parametry MediaMarkt (nazwa: wartosc)',
             'product.generated_title' => 'Generowany tytul CSV',
             'product.collection_name' => 'Kolekcja wpisana przy eksporcie CSV',
             'product.image_queue_range' => 'Zakres kolejki wpisany przy eksporcie CSV',
@@ -2295,6 +2431,7 @@ class CsvTemplateController extends Controller
             'product.category_slug' => 'Slug kategorii',
             'product.category_id_allegro' => 'ID kategorii Allegro',
             'product.category_id_empik' => 'ID kategorii Empik',
+            'product.category_id_mediamarkt' => 'ID kategorii MediaMarkt',
             'product.created_at' => 'Data utworzenia',
             'product.updated_at' => 'Data modyfikacji',
         );
@@ -2304,6 +2441,10 @@ class CsvTemplateController extends Controller
         }
 
         foreach ($this->empikParameters->usedParameterFieldOptions() as $fieldKey => $fieldLabel) {
+            $options[$fieldKey] = $fieldLabel;
+        }
+
+        foreach ($this->mediamarktParameters->usedParameterFieldOptions() as $fieldKey => $fieldLabel) {
             $options[$fieldKey] = $fieldLabel;
         }
 
@@ -3205,6 +3346,7 @@ class CsvTemplateController extends Controller
             array('header_name' => 'category_slug', 'source_type' => 'field', 'source_value' => 'product.category_slug', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'category_id_allegro', 'source_type' => 'field', 'source_value' => 'product.category_id_allegro', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'category_id_empik', 'source_type' => 'field', 'source_value' => 'product.category_id_empik', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'category_id_mediamarkt', 'source_type' => 'field', 'source_value' => 'product.category_id_mediamarkt', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'quantity', 'source_type' => 'field', 'source_value' => 'product.quantity', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'localization', 'source_type' => 'field', 'source_value' => 'product.localization', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'dimensions', 'source_type' => 'field', 'source_value' => 'product.dimensions', 'settings' => array(), 'mappings' => array()),
@@ -3219,6 +3361,7 @@ class CsvTemplateController extends Controller
             array('header_name' => 'allegro_compatibility_list', 'source_type' => 'field', 'source_value' => 'product.allegro_compatibility_list', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'allegro_parameters_eu', 'source_type' => 'field', 'source_value' => 'product.allegro_parameters_eu', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'empik_parameters', 'source_type' => 'field', 'source_value' => 'product.empik_parameters', 'settings' => array(), 'mappings' => array()),
+            array('header_name' => 'mediamarkt_parameters', 'source_type' => 'field', 'source_value' => 'product.mediamarkt_parameters', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'created_at', 'source_type' => 'field', 'source_value' => 'product.created_at', 'settings' => array(), 'mappings' => array()),
             array('header_name' => 'updated_at', 'source_type' => 'field', 'source_value' => 'product.updated_at', 'settings' => array(), 'mappings' => array()),
         );

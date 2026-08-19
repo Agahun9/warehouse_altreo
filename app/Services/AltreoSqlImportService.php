@@ -46,6 +46,7 @@ class AltreoSqlImportService
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
+            . "img_mediamarkt TEXT DEFAULT NULL,\n"
             . "offerid VARCHAR(64) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -66,12 +67,15 @@ class AltreoSqlImportService
             . "description MEDIUMTEXT DEFAULT NULL,\n"
             . "description_morele MEDIUMTEXT DEFAULT NULL,\n"
             . "description_empik MEDIUMTEXT DEFAULT NULL,\n"
+            . "description_mediamarkt MEDIUMTEXT DEFAULT NULL,\n"
             . "parameters_eu LONGTEXT DEFAULT NULL,\n"
             . "parameters_morele LONGTEXT DEFAULT NULL,\n"
             . "parameters_empik LONGTEXT DEFAULT NULL,\n"
+            . "parameters_mediamarkt LONGTEXT DEFAULT NULL,\n"
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
+            . "img_mediamarkt TEXT DEFAULT NULL,\n"
             . "category VARCHAR(120) DEFAULT NULL,\n"
             . "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
             . "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
@@ -103,10 +107,12 @@ class AltreoSqlImportService
         $this->ensureColumn(self::PRODUCTS_TABLE, 'img', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER EAN");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'img_morele', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'img_empik', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
-        $this->ensureColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_empik");
+        $this->ensureColumn(self::PRODUCTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");
+        $this->ensureColumn(self::PRODUCTS_TABLE, 'offerid', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN offerid VARCHAR(64) DEFAULT NULL AFTER img_mediamarkt");
         $this->ensureColumnType(self::PRODUCTS_TABLE, 'img', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img TEXT DEFAULT NULL");
         $this->ensureColumnType(self::PRODUCTS_TABLE, 'img_morele', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_morele TEXT DEFAULT NULL");
         $this->ensureColumnType(self::PRODUCTS_TABLE, 'img_empik', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_empik TEXT DEFAULT NULL");
+        $this->ensureColumnType(self::PRODUCTS_TABLE, 'img_mediamarkt', 'text', "ALTER TABLE " . self::PRODUCTS_TABLE . " MODIFY COLUMN img_mediamarkt TEXT DEFAULT NULL");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'created_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER offerid");
         $this->ensureColumn(self::PRODUCTS_TABLE, 'updated_at', "ALTER TABLE " . self::PRODUCTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
 
@@ -117,13 +123,16 @@ class AltreoSqlImportService
         $this->ensureColumn(self::COMPONENTS_TABLE, 'description', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description MEDIUMTEXT DEFAULT NULL AFTER price");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'description_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_morele MEDIUMTEXT DEFAULT NULL AFTER description");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'description_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_empik MEDIUMTEXT DEFAULT NULL AFTER description_morele");
-        $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_eu', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_eu LONGTEXT DEFAULT NULL AFTER description_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'description_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN description_mediamarkt MEDIUMTEXT DEFAULT NULL AFTER description_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_eu', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_eu LONGTEXT DEFAULT NULL AFTER description_mediamarkt");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_morele LONGTEXT DEFAULT NULL AFTER parameters_eu");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_empik LONGTEXT DEFAULT NULL AFTER parameters_morele");
-        $this->ensureColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt LONGTEXT DEFAULT NULL AFTER parameters_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'img_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'img_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
-        $this->ensureColumn(self::COMPONENTS_TABLE, 'category', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN category VARCHAR(120) DEFAULT NULL AFTER img_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'category', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN category VARCHAR(120) DEFAULT NULL AFTER img_mediamarkt");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'created_at', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER category");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'updated_at', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
 
@@ -360,7 +369,7 @@ class AltreoSqlImportService
         }
 
         if ($table === self::COMPONENTS_TABLE) {
-            foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik') as $column) {
+            foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt') as $column) {
                 if (isset($row[$column])) {
                     $row[$column] = $this->sanitizeImportedJsonMap((string) $row[$column]);
                 }

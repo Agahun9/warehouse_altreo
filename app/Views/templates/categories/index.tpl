@@ -52,6 +52,7 @@
                   <th>Prefix SKU</th>
                   <th>Allegro ID</th>
                   <th>Empik ID</th>
+                  <th>MediaMarkt ID</th>
                   <th>Temu ID</th>
                   <th>Temu kategoria</th>
                   <th>Koncz ponizej</th>
@@ -72,6 +73,7 @@
                       <td><span class="badge text-bg-dark">{$category.sku_prefix|default:'PRD'|escape}</span></td>
                       <td>{if $category.allegro_category_id}<code>{$category.allegro_category_id|escape}</code>{else}-{/if}</td>
                       <td>{if $category.empik_category_id}<code>{$category.empik_category_id|escape}</code>{else}-{/if}</td>
+                      <td>{if $category.mediamarkt_category_id}<code>{$category.mediamarkt_category_id|escape}</code>{else}-{/if}</td>
                       <td>{if $category.temu_category_id}<code>{$category.temu_category_id|escape}</code>{else}-{/if}</td>
                       <td>{if $category.temu_category_name or $category.temu_category_path}{$category.temu_category_name|default:'-'|escape}{if $category.temu_category_path}<div class="small text-secondary">{$category.temu_category_path|escape|truncate:70}</div>{/if}{else}-{/if}</td>
                       <td>{if $category.end_offers_below_quantity !== null && $category.end_offers_below_quantity !== ''}<span class="badge text-bg-warning">{$category.end_offers_below_quantity|escape}</span>{else}-{/if}</td>
@@ -98,7 +100,7 @@
                   {/foreach}
                 {else}
                   <tr>
-                    <td colspan="14" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
+                    <td colspan="15" class="text-center py-4">Brak kategorii do wyswietlenia.</td>
                   </tr>
                 {/if}
               </tbody>

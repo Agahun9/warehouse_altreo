@@ -7,7 +7,8 @@ declare(strict_types=1);
  * "Wystawione aukcje" / "Brak aktywnych aukcji" filters.
  *
  * That filter runs a correlated EXISTS lookup (per product row) against
- * allegro_offers.sku / empik_offers.shop_sku+product_sku / erli_products.sku /
+ * allegro_offers.sku / empik_offers.shop_sku+product_sku /
+ * mediamarkt_offers.shop_sku+product_sku / erli_products.sku /
  * morele_offers.sku, comparing under an explicit COLLATE utf8mb4_unicode_ci
  * (needed to avoid "Illegal mix of collations" since these tables were created
  * at different times, some still utf8mb4_general_ci). That explicit COLLATE
@@ -38,6 +39,7 @@ require BASE_PATH . '/app/bootstrap.php';
 use App\Core\Database;
 use App\Models\AllegroStorageRepository;
 use App\Models\EmpikStorageRepository;
+use App\Models\MediaMarktStorageRepository;
 use App\Models\ErliStorageRepository;
 use App\Models\MoreleStorageRepository;
 
@@ -84,6 +86,13 @@ step('allegro_offers.sku', static function () use ($database): array {
 
 step('empik_offers.shop_sku / product_sku', static function () use ($database): array {
     $repository = new EmpikStorageRepository($database);
+    $repository->ensureSchema();
+
+    return $repository->fixSkuCollation();
+});
+
+step('mediamarkt_offers.shop_sku / product_sku', static function () use ($database): array {
+    $repository = new MediaMarktStorageRepository($database);
     $repository->ensureSchema();
 
     return $repository->fixSkuCollation();

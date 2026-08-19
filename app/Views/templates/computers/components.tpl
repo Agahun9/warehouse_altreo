@@ -65,6 +65,7 @@
               <input type="hidden" id="img_old" name="img_old" value="{$editItem.img|escape:'html'}" />
               <input type="hidden" id="img_morele_old" name="img_morele_old" value="{$editItem.img_morele|escape:'html'}" />
               <input type="hidden" id="img_empik_old" name="img_empik_old" value="{$editItem.img_empik|escape:'html'}" />
+              <input type="hidden" id="img_mediamarkt_old" name="img_mediamarkt_old" value="{$editItem.img_mediamarkt|escape:'html'}" />
               <div class="mb-3">
                 <label for="name" class="form-label">Nazwa:</label>
                 <input type="text" id="name" name="name" value="{$editItem.name|escape:'html'}" class="form-control"
@@ -100,6 +101,11 @@
                 <textarea id="description_empik" name="description_empik" class="form-control free-rich-text-editor"
                   rows="3">{$editItem.description_empik|escape:'html'}</textarea>
               </div>
+              <div class="mb-3">
+                <label for="description_mediamarkt" class="form-label">Opis MediaMarkt:</label>
+                <textarea id="description_mediamarkt" name="description_mediamarkt" class="form-control free-rich-text-editor"
+                  rows="3">{$editItem.description_mediamarkt|escape:'html'}</textarea>
+              </div>
               <div class="mb-4">
                 <button class="btn btn-primary mb-3" type="button" data-bs-toggle="collapse"
                   data-bs-target="#parametersBox" aria-expanded="false" aria-controls="parametersBox">
@@ -113,6 +119,10 @@
                   data-bs-target="#parametersBoxEmpik" aria-expanded="false" aria-controls="parametersBox">
                   Pokaż / ukryj parametry Empik
                 </button>
+                <button class="btn btn-danger mb-3" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#parametersBoxMediaMarkt" aria-expanded="false" aria-controls="parametersBoxMediaMarkt">
+                  Pokaż / ukryj parametry MediaMarkt
+                </button>
                 <div class="collapse" id="parametersBoxMorele">
                   <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=morele{if $editItem}&edit_id={$editItem.id}{/if}">
                     <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
@@ -120,6 +130,11 @@
                 </div>
                 <div class="collapse" id="parametersBoxEmpik">
                   <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=empik{if $editItem}&edit_id={$editItem.id}{/if}">
+                    <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
+                  </div>
+                </div>
+                <div class="collapse" id="parametersBoxMediaMarkt">
+                  <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=mediamarkt{if $editItem}&edit_id={$editItem.id}{/if}">
                     <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
                   </div>
                 </div>
@@ -155,6 +170,32 @@
                           <span class="component-image-drag-handle" title="Przytrzymaj i przeciągnij"><i class="bi bi-grip-vertical"></i></span>
                           <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie Allegro" class="component-img-thumb" data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
                           <label style="font-size:0.9em;"><input type="checkbox" name="remove_img[]" value="{$imgFile|escape:'html'}" /> Usuń</label>
+                        </div>
+                      {/if}{/foreach}
+                    </div>
+                  </div>
+                {/if}
+              </fieldset>
+              <fieldset class="component-market-images component-market-images--mediamarkt mb-3">
+                <legend><span class="component-market-logo">MM</span> Zdjęcia MediaMarkt</legend>
+                <label for="img_file_mediamarkt" class="form-label">Dodaj zdjęcia MediaMarkt <span class="text-muted fw-normal">(maks. 16)</span></label>
+                <div class="component-image-upload" data-input="img_file_mediamarkt" data-order-input="img_mediamarkt_old">
+                  <div class="component-image-dropzone" tabindex="0" role="button">
+                    <i class="bi bi-cloud-arrow-up"></i><strong>Upuść zdjęcia MediaMarkt tutaj</strong><span>lub kliknij, aby wybrać pliki</span>
+                  </div>
+                  <input type="file" id="img_file_mediamarkt" name="img_file_mediamarkt[]" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control component-image-file-input" multiple />
+                  <div class="component-new-image-preview"></div>
+                </div>
+                {if $editItem.img_mediamarkt}
+                  <div class="component-current-images mt-3">
+                    <label class="form-label mb-1">Aktualne zdjęcia MediaMarkt</label>
+                    {assign var="imgListMediaMarkt" value=$editItem.img_mediamarkt|split:","}
+                    <div class="component-image-sorter" data-order-input="img_mediamarkt_old">
+                      {foreach from=$imgListMediaMarkt item=imgFile}{if $imgFile}
+                        <div class="component-image-sort-item" draggable="true" data-filename="{$imgFile|escape:'html'}">
+                          <span class="component-image-drag-handle"><i class="bi bi-grip-vertical"></i></span>
+                          <img src="{$imgFolder}/{$imgFile|escape:'html'}" alt="zdjęcie MediaMarkt" class="component-img-thumb" data-img="{$imgFolder}/{$imgFile|escape:'html'}" />
+                          <label style="font-size:0.9em;"><input type="checkbox" name="remove_img_mediamarkt[]" value="{$imgFile|escape:'html'}" /> Usuń</label>
                         </div>
                       {/if}{/foreach}
                     </div>
@@ -285,6 +326,9 @@
           <li><a class="dropdown-item" href="#"
             onclick="setBulkAction('assign_image_empik'); return false;">Przypisz
             grafikę Empik</a></li>
+          <li><a class="dropdown-item" href="#"
+            onclick="setBulkAction('assign_image_mediamarkt'); return false;">Przypisz
+            grafikę MediaMarkt</a></li>
                     <li><a class="dropdown-item" href="#"
                         onclick="setBulkAction('copy'); return false;">Kopiuj zaznaczone</a></li>
                     <li><a class="dropdown-item text-danger" href="#"
@@ -355,6 +399,11 @@
                   <p class="mt-2 text-muted small">Wybrane obrazy zostaną przypisane do wszystkich zaznaczonych
                     komponentów jako zdjęcia Empik (zastąpią obecne, max 6 plików).</p>
                 </div>
+                <div id="assign_image_mediamarkt_field" style="display:none; max-width: 400px;">
+                  <label for="bulk_img_mediamarkt" class="form-label">Wybierz pliki obrazów MediaMarkt (max 6):</label>
+                  <input type="file" id="bulk_img_mediamarkt" name="bulk_img_mediamarkt[]" accept=".jpg,.jpeg,.png,.gif,.webp" class="form-control" multiple />
+                  <p class="mt-2 text-muted small">Wybrane obrazy zastąpią obecne zdjęcia MediaMarkt w zaznaczonych komponentach.</p>
+                </div>
                 <div id="delete_field" style="display:none; max-width: 400px;">
                   <p class="mb-2 text-danger">Zaznaczone komponenty zostaną trwale usunięte z systemu. Tej operacji nie
                     można cofnąć!</p>
@@ -422,6 +471,11 @@
           <span><i class="bi bi-images"></i> zdjęcia: {$item.img_empik_count|default:0}</span>
           <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_empik_count|default:0}</span>
         </span>
+        <span class="component-market-stats component-market-stats--mediamarkt">
+          <strong>MediaMarkt</strong>
+          <span><i class="bi bi-images"></i> zdjęcia: {$item.img_mediamarkt_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_mediamarkt_count|default:0}</span>
+        </span>
       </span>
     </summary>
 
@@ -462,6 +516,21 @@
           {else}
             <span style="color:#bbb; font-size:0.75rem;">Brak zdjęć</span>
           {/if}
+        </div>
+      </div>
+
+      <div class="shop-row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size: 0.85rem; color: #555; font-weight: bold;">MediaMarkt</span>
+          <span class="badge bg-danger" style="font-size: 0.7rem;">{$item.parameters_mediamarkt_count}</span>
+        </div>
+        <div class="img-wrapper">
+          {if $item.img_mediamarkt}
+            {assign var="imgListMediaMarkt" value=$item.img_mediamarkt|split:","}
+            {foreach from=$imgListMediaMarkt item=imgFile}{if $imgFile}
+              <img src="{$imgFolder}/{$imgFile|escape:'html'}" class="thumb-img" alt="mediamarkt" />
+            {/if}{/foreach}
+          {else}<span style="color:#bbb; font-size:0.75rem;">Brak zdjęć</span>{/if}
         </div>
       </div>
 
@@ -691,6 +760,8 @@
     .component-market-images--morele .component-market-logo { background: #0284c7; }
     .component-market-images--empik { border-color: #fecdd3; background: #fffafb; }
     .component-market-images--empik .component-market-logo { background: #e11d48; }
+    .component-market-images--mediamarkt { border-color: #fca5a5; background: #fff7f7; }
+    .component-market-images--mediamarkt .component-market-logo { background: #df0000; }
 
     .component-current-images {
       padding-top: 12px;
@@ -1196,14 +1267,18 @@
         document.getElementById('copy_field').style.display = 'none';
         var moreleField = document.getElementById('assign_image_morele_field');
         var empikField = document.getElementById('assign_image_empik_field');
+        var mediamarktField = document.getElementById('assign_image_mediamarkt_field');
         if (moreleField) moreleField.style.display = 'none';
         if (empikField) empikField.style.display = 'none';
+        if (mediamarktField) mediamarktField.style.display = 'none';
         if (action === 'assign_image') {
           document.getElementById('assign_image_field').style.display = 'block';
         } else if (action === 'assign_image_morele') {
           if (moreleField) moreleField.style.display = 'block';
         } else if (action === 'assign_image_empik') {
           if (empikField) empikField.style.display = 'block';
+        } else if (action === 'assign_image_mediamarkt') {
+          if (mediamarktField) mediamarktField.style.display = 'block';
         } else if (action === 'delete') {
           document.getElementById('delete_field').style.display = 'block';
         } else if (action === 'copy') {
@@ -1234,8 +1309,12 @@
             alert('Zaznacz przynajmniej jeden komponent, aby wykonać akcję masową.');
             return;
           }
-          if (action === 'assign_image' || action === 'assign_image_morele' || action === 'assign_image_empik') {
-            const fileInput = action === 'assign_image' ? document.getElementById('bulk_img') : (action === 'assign_image_morele' ? document.getElementById('bulk_img_morele') : document.getElementById('bulk_img_empik'));
+          if (action === 'assign_image' || action === 'assign_image_morele' || action === 'assign_image_empik' || action === 'assign_image_mediamarkt') {
+            const fileInput = action === 'assign_image'
+              ? document.getElementById('bulk_img')
+              : (action === 'assign_image_morele'
+                ? document.getElementById('bulk_img_morele')
+                : (action === 'assign_image_empik' ? document.getElementById('bulk_img_empik') : document.getElementById('bulk_img_mediamarkt')));
             if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
               e.preventDefault();
               alert('Wybierz pliki do przypisania w polu akcji masowej.');
@@ -1431,6 +1510,7 @@
     .component-market-stats--allegro { color: #7c3aed; background: #f5f3ff; border-color: #ddd6fe; }
     .component-market-stats--morele { color: #075985; background: #f0f9ff; border-color: #bae6fd; }
     .component-market-stats--empik { color: #9f1239; background: #fff1f2; border-color: #fecdd3; }
+    .component-market-stats--mediamarkt { color: #991b1b; background: #fef2f2; border-color: #fca5a5; }
 
     @media (max-width: 1199.98px) {
       .component-resource-title {

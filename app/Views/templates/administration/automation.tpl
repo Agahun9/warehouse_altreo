@@ -169,6 +169,7 @@
             <a href="{$baseUrl}?controller=administration&action=users" class="btn btn-light btn-sm">Uzytkownicy</a>
             <a href="{$baseUrl}?controller=allegro&action=index" class="btn btn-outline-light btn-sm">Allegro</a>
             <a href="{$baseUrl}?controller=empik&action=index" class="btn btn-outline-light btn-sm">Empik</a>
+            <a href="{$baseUrl}?controller=mediamarkt&action=index" class="btn btn-outline-light btn-sm">MediaMarkt</a>
             <a href="{$baseUrl}?controller=erli&action=index" class="btn btn-outline-light btn-sm">Erli</a>
           </div>
         </div>
@@ -179,8 +180,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Wszystkie konta</div>
-              <div class="administration-summary-value">{$accounts|@count + $empikAccounts|@count + $erliAccounts|@count + 1}</div>
-              <div class="administration-summary-meta">Allegro {$accounts|@count} | Empik {$empikAccounts|@count} | Erli {$erliAccounts|@count} | Morele 1</div>
+              <div class="administration-summary-value">{$accounts|@count + $empikAccounts|@count + $mediamarktAccounts|@count + $erliAccounts|@count + 1}</div>
+              <div class="administration-summary-meta">Allegro {$accounts|@count} | Empik {$empikAccounts|@count} | MediaMarkt {$mediamarktAccounts|@count} | Erli {$erliAccounts|@count} | Morele 1</div>
             </div>
           </div>
         </div>
@@ -188,8 +189,8 @@
           <div class="card administration-summary-card h-100">
             <div class="card-body">
               <div class="administration-summary-label">Kolejki marketplace</div>
-              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $empikQueueStats.pending + $empikQueueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry + $moreleQueueStats.pending + $moreleQueueStats.retry}</div>
-              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Empik {$empikQueueStats.pending + $empikQueueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | Morele {$moreleQueueStats.pending + $moreleQueueStats.retry} | bledy {$queueStats.error + $empikQueueStats.error + $erliQueueStats.error + $moreleQueueStats.error}</div>
+              <div class="administration-summary-value text-warning">{$queueStats.pending + $queueStats.retry + $empikQueueStats.pending + $empikQueueStats.retry + $mediamarktQueueStats.pending + $mediamarktQueueStats.retry + $erliQueueStats.pending + $erliQueueStats.retry + $moreleQueueStats.pending + $moreleQueueStats.retry}</div>
+              <div class="administration-summary-meta">Allegro {$queueStats.pending + $queueStats.retry} | Empik {$empikQueueStats.pending + $empikQueueStats.retry} | MediaMarkt {$mediamarktQueueStats.pending + $mediamarktQueueStats.retry} | Erli {$erliQueueStats.pending + $erliQueueStats.retry} | Morele {$moreleQueueStats.pending + $moreleQueueStats.retry} | bledy {$queueStats.error + $empikQueueStats.error + $mediamarktQueueStats.error + $erliQueueStats.error + $moreleQueueStats.error}</div>
             </div>
           </div>
         </div>
@@ -240,7 +241,7 @@
           <div id="collapseMarketplaces" class="accordion-collapse collapse show" aria-labelledby="headingMarketplaces" data-bs-parent="#administrationAccordion">
             <div class="accordion-body">
               <div class="alert alert-light border administration-note mb-4">
-                Tutaj trzymasz wszystkie konfiguracje kont. Allegro ma autoryzacje OAuth i linki cron per konto, a Empik i Erli korzystaja z kluczy API.
+                Tutaj trzymasz wszystkie konfiguracje kont. Allegro ma autoryzacje OAuth i linki cron per konto, a Empik, MediaMarkt i Erli korzystaja z kluczy API.
               </div>
 
               <ul class="nav nav-pills administration-market-tabs mb-4" id="marketplaceTabs" role="tablist">
@@ -249,6 +250,7 @@
                 </li>
                 <li class="nav-item" role="presentation">
                   <button class="nav-link" id="empik-tab" data-bs-toggle="pill" data-bs-target="#empik-pane" type="button" role="tab" aria-controls="empik-pane" aria-selected="false">Empik</button>
+                  <button class="nav-link" id="mediamarkt-tab" data-bs-toggle="pill" data-bs-target="#mediamarkt-pane" type="button" role="tab" aria-controls="mediamarkt-pane" aria-selected="false">MediaMarkt</button>
                 </li>
                 <li class="nav-item" role="presentation">
                   <button class="nav-link" id="erli-tab" data-bs-toggle="pill" data-bs-target="#erli-pane" type="button" role="tab" aria-controls="erli-pane" aria-selected="false">Erli</button>
@@ -647,6 +649,163 @@
                   </div>
                 </div>
 
+                <div class="tab-pane fade" id="mediamarkt-pane" role="tabpanel" aria-labelledby="mediamarkt-tab" tabindex="0">
+                  <div class="row g-4">
+                    <div class="col-xl-4">
+                      <div class="card administration-form-card h-100">
+                        <div class="card-header bg-white">
+                          <h3 class="card-title mb-0">Nowe konto MediaMarkt</h3>
+                        </div>
+                        <div class="card-body">
+                          <form method="post" action="{$baseUrl}?controller=administration&action=savemediamarkt" class="row g-3">
+                            <input type="hidden" name="account_id" value="">
+                            <div class="col-12">
+                              <label class="form-label">Nazwa konta</label>
+                              <input type="text" name="name" class="form-control" placeholder="np. MediaMarkt DE" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">Instance URL</label>
+                              <input type="url" name="api_url" class="form-control" placeholder="https://mediamarktsaturn.mirakl.net" required>
+                            </div>
+                            <div class="col-12">
+                              <label class="form-label">API Key</label>
+                              <input type="text" name="api_key" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">shop_id</label>
+                              <input type="number" min="1" step="1" name="shop_id" class="form-control" placeholder="opcjonalnie">
+                            </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Locale</label>
+                              <input type="text" name="locale" class="form-control" value="de_DE">
+                            </div>
+                            <div class="col-12">
+                              <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" value="1" id="mediamarkt_active_default" checked>
+                                <label class="form-check-label" for="mediamarkt_active_default">Konto aktywne</label>
+                              </div>
+                            </div>
+                            <div class="col-12">
+                              <button type="submit" class="btn btn-primary">Zapisz MediaMarkt API</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-xl-8">
+                      <div class="card administration-panel h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                          <h3 class="card-title mb-0">Konta MediaMarkt</h3>
+                          <a href="{$baseUrl}?controller=mediamarkt&action=index" class="btn btn-sm btn-outline-secondary">Przejdz do MediaMarkt</a>
+                        </div>
+                        <div class="card-body">
+                          <div class="alert alert-light border small text-secondary">
+                            MediaMarkt Marketplace dziala na Mirakl Seller API. Wpisz adres instancji Mirakl, API key i opcjonalny <code>shop_id</code>, jesli sprzedawca ma kilka sklepow.
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0">
+                              <thead class="table-light">
+                                <tr>
+                                  <th>Konto</th>
+                                  <th>API</th>
+                                  <th>Status</th>
+                                  <th>Sync</th>
+                                  <th>Akcje</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {foreach $mediamarktAccounts as $account}
+                                  <tr>
+                                    <td>
+                                      <div class="fw-semibold">{$account.name|escape}</div>
+                                      <div class="small text-secondary">slug: {$account.slug|escape}</div>
+                                    </td>
+                                    <td>
+                                      <div class="small">{$account.api_url|escape}</div>
+                                      <div class="small text-secondary">shop_id: {$account.shop_id|default:'-'|escape} | locale: {$account.locale|default:'de_DE'|escape}</div>
+                                    </td>
+                                    <td>
+                                      {if $account.is_active}
+                                        <span class="badge text-bg-success">Aktywne</span>
+                                      {else}
+                                        <span class="badge text-bg-secondary">Nieaktywne</span>
+                                      {/if}
+                                      {if $account.last_error_message}
+                                        <div class="small text-danger mt-1">{$account.last_error_message|escape}</div>
+                                      {/if}
+                                    </td>
+                                    <td>
+                                      <div class="small">ostatni sync: {$account.last_sync_at|default:'-'|escape}</div>
+                                      <div class="small text-secondary">ostatni blad: {$account.last_error_at|default:'-'|escape}</div>
+                                    </td>
+                                    <td class="text-nowrap">
+                                      <div class="d-grid gap-2">
+                                        <a href="{$baseUrl}?controller=mediamarkt&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
+                                        <a href="{$baseUrl}?controller=mediamarkt&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editMediaMarktAccount{$account.id|escape}" aria-expanded="false" aria-controls="editMediaMarktAccount{$account.id|escape}">Edytuj</button>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=savemediamarkt" class="d-grid">
+                                          <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                          <input type="hidden" name="name" value="{$account.name|escape}">
+                                          <input type="hidden" name="api_url" value="{$account.api_url|escape}">
+                                          <input type="hidden" name="shop_id" value="{$account.shop_id|default:''|escape}">
+                                          <input type="hidden" name="locale" value="{$account.locale|default:'de_DE'|escape}">
+                                          <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
+                                          <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
+                                            {if $account.is_active}Wylacz konto{else}Wlacz konto{/if}
+                                          </button>
+                                        </form>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colspan="5" class="bg-light p-0">
+                                      <form method="post" action="{$baseUrl}?controller=administration&action=savemediamarkt" class="row g-3 collapse p-3" id="editMediaMarktAccount{$account.id|escape}">
+                                        <input type="hidden" name="account_id" value="{$account.id|escape}">
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Nazwa konta</label>
+                                          <input type="text" name="name" class="form-control form-control-sm" value="{$account.name|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Instance URL</label>
+                                          <input type="url" name="api_url" class="form-control form-control-sm" value="{$account.api_url|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">API Key</label>
+                                          <input type="text" name="api_key" class="form-control form-control-sm" value="" placeholder="Zostaw puste, aby nie zmieniac">
+                                        </div>
+                                        <div class="col-lg-1">
+                                          <label class="form-label">shop_id</label>
+                                          <input type="number" min="1" step="1" name="shop_id" class="form-control form-control-sm" value="{$account.shop_id|default:''|escape}">
+                                        </div>
+                                        <div class="col-lg-2">
+                                          <label class="form-label">Locale</label>
+                                          <input type="text" name="locale" class="form-control form-control-sm" value="{$account.locale|default:'de_DE'|escape}">
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <div class="form-check mt-lg-4">
+                                            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="mediamarktEditActive{$account.id|escape}" {if $account.is_active}checked{/if}>
+                                            <label class="form-check-label" for="mediamarktEditActive{$account.id|escape}">Konto aktywne</label>
+                                          </div>
+                                        </div>
+                                        <div class="col-lg-9 d-flex justify-content-end align-items-end">
+                                          <button type="submit" class="btn btn-sm btn-primary">Zapisz zmiany MediaMarkt</button>
+                                        </div>
+                                      </form>
+                                    </td>
+                                  </tr>
+                                {foreachelse}
+                                  <tr><td colspan="5" class="text-center text-secondary py-4">Brak skonfigurowanych kont MediaMarkt.</td></tr>
+                                {/foreach}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+
                 <div class="tab-pane fade" id="erli-pane" role="tabpanel" aria-labelledby="erli-tab" tabindex="0">
                   <div class="row g-4">
                     <div class="col-xl-4">
@@ -821,7 +980,7 @@
                     <div class="col-xl-5">
                       <div class="card administration-form-card h-100">
                         <div class="card-header bg-white">
-                          <h3 class="card-title mb-0">API Morele i fallback komputerow</h3>
+                          <h3 class="card-title mb-0">API Morele i kategorie komputerow</h3>
                         </div>
                         <div class="card-body">
                           <form method="post" action="{$baseUrl}?controller=administration&action=savemorele" class="row g-3">
@@ -852,8 +1011,13 @@
                               <input type="text" name="computers_empik_category_id" class="form-control" value="{$computersEmpikCategoryId|escape}">
                               <div class="form-text">Domyslnie <code>21-16-1</code>.</div>
                             </div>
+                            <div class="col-md-6">
+                              <label class="form-label">Kategoria MediaMarkt dla komputerow</label>
+                              <input type="text" name="computers_mediamarkt_category_id" class="form-control" value="{$computersMediaMarktCategoryId|escape}" placeholder="Wpisz ID kategorii z Mirakl">
+                              <div class="form-text">ID hierarchii MediaMarkt używane do pobierania parametrów w Komputery → Komponenty.</div>
+                            </div>
                             <div class="col-12">
-                              <button type="submit" class="btn btn-primary">Zapisz ustawienia Morele</button>
+                              <button type="submit" class="btn btn-primary">Zapisz ustawienia komputerow</button>
                             </div>
                           </form>
                         </div>
@@ -866,7 +1030,7 @@
                         </div>
                         <div class="card-body">
                           <div class="alert alert-light border small text-secondary mb-3">
-                            Ta sekcja zasila ekran <code>Komputery -&gt; Komponenty</code>. Morele dziala teraz w logice starego modulu: <code>Basic client_id:client_secret -&gt; /auth/register lub /auth/refresh -&gt; Bearer access_token -&gt; /offer/category/features/{ldelim}id{rdelim}</code>. Empik fallback bierze podane tutaj ID kategorii.
+                            Ta sekcja zasila ekran <code>Komputery -&gt; Komponenty</code>. Morele dziala teraz w logice starego modulu: <code>Basic client_id:client_secret -&gt; /auth/register lub /auth/refresh -&gt; Bearer access_token -&gt; /offer/category/features/{ldelim}id{rdelim}</code>. Empik i MediaMarkt biorą podane tutaj ID kategorii.
                           </div>
                           <div class="row g-3">
                             <div class="col-md-6">
@@ -1005,7 +1169,7 @@
                     <div class="card-body">
                       <div class="fw-semibold mb-2">Jak to ustawic</div>
                       <div class="small text-secondary mb-2">Ustaw osobno szybkie workery kolejek i wolniejsze maintenance. Workery przepychaja juz dodane zadania, a maintenance robi sync i dorzuca nowe aktualizacje.</div>
-                      <div class="small text-secondary">Kolejki Allegro, Empik, Erli: co 1 minute.</div>
+                      <div class="small text-secondary">Kolejki Allegro, Empik, MediaMarkt, Erli: co 1 minute.</div>
                       <div class="small text-secondary">Allegro: co 5 minut.</div>
                       <div class="small text-secondary">Empik: co 10 minut.</div>
                       <div class="small text-secondary">Erli: co 10 minut.</div>
@@ -1028,6 +1192,10 @@
                         <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="mb-3 administration-inline-code">
+                        <label class="form-label">MediaMarkt kolejka - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$mediamarktAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
                         <label class="form-label">Erli kolejka - co 1 minute</label>
                         <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
@@ -1043,6 +1211,10 @@
                       <div class="mb-3 administration-inline-code">
                         <label class="form-label">Empik maintenance - co 10 minut</label>
                         <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                      </div>
+                      <div class="mb-3 administration-inline-code">
+                        <label class="form-label">MediaMarkt maintenance - co 10 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$mediamarktAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="mb-3 administration-inline-code">
                         <label class="form-label">Erli maintenance - co 10 minut</label>
@@ -1100,7 +1272,7 @@
                 <div class="col-xl-6">
                   <div class="administration-backup-box">
                     <h3 class="h5 mb-2">Kopia modulu produktow</h3>
-                    <p class="text-secondary small mb-3">Pobiera pelny JSON z produktami, kategoriami, polami wlasnymi, parametrami Allegro/Empik/Temu, grupami wspolnego stanu i powiazaniami stanow pochodnych.</p>
+                    <p class="text-secondary small mb-3">Pobiera pelny JSON z produktami, kategoriami, polami wlasnymi, parametrami Allegro/Empik/MediaMarkt/Temu, grupami wspolnego stanu i powiazaniami stanow pochodnych.</p>
                     <a href="{$baseUrl}?controller=products&action=exportbackup" class="btn btn-outline-success">Pobierz pelna kopie JSON produktow</a>
                   </div>
                 </div>

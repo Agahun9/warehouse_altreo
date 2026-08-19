@@ -10,6 +10,7 @@ use App\Models\UserRepository;
 use App\Services\AllegroService;
 use App\Services\AltreoSqlImportService;
 use App\Services\EmpikService;
+use App\Services\MediaMarktService;
 use App\Services\ErliService;
 use App\Services\MoreleService;
 use App\Services\TemuService;
@@ -30,6 +31,9 @@ class AdministrationController extends Controller
     /** @var EmpikService */
     private $empik;
 
+    /** @var MediaMarktService */
+    private $mediamarkt;
+
     /** @var ErliService */
     private $erli;
 
@@ -45,6 +49,7 @@ class AdministrationController extends Controller
         $this->users->ensureSchema();
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
+        $this->mediamarkt = new MediaMarktService();
         $this->erli = new ErliService();
         $this->morele = new MoreleService();
         $this->temu = new TemuService();
@@ -149,6 +154,7 @@ class AdministrationController extends Controller
         $baseUrl = $this->absoluteBaseUrl();
         $accounts = $this->allegro->listAccounts();
         $empikAccounts = $this->empik->listAccounts();
+        $mediamarktAccounts = $this->mediamarkt->listAccounts();
         $erliAccounts = $this->erli->listAccounts();
         $temuSettings = $this->temu->connectionSettings();
 
@@ -173,12 +179,15 @@ class AdministrationController extends Controller
             'queueStats' => $this->allegro->queueCounts(),
             'empikAutomation' => $this->empik->automationLinks($baseUrl),
             'empikQueueStats' => $this->empik->queueCounts(),
+            'mediamarktAutomation' => $this->mediamarkt->automationLinks($baseUrl),
+            'mediamarktQueueStats' => $this->mediamarkt->queueCounts(),
             'erliAutomation' => $this->erli->automationLinks($baseUrl),
             'erliQueueStats' => $this->erli->queueCounts(),
             'moreleAutomation' => $this->morele->automationLinks($baseUrl),
             'moreleQueueStats' => $this->morele->queueCounts(),
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
+            'mediamarktAccounts' => $mediamarktAccounts,
             'erliAccounts' => $erliAccounts,
             'temuApiUrl' => (string) ($temuSettings['api_url'] ?? ''),
             'temuAppKey' => (string) ($temuSettings['app_key'] ?? ''),
@@ -199,6 +208,7 @@ class AdministrationController extends Controller
             'moreleClientSecret' => $this->settings->get('morele_client_secret', ''),
             'computersMoreleCategoryId' => $this->settings->get('computers_morele_category_id', '672'),
             'computersEmpikCategoryId' => $this->settings->get('computers_empik_category_id', '21-16-1'),
+            'computersMediaMarktCategoryId' => $this->settings->get('computers_mediamarkt_category_id', ''),
         ));
     }
 
@@ -295,6 +305,34 @@ class AdministrationController extends Controller
             ), $accountId > 0 ? $accountId : null);
 
             $this->setFlash('success', 'Ustawienia Empik API zostaly zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function savemediamarkt(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        try {
+            $accountId = (int) $this->input('account_id', 0);
+            $this->mediamarkt->saveAccount(array(
+                'name' => $this->input('name', ''),
+                'api_url' => $this->input('api_url', 'https://mediamarktsaturn.mirakl.net'),
+                'api_key' => $this->input('api_key', ''),
+                'shop_id' => $this->input('shop_id', ''),
+                'locale' => $this->input('locale', 'de_DE'),
+                'is_active' => $this->input('is_active', '0') === '1' ? 1 : 0,
+            ), $accountId > 0 ? $accountId : null);
+
+            $this->setFlash('success', 'Ustawienia MediaMarkt API zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
@@ -433,6 +471,7 @@ class AdministrationController extends Controller
             $clientSecret = trim((string) $this->input('morele_client_secret', ''));
             $moreleCategoryId = trim((string) $this->input('computers_morele_category_id', '672'));
             $empikCategoryId = trim((string) $this->input('computers_empik_category_id', '21-16-1'));
+            $mediaMarktCategoryId = trim((string) $this->input('computers_mediamarkt_category_id', ''));
 
             if ($apiUrl !== '' && filter_var($apiUrl, FILTER_VALIDATE_URL) === false) {
                 throw new RuntimeException('Adres API Morele musi byc poprawnym URL.');
@@ -456,8 +495,9 @@ class AdministrationController extends Controller
             $this->settings->set('morele_client_secret', $clientSecret);
             $this->settings->set('computers_morele_category_id', $moreleCategoryId !== '' ? $moreleCategoryId : '672');
             $this->settings->set('computers_empik_category_id', $empikCategoryId);
+            $this->settings->set('computers_mediamarkt_category_id', $mediaMarktCategoryId);
 
-            $this->setFlash('success', 'Ustawienia Morele i fallback kategorii dla komputerow zostaly zapisane.');
+            $this->setFlash('success', 'Ustawienia Morele oraz kategorie Empik i MediaMarkt dla komputerow zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
