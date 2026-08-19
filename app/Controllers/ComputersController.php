@@ -1694,6 +1694,9 @@ class ComputersController extends Controller
                 'erli' => 0,
                 'morele' => 0,
             );
+            $empikBatchUpdates = array();
+            $successfulProductIds = array();
+            $empikBatchRequests = 0;
             foreach ($productIds as $productId) {
                 if ($selectedMarketAccounts === array()) {
                     break;
@@ -1702,19 +1705,37 @@ class ComputersController extends Controller
                 if ($product === null) {
                     continue;
                 }
-                $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts);
-                $queuedTotal = array_sum($queuedCounts);
-                if ($queuedTotal > 0) {
-                    $successCount++;
-                    foreach ($marketQueuedCounts as $market => $count) {
-                        $marketQueuedCounts[$market] += (int) ($queuedCounts[$market] ?? 0);
-                    }
+                $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts, $empikBatchUpdates);
+                foreach (array('allegro', 'erli', 'morele') as $market) {
+                    $marketQueuedCounts[$market] += (int) ($queuedCounts[$market] ?? 0);
+                }
+                if ((int) ($queuedCounts['allegro'] ?? 0) + (int) ($queuedCounts['erli'] ?? 0) + (int) ($queuedCounts['morele'] ?? 0) > 0) {
+                    $successfulProductIds[$productId] = true;
                 }
             }
+
+            if ($empikBatchUpdates !== array()) {
+                try {
+                    $empikResult = (new EmpikService())->submitPriceUpdatesBatch(array_values($empikBatchUpdates));
+                    $marketQueuedCounts['empik'] = (int) ($empikResult['offers'] ?? 0);
+                    $empikBatchRequests = (int) ($empikResult['requests'] ?? 0);
+                    foreach ($empikBatchUpdates as $update) {
+                        foreach ((array) ($update['product_ids'] ?? array()) as $productId) {
+                            $successfulProductIds[(int) $productId] = true;
+                        }
+                    }
+                } catch (Throwable $exception) {
+                    $errors[] = 'Empik: ' . $exception->getMessage();
+                }
+            }
+
+            $successCount = count($successfulProductIds);
             $totalQueued = array_sum($marketQueuedCounts);
             if ($totalQueued > 0) {
-                $successMessage = 'Dodano do kolejki aktualizacji cen: ' . $successCount . ' produktow, Allegro: ' . $marketQueuedCounts['allegro'] . ', Empik: ' . $marketQueuedCounts['empik'] . ', Erli: ' . $marketQueuedCounts['erli'] . ', Morele: ' . $marketQueuedCounts['morele'] . ' ofert.';
-            } elseif ($selectedMarketAccounts !== array()) {
+                $successMessage = 'Przygotowano aktualizacje cen dla ' . $successCount . ' produktow. Allegro: ' . $marketQueuedCounts['allegro']
+                    . ' w kolejce, Empik: ' . $marketQueuedCounts['empik'] . ' ofert w ' . $empikBatchRequests
+                    . ' zbiorczym imporcie, Erli: ' . $marketQueuedCounts['erli'] . ' w kolejce, Morele: ' . $marketQueuedCounts['morele'] . ' w kolejce.';
+            } elseif ($selectedMarketAccounts !== array() && $empikBatchUpdates === array()) {
                 $successCount = 0;
                 $errors[] = 'Nie znaleziono aktywnych ofert na wybranych kontach dla zaznaczonych produktow.';
             }
@@ -2402,7 +2423,7 @@ class ComputersController extends Controller
         return is_array($product) ? $this->normalizeProductImageFields($product) : null;
     }
 
-    private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts): array
+    private function queueMarketplacePriceUpdatesForProduct(array $product, array $selectedMarketAccounts, array &$empikBatchUpdates = array()): array
     {
         // Price updates must reach every offer with the matching SKU, including
         // offers whose locally synchronized status is currently inactive.
@@ -2414,7 +2435,7 @@ class ComputersController extends Controller
 
         return array(
             'allegro' => $this->queueAllegroPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
-            'empik' => $this->queueEmpikPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
+            'empik' => $this->collectEmpikPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts, $empikBatchUpdates),
             'erli' => $this->queueErliPriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
             'morele' => $this->queueMorelePriceUpdatesForProduct($attachedProduct, $selectedMarketAccounts),
         );
@@ -2467,7 +2488,7 @@ class ComputersController extends Controller
         return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price), null, true);
     }
 
-    private function queueEmpikPriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int
+    private function collectEmpikPriceUpdatesForProduct(array $product, array $selectedMarketAccounts, array &$updates): int
     {
         $offers = isset($product['empik_accounts']) && is_array($product['empik_accounts'])
             ? $product['empik_accounts']
@@ -2482,7 +2503,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $targets = array();
+        $collected = 0;
         foreach ($offers as $offer) {
             if (!is_array($offer)) {
                 continue;
@@ -2490,26 +2511,34 @@ class ComputersController extends Controller
 
             $offerRowId = (int) ($offer['offer_row_id'] ?? 0);
             $accountId = (int) ($offer['account_id'] ?? 0);
-            if ($offerRowId <= 0 || $accountId <= 0) {
+            $shopSku = trim((string) ($offer['shop_sku'] ?? ''));
+            if ($offerRowId <= 0 || $accountId <= 0 || $shopSku === '') {
                 continue;
             }
             if ($selectedMarketAccounts !== array() && !in_array('empik:' . $accountId, $selectedMarketAccounts, true)) {
                 continue;
             }
 
-            $targets[] = array(
-                'id' => $offerRowId,
+            $key = $accountId . ':' . $shopSku;
+            if (isset($updates[$key])) {
+                if ((string) $updates[$key]['price'] !== (string) $price) {
+                    throw new RuntimeException('Oferta Empik ' . $shopSku . ' pasuje do produktow z roznymi cenami.');
+                }
+                $updates[$key]['product_ids'][] = (int) ($product['id'] ?? 0);
+                $updates[$key]['product_ids'] = array_values(array_unique(array_filter($updates[$key]['product_ids'])));
+                continue;
+            }
+
+            $updates[$key] = array(
                 'account_id' => $accountId,
+                'shop_sku' => $shopSku,
+                'price' => $price,
+                'product_ids' => array((int) ($product['id'] ?? 0)),
             );
+            $collected++;
         }
 
-        if ($targets === array()) {
-            return 0;
-        }
-
-        $storage = new EmpikStorageRepository($this->db());
-        $storage->ensureSchema();
-        return $storage->enqueueOfferChanges($targets, 'set_price', array('value' => $price));
+        return $collected;
     }
 
     private function queueErliPriceUpdatesForProduct(array $product, array $selectedMarketAccounts = array()): int

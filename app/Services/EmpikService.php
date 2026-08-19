@@ -159,6 +159,85 @@ class EmpikService
         );
     }
 
+    /**
+     * Sends all selected price changes in one Mirakl pricing import per Empik account.
+     * A single import cannot span accounts because every account has separate API
+     * credentials, but within an account every selected offer is one row of the same CSV.
+     *
+     * @param array<int, array<string, mixed>> $updates
+     */
+    public function submitPriceUpdatesBatch(array $updates): array
+    {
+        $groups = array();
+
+        foreach ($updates as $update) {
+            if (!is_array($update)) {
+                continue;
+            }
+
+            $accountId = (int) ($update['account_id'] ?? 0);
+            $shopSku = trim((string) ($update['shop_sku'] ?? ''));
+            $price = $this->normalizeDecimal($update['price'] ?? null);
+            if ($accountId <= 0 || $shopSku === '' || $price === null) {
+                throw new RuntimeException('Niekompletne dane oferty Empik do zbiorczej aktualizacji ceny.');
+            }
+
+            $offerKey = $accountId . ':' . $shopSku;
+            if (isset($groups[$accountId]['offers'][$offerKey])) {
+                if ($groups[$accountId]['offers'][$offerKey]['price'] !== $price) {
+                    throw new RuntimeException('Oferta Empik ' . $shopSku . ' otrzymala dwie rozne ceny w tej samej aktualizacji.');
+                }
+                continue;
+            }
+
+            if (!isset($groups[$accountId])) {
+                $account = $this->storage->findAccountById($accountId);
+                if (!is_array($account) || $account === array()) {
+                    throw new RuntimeException('Nie znaleziono konta Empik dla zbiorczej aktualizacji ceny.');
+                }
+                $groups[$accountId] = array('account' => $account, 'offers' => array());
+            }
+
+            $groups[$accountId]['offers'][$offerKey] = array(
+                'shop_sku' => $shopSku,
+                'price' => $price,
+            );
+        }
+
+        if ($groups === array()) {
+            return array('offers' => 0, 'requests' => 0, 'imports' => array());
+        }
+
+        $imports = array();
+        $offerCount = 0;
+        foreach ($groups as $accountId => $group) {
+            $csv = "\"offer-sku\";\"price\";\"discount-price\";\"discount-start-date\";\"discount-end-date\"\n";
+            foreach ($group['offers'] as $offer) {
+                $csv .= $this->csvRow(array($offer['shop_sku'], $offer['price'], '', '', ''));
+                $offerCount++;
+            }
+
+            $response = $this->requestMultipartImport($group['account'], '/api/offers/pricing/imports', $csv);
+            $importId = trim((string) ($response['import_id'] ?? $response['importId'] ?? ''));
+            if ($importId === '') {
+                throw new RuntimeException('Empik nie zwrocil identyfikatora zbiorczego importu cen.');
+            }
+
+            $imports[] = array(
+                'account_id' => (int) $accountId,
+                'account_name' => (string) ($group['account']['name'] ?? ''),
+                'import_id' => $importId,
+                'offers' => count($group['offers']),
+            );
+        }
+
+        return array(
+            'offers' => $offerCount,
+            'requests' => count($imports),
+            'imports' => $imports,
+        );
+    }
+
     public function processQueue(array $options = array()): array
     {
         // Recover anything a previous, abruptly-terminated run left stuck in "processing"

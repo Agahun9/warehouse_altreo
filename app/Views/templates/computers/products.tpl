@@ -1010,6 +1010,7 @@
       <div class="modal-body">
         <p class="mb-2">Wybierz konta, na ktorych zaktualizowac cene z magazynu.</p>
         <div id="priceMarketplaceAccounts" class="d-flex flex-column gap-2"></div>
+        <div class="form-text mt-2">Dla Empik wszystkie wybrane aukcje z jednego konta zostana wyslane w jednym zbiorczym imporcie cen, bez tworzenia osobnej kolejki dla kazdej aukcji.</div>
         <div id="priceMarketplaceEmpty" class="alert alert-warning mb-0 d-none">
           Zaznaczone produkty nie maja aktywnych ofert na kontach marketplace.
         </div>
