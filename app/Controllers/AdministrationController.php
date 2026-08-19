@@ -209,6 +209,7 @@ class AdministrationController extends Controller
             'computersMoreleCategoryId' => $this->settings->get('computers_morele_category_id', '672'),
             'computersEmpikCategoryId' => $this->settings->get('computers_empik_category_id', '21-16-1'),
             'computersMediaMarktCategoryId' => $this->settings->get('computers_mediamarkt_category_id', ''),
+            'computersMediaMarktSetPcCategoryId' => $this->settings->get('computers_mediamarkt_set_pc_category_id', ''),
         ));
     }
 
@@ -309,7 +310,7 @@ class AdministrationController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=administration&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation#empik-pane');
     }
 
     public function savemediamarkt(): void
@@ -337,7 +338,7 @@ class AdministrationController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=administration&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation#mediamarkt-pane');
     }
 
     public function saveerli(): void
@@ -470,8 +471,6 @@ class AdministrationController extends Controller
             $clientId = trim((string) $this->input('morele_client_id', ''));
             $clientSecret = trim((string) $this->input('morele_client_secret', ''));
             $moreleCategoryId = trim((string) $this->input('computers_morele_category_id', '672'));
-            $empikCategoryId = trim((string) $this->input('computers_empik_category_id', '21-16-1'));
-            $mediaMarktCategoryId = trim((string) $this->input('computers_mediamarkt_category_id', ''));
 
             if ($apiUrl !== '' && filter_var($apiUrl, FILTER_VALIDATE_URL) === false) {
                 throw new RuntimeException('Adres API Morele musi byc poprawnym URL.');
@@ -485,24 +484,73 @@ class AdministrationController extends Controller
                 throw new RuntimeException('Kategoria Morele musi byc liczba calkowita.');
             }
 
-            if ($empikCategoryId === '') {
-                $empikCategoryId = '21-16-1';
-            }
-
             $this->settings->set('morele_api_url', $apiUrl !== '' ? $apiUrl : 'https://api-marketplace.morele.net');
             $this->settings->set('morele_account', $account);
             $this->settings->set('morele_client_id', $clientId);
             $this->settings->set('morele_client_secret', $clientSecret);
             $this->settings->set('computers_morele_category_id', $moreleCategoryId !== '' ? $moreleCategoryId : '672');
-            $this->settings->set('computers_empik_category_id', $empikCategoryId);
-            $this->settings->set('computers_mediamarkt_category_id', $mediaMarktCategoryId);
-
-            $this->setFlash('success', 'Ustawienia Morele oraz kategorie Empik i MediaMarkt dla komputerow zostaly zapisane.');
+            $this->setFlash('success', 'Ustawienia Morele dla komputerow zostaly zapisane.');
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=administration&action=automation');
+        $this->redirect('./index.php?controller=administration&action=automation#morele-pane');
+    }
+
+    public function savecomputerscategory(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+
+        $marketplace = strtolower(trim((string) $this->input('marketplace', '')));
+        $categories = array(
+            'empik' => array(
+                'setting' => 'computers_empik_category_id',
+                'label' => 'Empik',
+                'default' => '21-16-1',
+            ),
+            'mediamarkt' => array(
+                'setting' => 'computers_mediamarkt_category_id',
+                'label' => 'MediaMarkt - PC',
+                'default' => '',
+                'target' => 'mediamarkt',
+            ),
+            'mediamarkt_pc' => array(
+                'setting' => 'computers_mediamarkt_category_id',
+                'label' => 'MediaMarkt - PC',
+                'default' => '',
+                'target' => 'mediamarkt',
+            ),
+            'mediamarkt_set_pc' => array(
+                'setting' => 'computers_mediamarkt_set_pc_category_id',
+                'label' => 'MediaMarkt - zestaw PC',
+                'default' => '',
+                'target' => 'mediamarkt',
+            ),
+        );
+
+        try {
+            if (!isset($categories[$marketplace])) {
+                throw new RuntimeException('Nieprawidlowa platforma dla kategorii komputerow.');
+            }
+
+            $categoryId = trim((string) $this->input('category_id', ''));
+            if ($categoryId === '') {
+                $categoryId = $categories[$marketplace]['default'];
+            }
+
+            $this->settings->set($categories[$marketplace]['setting'], $categoryId);
+            $this->setFlash('success', 'Kategoria ' . $categories[$marketplace]['label'] . ' dla komputerow zostala zapisana.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $target = isset($categories[$marketplace]) ? ($categories[$marketplace]['target'] ?? $marketplace) : 'allegro';
+        $this->redirect('./index.php?controller=administration&action=automation#' . $target . '-pane');
     }
 
     private function uploadedAltreoSqlPaths(): array

@@ -951,7 +951,7 @@ class ComputersController extends Controller
         }
 
         $items = $this->db()->fetchAll(
-            'SELECT *, JSON_LENGTH(parameters_morele) AS parameters_morele_count, JSON_LENGTH(parameters_eu) AS parameters_eu_count, JSON_LENGTH(parameters_empik) AS parameters_empik_count, JSON_LENGTH(parameters_mediamarkt) AS parameters_mediamarkt_count
+            'SELECT *, JSON_LENGTH(parameters_morele) AS parameters_morele_count, JSON_LENGTH(parameters_eu) AS parameters_eu_count, JSON_LENGTH(parameters_empik) AS parameters_empik_count, JSON_LENGTH(parameters_mediamarkt) AS parameters_mediamarkt_count, JSON_LENGTH(parameters_mediamarkt_set_pc) AS parameters_mediamarkt_set_pc_count
              FROM ' . self::COMPONENTS_TABLE . ' ORDER BY category ASC, name ASC'
         );
         foreach ($items as $index => $item) {
@@ -1421,6 +1421,7 @@ class ComputersController extends Controller
         $allegroParameterLines = array();
         $empikParameters = array();
         $mediamarktParameters = array();
+        $mediamarktSetPcParameters = array();
 
         foreach ($components as $component) {
             $category = trim((string) ($component['category'] ?? ''));
@@ -1453,6 +1454,11 @@ class ComputersController extends Controller
                     $mediamarktParameters[$name] = $value;
                 }
             }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt_set_pc'] ?? '')) as $name => $value) {
+                if (!array_key_exists($name, $mediamarktSetPcParameters)) {
+                    $mediamarktSetPcParameters[$name] = $value;
+                }
+            }
         }
 
         foreach ($allegroParameters as $name => $value) {
@@ -1477,6 +1483,7 @@ class ComputersController extends Controller
             'allegro_parameters' => implode("\n", $allegroParameterLines),
             'empik_parameters' => $this->computerTitleParametersText($empikParameters),
             'mediamarkt_parameters' => $this->computerTitleParametersText($mediamarktParameters),
+            'mediamarkt_set_pc_parameters' => $this->computerTitleParametersText($mediamarktSetPcParameters),
             'components' => $componentMap,
             'component_names' => implode(', ', array_values(array_filter($componentNames))),
         );
@@ -1592,7 +1599,8 @@ class ComputersController extends Controller
             '{{field:product.components.OBUDOWA}}' => 'Komponent Obudowa',
             '{{field:product.allegro_parameters}}' => 'Parametry Allegro z komponentow',
             '{{field:product.empik_parameters}}' => 'Parametry Empik z komponentow',
-            '{{field:product.mediamarkt_parameters}}' => 'Parametry MediaMarkt z komponentow',
+            '{{field:product.mediamarkt_parameters}}' => 'Parametry MediaMarkt - PC z komponentow',
+            '{{field:product.mediamarkt_set_pc_parameters}}' => 'Parametry MediaMarkt - zestaw PC z komponentow',
             '{{field:product.ean}}' => 'EAN produktu',
             '{{field:product.id_components}}' => 'ID komponentow',
         );
@@ -2113,9 +2121,15 @@ class ComputersController extends Controller
             ),
             'parameters_mediamarkt' => $this->postedComponentParamsJson(
                 'params_mediamarkt_loaded',
-                $this->collectMediaMarktParams(),
+                $this->collectMediaMarktParams('pc'),
                 $existingComponent,
                 'parameters_mediamarkt'
+            ),
+            'parameters_mediamarkt_set_pc' => $this->postedComponentParamsJson(
+                'params_mediamarkt_set_pc_loaded',
+                $this->collectMediaMarktParams('set_pc'),
+                $existingComponent,
+                'parameters_mediamarkt_set_pc'
             ),
             'name_spec' => trim((string) $this->input('name_spec', '')),
             'img' => $img,
@@ -2178,13 +2192,22 @@ class ComputersController extends Controller
             ));
             return;
         }
-        if ($which === 'mediamarkt') {
-            $payload = $this->loadMediaMarktParameterPayload($componentCategory);
+        if (in_array($which, array('mediamarkt', 'mediamarkt_pc', 'mediamarkt_set_pc'), true)) {
+            $profile = $which === 'mediamarkt_set_pc' ? 'set_pc' : 'pc';
+            $payload = $this->loadMediaMarktParameterPayload($componentCategory, $profile);
             $this->partial('computers/partials/params_mediamarkt', array(
                 'product' => $product,
                 'mediamarkt_parameters' => $payload['items'],
                 'mediamarkt_parameters_error' => $payload['error'],
                 'mediamarkt_parameters_meta' => $payload['meta'],
+                'mediamarkt_profile_key' => $profile,
+                'mediamarkt_profile_label' => $profile === 'set_pc' ? 'MediaMarkt - zestaw PC' : 'MediaMarkt - PC',
+                'mediamarkt_input_prefix' => $profile === 'set_pc' ? 'mediamarkt_set_pc_parameters' : 'mediamarkt_parameters',
+                'mediamarkt_custom_name_input' => $profile === 'set_pc' ? 'mediamarkt_set_pc_custom_name' : 'mediamarkt_custom_name',
+                'mediamarkt_custom_value_input' => $profile === 'set_pc' ? 'mediamarkt_set_pc_custom_value' : 'mediamarkt_custom_value',
+                'mediamarkt_loaded_input' => $profile === 'set_pc' ? 'params_mediamarkt_set_pc_loaded' : 'params_mediamarkt_loaded',
+                'mediamarkt_product_map_key' => $profile === 'set_pc' ? 'param_mediamarkt_set_pc' : 'param_mediamarkt',
+                'mediamarkt_product_normalized_key' => $profile === 'set_pc' ? 'param_mediamarkt_set_pc_normalized' : 'param_mediamarkt_normalized',
             ));
             return;
         }
@@ -2238,7 +2261,7 @@ class ComputersController extends Controller
         return array(
             'id', 'category', 'name', 'name_title', 'name_spec', 'price',
             'description', 'description_morele', 'description_empik', 'description_mediamarkt',
-            'parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt',
+            'parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc',
             'img', 'img_morele', 'img_empik', 'img_mediamarkt',
             'created_at', 'updated_at',
         );
@@ -4160,7 +4183,7 @@ class ComputersController extends Controller
             }
         }
 
-        foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt') as $field) {
+        foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc') as $field) {
             if (array_key_exists($field, $component)) {
                 $component[$field] = $this->normalizeJsonMapString((string) $component[$field]);
             }
@@ -4489,6 +4512,7 @@ class ComputersController extends Controller
         }
         $empikParams = array();
         $mediamarktParams = array();
+        $mediamarktSetPcParams = array();
         $moreleParams = array();
         foreach ($components as $component) {
             foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $key => $value) {
@@ -4496,6 +4520,9 @@ class ComputersController extends Controller
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt'] ?? '')) as $key => $value) {
                 $mediamarktParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
+            }
+            foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt_set_pc'] ?? '')) as $key => $value) {
+                $mediamarktSetPcParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_morele'] ?? '')) as $key => $value) {
                 if (!array_key_exists($key, $moreleParams)) {
@@ -4539,6 +4566,7 @@ class ComputersController extends Controller
             'main_image.mediamarkt' => $mainMediaMarktImage,
             'empik_params' => $empikParams,
             'mediamarkt_params' => $mediamarktParams,
+            'mediamarkt_set_pc_params' => $mediamarktSetPcParams,
             'parameters.easy' => $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? '')),
             'parameters.morele' => implode("|\n", array_values($moreleParams)),
             'description' => $this->renderComputerDescription($product, $components, $descriptionTemplate),
@@ -4697,7 +4725,10 @@ class ComputersController extends Controller
             return (string) ($context['empik_params'][substr($source, 12)] ?? '');
         }
         if (strpos($source, 'mediamarkt_param:') === 0) {
-            return (string) ($context['mediamarkt_params'][substr($source, 18)] ?? '');
+            return (string) ($context['mediamarkt_params'][substr($source, 17)] ?? '');
+        }
+        if (strpos($source, 'mediamarkt_set_pc_param:') === 0) {
+            return (string) ($context['mediamarkt_set_pc_params'][substr($source, 24)] ?? '');
         }
         if ($source === 'description') {
             return (string) $context['description'];
@@ -4787,6 +4818,7 @@ class ComputersController extends Controller
                 'morele' => 'parameters_morele',
                 'empik' => 'parameters_empik',
                 'mediamarkt' => 'parameters_mediamarkt',
+                'mediamarkt_set_pc' => 'parameters_mediamarkt_set_pc',
             ) as $market => $parameterField) {
                 foreach ($this->decodeJsonMap((string) ($component[$parameterField] ?? '')) as $parameterKey => $parameterValue) {
                     $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
@@ -5252,11 +5284,12 @@ class ComputersController extends Controller
         return $value;
     }
 
-    private function collectMediaMarktParams(): array
+    private function collectMediaMarktParams(string $profile = 'pc'): array
     {
-        $result = $this->collectStructuredMediaMarktParams();
-        $names = (array) $this->input('mediamarkt_custom_name', array());
-        $values = (array) $this->input('mediamarkt_custom_value', array());
+        $isSetPc = $profile === 'set_pc';
+        $result = $this->collectStructuredMediaMarktParams($profile);
+        $names = (array) $this->input($isSetPc ? 'mediamarkt_set_pc_custom_name' : 'mediamarkt_custom_name', array());
+        $values = (array) $this->input($isSetPc ? 'mediamarkt_set_pc_custom_value' : 'mediamarkt_custom_value', array());
         foreach ($names as $index => $name) {
             $name = trim((string) $name);
             $value = trim((string) ($values[$index] ?? ''));
@@ -5268,14 +5301,14 @@ class ComputersController extends Controller
         return $result;
     }
 
-    private function collectStructuredMediaMarktParams(): array
+    private function collectStructuredMediaMarktParams(string $profile = 'pc'): array
     {
-        $input = $this->input('mediamarkt_parameters', array());
+        $input = $this->input($profile === 'set_pc' ? 'mediamarkt_set_pc_parameters' : 'mediamarkt_parameters', array());
         if (!is_array($input)) {
             return array();
         }
 
-        $payload = $this->loadMediaMarktParameterPayload();
+        $payload = $this->loadMediaMarktParameterPayload('', $profile);
         $definitions = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : array();
         if ($definitions === array()) {
             return array();
@@ -5409,10 +5442,12 @@ class ComputersController extends Controller
         $row['param_morele'] = $this->decodeJsonMap((string) ($row['parameters_morele'] ?? ''));
         $row['param_empik'] = $this->decodeJsonMap((string) ($row['parameters_empik'] ?? ''));
         $row['param_mediamarkt'] = $this->decodeJsonMap((string) ($row['parameters_mediamarkt'] ?? ''));
+        $row['param_mediamarkt_set_pc'] = $this->decodeJsonMap((string) ($row['parameters_mediamarkt_set_pc'] ?? ''));
         $row['param_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param']) && is_array($row['param']) ? $row['param'] : array());
         $row['param_morele_values_by_id'] = $this->normalizeStoredMarketParamValues(isset($row['param_morele']) && is_array($row['param_morele']) ? $row['param_morele'] : array());
         $row['param_empik_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_empik']) && is_array($row['param_empik']) ? $row['param_empik'] : array());
         $row['param_mediamarkt_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_mediamarkt']) && is_array($row['param_mediamarkt']) ? $row['param_mediamarkt'] : array());
+        $row['param_mediamarkt_set_pc_normalized'] = $this->normalizeStoredLabelMap(isset($row['param_mediamarkt_set_pc']) && is_array($row['param_mediamarkt_set_pc']) ? $row['param_mediamarkt_set_pc'] : array());
 
         return $row;
     }
@@ -5622,22 +5657,24 @@ class ComputersController extends Controller
         return $hasImageWord && $hasManualWord;
     }
 
-    private function loadMediaMarktParameterPayload(string $componentCategory = ''): array
+    private function loadMediaMarktParameterPayload(string $componentCategory = '', string $profile = 'pc'): array
     {
+        $isSetPc = $profile === 'set_pc';
         $meta = array(
-            'label' => 'MediaMarkt',
+            'label' => $isSetPc ? 'MediaMarkt - zestaw PC' : 'MediaMarkt - PC',
             'category_id' => '',
             'source' => '',
         );
 
         try {
-            $categoryId = trim($this->settings ? $this->settings->get('computers_mediamarkt_category_id', '') : '');
+            $settingKey = $isSetPc ? 'computers_mediamarkt_set_pc_category_id' : 'computers_mediamarkt_category_id';
+            $categoryId = trim($this->settings ? $this->settings->get($settingKey, '') : '');
             $meta['source'] = $categoryId !== '' ? 'Ustawienia administracji' : '';
 
             if ($categoryId === '') {
                 return array(
                     'items' => array(),
-                    'error' => 'Najpierw wpisz ID kategorii MediaMarkt w Administracja → Automatyzacja → Morele.',
+                    'error' => 'Najpierw wpisz ID kategorii ' . $meta['label'] . ' w Administracja → Automatyzacja → MediaMarkt.',
                     'meta' => $meta,
                 );
             }
@@ -5658,7 +5695,7 @@ class ComputersController extends Controller
             }
             $items = $this->markUsedComputerParameters(
                 $items,
-                $this->computerParameterUsage('parameters_mediamarkt', $componentCategory),
+                $this->computerParameterUsage($isSetPc ? 'parameters_mediamarkt_set_pc' : 'parameters_mediamarkt', $componentCategory),
                 'name'
             );
             $meta['component_category'] = $componentCategory;
@@ -5720,7 +5757,7 @@ class ComputersController extends Controller
 
     private function computerParameterUsage(string $column, string $componentCategory = ''): array
     {
-        if (!in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt'), true)) {
+        if (!in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc'), true)) {
             return array();
         }
 
@@ -5743,7 +5780,7 @@ class ComputersController extends Controller
                     continue;
                 }
                 $identifier = trim((string) $key);
-                if (!in_array($column, array('parameters_empik', 'parameters_mediamarkt'), true)) {
+                if (!in_array($column, array('parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc'), true)) {
                     $identifier = trim((string) (explode('|', $identifier)[0] ?? ''));
                 }
                 $identifier = $this->normalizeLookupText($identifier);
@@ -6200,7 +6237,8 @@ class ComputersController extends Controller
             $options['empik_param:' . $name] = 'Empik parametr: ' . $name;
         }
         foreach ($this->mediaMarktComputerParameterNames() as $name) {
-            $options['mediamarkt_param:' . $name] = 'MediaMarkt parametr: ' . $name;
+            $options['mediamarkt_param:' . $name] = 'MediaMarkt - PC parametr: ' . $name;
+            $options['mediamarkt_set_pc_param:' . $name] = 'MediaMarkt - zestaw PC parametr: ' . $name;
         }
         return $options;
     }
@@ -6335,12 +6373,13 @@ class ComputersController extends Controller
     {
         $tokens = array();
         $rows = $this->db()->fetchAll(
-            'SELECT category, parameters_eu, parameters_morele, parameters_empik, parameters_mediamarkt'
+            'SELECT category, parameters_eu, parameters_morele, parameters_empik, parameters_mediamarkt, parameters_mediamarkt_set_pc'
             . ' FROM ' . self::COMPONENTS_TABLE
             . " WHERE (parameters_eu IS NOT NULL AND parameters_eu <> '' AND parameters_eu <> '{}')"
             . " OR (parameters_morele IS NOT NULL AND parameters_morele <> '' AND parameters_morele <> '{}')"
             . " OR (parameters_empik IS NOT NULL AND parameters_empik <> '' AND parameters_empik <> '{}')"
             . " OR (parameters_mediamarkt IS NOT NULL AND parameters_mediamarkt <> '' AND parameters_mediamarkt <> '{}')"
+            . " OR (parameters_mediamarkt_set_pc IS NOT NULL AND parameters_mediamarkt_set_pc <> '' AND parameters_mediamarkt_set_pc <> '{}')"
             . ' ORDER BY category, id'
         );
 
@@ -6354,7 +6393,8 @@ class ComputersController extends Controller
                 'allegro' => array('field' => 'parameters_eu', 'label' => 'Allegro'),
                 'morele' => array('field' => 'parameters_morele', 'label' => 'Morele'),
                 'empik' => array('field' => 'parameters_empik', 'label' => 'Empik'),
-                'mediamarkt' => array('field' => 'parameters_mediamarkt', 'label' => 'MediaMarkt'),
+                'mediamarkt' => array('field' => 'parameters_mediamarkt', 'label' => 'MediaMarkt - PC'),
+                'mediamarkt_set_pc' => array('field' => 'parameters_mediamarkt_set_pc', 'label' => 'MediaMarkt - zestaw PC'),
             ) as $market => $config) {
                 foreach ($this->decodeJsonMap((string) ($row[$config['field']] ?? '')) as $parameterKey => $parameterValue) {
                     $identifier = $this->computerDescriptionParameterIdentifier($market, (string) $parameterKey);
@@ -6377,7 +6417,7 @@ class ComputersController extends Controller
         if ($key === '') {
             return '';
         }
-        if (!in_array($market, array('empik', 'mediamarkt'), true)) {
+        if (!in_array($market, array('empik', 'mediamarkt', 'mediamarkt_set_pc'), true)) {
             $key = trim((string) (explode('|', $key)[0] ?? ''));
         }
         return $this->computerDescriptionTokenPart($key);
@@ -6397,7 +6437,7 @@ class ComputersController extends Controller
 
     private function computerDescriptionParameterLabel(string $market, string $key, $value): string
     {
-        if (in_array($market, array('empik', 'mediamarkt'), true)) {
+        if (in_array($market, array('empik', 'mediamarkt', 'mediamarkt_set_pc'), true)) {
             return trim($key);
         }
         if ($market === 'morele') {
@@ -6762,6 +6802,7 @@ class ComputersController extends Controller
             . "parameters_morele LONGTEXT DEFAULT NULL,\n"
             . "parameters_empik LONGTEXT DEFAULT NULL,\n"
             . "parameters_mediamarkt LONGTEXT DEFAULT NULL,\n"
+            . "parameters_mediamarkt_set_pc LONGTEXT DEFAULT NULL,\n"
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
@@ -6842,7 +6883,8 @@ class ComputersController extends Controller
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_morele LONGTEXT DEFAULT NULL AFTER parameters_eu");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_empik LONGTEXT DEFAULT NULL AFTER parameters_morele");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt LONGTEXT DEFAULT NULL AFTER parameters_empik");
-        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt_set_pc', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt_set_pc LONGTEXT DEFAULT NULL AFTER parameters_mediamarkt");
+        $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt_set_pc");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
         $this->ensureTableColumn(self::COMPONENTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");

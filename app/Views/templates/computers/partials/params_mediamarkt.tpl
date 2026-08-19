@@ -1,9 +1,23 @@
 {assign var=mediamarktParamsList value=$mediamarkt_parameters|default:null}
+{assign var=mediamarktProfileKey value=$mediamarkt_profile_key|default:'pc'}
+{assign var=mediamarktProfileLabel value=$mediamarkt_profile_label|default:'MediaMarkt - PC'}
+{assign var=mediamarktInputPrefix value=$mediamarkt_input_prefix|default:'mediamarkt_parameters'}
+{assign var=mediamarktCustomNameInput value=$mediamarkt_custom_name_input|default:'mediamarkt_custom_name'}
+{assign var=mediamarktCustomValueInput value=$mediamarkt_custom_value_input|default:'mediamarkt_custom_value'}
+{assign var=mediamarktLoadedInput value=$mediamarkt_loaded_input|default:'params_mediamarkt_loaded'}
+{assign var=mediamarktProductMapKey value=$mediamarkt_product_map_key|default:'param_mediamarkt'}
+{assign var=mediamarktProductNormalizedKey value=$mediamarkt_product_normalized_key|default:'param_mediamarkt_normalized'}
+{assign var=mediamarktStoredParams value=$product[$mediamarktProductMapKey]|default:[]}
+{assign var=mediamarktStoredParamsNormalized value=$product[$mediamarktProductNormalizedKey]|default:[]}
 <div class="market-params market-params--mediamarkt"
+     data-profile="{$mediamarktProfileKey|escape:'html'}"
+     data-input-prefix="{$mediamarktInputPrefix|escape:'html'}"
+     data-custom-name-input="{$mediamarktCustomNameInput|escape:'html'}"
+     data-custom-value-input="{$mediamarktCustomValueInput|escape:'html'}"
      data-options-url="{$baseUrl}?controller=computers&amp;action=mediamarktparameteroptions">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
-      <div class="fw-bold fs-6">Parametry MediaMarkt</div>
+      <div class="fw-bold fs-6">{$mediamarktProfileLabel|escape:'html'}</div>
       <div class="small text-muted">
         {if !empty($mediamarkt_parameters_meta.category_id)}Kategoria API: <code>{$mediamarkt_parameters_meta.category_id|escape:'html'}</code>{/if}
         {if !empty($mediamarkt_parameters_meta.source)}{if !empty($mediamarkt_parameters_meta.category_id)} | {/if}Źródło: {$mediamarkt_parameters_meta.source|escape:'html'}{/if}
@@ -18,7 +32,7 @@
   {/if}
 
   {if $mediamarktParamsList}
-    <input type="hidden" name="params_mediamarkt_loaded" value="1" />
+    <input type="hidden" name="{$mediamarktLoadedInput|escape:'html'}" value="1" />
     <div class="mb-3">
       <input type="text" class="form-control js-market-param-filter" data-target=".js-mediamarkt-param-card" placeholder="Szukaj po nazwie lub ID parametru MediaMarkt...">
     </div>
@@ -36,11 +50,11 @@
         {assign var=storedValue value=''}
         {assign var=storedValueNormalized value=[]}
         {assign var=paramNameLookup value=$param.name|lower}
-        {if isset($product.param_mediamarkt[$param.name])}
-          {assign var=storedValue value=$product.param_mediamarkt[$param.name]}
+        {if isset($mediamarktStoredParams[$param.name])}
+          {assign var=storedValue value=$mediamarktStoredParams[$param.name]}
         {/if}
-        {if isset($product.param_mediamarkt_normalized[$paramNameLookup])}
-          {assign var=storedValueNormalized value=$product.param_mediamarkt_normalized[$paramNameLookup]}
+        {if isset($mediamarktStoredParamsNormalized[$paramNameLookup])}
+          {assign var=storedValueNormalized value=$mediamarktStoredParamsNormalized[$paramNameLookup]}
         {/if}
 
         <div class="col-12 col-xl-6 js-mediamarkt-param-card{if !$param.is_used && $mediamarkt_parameters_meta.used_count|default:0 > 0} d-none{/if}"
@@ -48,7 +62,7 @@
              data-filter-text="{$param.name|escape:'html'} {$param.id|escape:'html'} {$param.type|escape:'html'}">
           <div class="border rounded-3 p-3 h-100 bg-white">
             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-              <label class="form-label fw-semibold mb-0" for="mediamarkt_param_{$param.id}">
+              <label class="form-label fw-semibold mb-0" for="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}">
                 {$param.name}
               </label>
               <span class="badge bg-light text-dark border">ID {$param.id}</span>
@@ -76,14 +90,14 @@
                         {if $storedOption neq ''}
                           <span class="badge text-bg-primary me-1 mb-1 mediamarkt-selected-option">
                             <span>{$storedOption|escape:'html'}</span>
-                            <input type="hidden" name="mediamarkt_parameters[{$param.id}][]" value="{$storedOption|escape:'html'}">
+                            <input type="hidden" name="{$mediamarktInputPrefix}[{$param.id}][]" value="{$storedOption|escape:'html'}">
                             <button type="button" class="btn-close btn-close-white ms-1 js-remove-mediamarkt-option" aria-label="Usuń"></button>
                           </span>
                         {/if}
                       {/foreach}
                     {/if}
                   {else}
-                    <input type="hidden" name="mediamarkt_parameters[{$param.id}]" class="js-mediamarkt-option-value" value="{$storedValue|escape:'html'}">
+                    <input type="hidden" name="{$mediamarktInputPrefix}[{$param.id}]" class="js-mediamarkt-option-value" value="{$storedValue|escape:'html'}">
                     <div class="alert alert-light border py-2 px-3 mb-0 js-mediamarkt-single-selection {if $storedValue eq ''}d-none{/if}">
                       Wybrano: <strong class="js-mediamarkt-selected-label">{$storedValue|escape:'html'}</strong>
                     </div>
@@ -105,25 +119,25 @@
                     {/if}
                   {/if}
                   <div class="form-check mb-1">
-                    <input class="form-check-input" type="checkbox" name="mediamarkt_parameters[{$param.id}][]" id="mediamarkt_param_{$param.id}_{$option.id}" value="{$option.id}" {if $isChecked}checked{/if}>
-                    <label class="form-check-label" for="mediamarkt_param_{$param.id}_{$option.id}">{$option.value}</label>
+                    <input class="form-check-input" type="checkbox" name="{$mediamarktInputPrefix}[{$param.id}][]" id="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}_{$option.id}" value="{$option.id}" {if $isChecked}checked{/if}>
+                    <label class="form-check-label" for="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}_{$option.id}">{$option.value}</label>
                   </div>
                 {/foreach}
               </div>
               <div class="form-text">Wielokrotny wybór z listy.</div>
             {elseif $param.type == 'dictionary' && $param.dictionary}
-              <select name="mediamarkt_parameters[{$param.id}]" id="mediamarkt_param_{$param.id}" class="form-select">
+              <select name="{$mediamarktInputPrefix}[{$param.id}]" id="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}" class="form-select">
                 <option value="">-- Wybierz --</option>
                 {foreach from=$param.dictionary item=option}
                   <option value="{$option.id}" {if $storedValue == $option.id || $storedValue == $option.value}selected{/if}>{$option.value}</option>
                 {/foreach}
               </select>
             {elseif $param.type == 'integer' || $param.type == 'number'}
-              <input type="number" step="any" class="form-control" name="mediamarkt_parameters[{$param.id}]" id="mediamarkt_param_{$param.id}" value="{$storedValue|escape:'html'}" />
+              <input type="number" step="any" class="form-control" name="{$mediamarktInputPrefix}[{$param.id}]" id="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}" value="{$storedValue|escape:'html'}" />
             {elseif $param.type == 'textarea'}
-              <textarea class="form-control" name="mediamarkt_parameters[{$param.id}]" id="mediamarkt_param_{$param.id}" rows="3" placeholder="Wpisz wartości ręcznie, każdą w osobnej linii">{$storedValue|escape:'html'}</textarea>
+              <textarea class="form-control" name="{$mediamarktInputPrefix}[{$param.id}]" id="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}" rows="3" placeholder="Wpisz wartości ręcznie, każdą w osobnej linii">{$storedValue|escape:'html'}</textarea>
             {else}
-              <input type="text" class="form-control" name="mediamarkt_parameters[{$param.id}]" id="mediamarkt_param_{$param.id}" value="{$storedValue|escape:'html'}" />
+              <input type="text" class="form-control" name="{$mediamarktInputPrefix}[{$param.id}]" id="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}" value="{$storedValue|escape:'html'}" />
             {/if}
 
             <div class="small text-secondary mt-2">
@@ -140,14 +154,14 @@
   <div class="border-top pt-3">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
       <div class="fw-semibold">Dodatkowe parametry MediaMarkt</div>
-      <button type="button" id="addMediaMarktParamBtn" class="btn btn-sm btn-outline-primary">Dodaj własny parametr</button>
+      <button type="button" class="btn btn-sm btn-outline-primary js-add-mediamarkt-param">Dodaj własny parametr</button>
     </div>
     <div class="small text-muted mb-3">Tu możesz dopisać własne pary nazwa / wartość, które nie przyszły z API.</div>
 
-    <div id="mediamarkt_custom_params">
+    <div class="js-mediamarkt-custom-params">
       {assign var=hasCustomRows value=false}
-      {if $product.param_mediamarkt}
-        {foreach from=$product.param_mediamarkt key=ename item=eval}
+      {if $mediamarktStoredParams}
+        {foreach from=$mediamarktStoredParams key=ename item=eval}
           {assign var=isApiParam value=false}
           {if $mediamarktParamsList}
             {foreach from=$mediamarktParamsList item=param}
@@ -159,8 +173,8 @@
           {if !$isApiParam}
             {assign var=hasCustomRows value=true}
             <div class="mediamarkt-param-row row g-2 align-items-center mb-2">
-              <div class="col-md-5"><input type="text" name="mediamarkt_custom_name[]" value="{$ename|escape:'html'}" class="form-control" placeholder="Nazwa parametru" /></div>
-              <div class="col-md-5"><input type="text" name="mediamarkt_custom_value[]" value="{$eval|escape:'html'}" class="form-control" placeholder="Wartość" /></div>
+              <div class="col-md-5"><input type="text" name="{$mediamarktCustomNameInput}[]" value="{$ename|escape:'html'}" class="form-control" placeholder="Nazwa parametru" /></div>
+              <div class="col-md-5"><input type="text" name="{$mediamarktCustomValueInput}[]" value="{$eval|escape:'html'}" class="form-control" placeholder="Wartość" /></div>
               <div class="col-md-2 d-grid"><button type="button" class="btn btn-sm btn-outline-danger remove-mediamarkt-param">Usuń</button></div>
             </div>
           {/if}
@@ -169,8 +183,8 @@
 
       {if !$hasCustomRows}
         <div class="mediamarkt-param-row row g-2 align-items-center mb-2">
-          <div class="col-md-5"><input type="text" name="mediamarkt_custom_name[]" value="" class="form-control" placeholder="Nazwa parametru" /></div>
-          <div class="col-md-5"><input type="text" name="mediamarkt_custom_value[]" value="" class="form-control" placeholder="Wartość" /></div>
+          <div class="col-md-5"><input type="text" name="{$mediamarktCustomNameInput}[]" value="" class="form-control" placeholder="Nazwa parametru" /></div>
+          <div class="col-md-5"><input type="text" name="{$mediamarktCustomValueInput}[]" value="" class="form-control" placeholder="Wartość" /></div>
           <div class="col-md-2 d-grid"><button type="button" class="btn btn-sm btn-outline-danger remove-mediamarkt-param">Usuń</button></div>
         </div>
       {/if}
@@ -181,8 +195,13 @@
 {literal}
 <script>
   (function(){
-    var mediamarktRoot = document.querySelector('.market-params--mediamarkt');
+    var mediamarktRoot = document.querySelector('.market-params--mediamarkt:not([data-script-bound="1"])');
+    if (!mediamarktRoot) return;
+    mediamarktRoot.setAttribute('data-script-bound', '1');
     var optionsUrl = mediamarktRoot ? mediamarktRoot.getAttribute('data-options-url') : '';
+    var inputPrefix = mediamarktRoot.getAttribute('data-input-prefix') || 'mediamarkt_parameters';
+    var customNameInput = mediamarktRoot.getAttribute('data-custom-name-input') || 'mediamarkt_custom_name';
+    var customValueInput = mediamarktRoot.getAttribute('data-custom-value-input') || 'mediamarkt_custom_value';
 
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>"']/g, function (character) {
@@ -213,13 +232,13 @@
       var badge = document.createElement('span');
       badge.className = 'badge text-bg-primary me-1 mb-1 mediamarkt-selected-option';
       badge.innerHTML = '<span>' + escapeHtml(label) + '</span>'
-        + '<input type="hidden" name="mediamarkt_parameters[' + escapeHtml(lookup.getAttribute('data-attribute-id')) + '][]"'
+        + '<input type="hidden" name="' + escapeHtml(inputPrefix) + '[' + escapeHtml(lookup.getAttribute('data-attribute-id')) + '][]"'
         + ' value="' + escapeHtml(label) + '" data-option-id="' + escapeHtml(id) + '">'
         + '<button type="button" class="btn-close btn-close-white ms-1 js-remove-mediamarkt-option" aria-label="Usuń"></button>';
       selection.appendChild(badge);
     }
 
-    document.querySelectorAll('.mediamarkt-option-lookup').forEach(function (lookup, lookupIndex) {
+    mediamarktRoot.querySelectorAll('.mediamarkt-option-lookup').forEach(function (lookup, lookupIndex) {
       if (lookup.dataset.bound === '1') return;
       lookup.dataset.bound = '1';
       var input = lookup.querySelector('.js-mediamarkt-option-search');
@@ -323,7 +342,7 @@
       }
     });
 
-    document.querySelectorAll('.js-market-param-filter').forEach(function (input) {
+    mediamarktRoot.querySelectorAll('.js-market-param-filter').forEach(function (input) {
       if (input.dataset.filterBound === '1') {
         return;
       }
@@ -344,7 +363,7 @@
         });
       });
     });
-    document.querySelectorAll('.js-toggle-unused-params').forEach(function (button) {
+    mediamarktRoot.querySelectorAll('.js-toggle-unused-params').forEach(function (button) {
       if (button.dataset.bound === '1') return;
       button.dataset.bound = '1';
       button.addEventListener('click', function () {
@@ -357,8 +376,8 @@
       });
     });
 
-    var container = document.getElementById('mediamarkt_custom_params');
-    var addBtn = document.getElementById('addMediaMarktParamBtn');
+    var container = mediamarktRoot.querySelector('.js-mediamarkt-custom-params');
+    var addBtn = mediamarktRoot.querySelector('.js-add-mediamarkt-param');
     if (!container || !addBtn) {
       return;
     }
@@ -367,8 +386,8 @@
       var row = document.createElement('div');
       row.className = 'mediamarkt-param-row row g-2 align-items-center mb-2';
       row.innerHTML = ''
-        + '<div class="col-md-5"><input type="text" name="mediamarkt_custom_name[]" value="' + String(name || '').replace(/"/g, '&quot;') + '" class="form-control" placeholder="Nazwa parametru"></div>'
-        + '<div class="col-md-5"><input type="text" name="mediamarkt_custom_value[]" value="' + String(value || '').replace(/"/g, '&quot;') + '" class="form-control" placeholder="Wartość"></div>'
+        + '<div class="col-md-5"><input type="text" name="' + escapeHtml(customNameInput) + '[]" value="' + String(name || '').replace(/"/g, '&quot;') + '" class="form-control" placeholder="Nazwa parametru"></div>'
+        + '<div class="col-md-5"><input type="text" name="' + escapeHtml(customValueInput) + '[]" value="' + String(value || '').replace(/"/g, '&quot;') + '" class="form-control" placeholder="Wartość"></div>'
         + '<div class="col-md-2 d-grid"><button type="button" class="btn btn-sm btn-outline-danger remove-mediamarkt-param">Usuń</button></div>';
       return row;
     }
@@ -388,4 +407,3 @@
   })();
 </script>
 {/literal}
-

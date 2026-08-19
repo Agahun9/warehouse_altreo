@@ -133,11 +133,33 @@
 
         .administration-market-tabs .nav-link {
           font-weight: 600;
+          white-space: nowrap;
         }
 
         .administration-market-tabs .nav-link.active {
           background: #0d6efd;
           color: #fff;
+        }
+
+        .administration-market-tabs {
+          flex-wrap: nowrap;
+          gap: 0.35rem;
+          overflow-x: auto;
+          padding-bottom: 0.25rem;
+          scrollbar-width: thin;
+        }
+
+        .administration-market-tabs .nav-item {
+          flex: 0 0 auto;
+        }
+
+        .administration-category-search-results {
+          max-height: 18rem;
+          overflow-y: auto;
+        }
+
+        .administration-category-search-results:empty {
+          display: none;
         }
 
         .administration-inline-code input.form-control[readonly] {
@@ -250,6 +272,8 @@
                 </li>
                 <li class="nav-item" role="presentation">
                   <button class="nav-link" id="empik-tab" data-bs-toggle="pill" data-bs-target="#empik-pane" type="button" role="tab" aria-controls="empik-pane" aria-selected="false">Empik</button>
+                </li>
+                <li class="nav-item" role="presentation">
                   <button class="nav-link" id="mediamarkt-tab" data-bs-toggle="pill" data-bs-target="#mediamarkt-pane" type="button" role="tab" aria-controls="mediamarkt-pane" aria-selected="false">MediaMarkt</button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -494,6 +518,27 @@
                 </div>
 
                 <div class="tab-pane fade" id="empik-pane" role="tabpanel" aria-labelledby="empik-tab" tabindex="0">
+                  <div class="card administration-form-card mb-4">
+                    <div class="card-body">
+                      <form method="post" action="{$baseUrl}?controller=administration&action=savecomputerscategory" class="row g-3 align-items-end">
+                        <input type="hidden" name="marketplace" value="empik">
+                        <div class="col-lg-8">
+                          <label class="form-label" for="computers-empik-category-id">Kategoria Empik dla komputerow</label>
+                          <div class="input-group mb-2 administration-category-search" data-url="{$baseUrl}?controller=empik&amp;action=categories" data-target="computers-empik-category-id" data-market-name="Empik">
+                            <input type="search" class="form-control js-category-search-input" placeholder="Wyszukaj kategorie Empik, np. komputer">
+                            <button type="button" class="btn btn-outline-success js-category-search-button">Szukaj</button>
+                          </div>
+                          <div class="list-group administration-category-search-results mb-2 js-category-search-results"></div>
+                          <input type="text" id="computers-empik-category-id" name="category_id" class="form-control" value="{$computersEmpikCategoryId|escape}">
+                          <div class="small text-secondary mt-2 js-category-selected-label"></div>
+                          <div class="form-text">ID kategorii uzywane do pobierania parametrow w Komputery → Komponenty. Domyslnie <code>21-16-1</code>.</div>
+                        </div>
+                        <div class="col-lg-4 text-lg-end">
+                          <button type="submit" class="btn btn-primary">Zapisz kategorie Empik</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
                   <div class="row g-4">
                     <div class="col-xl-4">
                       <div class="card administration-form-card h-100">
@@ -650,6 +695,38 @@
                 </div>
 
                 <div class="tab-pane fade" id="mediamarkt-pane" role="tabpanel" aria-labelledby="mediamarkt-tab" tabindex="0">
+                  <div class="card administration-form-card mb-4">
+                    <div class="card-body">
+                      <div class="row g-4">
+                        <form method="post" action="{$baseUrl}?controller=administration&action=savecomputerscategory" class="col-lg-6">
+                          <input type="hidden" name="marketplace" value="mediamarkt_pc">
+                          <label class="form-label" for="computers-mediamarkt-category-id">MediaMarkt - PC</label>
+                          <div class="input-group mb-2 administration-category-search" data-url="{$baseUrl}?controller=mediamarkt&amp;action=categories" data-target="computers-mediamarkt-category-id" data-market-name="MediaMarkt - PC">
+                            <input type="search" class="form-control js-category-search-input" placeholder="Wyszukaj kategorie MediaMarkt">
+                            <button type="button" class="btn btn-outline-danger js-category-search-button">Szukaj</button>
+                          </div>
+                          <div class="list-group administration-category-search-results mb-2 js-category-search-results"></div>
+                          <input type="text" id="computers-mediamarkt-category-id" name="category_id" class="form-control" value="{$computersMediaMarktCategoryId|escape}" placeholder="Wpisz ID kategorii z Mirakl">
+                          <div class="small text-secondary mt-2 js-category-selected-label"></div>
+                          <div class="form-text mb-3">Kategoria i zestaw parametrow dla pojedynczego komputera.</div>
+                          <button type="submit" class="btn btn-primary">Zapisz MediaMarkt - PC</button>
+                        </form>
+                        <form method="post" action="{$baseUrl}?controller=administration&action=savecomputerscategory" class="col-lg-6">
+                          <input type="hidden" name="marketplace" value="mediamarkt_set_pc">
+                          <label class="form-label" for="computers-mediamarkt-set-pc-category-id">MediaMarkt - zestaw PC</label>
+                          <div class="input-group mb-2 administration-category-search" data-url="{$baseUrl}?controller=mediamarkt&amp;action=categories" data-target="computers-mediamarkt-set-pc-category-id" data-market-name="MediaMarkt - zestaw PC">
+                            <input type="search" class="form-control js-category-search-input" placeholder="Wyszukaj kategorie MediaMarkt">
+                            <button type="button" class="btn btn-outline-danger js-category-search-button">Szukaj</button>
+                          </div>
+                          <div class="list-group administration-category-search-results mb-2 js-category-search-results"></div>
+                          <input type="text" id="computers-mediamarkt-set-pc-category-id" name="category_id" class="form-control" value="{$computersMediaMarktSetPcCategoryId|escape}" placeholder="Wpisz ID kategorii z Mirakl">
+                          <div class="small text-secondary mt-2 js-category-selected-label"></div>
+                          <div class="form-text mb-3">Kategoria i osobny zestaw parametrow dla zestawu komputerowego.</div>
+                          <button type="submit" class="btn btn-primary">Zapisz MediaMarkt - zestaw PC</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
                   <div class="row g-4">
                     <div class="col-xl-4">
                       <div class="card administration-form-card h-100">
@@ -980,7 +1057,7 @@
                     <div class="col-xl-5">
                       <div class="card administration-form-card h-100">
                         <div class="card-header bg-white">
-                          <h3 class="card-title mb-0">API Morele i kategorie komputerow</h3>
+                          <h3 class="card-title mb-0">API Morele i kategoria komputerow</h3>
                         </div>
                         <div class="card-body">
                           <form method="post" action="{$baseUrl}?controller=administration&action=savemorele" class="row g-3">
@@ -1006,18 +1083,8 @@
                               <input type="number" min="1" step="1" name="computers_morele_category_id" class="form-control" value="{$computersMoreleCategoryId|escape}">
                               <div class="form-text">Domyslnie <code>672</code>.</div>
                             </div>
-                            <div class="col-md-6">
-                              <label class="form-label">Kategoria Empik dla komputerow</label>
-                              <input type="text" name="computers_empik_category_id" class="form-control" value="{$computersEmpikCategoryId|escape}">
-                              <div class="form-text">Domyslnie <code>21-16-1</code>.</div>
-                            </div>
-                            <div class="col-md-6">
-                              <label class="form-label">Kategoria MediaMarkt dla komputerow</label>
-                              <input type="text" name="computers_mediamarkt_category_id" class="form-control" value="{$computersMediaMarktCategoryId|escape}" placeholder="Wpisz ID kategorii z Mirakl">
-                              <div class="form-text">ID hierarchii MediaMarkt używane do pobierania parametrów w Komputery → Komponenty.</div>
-                            </div>
                             <div class="col-12">
-                              <button type="submit" class="btn btn-primary">Zapisz ustawienia komputerow</button>
+                              <button type="submit" class="btn btn-primary">Zapisz ustawienia Morele</button>
                             </div>
                           </form>
                         </div>
@@ -1030,14 +1097,13 @@
                         </div>
                         <div class="card-body">
                           <div class="alert alert-light border small text-secondary mb-3">
-                            Ta sekcja zasila ekran <code>Komputery -&gt; Komponenty</code>. Morele dziala teraz w logice starego modulu: <code>Basic client_id:client_secret -&gt; /auth/register lub /auth/refresh -&gt; Bearer access_token -&gt; /offer/category/features/{ldelim}id{rdelim}</code>. Empik i MediaMarkt biorą podane tutaj ID kategorii.
+                            Ta sekcja zasila ekran <code>Komputery -&gt; Komponenty</code>. Morele dziala teraz w logice starego modulu: <code>Basic client_id:client_secret -&gt; /auth/register lub /auth/refresh -&gt; Bearer access_token -&gt; /offer/category/features/{ldelim}id{rdelim}</code>. Kategorie Empik i MediaMarkt sa konfigurowane w ich wlasnych zakladkach.
                           </div>
                           <div class="row g-3">
                             <div class="col-md-6">
                               <div class="border rounded p-3 h-100">
-                                <div class="fw-semibold mb-2">Aktywne fallbacki</div>
-                                <div class="small mb-1">Morele: <code>{$computersMoreleCategoryId|escape}</code></div>
-                                <div class="small">Empik: <code>{$computersEmpikCategoryId|escape}</code></div>
+                                <div class="fw-semibold mb-2">Kategoria komputerow</div>
+                                <div class="small">Morele: <code>{$computersMoreleCategoryId|escape}</code></div>
                               </div>
                             </div>
                             <div class="col-md-6">
@@ -1375,6 +1441,144 @@
 </main>
 <script>
   (function () {
+    var marketplaceHash = window.location.hash;
+    if (/^#(?:allegro|empik|mediamarkt|erli|morele|temu)-pane$/.test(marketplaceHash) && window.bootstrap) {
+      var marketplaceTab = document.querySelector('[data-bs-target="' + marketplaceHash + '"]');
+      var marketplaceAccordion = document.getElementById('collapseMarketplaces');
+
+      if (marketplaceAccordion) {
+        bootstrap.Collapse.getOrCreateInstance(marketplaceAccordion, {ldelim}toggle: false{rdelim}).show();
+      }
+
+      if (marketplaceTab) {
+        bootstrap.Tab.getOrCreateInstance(marketplaceTab).show();
+      }
+    }
+
+    function escapeCategoryHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.administration-category-search')).forEach(function (searchBox) {
+      var form = searchBox.closest('form');
+      var input = searchBox.querySelector('.js-category-search-input');
+      var button = searchBox.querySelector('.js-category-search-button');
+      var results = form ? form.querySelector('.js-category-search-results') : null;
+      var selectedLabel = form ? form.querySelector('.js-category-selected-label') : null;
+      var categoryInput = document.getElementById(searchBox.getAttribute('data-target') || '');
+      var endpoint = searchBox.getAttribute('data-url') || '';
+      var marketName = searchBox.getAttribute('data-market-name') || 'Marketplace';
+      var resultById = {};
+      var requestController = null;
+
+      if (!input || !button || !results || !selectedLabel || !categoryInput || !endpoint) {
+        return;
+      }
+
+      function categoryPath(item) {
+        return String((item && (item.path || item.name)) || '');
+      }
+
+      function showSelected() {
+        var id = String(categoryInput.value || '').trim();
+        if (!id) {
+          selectedLabel.textContent = 'Brak wybranej kategorii ' + marketName + '.';
+          return;
+        }
+        var item = resultById[id];
+        selectedLabel.textContent = item
+          ? ('Wybrano: ' + categoryPath(item) + ' | ID: ' + id)
+          : ('Wybrane ID ' + marketName + ': ' + id);
+      }
+
+      function renderCategoryResults(items) {
+        resultById = {};
+        if (!Array.isArray(items) || !items.length) {
+          results.innerHTML = '<div class="list-group-item text-secondary">Brak wynikow.</div>';
+          return;
+        }
+
+        var html = '';
+        items.forEach(function (item) {
+          var id = String(item.id || '');
+          if (!id) return;
+          resultById[id] = item;
+          html += '<button type="button" class="list-group-item list-group-item-action" data-category-id="' + escapeCategoryHtml(id) + '">'
+            + '<strong>' + escapeCategoryHtml(categoryPath(item)) + '</strong>'
+            + '<div class="small text-secondary">ID: ' + escapeCategoryHtml(id) + (item.leaf ? ' | koncowa' : '') + '</div>'
+            + '</button>';
+        });
+        results.innerHTML = html || '<div class="list-group-item text-secondary">Brak wynikow.</div>';
+      }
+
+      function searchCategories() {
+        var phrase = String(input.value || '').trim();
+        if (phrase.length < 2) {
+          results.innerHTML = '<div class="list-group-item text-secondary">Wpisz minimum 2 znaki.</div>';
+          return;
+        }
+
+        if (requestController && typeof requestController.abort === 'function') {
+          requestController.abort();
+        }
+        requestController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        button.disabled = true;
+        results.innerHTML = '<div class="list-group-item text-secondary">Pobieranie kategorii...</div>';
+
+        var url = endpoint + '&search=' + encodeURIComponent(phrase);
+        fetch(url, {
+          headers: {ldelim}'X-Requested-With': 'XMLHttpRequest'{rdelim},
+          signal: requestController ? requestController.signal : undefined
+        })
+          .then(function (response) {
+            return response.text().then(function (raw) {
+              var data;
+              try {
+                data = raw ? JSON.parse(raw) : {};
+              } catch (parseError) {
+                throw new Error('Serwer zwrocil nieoczekiwana odpowiedz.');
+              }
+              if (!response.ok || data.error) {
+                throw new Error(data.error || ('Blad HTTP ' + response.status + '.'));
+              }
+              return data;
+            });
+          })
+          .then(function (data) {
+            renderCategoryResults(data.items || []);
+          })
+          .catch(function (error) {
+            if (error && error.name === 'AbortError') return;
+            results.innerHTML = '<div class="list-group-item text-danger">' + escapeCategoryHtml(error && error.message ? error.message : 'Nie udalo sie pobrac kategorii.') + '</div>';
+          })
+          .finally(function () {
+            button.disabled = false;
+          });
+      }
+
+      button.addEventListener('click', searchCategories);
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          searchCategories();
+        }
+      });
+      results.addEventListener('click', function (event) {
+        var selected = event.target.closest('[data-category-id]');
+        if (!selected) return;
+        categoryInput.value = selected.getAttribute('data-category-id') || '';
+        showSelected();
+        results.innerHTML = '';
+      });
+      categoryInput.addEventListener('input', showSelected);
+      showSelected();
+    });
+
     var apiTokenInput = document.getElementById('api-bearer-token');
     var generateApiTokenBtn = document.getElementById('generateApiToken');
     var copyApiTokenBtn = document.getElementById('copyApiToken');

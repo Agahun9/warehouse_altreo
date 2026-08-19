@@ -120,8 +120,12 @@
                   Pokaż / ukryj parametry Empik
                 </button>
                 <button class="btn btn-danger mb-3" type="button" data-bs-toggle="collapse"
-                  data-bs-target="#parametersBoxMediaMarkt" aria-expanded="false" aria-controls="parametersBoxMediaMarkt">
-                  Pokaż / ukryj parametry MediaMarkt
+                  data-bs-target="#parametersBoxMediaMarktPc" aria-expanded="false" aria-controls="parametersBoxMediaMarktPc">
+                  MediaMarkt - PC
+                </button>
+                <button class="btn btn-danger mb-3" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#parametersBoxMediaMarktSetPc" aria-expanded="false" aria-controls="parametersBoxMediaMarktSetPc">
+                  MediaMarkt - zestaw PC
                 </button>
                 <div class="collapse" id="parametersBoxMorele">
                   <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=morele{if $editItem}&edit_id={$editItem.id}{/if}">
@@ -133,8 +137,13 @@
                     <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
                   </div>
                 </div>
-                <div class="collapse" id="parametersBoxMediaMarkt">
-                  <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=mediamarkt{if $editItem}&edit_id={$editItem.id}{/if}">
+                <div class="collapse" id="parametersBoxMediaMarktPc">
+                  <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=mediamarkt_pc{if $editItem}&edit_id={$editItem.id}{/if}">
+                    <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
+                  </div>
+                </div>
+                <div class="collapse" id="parametersBoxMediaMarktSetPc">
+                  <div class="ajax-params-placeholder" data-url="{$baseUrl}?controller=computers&action=components&ajax_params=mediamarkt_set_pc{if $editItem}&edit_id={$editItem.id}{/if}">
                     <div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"></div> Ładowanie...</div>
                   </div>
                 </div>
@@ -474,7 +483,8 @@
         <span class="component-market-stats component-market-stats--mediamarkt">
           <strong>MediaMarkt</strong>
           <span><i class="bi bi-images"></i> zdjęcia: {$item.img_mediamarkt_count|default:0}</span>
-          <span><i class="bi bi-sliders"></i> parametry: {$item.parameters_mediamarkt_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> PC: {$item.parameters_mediamarkt_count|default:0}</span>
+          <span><i class="bi bi-sliders"></i> zestaw PC: {$item.parameters_mediamarkt_set_pc_count|default:0}</span>
         </span>
       </span>
     </summary>
@@ -522,7 +532,7 @@
       <div class="shop-row">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size: 0.85rem; color: #555; font-weight: bold;">MediaMarkt</span>
-          <span class="badge bg-danger" style="font-size: 0.7rem;">{$item.parameters_mediamarkt_count}</span>
+          <span class="badge bg-danger" style="font-size: 0.7rem;">PC {$item.parameters_mediamarkt_count} / zestaw {$item.parameters_mediamarkt_set_pc_count|default:0}</span>
         </div>
         <div class="img-wrapper">
           {if $item.img_mediamarkt}

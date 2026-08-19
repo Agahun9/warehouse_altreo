@@ -72,6 +72,7 @@ class AltreoSqlImportService
             . "parameters_morele LONGTEXT DEFAULT NULL,\n"
             . "parameters_empik LONGTEXT DEFAULT NULL,\n"
             . "parameters_mediamarkt LONGTEXT DEFAULT NULL,\n"
+            . "parameters_mediamarkt_set_pc LONGTEXT DEFAULT NULL,\n"
             . "img TEXT DEFAULT NULL,\n"
             . "img_morele TEXT DEFAULT NULL,\n"
             . "img_empik TEXT DEFAULT NULL,\n"
@@ -128,7 +129,8 @@ class AltreoSqlImportService
         $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_morele LONGTEXT DEFAULT NULL AFTER parameters_eu");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_empik LONGTEXT DEFAULT NULL AFTER parameters_morele");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt LONGTEXT DEFAULT NULL AFTER parameters_empik");
-        $this->ensureColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'parameters_mediamarkt_set_pc', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN parameters_mediamarkt_set_pc LONGTEXT DEFAULT NULL AFTER parameters_mediamarkt");
+        $this->ensureColumn(self::COMPONENTS_TABLE, 'img', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img TEXT DEFAULT NULL AFTER parameters_mediamarkt_set_pc");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'img_morele', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_morele TEXT DEFAULT NULL AFTER img");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'img_empik', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_empik TEXT DEFAULT NULL AFTER img_morele");
         $this->ensureColumn(self::COMPONENTS_TABLE, 'img_mediamarkt', "ALTER TABLE " . self::COMPONENTS_TABLE . " ADD COLUMN img_mediamarkt TEXT DEFAULT NULL AFTER img_empik");
@@ -369,7 +371,7 @@ class AltreoSqlImportService
         }
 
         if ($table === self::COMPONENTS_TABLE) {
-            foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt') as $column) {
+            foreach (array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc') as $column) {
                 if (isset($row[$column])) {
                     $row[$column] = $this->sanitizeImportedJsonMap((string) $row[$column]);
                 }
