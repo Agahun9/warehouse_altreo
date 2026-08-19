@@ -394,6 +394,10 @@
     <i class="bi bi-percent me-1"></i>Zmień marżę
 </a></li>
 
+<li><a class="dropdown-item" href="#" onclick="setBulkAction('calculate_profit_formula'); return false;">
+    <i class="bi bi-calculator me-1"></i>Wylicz marżę według wzoru
+</a></li>
+
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('replace_name'); return false;">
     <i class="bi bi-type me-1"></i>Znajdź i zamień w nazwie
@@ -459,6 +463,25 @@
                 <label for="bulk_profit" class="form-label">Nowa marża (profit) w zł:</label>
                 <input type="number" step="0.01" id="bulk_profit" name="bulk_profit" class="form-control" />
                 <p class="mt-2 text-muted small">Zaznaczone produkty otrzymają nową wartość marży (profit). Cena produktu zostanie automatycznie przeliczona.</p>
+              </div>
+              <div id="calculate_profit_formula_field" style="display:none; max-width: 620px;">
+                <p class="mb-2"><strong>Wylicz marżę według wzoru</strong></p>
+                <div class="row g-2 mb-2" style="max-width: 420px;">
+                  <div class="col-6">
+                    <label for="bulk_formula_min" class="form-label">MIN</label>
+                    <input type="number" id="bulk_formula_min" name="bulk_formula_min" class="form-control" value="400" step="0.01" />
+                  </div>
+                  <div class="col-6">
+                    <label for="bulk_formula_max" class="form-label">MAX</label>
+                    <input type="number" id="bulk_formula_max" name="bulk_formula_max" class="form-control" value="550" step="0.01" />
+                  </div>
+                </div>
+                <p class="mb-2 text-muted small">
+                  Dla każdego zaznaczonego produktu system użyje sumy cen jego podzespołów,
+                  wyliczy i zaokrągli marżę do pełnych dziesiątek, a następnie ustawi cenę produktu
+                  jako sumę cen podzespołów i nowej marży.
+                </p>
+                <code class="small">ZAOKR((MIN(550;MAX(400;(239,1+0,03*cena_podzespolow)/0,9264))+4,36%*cena_podzespolow)/(1-4,36%);-1)</code>
               </div>
               <div id="replace_name_fields" style="display:none; max-width: 400px;">
                 <label for="bulk_find" class="form-label">Znajdź w nazwie:</label>
@@ -582,10 +605,12 @@
                   {assign var="calculation_price" value=$allegro_price}
                 {/if}
 
-{assign var="commission" value=$calculation_price*0.0246}
-{assign var="commission_highlight" value=$calculation_price*0.0431}
+{assign var="commission" value=$calculation_price*0.0308}
+{assign var="commission_highlight" value=$calculation_price*0.0539}
+{assign var="commission_empik" value=$calculation_price*0.0436}
 {assign var="profit_net" value=$calculation_price - $component_price_sum - $commission}
 {assign var="profit_highlight_net" value=$calculation_price - $component_price_sum - $commission_highlight}
+{assign var="profit_empik_net" value=$calculation_price - $component_price_sum - $commission_empik}
 
                 <div class="col-12">
                   <div class="card mb-2 border border-primary-subtle shadow-sm product-card">
@@ -831,22 +856,36 @@
 </tr>
 
                                 <tr>
-                                  <th class="bg-light">Prowizja 2.46%</th>
-                                  <td>{$commission|number_format:2:',':'.'}</td>
-                                  <th class="bg-light">Prowizja 4.31%</th>
-                                  <td>{$commission_highlight|number_format:2:',':'.'}</td>
+                                  <th class="bg-light">Prowizja Allegro 3,08% bez wyróżnienia</th>
+                                  <td>
+                                    {$commission|number_format:2:',':'.'} zarobek -
+                                    {if $profit_net < 350}
+                                      <span style="color:red; font-weight:bold;">{$profit_net|number_format:2:',':'.'}</span>
+                                    {else}
+                                      {$profit_net|number_format:2:',':'.'}
+                                    {/if}
+                                  </td>
+                                  <th class="bg-light">Prowizja Allegro 5,39% z wyróżnieniem</th>
+                                  <td>
+                                    {$commission_highlight|number_format:2:',':'.'} zarobek -
+                                    {if $profit_highlight_net < 350}
+                                      <span style="color:red; font-weight:bold;">{$profit_highlight_net|number_format:2:',':'.'}</span>
+                                    {else}
+                                      {$profit_highlight_net|number_format:2:',':'.'}
+                                    {/if}
+                                  </td>
                                 </tr>
-                                
-                                <tr>
-                                  <th class="bg-light">Zysk bez wyróżnienia</th>
-                                  <td>{$profit_net|number_format:2:',':'.'}</td>
-                                  <th class="bg-light">Zysk z wyróżnieniem</th>
-                                  {if $profit_highlight_net < 350}
-                            <td style="color:red; font-weight:bold;">{$profit_highlight_net|number_format:2:',':'.'}</td>
-                            {else}
-                                      <td>{$profit_highlight_net|number_format:2:',':'.'}</td>
-                            {/if}
 
+                                <tr>
+                                  <th class="bg-light">Prowizja Empik 4,36%</th>
+                                  <td colspan="3">
+                                    {$commission_empik|number_format:2:',':'.'} zarobek -
+                                    {if $profit_empik_net < 350}
+                                      <span style="color:red; font-weight:bold;">{$profit_empik_net|number_format:2:',':'.'}</span>
+                                    {else}
+                                      {$profit_empik_net|number_format:2:',':'.'}
+                                    {/if}
+                                  </td>
                                 </tr>
                               </tbody>
                             </table>
@@ -2558,6 +2597,7 @@
     }
     document.getElementById('bulk_action_fields').style.display = 'block';
     document.getElementById('profit_field').style.display = 'none';
+    document.getElementById('calculate_profit_formula_field').style.display = 'none';
     document.getElementById('replace_name_fields').style.display = 'none';
     document.getElementById('regenerate_title_field').style.display = 'none';
     document.getElementById('change_images_field').style.display = 'none';
@@ -2570,6 +2610,8 @@
     document.getElementById('remove_component_field').style.display = 'none';
     if (action === 'change_profit') {
       document.getElementById('profit_field').style.display = 'block';
+    } else if (action === 'calculate_profit_formula') {
+      document.getElementById('calculate_profit_formula_field').style.display = 'block';
     } else if (action === 'replace_name') {
       document.getElementById('replace_name_fields').style.display = 'block';
     } else if (action === 'regenerate_title') {

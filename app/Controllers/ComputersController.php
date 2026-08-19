@@ -1575,6 +1575,33 @@ class ComputersController extends Controller
                 ), 'id = :id', array('id' => $productId));
                 $successCount++;
             }
+        } elseif ($bulkAction === 'calculate_profit_formula') {
+            $minimumInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_min', '400')));
+            $maximumInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_max', '550')));
+            if (!is_numeric($minimumInput) || !is_numeric($maximumInput)) {
+                $errors[] = 'Wartosci MIN i MAX musza byc liczbami.';
+            } else {
+                $minimum = (float) $minimumInput;
+                $maximum = (float) $maximumInput;
+                if ($maximum < $minimum) {
+                    $errors[] = 'Wartosc MAX nie moze byc mniejsza od MIN.';
+                } else {
+                    foreach ($productIds as $productId) {
+                        $product = $this->productById($productId);
+                        if ($product === null) {
+                            continue;
+                        }
+                        $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
+                        $priceSum = $this->priceSumForComponents($componentIds, $componentsById);
+                        $newProfit = $this->profitFromComponentPriceFormula($priceSum, $minimum, $maximum);
+                        $this->db()->update(self::PRODUCTS_TABLE, array(
+                            'profit' => $newProfit,
+                            'price' => $priceSum + $newProfit,
+                        ), 'id = :id', array('id' => $productId));
+                        $successCount++;
+                    }
+                }
+            }
         } elseif ($bulkAction === 'replace_name') {
             $find = trim((string) $this->input('bulk_find', ''));
             $replace = trim((string) $this->input('bulk_replace', ''));
@@ -1638,6 +1665,13 @@ class ComputersController extends Controller
                 if ($product === null) {
                     continue;
                 }
+                $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
+                $product['component_price_sum'] = number_format(
+                    $this->priceSumForComponents($componentIds, $componentsById),
+                    2,
+                    '.',
+                    ''
+                );
                 $row = array();
                 foreach ($columns as $column) {
                     $row[] = (string) ($product[$column['product_key']] ?? '');
@@ -4510,16 +4544,23 @@ class ComputersController extends Controller
      * import. This prevents the two operations from silently drifting apart when a
      * column is added to the file in the future.
      *
-     * @return array<int, array{header: string, product_key: string, type: string, editable: bool}>
+     * @return array<int, array{header: string, product_key: string, type: string, editable: bool, required_on_import?: bool}>
      */
     private function editableProductCsvColumns(): array
     {
         return array(
             array('header' => 'IDENTITY', 'product_key' => 'id', 'type' => 'integer', 'editable' => false),
-            array('header' => 'NAME', 'product_key' => 'name', 'type' => 'string', 'editable' => true),
-            array('header' => 'profit', 'product_key' => 'profit', 'type' => 'decimal', 'editable' => true),
-            array('header' => 'price', 'product_key' => 'price', 'type' => 'decimal', 'editable' => true),
-            array('header' => 'EAN', 'product_key' => 'EAN', 'type' => 'string', 'editable' => true),
+            array('header' => 'NAME', 'product_key' => 'name', 'type' => 'string', 'editable' => true, 'required_on_import' => false),
+            array('header' => 'profit', 'product_key' => 'profit', 'type' => 'decimal', 'editable' => true, 'required_on_import' => false),
+            array('header' => 'price', 'product_key' => 'price', 'type' => 'decimal', 'editable' => true, 'required_on_import' => false),
+            array(
+                'header' => 'cena podzespolow',
+                'product_key' => 'component_price_sum',
+                'type' => 'decimal',
+                'editable' => false,
+                'required_on_import' => false,
+            ),
+            array('header' => 'EAN', 'product_key' => 'EAN', 'type' => 'string', 'editable' => true, 'required_on_import' => false),
         );
     }
 
@@ -4550,7 +4591,7 @@ class ComputersController extends Controller
         $headerIndexes = array_flip($headers);
         $missingHeaders = array();
         foreach ($columns as $column) {
-            if (!array_key_exists($column['header'], $headerIndexes)) {
+            if (($column['required_on_import'] ?? true) && !array_key_exists($column['header'], $headerIndexes)) {
                 $missingHeaders[] = $column['header'];
             }
         }
@@ -4558,6 +4599,17 @@ class ComputersController extends Controller
             fclose($handle);
             $this->setFlash('error', json_encode(array(
                 'Brakuje kolumn wymaganych przez eksport produktow: ' . implode(', ', $missingHeaders) . '.',
+            )));
+            $this->redirect($this->productsRedirectUrl());
+        }
+
+        $importedColumns = array_values(array_filter($columns, static function (array $column) use ($headerIndexes): bool {
+            return $column['editable'] && array_key_exists($column['header'], $headerIndexes);
+        }));
+        if ($importedColumns === array()) {
+            fclose($handle);
+            $this->setFlash('error', json_encode(array(
+                'Plik CSV nie zawiera zadnej obslugiwanej kolumny do aktualizacji.',
             )));
             $this->redirect($this->productsRedirectUrl());
         }
@@ -4572,10 +4624,7 @@ class ComputersController extends Controller
             }
 
             $payload = array();
-            foreach ($columns as $column) {
-                if (!$column['editable']) {
-                    continue;
-                }
+            foreach ($importedColumns as $column) {
                 $value = $row[$headerIndexes[$column['header']]] ?? '';
                 $payload[$column['product_key']] = $column['type'] === 'decimal'
                     ? $this->normalizeDecimalInput($value)
@@ -4586,7 +4635,9 @@ class ComputersController extends Controller
             $updatedCount++;
         }
         fclose($handle);
-        $message = 'Import CSV produktow zakonczony. Zaktualizowano ' . $updatedCount . ' rekordow (nazwa, marza, cena i EAN).';
+        $importedHeaders = array_column($importedColumns, 'header');
+        $message = 'Import CSV produktow zakonczony. Zaktualizowano ' . $updatedCount
+            . ' rekordow. Zmienione kolumny: ' . implode(', ', $importedHeaders) . '.';
         if ($skippedCount > 0) {
             $message .= ' Pominieto wierszy bez poprawnego ID: ' . $skippedCount . '.';
         }
@@ -5479,6 +5530,14 @@ class ComputersController extends Controller
             }
         }
         return $priceSum;
+    }
+
+    private function profitFromComponentPriceFormula(float $componentPriceSum, float $minimum, float $maximum): float
+    {
+        $baseProfit = min($maximum, max($minimum, (239.1 + 0.03 * $componentPriceSum) / 0.9264));
+        $profitWithCommission = ($baseProfit + 0.0436 * $componentPriceSum) / (1.0 - 0.0436);
+
+        return round($profitWithCommission, -1);
     }
 
     private function computerCsvSourceOptions(): array
