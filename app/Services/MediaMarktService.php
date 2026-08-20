@@ -11,6 +11,7 @@ use RuntimeException;
 
 class MediaMarktService
 {
+    private const DISPLAY_LOCALE = 'pl_PL';
     private const CACHE_CLEANUP_THROTTLE_SECONDS = 600;
     private const RATE_LIMIT_MAX_ATTEMPTS = 8;
     private const RATE_LIMIT_BASE_DELAY_SECONDS = 30;
@@ -747,7 +748,7 @@ class MediaMarktService
             throw new RuntimeException('Najpierw skonfiguruj aktywne konto MediaMarkt, zeby pobierac parametry.');
         }
 
-        $cacheKey = 'mediamarkt_attributes_v7_' . (int) $account['id'] . '_' . md5($hierarchyCode);
+        $cacheKey = 'mediamarkt_attributes_v8_' . (int) $account['id'] . '_' . md5($hierarchyCode);
         if (!$forceRefresh) {
             $cached = $this->storage->getCache($cacheKey);
             if (is_array($cached)) {
@@ -993,7 +994,11 @@ class MediaMarktService
             return null;
         }
 
-        $name = trim((string) ($attribute['label'] ?? $attribute['name'] ?? $attribute['code'] ?? $id));
+        $name = $this->localizedApiLabel(
+            $attribute,
+            self::DISPLAY_LOCALE,
+            array('label', 'name', 'code', 'id')
+        );
         $rawType = strtolower(trim((string) ($attribute['type'] ?? $attribute['value_type'] ?? $attribute['input_type'] ?? 'text')));
         $type = str_replace(array('-', ' '), '_', $rawType);
         $multiple = $this->truthyAttributeFlag($attribute['multivalued'] ?? null)
@@ -1069,7 +1074,7 @@ class MediaMarktService
 
     private function loadCategoryAttributesPayload(array $account, string $hierarchyCode, bool $forceRefresh): array
     {
-        $cacheKey = 'mediamarkt_attributes_payload_v2_' . (int) $account['id'] . '_' . md5($hierarchyCode);
+        $cacheKey = 'mediamarkt_attributes_payload_v3_' . (int) $account['id'] . '_' . md5($hierarchyCode);
         if (!$forceRefresh) {
             $cached = $this->storage->getCache($cacheKey);
             if (is_array($cached)) {
@@ -1080,7 +1085,7 @@ class MediaMarktService
         $payload = $this->requestCatalogApi($account, '/api/products/attributes', array(
             'hierarchy' => $hierarchyCode,
             'max_level' => 0,
-            'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
+            'locale' => self::DISPLAY_LOCALE,
         ));
 
         $attributes = isset($payload['attributes']) && is_array($payload['attributes']) ? $payload['attributes'] : array();
@@ -1104,7 +1109,11 @@ class MediaMarktService
         foreach ($sources as $option) {
             if (is_array($option)) {
                 $id = trim((string) ($option['code'] ?? $option['id'] ?? $option['value'] ?? ''));
-                $label = trim((string) ($option['label'] ?? $option['name'] ?? $option['value'] ?? $id));
+                $label = $this->localizedApiLabel(
+                    $option,
+                    self::DISPLAY_LOCALE,
+                    array('label', 'name', 'value', 'code', 'id')
+                );
             } else {
                 $id = trim((string) $option);
                 $label = $id;
@@ -1356,7 +1365,7 @@ class MediaMarktService
 
     private function fetchValueListOptions(string $valueListCode, array $account, bool $suppressErrors = false): array
     {
-        $cacheKey = 'mediamarkt_value_list_v2_' . (int) $account['id'] . '_' . md5($valueListCode);
+        $cacheKey = 'mediamarkt_value_list_v3_' . (int) $account['id'] . '_' . md5($valueListCode);
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached)) {
             return $cached;
@@ -1365,7 +1374,7 @@ class MediaMarktService
         try {
             $payload = $this->requestCatalogApi($account, '/api/values_lists', array(
                 'code' => $valueListCode,
-                'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
+                'locale' => self::DISPLAY_LOCALE,
             ));
         } catch (RuntimeException $exception) {
             if (!$suppressErrors) {
@@ -1388,7 +1397,11 @@ class MediaMarktService
             foreach ($values as $value) {
                 if (is_array($value)) {
                     $id = trim((string) ($value['code'] ?? $value['id'] ?? $value['value'] ?? ''));
-                    $label = trim((string) ($value['label'] ?? $value['name'] ?? $value['value'] ?? $id));
+                    $label = $this->localizedApiLabel(
+                        $value,
+                        self::DISPLAY_LOCALE,
+                        array('label', 'name', 'value', 'code', 'id')
+                    );
                 } else {
                     $id = trim((string) $value);
                     $label = $id;
@@ -1462,6 +1475,67 @@ class MediaMarktService
         }
 
         return trim((string) ($row['code'] ?? ''));
+    }
+
+    /**
+     * Prefer a requested translation supplied by Mirakl, but retain the API's
+     * normal label when that language is not available.
+     */
+    private function localizedApiLabel(array $row, string $locale, array $fallbackKeys): string
+    {
+        $wantedLocale = strtolower(str_replace('-', '_', trim($locale)));
+        $wantedLanguage = substr($wantedLocale, 0, 2);
+        $firstTranslation = '';
+
+        foreach (array('label_translations', 'translations', 'labels') as $translationsKey) {
+            $translations = isset($row[$translationsKey]) && is_array($row[$translationsKey])
+                ? $row[$translationsKey]
+                : array();
+
+            foreach ($translations as $translationKey => $translation) {
+                if (is_array($translation)) {
+                    $translationLocale = strtolower(str_replace(
+                        '-',
+                        '_',
+                        trim((string) ($translation['locale'] ?? $translation['language'] ?? ''))
+                    ));
+                    $value = trim((string) ($translation['value'] ?? $translation['label'] ?? $translation['name'] ?? ''));
+                } elseif (is_scalar($translation)) {
+                    $translationLocale = is_string($translationKey)
+                        ? strtolower(str_replace('-', '_', trim($translationKey)))
+                        : '';
+                    $value = trim((string) $translation);
+                } else {
+                    continue;
+                }
+
+                if ($value === '') {
+                    continue;
+                }
+
+                if ($firstTranslation === '') {
+                    $firstTranslation = $value;
+                }
+
+                if ($translationLocale === $wantedLocale
+                    || ($translationLocale !== '' && substr($translationLocale, 0, 2) === $wantedLanguage)) {
+                    return $value;
+                }
+            }
+        }
+
+        foreach ($fallbackKeys as $key) {
+            if (!isset($row[$key]) || !is_scalar($row[$key])) {
+                continue;
+            }
+
+            $value = trim((string) $row[$key]);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return $firstTranslation;
     }
 
     private function buildHierarchyPath(string $id, array $map, array &$pathCache): string
