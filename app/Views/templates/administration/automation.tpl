@@ -470,11 +470,18 @@
                             </div>
                             <div class="col-md-6">
                               <label class="form-label">App Secret</label>
-                              <input type="text" name="temu_app_secret" class="form-control" value="{$temuAppSecret|escape}">
+                              <input type="password" name="temu_app_secret" class="form-control" value="" autocomplete="new-password" placeholder="Pozostaw puste, aby zachowac obecny sekret">
                             </div>
-                            <div class="col-md-6">
-                              <label class="form-label">Access Token</label>
-                              <input type="text" name="temu_access_token" class="form-control" value="{$temuAccessToken|escape}">
+                            <div class="col-12">
+                              <label class="form-label">Access Token sklepu</label>
+                              <input type="password" name="temu_access_token" class="form-control" value="" autocomplete="new-password" placeholder="{if $temuHasAccessToken}Token zapisany - pozostaw puste, aby go zachowac{else}Wklej token wygenerowany po autoryzacji aplikacji{/if}">
+                              <div class="form-text">
+                                {if $temuHasAccessToken}<span class="badge text-bg-success me-1">Token zapisany</span>{else}<span class="badge text-bg-danger me-1">Brak tokenu</span>{/if}
+                                Token nie znajduje sie w „App information”. Wygenerujesz go po autoryzacji aplikacji dla sklepu:
+                                <a href="https://seller-eu.temu.com/open-platform/client-manage" target="_blank" rel="noopener noreferrer">EU Local Seller Center</a>
+                                lub
+                                <a href="https://agentseller-eu.temu.com/open-platform/system-manage/client-manage" target="_blank" rel="noopener noreferrer">EU Cross-border Seller Center</a>.
+                              </div>
                             </div>
                             <div class="col-md-3">
                               <label class="form-label">Shop ID</label>
@@ -486,12 +493,14 @@
                             </div>
                             <div class="col-12">
                               <div class="small text-secondary">
-                                Ten etap przygotowuje system pod integracje Temu: zapis polaczenia, tokenow i mapowania kategorii. Pobieranie ofert i aukcji dodamy pozniej.
+                                Temu wymaga trzech elementow: App Key, App Secret oraz Access Token wydany dla konkretnego sklepu. App Secret sluzy do podpisu, a token nadaje dostep do danych sklepu.
                               </div>
                             </div>
-                            <div class="col-12">
+                            <div class="col-12 d-flex gap-2">
                               <button type="submit" class="btn btn-primary">Zapisz polaczenie Temu</button>
+                              <button type="button" class="btn btn-outline-primary" id="temu-test-connection">Zapisz i testuj</button>
                             </div>
+                            <div class="col-12"><div id="temu-test-result" class="small"></div></div>
                           </form>
                         </div>
                       </div>
@@ -503,12 +512,13 @@
                         </div>
                         <div class="card-body">
                           <div class="alert alert-light border administration-note mb-3">
-                            Integracja jest przygotowana pod dalsza rozbudowe, ale juz teraz laczy system z konfiguracja Temu i pozwala przypisywac kategorie Temu do kategorii magazynowych.
+                            Integracja pobiera kategorie i definicje parametrow bezposrednio z Temu OpenAPI.
                           </div>
                           <ul class="small text-secondary mb-0">
                             <li>Ustawienia polaczenia zapisujesz tutaj, w administracji.</li>
                             <li>Kategorie Temu mapujesz w edycji kategorii magazynowej.</li>
-                            <li>Definicje parametrow kategorii Temu mozna zapisac jako JSON przy kategorii.</li>
+                            <li>Kategorie wyszukujesz przez rekomendacje Temu w edycji kategorii magazynowej.</li>
+                            <li>Parametry produktu sa pobierane z template kategorii Temu.</li>
                             <li>Import aukcji i synchronizacje ofert zostawiamy na kolejny etap.</li>
                           </ul>
                         </div>
@@ -1578,6 +1588,45 @@
       categoryInput.addEventListener('input', showSelected);
       showSelected();
     });
+
+    var temuTestButton = document.getElementById('temu-test-connection');
+    var temuTestResult = document.getElementById('temu-test-result');
+    if (temuTestButton && temuTestResult) {
+      temuTestButton.addEventListener('click', function () {
+        var form = temuTestButton.closest('form');
+        if (!form || !form.reportValidity()) return;
+        temuTestButton.disabled = true;
+        temuTestResult.className = 'small text-secondary';
+        temuTestResult.textContent = 'Zapisywanie ustawien i laczenie z Temu...';
+        fetch('{$baseUrl|escape:"javascript"}?controller=temu&action=test', {
+          method: 'POST',
+          headers: {ldelim}'X-Requested-With': 'XMLHttpRequest'{rdelim},
+          body: new FormData(form)
+        })
+          .then(function (response) {
+            return response.text().then(function (raw) {
+              var data;
+              try {
+                data = raw ? JSON.parse(raw) : {};
+              } catch (parseError) {
+                throw new Error(raw ? raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 300) : ('Blad HTTP ' + response.status + '.'));
+              }
+              if (!response.ok && !data.error) throw new Error('Blad HTTP ' + response.status + '.');
+              return data;
+            });
+          })
+          .then(function (data) {
+            if (data.error) throw new Error(data.error);
+            temuTestResult.className = 'small text-success';
+            temuTestResult.textContent = 'Ustawienia zapisane. Polaczenie dziala. Kategorie glowne: ' + (data.categories_count || 0) + '.';
+          })
+          .catch(function (error) {
+            temuTestResult.className = 'small text-danger';
+            temuTestResult.textContent = error.message || 'Nie udalo sie polaczyc z Temu.';
+          })
+          .finally(function () { temuTestButton.disabled = false; });
+      });
+    }
 
     var apiTokenInput = document.getElementById('api-bearer-token');
     var generateApiTokenBtn = document.getElementById('generateApiToken');

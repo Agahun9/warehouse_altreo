@@ -60,12 +60,13 @@
         <div class="col-12 col-xl-6 js-mediamarkt-param-card{if !$param.is_used && $mediamarkt_parameters_meta.used_count|default:0 > 0} d-none{/if}"
              data-unused="{if $param.is_used}0{else}1{/if}"
              data-filter-text="{$param.name|escape:'html'} {$param.id|escape:'html'} {$param.type|escape:'html'}">
-          <div class="border rounded-3 p-3 h-100 bg-white">
+          <div class="border rounded-3 p-3 h-100 bg-white{if $param.required} border-danger{/if}">
             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-              <label class="form-label fw-semibold mb-0" for="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}">
+              <label class="form-label fw-semibold mb-0{if $param.required} text-danger{/if}" for="mediamarkt_{$mediamarktProfileKey}_param_{$param.id}">
                 {$param.name}
+                {if $param.required}<span class="small">(wymagany)</span>{/if}
               </label>
-              <span class="badge bg-light text-dark border">ID {$param.id}</span>
+              <span class="badge {if $param.required}text-bg-danger{else}bg-light text-dark border{/if}">ID {$param.id}</span>
             </div>
 
             {if $param.option_lookup}

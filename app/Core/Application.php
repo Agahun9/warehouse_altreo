@@ -21,6 +21,7 @@ use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
 use App\Controllers\SellasistController;
 use App\Controllers\TaskboardController;
+use App\Controllers\TemuController;
 use App\Controllers\WorkTimeController;
 
 class Application
@@ -65,6 +66,9 @@ class Application
                 break;
             case 'morele':
                 $controller = new MoreleController();
+                break;
+            case 'temu':
+                $controller = new TemuController();
                 break;
             case 'media':
                 $controller = new MediaController();

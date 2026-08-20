@@ -191,8 +191,10 @@ class AdministrationController extends Controller
             'erliAccounts' => $erliAccounts,
             'temuApiUrl' => (string) ($temuSettings['api_url'] ?? ''),
             'temuAppKey' => (string) ($temuSettings['app_key'] ?? ''),
-            'temuAppSecret' => (string) ($temuSettings['app_secret'] ?? ''),
-            'temuAccessToken' => (string) ($temuSettings['access_token'] ?? ''),
+            // Never render the stored secret back into the HTML response.
+            'temuAppSecret' => '',
+            'temuAccessToken' => '',
+            'temuHasAccessToken' => trim((string) ($temuSettings['access_token'] ?? '')) !== '',
             'temuShopId' => (string) ($temuSettings['shop_id'] ?? ''),
             'temuRegion' => (string) ($temuSettings['region'] ?? 'PL'),
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',

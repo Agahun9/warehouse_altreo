@@ -81,6 +81,10 @@ class MediaMarktService
             'shop_id' => ($shopIdRaw !== '' && ctype_digit($shopIdRaw)) ? (int) $shopIdRaw : null,
             'locale' => $locale !== '' ? $locale : $this->defaultLocale(),
             'is_active' => $isActive,
+            // Do not keep displaying an error produced by the previous connection
+            // settings after an administrator has corrected the account.
+            'last_error_at' => null,
+            'last_error_message' => null,
         );
 
         $id = $this->storage->saveAccount($payload, $accountId);
@@ -743,7 +747,7 @@ class MediaMarktService
             throw new RuntimeException('Najpierw skonfiguruj aktywne konto MediaMarkt, zeby pobierac parametry.');
         }
 
-        $cacheKey = 'mediamarkt_attributes_v5_' . (int) $account['id'] . '_' . md5($hierarchyCode);
+        $cacheKey = 'mediamarkt_attributes_v7_' . (int) $account['id'] . '_' . md5($hierarchyCode);
         if (!$forceRefresh) {
             $cached = $this->storage->getCache($cacheKey);
             if (is_array($cached)) {
@@ -923,7 +927,7 @@ class MediaMarktService
             }
         }
 
-        $payload = $this->requestApi($account, 'GET', '/api/hierarchies', array(
+        $payload = $this->requestCatalogApi($account, '/api/hierarchies', array(
             'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
         ));
 
@@ -996,9 +1000,7 @@ class MediaMarktService
             || $this->truthyAttributeFlag($attribute['multi_valued'] ?? null)
             || $this->truthyAttributeFlag($attribute['multiple'] ?? null)
             || in_array($type, array('multidictionary', 'multi_dictionary', 'multi_select', 'multiple_select', 'list_multiple', 'multiple_list', 'multi_value_list', 'multiple_values_list'), true);
-        $required = $this->truthyAttributeFlag($attribute['required'] ?? null)
-            || $this->truthyAttributeFlag($attribute['mandatory'] ?? null)
-            || in_array(strtolower(trim((string) ($attribute['requirement_level'] ?? $attribute['requirement'] ?? ''))), array('required', 'mandatory'), true);
+        $required = $this->attributeIsRequired($attribute);
         $dictionary = array();
 
         if (in_array($type, array('enum', 'enumeration', 'list', 'lov', 'select', 'choice'), true)) {
@@ -1067,7 +1069,7 @@ class MediaMarktService
 
     private function loadCategoryAttributesPayload(array $account, string $hierarchyCode, bool $forceRefresh): array
     {
-        $cacheKey = 'mediamarkt_attributes_payload_v1_' . (int) $account['id'] . '_' . md5($hierarchyCode);
+        $cacheKey = 'mediamarkt_attributes_payload_v2_' . (int) $account['id'] . '_' . md5($hierarchyCode);
         if (!$forceRefresh) {
             $cached = $this->storage->getCache($cacheKey);
             if (is_array($cached)) {
@@ -1075,11 +1077,9 @@ class MediaMarktService
             }
         }
 
-        $payload = $this->requestApi($account, 'GET', '/api/products/attributes', array(
+        $payload = $this->requestCatalogApi($account, '/api/products/attributes', array(
             'hierarchy' => $hierarchyCode,
             'max_level' => 0,
-            'all_operator_attributes' => 'true',
-            'shop_id' => isset($account['shop_id']) && $account['shop_id'] !== null ? (int) $account['shop_id'] : null,
             'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
         ));
 
@@ -1314,18 +1314,57 @@ class MediaMarktService
         return in_array(strtolower(trim((string) $value)), array('1', 'true', 'yes', 'y', 'tak'), true);
     }
 
+    /**
+     * PM11 can expose the requirement at the attribute level or inside its
+     * per-channel configuration. MediaMarkt uses multiple country channels, so
+     * checking only the top-level flag can hide genuinely mandatory fields.
+     */
+    private function attributeIsRequired(array $attribute): bool
+    {
+        if ($this->truthyAttributeFlag($attribute['required'] ?? null)
+            || $this->truthyAttributeFlag($attribute['mandatory'] ?? null)
+            || in_array(
+                strtolower(trim((string) ($attribute['requirement_level'] ?? $attribute['requirement'] ?? ''))),
+                array('required', 'mandatory'),
+                true
+            )) {
+            return true;
+        }
+
+        $channels = isset($attribute['channels']) && is_array($attribute['channels'])
+            ? $attribute['channels']
+            : array();
+
+        foreach ($channels as $channel) {
+            if (!is_array($channel)) {
+                continue;
+            }
+
+            if ($this->truthyAttributeFlag($channel['required'] ?? null)
+                || $this->truthyAttributeFlag($channel['mandatory'] ?? null)
+                || in_array(
+                    strtolower(trim((string) ($channel['requirement_level'] ?? $channel['requirement'] ?? ''))),
+                    array('required', 'mandatory'),
+                    true
+                )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function fetchValueListOptions(string $valueListCode, array $account, bool $suppressErrors = false): array
     {
-        $cacheKey = 'mediamarkt_value_list_v1_' . (int) $account['id'] . '_' . md5($valueListCode);
+        $cacheKey = 'mediamarkt_value_list_v2_' . (int) $account['id'] . '_' . md5($valueListCode);
         $cached = $this->storage->getCache($cacheKey);
         if (is_array($cached)) {
             return $cached;
         }
 
         try {
-            $payload = $this->requestApi($account, 'GET', '/api/values_lists', array(
+            $payload = $this->requestCatalogApi($account, '/api/values_lists', array(
                 'code' => $valueListCode,
-                'shop_id' => isset($account['shop_id']) && $account['shop_id'] !== null ? (int) $account['shop_id'] : null,
                 'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
             ));
         } catch (RuntimeException $exception) {
@@ -1932,7 +1971,34 @@ class MediaMarktService
         return $payload;
     }
 
-    private function requestApi(array $account, string $method, string $path, array $query = array(), $body = null, array $extraHeaders = array()): array
+    /**
+     * Category configuration is available for the account's default shop. A stale
+     * optional shop_id can make Mirakl return 404, so retry these read-only calls
+     * without it before reporting an endpoint failure.
+     */
+    private function requestCatalogApi(array $account, string $path, array $query): array
+    {
+        try {
+            return $this->requestApi($account, 'GET', $path, $query);
+        } catch (RuntimeException $exception) {
+            $hasShopId = isset($account['shop_id']) && $account['shop_id'] !== null && $account['shop_id'] !== '';
+            if (!$hasShopId || strpos($exception->getMessage(), 'HTTP 404') === false) {
+                throw $exception;
+            }
+
+            return $this->requestApi($account, 'GET', $path, $query, null, array(), false);
+        }
+    }
+
+    private function requestApi(
+        array $account,
+        string $method,
+        string $path,
+        array $query = array(),
+        $body = null,
+        array $extraHeaders = array(),
+        bool $includeAccountShopId = true
+    ): array
     {
         if (!function_exists('curl_init')) {
             throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji MediaMarkt.');
@@ -1943,8 +2009,15 @@ class MediaMarktService
             throw new RuntimeException('Brak adresu API MediaMarkt.');
         }
 
-        if (isset($account['shop_id']) && $account['shop_id'] !== null && $account['shop_id'] !== '') {
+        $shopIdIncluded = $includeAccountShopId
+            && isset($account['shop_id'])
+            && $account['shop_id'] !== null
+            && $account['shop_id'] !== '';
+
+        if ($shopIdIncluded) {
             $query['shop_id'] = (int) $account['shop_id'];
+        } else {
+            unset($query['shop_id']);
         }
 
         $url = $baseUrl . $path;
@@ -2020,7 +2093,12 @@ class MediaMarktService
                 $message = $curlError;
             }
 
-            throw new RuntimeException('MediaMarkt API zwrocilo blad HTTP ' . $httpCode . ($message !== '' ? ': ' . $message : '.'));
+            throw new RuntimeException(
+                'MediaMarkt API zwrocilo blad HTTP ' . $httpCode
+                . ($message !== '' ? ': ' . $message : '.')
+                . ' Endpoint: ' . strtoupper($method) . ' ' . $baseUrl . $path
+                . '; shop_id: ' . ($shopIdIncluded ? 'dodany' : 'pominiety')
+            );
         }
 
         if (!is_array($decoded)) {
@@ -2105,15 +2183,31 @@ class MediaMarktService
     }
 
     /**
-     * Account setup guides sometimes call the URL ending in /api the API base URL,
-     * while this client keeps /api in every endpoint path. Accept both forms so an
-     * account saved as https://instance.mirakl.net/api does not call /api/api/....
+     * Mirakl API endpoints always live directly below the instance origin.
+     *
+     * Users sometimes paste the current back-office URL (for example /mmp/shop)
+     * or an URL ending in /api into the account form. Keeping that path would make
+     * requests such as /mmp/shop/api/products/attributes return HTTP 404. Reduce a
+     * valid absolute URL to scheme + host + optional port. This is also applied at
+     * request time, so accounts saved before this normalization do not need to be
+     * edited and saved again.
      */
     private function normalizeApiBaseUrl(string $url): string
     {
         $url = rtrim(trim($url), '/');
-        if (preg_match('~/api$~i', $url) === 1) {
-            $url = substr($url, 0, -4);
+        if ($url === '') {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if (is_array($parts) && isset($parts['scheme'], $parts['host'])) {
+            $host = (string) $parts['host'];
+            if (strpos($host, ':') !== false && $host[0] !== '[') {
+                $host = '[' . $host . ']';
+            }
+
+            return strtolower((string) $parts['scheme']) . '://' . $host
+                . (isset($parts['port']) ? ':' . (int) $parts['port'] : '');
         }
 
         return rtrim($url, '/');

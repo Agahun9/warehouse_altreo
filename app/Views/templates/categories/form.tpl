@@ -180,14 +180,36 @@
         <div class="card card-outline border-warning-subtle mb-4">
           <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h3 class="card-title mb-0">Mapowanie Temu</h3>
-            <span class="badge text-bg-warning">Manualne mapowanie</span>
+            <span class="badge text-bg-warning">Temu OpenAPI</span>
           </div>
           <div class="card-body">
-            <div class="small text-secondary mb-3">Na razie bez pobierania ofert. Tutaj zapisujemy polaczenie kategorii Temu z kategoria magazynowa i surowe parametry kategorii.</div>
-            <div class="row g-3">
+            <div class="small text-secondary mb-3">Pierwszy wynik pochodzi bezposrednio z rekomendacji Temu. System przeszukuje rowniez szersze drzewo Seller OpenAPI i pokazuje do 40 kategorii zgodnych z wpisana fraza.</div>
+            <div class="row g-3 align-items-end">
+              <div class="col-md-8">
+                <label for="temu_category_search" class="form-label">Wyszukaj kategorie Temu</label>
+                <div class="input-group">
+                  <input type="text" class="form-control" id="temu_category_search" placeholder="Nazwa produktu albo pelny link temu.com">
+                  <button type="button" class="btn btn-outline-warning" id="temu_category_search_btn">Szukaj Temu</button>
+                </div>
+                <div class="form-text">Podaj dokladna nazwe produktu albo wklej link kategorii z temu.com. Z linku system pobierze tytul i wyszuka odpowiadajaca mu kategorie Seller OpenAPI.</div>
+              </div>
               <div class="col-md-4">
-                <label for="temu_category_id" class="form-label">Temu category ID</label>
+                <label for="temu_category_id" class="form-label">Temu Seller category ID</label>
                 <input type="text" class="form-control" id="temu_category_id" name="temu_category_id" value="{$category.temu_category_id|default:''|escape}" placeholder="np. 123456789">
+                <div class="form-text text-warning-emphasis">To ID z Seller OpenAPI. Numer z koncowki publicznego adresu temu.com, np. 2642, oznacza inna taksonomie.</div>
+              </div>
+              <div class="col-12"><div id="temu_category_selected" class="small text-secondary"></div></div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-warning-subtle h-100">
+                  <div class="small fw-semibold mb-2">Wyniki Temu</div>
+                  <div id="temu_category_results" class="list-group"></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="border rounded p-2 border-warning-subtle h-100">
+                  <div class="small fw-semibold mb-2">Sciezki kategorii</div>
+                  <div id="temu_category_tree" class="small"></div>
+                </div>
               </div>
               <div class="col-md-4">
                 <label for="temu_category_name" class="form-label">Nazwa kategorii Temu</label>
@@ -200,8 +222,7 @@
               <div class="col-12">
                 <label for="temu_category_parameters" class="form-label">Parametry kategorii Temu (JSON)</label>
                 <textarea class="form-control font-monospace" id="temu_category_parameters" name="temu_category_parameters" rows="8">{$category.temu_category_parameters|default:''|escape}</textarea>
-                <div class="form-text">Pole jest opcjonalne, ale jesli je wypelnisz, JSON musi byc poprawny.</div>
-                <div class="form-text"><code>[&#123;"id":"color","name":"Kolor","required":true,"type":"enum","values":["Czarny","Bezowy"]&#125;]</code></div>
+                <div class="form-text" id="temu_parameters_status">JSON jest uzupelniany automatycznie po wyborze kategorii; nadal mozna go poprawic recznie.</div>
               </div>
             </div>
           </div>
@@ -234,6 +255,28 @@
         return String(item.path);
       }
       return item && item.name ? String(item.name) : '';
+    }
+
+    function temuSearchFromValue(value) {
+      var raw = String(value || '').trim();
+      if (!/^https?:\/\//i.test(raw)) {
+        return raw;
+      }
+      try {
+        var parsed = new URL(raw);
+        if (!/(^|\.)temu\.com$/i.test(parsed.hostname)) {
+          return raw;
+        }
+        var title = String(parsed.searchParams.get('title') || '').trim();
+        if (title) {
+          return title;
+        }
+        var slug = parsed.pathname.split('/').filter(Boolean).pop() || '';
+        slug = slug.replace(/\.html$/i, '').replace(/-o\d+-\d+$/i, '').replace(/[-_]+/g, ' ').trim();
+        return slug || raw;
+      } catch (error) {
+        return raw;
+      }
     }
 
     function buildTree(items) {
@@ -323,7 +366,7 @@
         resultById = {};
 
         if (!items || !items.length) {
-          results.innerHTML = '<div class="list-group-item text-secondary">Brak wynikow.</div>';
+          results.innerHTML = '<div class="list-group-item text-secondary">' + escapeHtml(config.emptyMessage || 'Brak wynikow.') + '</div>';
           tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
           return;
         }
@@ -336,7 +379,8 @@
 
           html += '<button type="button" class="list-group-item list-group-item-action" data-id="' + escapeHtml(item.id) + '">'
             + '<strong>' + escapeHtml(path) + '</strong>'
-            + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + '</div>'
+            + (item.recommended ? ' <span class="badge text-bg-warning ms-1">Najlepsza rekomendacja Temu</span>' : '')
+            + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + (item.match_kind === 'related' ? ' | kategoria powiazana' : '') + (item.match_kind === 'taxonomy' ? ' | zgodna z fraza' : '') + '</div>'
             + '</button>';
         }
         results.innerHTML = html;
@@ -344,10 +388,23 @@
         var treeData = buildTree(items);
         var treeHtml = renderTreeNode(treeData);
         tree.innerHTML = treeHtml || '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
+
+        var currentId = categoryIdInput.value.trim();
+        if (config.autoApplyMatch && currentId && resultById[currentId] && typeof config.onSelect === 'function') {
+          config.onSelect(resultById[currentId]);
+        } else if (config.autoSelectFirst && items[0] && typeof config.onSelect === 'function') {
+          categoryIdInput.value = String(items[0].id || '');
+          setSelectedText();
+          config.onSelect(items[0]);
+        }
       }
 
       function doSearch() {
-        var search = input.value.trim();
+        var rawSearch = input.value.trim();
+        var search = typeof config.normalizeSearch === 'function' ? config.normalizeSearch(rawSearch) : rawSearch;
+        if (search && search !== rawSearch) {
+          input.value = search;
+        }
         if (search.length < 2) {
           results.innerHTML = '<div class="list-group-item text-secondary">Wpisz minimum 2 znaki.</div>';
           tree.innerHTML = '<div class="text-secondary">Brak drzewa do wyswietlenia.</div>';
@@ -433,9 +490,17 @@
         var id = target.getAttribute('data-id') || '';
         categoryIdInput.value = id;
         setSelectedText();
+        if (typeof config.onSelect === 'function') {
+          config.onSelect(resultById[id] || { id: id, name: '', path: '' });
+        }
       });
 
-      categoryIdInput.addEventListener('input', setSelectedText);
+      categoryIdInput.addEventListener('input', function () {
+        setSelectedText();
+        if (typeof config.onIdChange === 'function') {
+          config.onIdChange(categoryIdInput.value);
+        }
+      });
       setSelectedText();
     }
 
@@ -474,6 +539,154 @@
 
     var temuPathInput = document.getElementById('temu_category_path');
     var temuNameInput = document.getElementById('temu_category_name');
+    var temuParametersInput = document.getElementById('temu_category_parameters');
+    var temuParametersStatus = document.getElementById('temu_parameters_status');
+    var temuSelectedLabel = document.getElementById('temu_category_selected');
+    var temuIdLookupTimer = null;
+    var temuIdLookupController = null;
+
+    function loadTemuParameters(item) {
+      var categoryId = item && item.id ? String(item.id) : '';
+      if (!categoryId || !temuParametersInput) return;
+      if (temuNameInput) temuNameInput.value = item.name || '';
+      if (temuPathInput) temuPathInput.value = item.path || item.name || '';
+      if (temuParametersStatus) {
+        temuParametersStatus.className = 'form-text text-secondary';
+        temuParametersStatus.textContent = 'Pobieranie parametrow kategorii Temu...';
+      }
+      fetch('{$baseUrl|escape:"javascript"}?controller=temu&action=parameters&id=' + encodeURIComponent(categoryId), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(function (response) {
+          return response.text().then(function (raw) {
+            var data;
+            try {
+              data = raw ? JSON.parse(raw) : {};
+            } catch (parseError) {
+              throw new Error(raw ? raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 300) : ('Blad HTTP ' + response.status + '.'));
+            }
+            if (!response.ok && !data.error) throw new Error('Blad HTTP ' + response.status + '.');
+            return data;
+          });
+        })
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          var items = data.items || [];
+          temuParametersInput.value = JSON.stringify(items, null, 2);
+          if (temuParametersStatus) {
+            temuParametersStatus.className = 'form-text text-success';
+            temuParametersStatus.textContent = 'Pobrano ' + items.length + ' parametrow z Temu.';
+          }
+        })
+        .catch(function (error) {
+          if (temuParametersStatus) {
+            temuParametersStatus.className = 'form-text text-danger';
+            temuParametersStatus.textContent = error.message || 'Nie udalo sie pobrac parametrow Temu.';
+          }
+        });
+    }
+
+    function recognizeTemuCategoryId(rawId) {
+      var categoryId = String(rawId || '').trim();
+      if (temuIdLookupTimer) {
+        window.clearTimeout(temuIdLookupTimer);
+      }
+      if (temuIdLookupController && typeof temuIdLookupController.abort === 'function') {
+        temuIdLookupController.abort();
+      }
+      if (!categoryId) {
+        return;
+      }
+      if (/^https?:\/\//i.test(categoryId)) {
+        var searchFromUrl = temuSearchFromValue(categoryId);
+        var temuSearchInput = document.getElementById('temu_category_search');
+        var temuSearchButton = document.getElementById('temu_category_search_btn');
+        var temuIdInput = document.getElementById('temu_category_id');
+        if (temuSearchInput && searchFromUrl && searchFromUrl !== categoryId) {
+          temuSearchInput.value = searchFromUrl;
+          if (temuIdInput) temuIdInput.value = '';
+          if (temuNameInput) temuNameInput.value = '';
+          if (temuPathInput) temuPathInput.value = '';
+          if (temuParametersInput) temuParametersInput.value = '';
+          if (temuSelectedLabel) temuSelectedLabel.textContent = 'Wybierz kategorie Seller OpenAPI z wynikow ponizej.';
+          if (temuParametersStatus) {
+            temuParametersStatus.className = 'form-text text-secondary';
+            temuParametersStatus.textContent = 'Rozpoznano z linku: ' + searchFromUrl + '. Wyszukiwanie kategorii Seller OpenAPI...';
+          }
+          if (temuSearchButton) temuSearchButton.click();
+          return;
+        }
+      }
+      if (!/^\d+$/.test(categoryId)) {
+        if (temuParametersStatus) {
+          temuParametersStatus.className = 'form-text text-danger';
+          temuParametersStatus.textContent = 'ID kategorii Temu musi zawierac same cyfry.';
+        }
+        return;
+      }
+      if (temuNameInput) temuNameInput.value = '';
+      if (temuPathInput) temuPathInput.value = '';
+      if (temuParametersInput) temuParametersInput.value = '';
+
+      temuIdLookupTimer = window.setTimeout(function () {
+        temuIdLookupController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        if (temuParametersStatus) {
+          temuParametersStatus.className = 'form-text text-secondary';
+          temuParametersStatus.textContent = 'Rozpoznawanie kategorii Temu ID ' + categoryId + '...';
+        }
+        fetch('{$baseUrl|escape:"javascript"}?controller=temu&action=category&id=' + encodeURIComponent(categoryId), {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          signal: temuIdLookupController ? temuIdLookupController.signal : undefined
+        })
+          .then(function (response) {
+            return response.text().then(function (raw) {
+              var data;
+              try {
+                data = raw ? JSON.parse(raw) : {};
+              } catch (parseError) {
+                throw new Error(raw ? raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 300) : ('Blad HTTP ' + response.status + '.'));
+              }
+              if (!response.ok && !data.error) throw new Error('Blad HTTP ' + response.status + '.');
+              return data;
+            });
+          })
+          .then(function (data) {
+            if (data.error) throw new Error(data.error);
+            var item = data.item || null;
+            if (!item || String(item.id || '') !== categoryId) {
+              throw new Error('Temu nie zwrocilo danych tej kategorii.');
+            }
+            if (temuSelectedLabel) {
+              temuSelectedLabel.textContent = 'Wybrane Temu ID: ' + categoryId + ' | Sciezka: ' + normalizedPath(item);
+            }
+            loadTemuParameters(item);
+          })
+          .catch(function (error) {
+            if (error && error.name === 'AbortError') return;
+            if (temuParametersStatus) {
+              temuParametersStatus.className = 'form-text text-danger';
+              temuParametersStatus.textContent = error.message || 'Nie udalo sie rozpoznac kategorii Temu.';
+            }
+          });
+      }, 600);
+    }
+
+    initMarketplaceSearch({
+      controller: 'temu',
+      marketName: 'Temu',
+      inputId: 'temu_category_search',
+      buttonId: 'temu_category_search_btn',
+      resultsId: 'temu_category_results',
+      treeId: 'temu_category_tree',
+      selectedId: 'temu_category_selected',
+      categoryInputId: 'temu_category_id',
+      emptyMessage: 'Temu nie zwrocilo rekomendacji. Sprobuj pelnej nazwy produktu, najlepiej po angielsku.',
+      autoApplyMatch: true,
+      autoSelectFirst: true,
+      onSelect: loadTemuParameters,
+      onIdChange: recognizeTemuCategoryId,
+      normalizeSearch: temuSearchFromValue
+    });
 
     if (temuPathInput && temuNameInput) {
       temuPathInput.addEventListener('blur', function () {

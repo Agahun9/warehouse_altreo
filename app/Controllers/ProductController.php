@@ -21,6 +21,7 @@ use App\Models\SharedStockGroupRepository;
 use App\Services\AllegroService;
 use App\Services\EmpikService;
 use App\Services\MediaMarktService;
+use App\Services\TemuService;
 use App\Services\ValueResolver;
 use RuntimeException;
 use Throwable;
@@ -63,6 +64,9 @@ class ProductController extends Controller
     /** @var MediaMarktService */
     private $mediamarkt;
 
+    /** @var TemuService */
+    private $temu;
+
     /** @var SharedStockGroupRepository */
     private $sharedStockGroups;
 
@@ -101,6 +105,7 @@ class ProductController extends Controller
         $this->allegro = new AllegroService();
         $this->empik = new EmpikService();
         $this->mediamarkt = new MediaMarktService();
+        $this->temu = new TemuService();
     }
 
     public function index(): void
@@ -2108,13 +2113,13 @@ class ProductController extends Controller
         }
 
         $raw = trim((string) ($category['temu_category_parameters'] ?? ''));
-        if ($raw === '') {
-            return array();
-        }
-
-        $decoded = json_decode($raw, true);
+        $decoded = $raw !== '' ? json_decode($raw, true) : null;
         if (!is_array($decoded)) {
-            return array();
+            $temuCategoryId = trim((string) ($category['temu_category_id'] ?? ''));
+            if ($temuCategoryId === '') {
+                return array();
+            }
+            $decoded = $this->temu->categoryParameters($temuCategoryId);
         }
 
         $definitions = array();
@@ -2259,7 +2264,7 @@ class ProductController extends Controller
         foreach ($values as $value) {
             if (is_array($value)) {
                 $optionId = trim((string) ($value['id'] ?? $value['value'] ?? ''));
-                $optionLabel = trim((string) ($value['label'] ?? $value['name'] ?? $optionId));
+                $optionLabel = trim((string) ($value['label'] ?? $value['name'] ?? $value['value'] ?? $optionId));
             } else {
                 $optionId = trim((string) $value);
                 $optionLabel = $optionId;
