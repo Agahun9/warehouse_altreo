@@ -52,7 +52,7 @@ class MediaMarktService
         }
 
         $name = trim((string) ($input['name'] ?? ''));
-        $apiUrl = rtrim(trim((string) ($input['api_url'] ?? '')), '/');
+        $apiUrl = $this->normalizeApiBaseUrl((string) ($input['api_url'] ?? ''));
         $apiKey = trim((string) ($input['api_key'] ?? ''));
         $shopIdRaw = trim((string) ($input['shop_id'] ?? ''));
         $locale = trim((string) ($input['locale'] ?? $this->defaultLocale()));
@@ -60,7 +60,7 @@ class MediaMarktService
 
         if ($existing) {
             $name = $name !== '' ? $name : (string) ($existing['name'] ?? '');
-            $apiUrl = $apiUrl !== '' ? $apiUrl : rtrim((string) ($existing['api_url'] ?? ''), '/');
+            $apiUrl = $apiUrl !== '' ? $apiUrl : $this->normalizeApiBaseUrl((string) ($existing['api_url'] ?? ''));
             $apiKey = $apiKey !== '' ? $apiKey : (string) ($existing['api_key'] ?? '');
             $locale = $locale !== '' ? $locale : (string) ($existing['locale'] ?? $this->defaultLocale());
         }
@@ -1938,7 +1938,7 @@ class MediaMarktService
             throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji MediaMarkt.');
         }
 
-        $baseUrl = rtrim((string) ($account['api_url'] ?? ''), '/');
+        $baseUrl = $this->normalizeApiBaseUrl((string) ($account['api_url'] ?? ''));
         if ($baseUrl === '') {
             throw new RuntimeException('Brak adresu API MediaMarkt.');
         }
@@ -2036,7 +2036,7 @@ class MediaMarktService
             throw new RuntimeException('Brak rozszerzenia cURL potrzebnego do integracji MediaMarkt.');
         }
 
-        $baseUrl = rtrim((string) ($account['api_url'] ?? ''), '/');
+        $baseUrl = $this->normalizeApiBaseUrl((string) ($account['api_url'] ?? ''));
         if ($baseUrl === '') {
             throw new RuntimeException('Brak adresu API MediaMarkt.');
         }
@@ -2102,6 +2102,21 @@ class MediaMarktService
         }
 
         return $raw;
+    }
+
+    /**
+     * Account setup guides sometimes call the URL ending in /api the API base URL,
+     * while this client keeps /api in every endpoint path. Accept both forms so an
+     * account saved as https://instance.mirakl.net/api does not call /api/api/....
+     */
+    private function normalizeApiBaseUrl(string $url): string
+    {
+        $url = rtrim(trim($url), '/');
+        if (preg_match('~/api$~i', $url) === 1) {
+            $url = substr($url, 0, -4);
+        }
+
+        return rtrim($url, '/');
     }
 
     private function throttleBeforeRequest(): void
