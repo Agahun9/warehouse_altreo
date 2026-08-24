@@ -55,6 +55,10 @@ class ProductChangeLogRepository
         );
 
         $this->ensureColumn('actor_name', "ALTER TABLE " . self::TABLE . " ADD COLUMN actor_name VARCHAR(255) DEFAULT NULL AFTER actor_user_id");
+        $this->ensureIndex(
+            'idx_product_change_logs_actor_product_created',
+            'ALTER TABLE ' . self::TABLE . ' ADD KEY idx_product_change_logs_actor_product_created (actor_name(64), product_id, created_at)'
+        );
         self::$schemaEnsured = true;
     }
 
@@ -105,6 +109,49 @@ class ProductChangeLogRepository
         );
 
         return $this->hydrateRows($rows);
+    }
+
+    public function lastSellasistSubtractDatesForProducts(array $productIds): array
+    {
+        $normalizedIds = array();
+        foreach ($productIds as $productId) {
+            $productId = (int) $productId;
+            if ($productId > 0) {
+                $normalizedIds[$productId] = $productId;
+            }
+        }
+
+        if ($normalizedIds === array()) {
+            return array();
+        }
+
+        $params = array();
+        $placeholders = array();
+        foreach (array_values($normalizedIds) as $index => $productId) {
+            $key = 'product_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $productId;
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT product_id, MAX(created_at) AS last_sale_date'
+            . ' FROM ' . self::TABLE
+            . ' WHERE product_id IN (' . implode(', ', $placeholders) . ')'
+            . '   AND actor_name = "Sellasist"'
+            . '   AND summary LIKE "Odjeto stan magazynowy przez Sellasist%"'
+            . ' GROUP BY product_id',
+            $params
+        );
+
+        $dates = array();
+        foreach ($rows as $row) {
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+            if ($productId > 0) {
+                $dates[$productId] = (string) ($row['last_sale_date'] ?? '');
+            }
+        }
+
+        return $dates;
     }
 
     private function trimToLatest(int $productId, int $keep): void
@@ -196,6 +243,24 @@ class ProductChangeLogRepository
             array(
                 'table_name' => self::TABLE,
                 'column_name' => $columnName,
+            )
+        );
+
+        if ($exists <= 0) {
+            $this->database->query($ddl);
+        }
+    }
+
+    private function ensureIndex(string $indexName, string $ddl): void
+    {
+        $exists = (int) $this->database->fetchColumn(
+            'SELECT COUNT(*) FROM information_schema.STATISTICS'
+            . ' WHERE TABLE_SCHEMA = DATABASE()'
+            . ' AND TABLE_NAME = :table_name'
+            . ' AND INDEX_NAME = :index_name',
+            array(
+                'table_name' => self::TABLE,
+                'index_name' => $indexName,
             )
         );
 

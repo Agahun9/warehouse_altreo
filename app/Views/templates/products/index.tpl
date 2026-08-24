@@ -198,6 +198,13 @@
       min-width: 118px;
     }
 
+    .product-sales-cell {
+      width: 150px;
+      min-width: 150px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+
     .product-timestamps-cell {
       width: 170px;
       min-width: 170px;
@@ -632,6 +639,39 @@
       line-height: 1.2;
     }
 
+    .product-sales-stack {
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+    }
+
+    .product-sales-metric {
+      display: flex;
+      flex-direction: column;
+      gap: .08rem;
+      padding: .35rem .45rem;
+      border-radius: .5rem;
+      background: rgba(248, 250, 252, .95);
+      border: 1px solid rgba(15, 23, 42, .08);
+    }
+
+    .product-sales-label {
+      color: #64748b;
+      font-size: .66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .product-sales-value {
+      color: #0f172a;
+      font-size: .82rem;
+      font-weight: 800;
+    }
+
+    .product-sales-value.muted {
+      color: #dc2626;
+    }
+
     .product-allegro-account {
       display: flex;
       flex-direction: column;
@@ -815,6 +855,12 @@
                     </th>
                     <th class="product-quantity-cell"><a href="{$sortUrls.quantity|escape}" class="link-dark text-decoration-none">Ilosc {if $sortIndicators.quantity eq 'asc'}&uarr;{elseif $sortIndicators.quantity eq 'desc'}&darr;{else}&harr;{/if}</a></th>
                     <th style="width: 100px; min-width: 100px;"><a href="{$sortUrls.localization|escape}" class="link-dark text-decoration-none">Lokalizacja {if $sortIndicators.localization eq 'asc'}&uarr;{elseif $sortIndicators.localization eq 'desc'}&darr;{else}&harr;{/if}</a></th>
+                    <th class="product-sales-cell">
+                      <div class="d-flex flex-column gap-1">
+                        <a href="{$sortUrls.active_auction_count|escape}" class="link-dark text-decoration-none">Aukcje {if $sortIndicators.active_auction_count eq 'asc'}&uarr;{elseif $sortIndicators.active_auction_count eq 'desc'}&darr;{else}&harr;{/if}</a>
+                        <a href="{$sortUrls.last_sale_date|escape}" class="link-dark text-decoration-none">Ost. sprzedaz {if $sortIndicators.last_sale_date eq 'asc'}&uarr;{elseif $sortIndicators.last_sale_date eq 'desc'}&darr;{else}&harr;{/if}</a>
+                      </div>
+                    </th>
                     <th style="width: 140px; min-width: 140px;">Wymiary / obrys</th>
                     <th class="product-compact-cell">Zdjecie</th>
                     <th class="product-price-cell">Cena / daty</th>
@@ -864,7 +910,7 @@
                         <option value="0"{if $contoursFilter eq '0'} selected{/if}>nie ma obrysu</option>
                       </select>
                     </th>
-                    <th class="text-end" colspan="4">
+                    <th class="text-end" colspan="5">
                     <a href="{$clearFiltersUrl|escape}" class="btn btn-sm btn-warning ">Wyczysc filtry</a><button type="submit" class="btn btn-sm btn-primary" style="margin-left:10px;">Filtruj</button></th>
                   </tr>
                 </thead>
@@ -964,6 +1010,22 @@
                             {/if}
                           </details>
                         </td>
+                        <td class="product-sales-cell">
+                          <div class="product-sales-stack">
+                            <div class="product-sales-metric">
+                              <span class="product-sales-label">Wystawione aukcje</span>
+                              <span class="product-sales-value">{$product.active_auction_count|default:0}</span>
+                            </div>
+                            <div class="product-sales-metric">
+                              <span class="product-sales-label">Ostatnia sprzedaz</span>
+                              {if $product.last_sale_date|default:'' !== ''}
+                                <span class="product-sales-value">{$product.last_sale_date|escape}</span>
+                              {else}
+                                <span class="product-sales-value muted">Brak</span>
+                              {/if}
+                            </div>
+                          </div>
+                        </td>
                         <td>
                           <div class="product-dimensions-stack">
                             <input type="text" class="quick-edit-input js-quick-edit-field" data-field="dimensions" value="{$product.dimensions|default:''|escape}" aria-label="Wymiary">
@@ -1009,7 +1071,7 @@
                   </tr>
                     {/foreach}
                   {else}
-                    <tr><td colspan="9" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
+                    <tr><td colspan="10" class="text-center py-4">Brak produktow do wyswietlenia.</td></tr>
                   {/if}
                 </tbody>
               </table>

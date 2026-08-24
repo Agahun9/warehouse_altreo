@@ -76,12 +76,17 @@ class ProductController extends Controller
     /** @var SettingRepository */
     private $settings;
 
+    /** @var ProductChangeLogRepository */
+    private $productChangeLogs;
+
     public function __construct()
     {
         $this->categories = new CategoryRepository($this->db());
         $this->categories->ensureSchema();
         $this->products = new ProductRepository($this->db());
         $this->products->ensureSchema();
+        $this->productChangeLogs = new ProductChangeLogRepository($this->db());
+        $this->productChangeLogs->ensureSchema();
         $this->allegroParameters = new ProductAllegroParameterRepository($this->db());
         $this->allegroParameters->ensureSchema();
         $this->empikParameters = new ProductEmpikParameterRepository($this->db());
@@ -145,6 +150,9 @@ class ProductController extends Controller
         }
 
         $products = $this->products->paginate($filters, $sortBy, $sortDir, $page, $perPage);
+        $lastSellasistSaleDates = $this->productChangeLogs->lastSellasistSubtractDatesForProducts(array_map(static function (array $product): int {
+            return isset($product['id']) ? (int) $product['id'] : 0;
+        }, $products));
         $allegroOfferBreakdown = $this->allegro->offerBreakdownForProducts($products);
         foreach ($products as $index => $product) {
             $productId = isset($product['id']) ? (int) $product['id'] : 0;
@@ -157,10 +165,16 @@ class ProductController extends Controller
             $products[$index]['allegro_offer_total'] = array_sum(array_map(static function (array $item): int {
                 return (int) ($item['count'] ?? 0);
             }, $products[$index]['allegro_offers_by_account']));
+            $products[$index]['active_auction_count'] = $sortBy === 'active_auction_count'
+                ? (int) ($product['active_auction_count'] ?? 0)
+                : (int) $products[$index]['allegro_offer_total'];
+            if (isset($lastSellasistSaleDates[$productId])) {
+                $products[$index]['last_sale_date'] = $lastSellasistSaleDates[$productId];
+            }
         }
         $pageWindow = $this->buildPageWindow($page, $totalPages);
 
-        $sortableColumns = array('id', 'sku', 'product_name', 'category', 'quantity', 'localization');
+        $sortableColumns = array('id', 'sku', 'product_name', 'category', 'quantity', 'localization', 'active_auction_count', 'last_sale_date');
         $sortIndicators = array();
         $sortUrls = array();
 
@@ -2958,7 +2972,7 @@ class ProductController extends Controller
     private function nextSortDirection($column, $currentSortBy, $currentSortDir): string
     {
         if ($currentSortBy !== $column) {
-            if ($column === 'product_name') {
+            if ($column === 'product_name' || $column === 'active_auction_count') {
                 return 'desc';
             }
             return 'asc';

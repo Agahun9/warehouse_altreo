@@ -151,13 +151,19 @@ class ProductRepository
 
     public function paginate(array $filters = array(), $sortBy = '', $sortDir = '', int $page = 1, int $perPage = 50): array
     {
+        $needsOfferStats = $sortBy === 'active_auction_count';
+        $needsSaleStats = $sortBy === 'last_sale_date';
         $sql = 'SELECT products.*,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
+            . ($needsOfferStats ? ' COALESCE(offer_stats.active_offer_count, 0)' : ' 0') . ' AS active_auction_count,'
+            . ($needsSaleStats ? ' sale_stats.last_sale_date' : ' NULL') . ' AS last_sale_date,'
             . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
-            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id';
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
+            . ($needsOfferStats ? $this->productActiveOfferStatsJoinSql() : '')
+            . ($needsSaleStats ? $this->productLastSaleStatsJoinSql() : '');
         $params = array();
         $whereParts = array('products.deleted_at IS NULL');
 
@@ -229,6 +235,8 @@ class ProductRepository
             'category' => 'categories.name',
             'quantity' => 'COALESCE(shared_stock_groups.quantity, products.quantity)',
             'localization' => 'COALESCE(shared_stock_groups.localization, products.localization)',
+            'active_auction_count' => 'COALESCE(offer_stats.active_offer_count, 0)',
+            'last_sale_date' => 'sale_stats.last_sale_date',
         );
 
         if (isset($sortMap[$sortBy])) {
@@ -244,6 +252,55 @@ class ProductRepository
         $sql .= ' LIMIT ' . $perPage . ' OFFSET ' . $offset;
 
         return $this->attachCustomFields($this->attachSharedStock($this->database->fetchAll($sql, $params)));
+    }
+
+    private function productActiveOfferStatsJoinSql(): string
+    {
+        $skuMapSql = 'SELECT products.id AS product_id, products.sku AS match_sku'
+            . ' FROM products'
+            . ' WHERE products.deleted_at IS NULL'
+            . '   AND products.sku IS NOT NULL'
+            . '   AND products.sku <> ""'
+            . ' UNION ALL'
+            . ' SELECT old_sku_values.product_id AS product_id, old_sku_values.value AS match_sku'
+            . ' FROM product_custom_field_values old_sku_values'
+            . ' INNER JOIN product_custom_field_definitions old_sku_definition ON old_sku_definition.id = old_sku_values.definition_id'
+            . ' INNER JOIN products old_sku_products ON old_sku_products.id = old_sku_values.product_id'
+            . ' WHERE old_sku_products.deleted_at IS NULL'
+            . '   AND old_sku_definition.slug = "old_sku"'
+            . '   AND old_sku_values.value IS NOT NULL'
+            . '   AND old_sku_values.value <> ""';
+
+        return ' LEFT JOIN ('
+            . ' SELECT matched.product_id, COUNT(*) AS active_offer_count'
+            . ' FROM ('
+            . '   SELECT offers.warehouse_product_id AS product_id, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . '     AND offers.warehouse_product_id IS NOT NULL'
+            . '   UNION'
+            . '   SELECT sku_map.product_id AS product_id, offers.id AS offer_row_id'
+            . '   FROM allegro_offers offers'
+            . '   INNER JOIN allegro_accounts accounts ON accounts.id = offers.account_id'
+            . '   INNER JOIN (' . $skuMapSql . ') sku_map ON sku_map.match_sku = offers.sku'
+            . '   WHERE accounts.is_active = 1'
+            . '     AND offers.publication_status = "ACTIVE"'
+            . ' ) matched'
+            . ' GROUP BY matched.product_id'
+            . ' ) offer_stats ON offer_stats.product_id = products.id';
+    }
+
+    private function productLastSaleStatsJoinSql(): string
+    {
+        return ' LEFT JOIN ('
+            . ' SELECT product_change_logs.product_id, MAX(product_change_logs.created_at) AS last_sale_date'
+            . ' FROM product_change_logs'
+            . ' WHERE product_change_logs.actor_name = "Sellasist"'
+            . '   AND product_change_logs.summary LIKE "Odjeto stan magazynowy przez Sellasist%"'
+            . ' GROUP BY product_change_logs.product_id'
+            . ' ) sale_stats ON sale_stats.product_id = products.id';
     }
 
     public function countFiltered(array $filters = array()): int
