@@ -1703,6 +1703,16 @@ class ProductController extends Controller
         }
         $temuDefinitions = array();
         $productHistory = array();
+        $productSalesHistory = array(
+            'total_quantity' => 0,
+            'days_count' => 0,
+            'events_count' => 0,
+            'last_sale_date' => '',
+            'average_per_day' => 0,
+            'peak_day' => array(),
+            'daily' => array(),
+            'events' => array(),
+        );
         $productImages = $this->imageUrlsFromValue(isset($product['img']) ? (string) $product['img'] : '');
         if (isset($product['contours']) && trim((string) $product['contours']) === '0') {
             $product['contours'] = '';
@@ -1753,6 +1763,7 @@ class ProductController extends Controller
             $productChanges = new ProductChangeLogRepository($this->db());
             $productChanges->ensureSchema();
             $productHistory = $productChanges->historyForProduct((int) $product['id'], 10);
+            $productSalesHistory = $productChanges->salesHistoryForProduct((int) $product['id']);
         }
 
         $this->render('products/form', array(
@@ -1787,6 +1798,7 @@ class ProductController extends Controller
             'assignedCustomFields' => $this->assignedCustomFieldsForView($product),
             'relatedProducts' => $this->relatedProductsForView($product),
             'productHistory' => $productHistory,
+            'productSalesHistory' => $productSalesHistory,
             'derivedStockSources' => $this->derivedStockSourcesForView($product),
             'productImagesJson' => json_encode($productImages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             'productImagesUploadUrl' => './index.php?controller=products&action=uploadimages',

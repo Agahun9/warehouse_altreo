@@ -197,7 +197,6 @@
       var timer = null;
       var activeQuery = '';
       var endpoint = '{$baseUrl|escape:'javascript'}?controller=products&action=quicksearch';
-      var productsIndexUrl = '{$baseUrl|escape:'javascript'}?controller=products&action=index';
       var productsEditBaseUrl = '{$baseUrl|escape:'javascript'}?controller=products&action=edit&id=';
 
       function escapeHtml(value) {
@@ -230,11 +229,10 @@
           var oldSku = String(item.old_sku || '');
           var quantity = String(item.quantity != null ? item.quantity : '-');
           var localization = String(item.localization || '-');
-          var filterUrl = productsIndexUrl + '&filter_global=' + encodeURIComponent(query || sku);
           var editUrl = productsEditBaseUrl + encodeURIComponent(id);
 
           html += '<div class="quick-search-item">';
-          html += '<a class="quick-search-item-main" href="' + filterUrl + '">';
+          html += '<a class="quick-search-item-main" href="' + editUrl + '">';
           html += '<div class="quick-search-topline">';
           html += '<span class="quick-search-sku">' + escapeHtml(sku || 'BRAK SKU') + '</span>';
           if (oldSku) {

@@ -302,6 +302,68 @@
       background: rgba(247, 251, 252, 0.9);
     }
 
+    .product-sales-hero {
+      border-radius: 1rem;
+      padding: 1rem;
+      background: linear-gradient(135deg, #12343b 0%, #1f6f78 60%, #249f8f 100%);
+      color: #fff;
+      box-shadow: 0 16px 34px rgba(15, 76, 92, 0.18);
+      margin-bottom: 1rem;
+    }
+
+    .product-sales-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .product-sales-kpi {
+      border-radius: 0.9rem;
+      padding: 0.85rem;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .product-sales-kpi span {
+      display: block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.72);
+      margin-bottom: 0.2rem;
+    }
+
+    .product-sales-kpi strong {
+      font-size: 1.15rem;
+      color: #fff;
+    }
+
+    .product-sales-table th {
+      color: #49656b;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      background: rgba(238, 248, 248, 0.9);
+    }
+
+    .product-sales-qty {
+      font-weight: 800;
+      color: #17353b;
+      font-size: 1rem;
+    }
+
+    .product-sales-event {
+      border: 1px solid rgba(31, 111, 120, 0.12);
+      border-radius: 0.9rem;
+      padding: 0.85rem;
+      background: #fff;
+      box-shadow: 0 8px 18px rgba(15, 76, 92, 0.04);
+    }
+
+    .product-sales-event + .product-sales-event {
+      margin-top: 0.65rem;
+    }
+
     .contour-picker-results {
       max-height: 240px;
       overflow: auto;
@@ -360,6 +422,10 @@
       }
 
       .product-mini-stat {
+        grid-template-columns: 1fr;
+      }
+
+      .product-sales-kpis {
         grid-template-columns: 1fr;
       }
     }
@@ -427,6 +493,12 @@
             <i class="bi bi-sliders2"></i>
             <span>Pola wlasne<small>Cechy i dodatkowe dane</small></span>
           </button>
+          {if isset($product.id)}
+            <button type="button" class="product-tab-button" data-product-tab-trigger="sales-history" aria-pressed="false">
+              <i class="bi bi-graph-up-arrow"></i>
+              <span>Historia sprzedazy<small>Sellasist, dzienne sumy</small></span>
+            </button>
+          {/if}
           <button type="button" class="product-tab-button" data-product-tab-trigger="marketplace" aria-pressed="false">
             <i class="bi bi-shop"></i>
             <span>Allegro<small>Parametry i kopiowanie</small></span>
@@ -797,6 +869,117 @@
                   {/if}
                 </div>
                 </div>
+
+                {if isset($product.id)}
+                <div class="product-tab-panel" data-product-tab-panel="sales-history">
+                  <div class="product-sales-hero">
+                    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                      <div>
+                        <div class="small text-white-50 mb-1">Historia sprzedazy z odjec Sellasist</div>
+                        <h5 class="mb-1"><i class="bi bi-graph-up-arrow me-2"></i>{$product.product_name|default:'Produkt'|escape}</h5>
+                        <div class="small text-white-50">Podsumowanie bazuje na wpisach historii zmian: odjeciach stanu magazynowego przez Sellasist.</div>
+                      </div>
+                      <span class="badge rounded-pill text-bg-light">SKU: {$product.sku|default:'-'|escape}</span>
+                    </div>
+                    <div class="product-sales-kpis">
+                      <div class="product-sales-kpi">
+                        <span>Lacznie zeszlo</span>
+                        <strong>{$productSalesHistory.total_quantity|default:0|escape} szt.</strong>
+                      </div>
+                      <div class="product-sales-kpi">
+                        <span>Dni ze sprzedaza</span>
+                        <strong>{$productSalesHistory.days_count|default:0|escape}</strong>
+                      </div>
+                      <div class="product-sales-kpi">
+                        <span>Ostatnia sprzedaz</span>
+                        <strong>{if $productSalesHistory.last_sale_date|default:''}{$productSalesHistory.last_sale_date|escape}{else}Brak{/if}</strong>
+                      </div>
+                      <div class="product-sales-kpi">
+                        <span>Srednio / dzien</span>
+                        <strong>{$productSalesHistory.average_per_day|default:0|escape} szt.</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {if $productSalesHistory.daily|default:[]}
+                    <div class="row g-3">
+                      <div class="col-lg-7">
+                        <div class="product-section-box">
+                          <div class="product-section-title">
+                            <div>
+                              <h5><i class="bi bi-calendar3 me-2"></i>Podsumowanie dzienne</h5>
+                              <p>Ile sztuk tego produktu zeszlo kazdego dnia.</p>
+                            </div>
+                            {if $productSalesHistory.peak_day|default:[]}
+                              <span class="product-section-chip"><i class="bi bi-trophy"></i>Top: {$productSalesHistory.peak_day.date|escape}, {$productSalesHistory.peak_day.quantity|escape} szt.</span>
+                            {/if}
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm align-middle product-sales-table mb-0">
+                              <thead>
+                                <tr>
+                                  <th>Dzien</th>
+                                  <th class="text-end">Szt.</th>
+                                  <th class="text-end">Zamowienia</th>
+                                  <th>Sygnatury</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {foreach $productSalesHistory.daily as $salesDay}
+                                  <tr>
+                                    <td class="fw-semibold">{$salesDay.date|escape}</td>
+                                    <td class="text-end"><span class="product-sales-qty">{$salesDay.quantity|escape}</span></td>
+                                    <td class="text-end">{$salesDay.orders_count|escape}</td>
+                                    <td class="small text-secondary">
+                                      {if $salesDay.signatures_preview|default:''}
+                                        {$salesDay.signatures_preview|escape}{if $salesDay.more_signatures_count|default:0 > 0} +{$salesDay.more_signatures_count|escape}{/if}
+                                      {else}
+                                        -
+                                      {/if}
+                                    </td>
+                                  </tr>
+                                {/foreach}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="col-lg-5">
+                        <div class="product-section-box soft">
+                          <div class="product-section-title">
+                            <div>
+                              <h5><i class="bi bi-receipt-cutoff me-2"></i>Ostatnie zejscia</h5>
+                              <p>Najnowsze odjecia z zamowien Sellasist.</p>
+                            </div>
+                            <span class="product-section-chip"><i class="bi bi-list-check"></i>{$productSalesHistory.events_count|default:0|escape} wpisow</span>
+                          </div>
+                          {foreach $productSalesHistory.events as $salesEvent}
+                            <div class="product-sales-event">
+                              <div class="d-flex justify-content-between gap-2 flex-wrap mb-1">
+                                <strong>{$salesEvent.created_at|escape}</strong>
+                                <span class="badge text-bg-success">{$salesEvent.quantity|escape} szt.</span>
+                              </div>
+                              <div class="small text-secondary mb-1">
+                                Zamowienie: {if $salesEvent.order_id|default:''}#{$salesEvent.order_id|escape}{else}-{/if}
+                                {if $salesEvent.signature|default:''} | sygnatura: {$salesEvent.signature|escape}{/if}
+                              </div>
+                              {if $salesEvent.source_name|default:''}
+                                <div class="small">{$salesEvent.source_name|escape}</div>
+                              {/if}
+                            </div>
+                          {/foreach}
+                        </div>
+                      </div>
+                    </div>
+                  {else}
+                    <div class="product-section-box text-center py-5">
+                      <div class="mb-3"><i class="bi bi-graph-up-arrow fs-1 text-secondary"></i></div>
+                      <h5>Brak sprzedazy w historii Sellasist</h5>
+                      <p class="text-secondary mb-0">Gdy Sellasist odejmie stan magazynowy dla tego produktu, pojawi sie tutaj dzienne podsumowanie.</p>
+                    </div>
+                  {/if}
+                </div>
+                {/if}
 
                 <div class="product-tab-panel" data-product-tab-panel="marketplace">
                 <div class="product-section-box">

@@ -146,6 +146,77 @@
       background: rgba(13, 110, 253, 0.08);
     }
 
+    .quick-search-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.65rem;
+      align-items: center;
+    }
+
+    .quick-search-item-main {
+      min-width: 0;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .quick-search-topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+      margin-bottom: 0.15rem;
+    }
+
+    .quick-search-sku,
+    .quick-search-old-sku,
+    .quick-search-meta-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      max-width: 100%;
+      padding: 0.08rem 0.38rem;
+      overflow: hidden;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border-radius: 0.35rem;
+    }
+
+    .quick-search-sku {
+      font-weight: 700;
+      color: #0f172a;
+      background: #e0f2fe;
+    }
+
+    .quick-search-old-sku {
+      color: #334155;
+      background: #f1f5f9;
+    }
+
+    .quick-search-name {
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .quick-search-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.25rem;
+      color: #64748b;
+    }
+
+    .quick-search-meta-chip {
+      background: #f8fafc;
+    }
+
+    .quick-search-actions {
+      flex: 0 0 auto;
+    }
+
     .topbar-user-link {
       display: flex;
       align-items: center;
@@ -247,7 +318,8 @@
                   name="filter_global"
                   id="globalProductSearchInput"
                   class="form-control"
-                  placeholder="Szybkie wyszukiwanie SKU lub nazwy..."
+                  placeholder='SKU, OLD_SKU, nazwa, "fraza", OR'
+                  title='Przyklady: 15380, TSHRTM000010, "koszulka meska", sku:KBG OR old:15380, name:kubek -zielony'
                   minlength="2"
                 >
               </div>

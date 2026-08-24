@@ -717,13 +717,18 @@ class ProductRepository
         }
 
         $limit = max(1, min(20, $limit));
+        $compactQuery = $this->compactIdentifierSearchTerm($query);
         $params = array(
             'quick_search_exact' => $query,
             'quick_search_prefix' => $query . '%',
+            'quick_search_compact_exact' => $compactQuery,
+            'quick_search_compact_prefix' => $compactQuery . '%',
             'quick_search_name_exact' => $query,
             'quick_search_name_prefix' => $query . '%',
             'quick_search_old_sku_exact' => $query,
             'quick_search_old_sku_prefix' => $query . '%',
+            'quick_search_old_sku_compact_exact' => $compactQuery,
+            'quick_search_old_sku_compact_prefix' => $compactQuery . '%',
         );
         $whereParts = array('products.deleted_at IS NULL');
         $this->appendGlobalProductFilterCondition($whereParts, $params, $query, 'quick_search');
@@ -743,11 +748,15 @@ class ProductRepository
             . '   CASE'
             . '     WHEN products.sku = :quick_search_exact THEN 0'
             . '     WHEN old_sku_values.value = :quick_search_old_sku_exact THEN 1'
-            . '     WHEN products.product_name = :quick_search_name_exact THEN 2'
-            . '     WHEN products.sku LIKE :quick_search_prefix THEN 3'
-            . '     WHEN old_sku_values.value LIKE :quick_search_old_sku_prefix THEN 4'
-            . '     WHEN products.product_name LIKE :quick_search_name_prefix THEN 5'
-            . '     ELSE 6'
+            . '     WHEN ' . $this->compactIdentifierColumnSql('products.sku') . ' = :quick_search_compact_exact THEN 2'
+            . '     WHEN ' . $this->compactIdentifierColumnSql('old_sku_values.value') . ' = :quick_search_old_sku_compact_exact THEN 3'
+            . '     WHEN products.product_name = :quick_search_name_exact THEN 4'
+            . '     WHEN products.sku LIKE :quick_search_prefix THEN 5'
+            . '     WHEN old_sku_values.value LIKE :quick_search_old_sku_prefix THEN 6'
+            . '     WHEN ' . $this->compactIdentifierColumnSql('products.sku') . ' LIKE :quick_search_compact_prefix THEN 7'
+            . '     WHEN ' . $this->compactIdentifierColumnSql('old_sku_values.value') . ' LIKE :quick_search_old_sku_compact_prefix THEN 8'
+            . '     WHEN products.product_name LIKE :quick_search_name_prefix THEN 9'
+            . '     ELSE 10'
             . '   END,'
             . ' products.id DESC'
             . ' LIMIT ' . $limit,
@@ -857,58 +866,214 @@ class ProductRepository
             return;
         }
 
-        $tokens = $this->searchTokens($value);
-        if ($tokens === array()) {
-            $tokens = array($value);
+        $groups = $this->parseProductSearchGroups($value);
+        if ($groups === array()) {
+            return;
         }
 
-        $tokenClauses = array();
-        foreach ($tokens as $index => $token) {
-            $key = $paramPrefix . '_token_' . $index;
-            $tokenClauses[] = '('
-                . 'products.sku LIKE :' . $key . '_sku'
-                . ' OR products.product_name LIKE :' . $key . '_name'
-                . ' OR EXISTS ('
-                . '   SELECT 1'
-                . '   FROM product_custom_field_values cfv'
-                . '   INNER JOIN product_custom_field_definitions cfd ON cfd.id = cfv.definition_id'
-                . '   WHERE cfv.product_id = products.id'
-                . '     AND cfd.slug = "old_sku"'
-                . '     AND cfv.value LIKE :' . $key . '_old_sku'
-                . ' )'
-                . ')';
-            $params[$key . '_sku'] = '%' . $token . '%';
-            $params[$key . '_name'] = '%' . $token . '%';
-            $params[$key . '_old_sku'] = '%' . $token . '%';
+        $groupClauses = array();
+        foreach ($groups as $groupIndex => $terms) {
+            $termClauses = array();
+            foreach ($terms as $termIndex => $term) {
+                $clause = $this->buildGlobalProductTermCondition($params, $term, $paramPrefix . '_' . $groupIndex . '_' . $termIndex);
+                if ($clause !== '') {
+                    $termClauses[] = !empty($term['negated']) ? 'NOT (' . $clause . ')' : '(' . $clause . ')';
+                }
+            }
+
+            if ($termClauses !== array()) {
+                $groupClauses[] = '(' . implode(' AND ', $termClauses) . ')';
+            }
         }
 
-        $whereParts[] = '(' . implode(' AND ', $tokenClauses) . ')';
+        if ($groupClauses !== array()) {
+            $whereParts[] = '(' . implode(' OR ', $groupClauses) . ')';
+        }
     }
 
-    private function searchTokens(string $value): array
+    private function parseProductSearchGroups(string $value): array
     {
         $value = trim($value);
         if ($value === '') {
             return array();
         }
 
-        $parts = preg_split('/[\s\-_,.;:\/\\\\|()+]+/u', mb_strtolower($value, 'UTF-8'));
-        if (!is_array($parts)) {
-            return array($value);
-        }
+        preg_match_all('/\b(sku|old|old_sku|name|nazwa|id):"([^"]+)"|\b(sku|old|old_sku|name|nazwa|id):\'([^\']+)\'|"([^"]+)"|\'([^\']+)\'|(\||\bAND\b|\bOR\b)|(\S+)/iu', $value, $matches, PREG_SET_ORDER);
+        $groups = array();
+        $current = array();
 
-        $tokens = array();
-        foreach ($parts as $part) {
-            $part = trim((string) $part);
-            if ($part === '') {
+        foreach ($matches as $match) {
+            $operator = isset($match[7]) ? mb_strtoupper((string) $match[7], 'UTF-8') : '';
+            if ($operator === 'AND') {
                 continue;
             }
-            if (!in_array($part, $tokens, true)) {
-                $tokens[] = $part;
+
+            if ($operator === 'OR' || $operator === '|') {
+                if ($current !== array()) {
+                    $groups[] = $current;
+                    $current = array();
+                }
+                continue;
+            }
+
+            $token = '';
+            $isPhrase = false;
+            if (isset($match[1], $match[2]) && $match[1] !== '' && $match[2] !== '') {
+                $token = (string) $match[1] . ':' . (string) $match[2];
+            } elseif (isset($match[3], $match[4]) && $match[3] !== '' && $match[4] !== '') {
+                $token = (string) $match[3] . ':' . (string) $match[4];
+            } elseif (isset($match[5]) && $match[5] !== '') {
+                $token = (string) $match[5];
+                $isPhrase = true;
+            } elseif (isset($match[6]) && $match[6] !== '') {
+                $token = (string) $match[6];
+                $isPhrase = true;
+            } elseif (isset($match[8])) {
+                $token = (string) $match[8];
+            }
+
+            $token = trim($token);
+            $token = trim($token, " \t\n\r\0\x0B,;.");
+            if ($token === '') {
+                continue;
+            }
+
+            $current[] = $this->normalizeProductSearchToken($token, $isPhrase);
+        }
+
+        if ($current !== array()) {
+            $groups[] = $current;
+        }
+
+        return $groups;
+    }
+
+    private function normalizeProductSearchToken(string $token, bool $isPhrase): array
+    {
+        $negated = false;
+        if (!$isPhrase && strlen($token) > 1 && ($token[0] === '!' || $token[0] === '-')) {
+            $negated = true;
+            $token = trim(substr($token, 1));
+        }
+
+        $field = '';
+        if (!$isPhrase && preg_match('/^(sku|old|old_sku|name|nazwa|id):(.+)$/iu', $token, $matches) === 1) {
+            $field = mb_strtolower((string) $matches[1], 'UTF-8');
+            if ($field === 'old') {
+                $field = 'old_sku';
+            } elseif ($field === 'nazwa') {
+                $field = 'name';
+            }
+            $token = trim((string) $matches[2]);
+        }
+
+        return array(
+            'value' => $token,
+            'field' => $field,
+            'negated' => $negated,
+            'phrase' => $isPhrase,
+        );
+    }
+
+    private function buildGlobalProductTermCondition(array &$params, array $term, string $paramPrefix): string
+    {
+        $needle = trim((string) ($term['value'] ?? ''));
+        if ($needle === '') {
+            return '';
+        }
+
+        $field = (string) ($term['field'] ?? '');
+        if ($field === 'id') {
+            if (ctype_digit($needle)) {
+                $params[$paramPrefix . '_id_exact'] = (int) $needle;
+                return 'products.id = :' . $paramPrefix . '_id_exact';
+            }
+
+            $params[$paramPrefix . '_id_like'] = '%' . $needle . '%';
+            return 'CAST(products.id AS CHAR) LIKE :' . $paramPrefix . '_id_like';
+        }
+
+        $columns = array();
+        if ($field === 'sku') {
+            $columns[] = array('type' => 'identifier', 'sql' => 'products.sku');
+        } elseif ($field === 'old_sku') {
+            $columns[] = array('type' => 'old_sku', 'sql' => 'cfv.value');
+        } elseif ($field === 'name') {
+            $columns[] = array('type' => 'text', 'sql' => 'products.product_name');
+        } else {
+            $columns[] = array('type' => 'identifier', 'sql' => 'products.sku');
+            $columns[] = array('type' => 'text', 'sql' => 'products.product_name');
+            $columns[] = array('type' => 'old_sku', 'sql' => 'cfv.value');
+        }
+
+        $parts = array();
+        foreach ($columns as $index => $column) {
+            $columnSql = (string) $column['sql'];
+            $columnType = (string) $column['type'];
+            if ($columnType === 'old_sku') {
+                $parts[] = $this->oldSkuExistsCondition($params, $needle, $paramPrefix . '_' . $index);
+            } else {
+                $parts[] = $this->searchableColumnCondition($params, $columnSql, $columnType, $needle, $paramPrefix . '_' . $index);
             }
         }
 
-        return $tokens;
+        $parts = array_values(array_filter($parts, static function (string $part): bool {
+            return $part !== '';
+        }));
+
+        return implode(' OR ', $parts);
+    }
+
+    private function oldSkuExistsCondition(array &$params, string $needle, string $paramPrefix): string
+    {
+        $condition = $this->searchableColumnCondition($params, 'cfv.value', 'identifier', $needle, $paramPrefix);
+        if ($condition === '') {
+            return '';
+        }
+
+        return 'EXISTS ('
+            . ' SELECT 1'
+            . ' FROM product_custom_field_values cfv'
+            . ' INNER JOIN product_custom_field_definitions cfd ON cfd.id = cfv.definition_id'
+            . ' WHERE cfv.product_id = products.id'
+            . '   AND cfd.slug = "old_sku"'
+            . '   AND (' . $condition . ')'
+            . ')';
+    }
+
+    private function searchableColumnCondition(array &$params, string $column, string $type, string $needle, string $paramPrefix): string
+    {
+        $params[$paramPrefix . '_like'] = '%' . $needle . '%';
+        $parts = array($column . ' LIKE :' . $paramPrefix . '_like');
+
+        $normalizedNeedle = $this->normalizePolishSearchTerm($needle);
+        if ($normalizedNeedle !== '' && $normalizedNeedle !== mb_strtolower($needle, 'UTF-8')) {
+            $params[$paramPrefix . '_normalized'] = '%' . $normalizedNeedle . '%';
+            $parts[] = $this->normalizedSearchColumnSql($column) . ' LIKE :' . $paramPrefix . '_normalized';
+        }
+
+        if ($type === 'identifier') {
+            $compactNeedle = $this->compactIdentifierSearchTerm($needle);
+            if ($compactNeedle !== '' && $compactNeedle !== mb_strtolower($needle, 'UTF-8')) {
+                $params[$paramPrefix . '_compact'] = '%' . $compactNeedle . '%';
+                $parts[] = $this->compactIdentifierColumnSql($column) . ' LIKE :' . $paramPrefix . '_compact';
+            }
+        }
+
+        return '(' . implode(' OR ', $parts) . ')';
+    }
+
+    private function compactIdentifierSearchTerm(string $value): string
+    {
+        $value = $this->normalizePolishSearchTerm($value);
+        return preg_replace('/[^a-z0-9]+/u', '', $value) ?? '';
+    }
+
+    private function compactIdentifierColumnSql(string $column): string
+    {
+        return 'REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE('
+            . $this->normalizedSearchColumnSql($column)
+            . ', "-", ""), "_", ""), " ", ""), "/", ""), "\\\\", ""), ".", ""), ",", ""), ":", "")';
     }
 
     public function searchForAllegroSku(string $query = '', string $offerName = '', int $limit = 12): array
