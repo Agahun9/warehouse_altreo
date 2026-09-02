@@ -178,10 +178,12 @@
           <code>trim</code> – usunięcie spacji z początku i końca, <code>date:Y-m-d</code> – format daty,
           <code>number:2:,: </code> – format liczbowy: 2 miejsca, przecinek dziesiętny, spacja tysięczna,
           <code>length:2000</code> – obcięcie tekstu do maksymalnie 2000 znaków.
+          Typ <strong>Warunek</strong> pozwala wpisać wartość zależną od pola, np. jeśli <code>MONITOR: nazwa</code>
+          zawiera <code>24</code>, wpisz kategorię zestawu, w przeciwnym razie inną wartość.
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th style="width:45px"></th><th>Nagłówek</th><th style="width:120px">Typ</th><th>Źródło / wartość stała</th><th style="width:190px">Formatowanie</th><th style="width:70px"></th></tr></thead>
+            <thead class="table-light"><tr><th style="width:45px"></th><th>Nagłówek</th><th style="width:130px">Typ</th><th>Źródło / wartość / warunek</th><th style="width:190px">Formatowanie</th><th style="width:70px"></th></tr></thead>
             <tbody id="csvColumnsBody"></tbody>
           </table>
         </div>
@@ -235,7 +237,13 @@
     if (value && !Object.prototype.hasOwnProperty.call(sourceOptions, value)) {
       const legacyOption = document.createElement('option');
       legacyOption.value = value;
-      legacyOption.textContent = 'Aktualnie zapisane źródło: ' + value;
+      if (value.startsWith('mediamarkt_param:')) {
+        legacyOption.textContent = 'MediaMarkt - PC parametr: ' + value.slice('mediamarkt_param:'.length);
+      } else if (value.startsWith('mediamarkt_set_pc_param:')) {
+        legacyOption.textContent = 'MediaMarkt - zestaw PC parametr: ' + value.slice('mediamarkt_set_pc_param:'.length);
+      } else {
+        legacyOption.textContent = 'Aktualnie zapisane źródło: ' + value;
+      }
       legacyOption.selected = true;
       select.appendChild(legacyOption);
     }
@@ -299,16 +307,31 @@
     return wrapper;
   }
 
+  function hiddenInput(name, value = '') {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    return input;
+  }
+
+  function appendEmptyConditionInputs(cell) {
+    cell.appendChild(hiddenInput('column_condition_source[]'));
+    cell.appendChild(hiddenInput('column_condition_operator[]'));
+    cell.appendChild(hiddenInput('column_condition_value[]'));
+    cell.appendChild(hiddenInput('column_condition_else_value[]'));
+  }
+
   function addRow(column = {header: '', type: 'source', value: '', format: ''}) {
     const row = document.createElement('tr');
     row.innerHTML = '<td class="text-center text-nowrap"><button type="button" class="btn btn-sm btn-link p-0 move-up" title="W górę">↑</button> <button type="button" class="btn btn-sm btn-link p-0 move-down" title="W dół">↓</button></td>'
       + '<td><input class="form-control form-control-sm" name="column_header[]" required></td>'
-      + '<td><select class="form-select form-select-sm type-select" name="column_type[]"><option value="source">Źródło</option><option value="static">Stała</option><option value="template">Łączenie pól</option></select></td>'
+      + '<td><select class="form-select form-select-sm type-select" name="column_type[]"><option value="source">Źródło</option><option value="static">Stała</option><option value="template">Łączenie pól</option><option value="conditional">Warunek</option></select></td>'
       + '<td class="value-cell"></td>'
       + '<td><input type="text" class="form-control form-control-sm format-input" name="column_format[]" placeholder="np. upper, date:Y-m-d" title="upper, lower, ucfirst, trim, date:Y-m-d, number:2:,: , length:2000"></td>'
       + '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger remove-column">×</button></td>';
     row.querySelector('input').value = column.header || '';
-    row.querySelector('.type-select').value = ['source', 'static', 'template'].includes(column.type) ? column.type : 'source';
+    row.querySelector('.type-select').value = ['source', 'static', 'template', 'conditional'].includes(column.type) ? column.type : 'source';
     row.querySelector('.format-input').value = column.format || '';
     body.appendChild(row);
 
@@ -323,6 +346,7 @@
         input.rows = 1;
         input.value = column.type === 'static' ? (column.value || '') : '';
         cell.appendChild(input);
+        appendEmptyConditionInputs(cell);
       } else if (selectedType === 'template') {
         const wrapper = document.createElement('div');
         wrapper.className = 'row g-2';
@@ -368,8 +392,70 @@
           textarea.focus();
         });
         cell.appendChild(wrapper);
+        appendEmptyConditionInputs(cell);
+      } else if (selectedType === 'conditional') {
+        const condition = column.type === 'conditional' && column.condition ? column.condition : {};
+        const wrapper = document.createElement('div');
+        wrapper.className = 'row g-2';
+        const sourceCol = document.createElement('div');
+        sourceCol.className = 'col-lg-4';
+        const sourceLabel = document.createElement('label');
+        sourceLabel.className = 'form-label small mb-1';
+        sourceLabel.textContent = 'Sprawdź pole';
+        sourceCol.appendChild(sourceLabel);
+        sourceCol.appendChild(searchableSourcePicker(condition.source || 'component.MONITOR.name', 'column_condition_source[]'));
+
+        const operatorCol = document.createElement('div');
+        operatorCol.className = 'col-lg-2';
+        operatorCol.innerHTML = '<label class="form-label small mb-1">Warunek</label>';
+        const operatorSelect = document.createElement('select');
+        operatorSelect.className = 'form-select form-select-sm';
+        operatorSelect.name = 'column_condition_operator[]';
+        [
+          ['contains', 'zawiera'],
+          ['not_contains', 'nie zawiera'],
+          ['equals', 'równe'],
+          ['not_equals', 'różne'],
+          ['empty', 'puste'],
+          ['not_empty', 'niepuste'],
+        ].forEach(function(item) {
+          const option = document.createElement('option');
+          option.value = item[0];
+          option.textContent = item[1];
+          option.selected = item[0] === (condition.operator || 'contains');
+          operatorSelect.appendChild(option);
+        });
+        operatorCol.appendChild(operatorSelect);
+
+        const matchCol = document.createElement('div');
+        matchCol.className = 'col-lg-2';
+        matchCol.innerHTML = '<label class="form-label small mb-1">Tekst</label><input type="text" class="form-control form-control-sm" name="column_condition_value[]" placeholder="np. 24">';
+        matchCol.querySelector('input').value = condition.value || '';
+
+        const thenCol = document.createElement('div');
+        thenCol.className = 'col-lg-2';
+        thenCol.innerHTML = '<label class="form-label small mb-1">Jeśli TAK</label><textarea class="form-control form-control-sm" name="column_value[]" rows="1" placeholder="np. Zestaw"></textarea>';
+        thenCol.querySelector('textarea').value = column.value || '';
+
+        const elseCol = document.createElement('div');
+        elseCol.className = 'col-lg-2';
+        elseCol.innerHTML = '<label class="form-label small mb-1">Jeśli NIE</label><textarea class="form-control form-control-sm" name="column_condition_else_value[]" rows="1" placeholder="np. Komputer"></textarea>';
+        elseCol.querySelector('textarea').value = condition.else_value || '';
+
+        const helpCol = document.createElement('div');
+        helpCol.className = 'col-12';
+        helpCol.innerHTML = '<div class="form-text">Przykład: pole <code>MONITOR: nazwa</code>, warunek <code>zawiera</code>, tekst <code>24</code>. Eksport wpisze wartość z „Jeśli TAK”, a w przeciwnym razie z „Jeśli NIE”.</div>';
+
+        wrapper.appendChild(sourceCol);
+        wrapper.appendChild(operatorCol);
+        wrapper.appendChild(matchCol);
+        wrapper.appendChild(thenCol);
+        wrapper.appendChild(elseCol);
+        wrapper.appendChild(helpCol);
+        cell.appendChild(wrapper);
       } else {
         cell.appendChild(searchableSourcePicker(column.type === 'source' ? (column.value || '') : 'product.name'));
+        appendEmptyConditionInputs(cell);
       }
     }
     renderValue();

@@ -314,6 +314,17 @@
                   class="bi bi-square"></i> Odznacz wszystkie</button>
               <a href="{$baseUrl}?controller=computers&action=exportcomponentsxml" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-xml me-1"></i>Eksport XML (wszystkie)</a>
               <a href="{$baseUrl}?controller=computers&action=exportcomponentscsv" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-csv me-1"></i>Eksport CSV (wszystkie)</a>
+              <div class="dropdown">
+                <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                  <i class="bi bi-filetype-json me-1"></i>JSON AI (wszystkie)
+                </button>
+                <ul class="dropdown-menu">
+                  <li><a class="dropdown-item" href="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=mediamarkt">MediaMarkt — komponenty + katalog + instrukcja</a></li>
+                  <li><a class="dropdown-item" href="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=eu">EU — komponenty + katalog + instrukcja</a></li>
+                  <li><a class="dropdown-item" href="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=morele">Morele — komponenty + katalog + instrukcja</a></li>
+                  <li><a class="dropdown-item" href="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=empik">Empik — komponenty + katalog + instrukcja</a></li>
+                </ul>
+              </div>
               <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#componentsImportModal"><i class="bi bi-upload me-1"></i>Import</button>
             </div>
           </div>
@@ -348,6 +359,15 @@
                   akcję</button>
                 <button type="submit" id="exportComponentsXmlBtn" formaction="{$baseUrl}?controller=computers&action=exportcomponentsxml" formmethod="post" class="btn btn-outline-primary ms-2"><i class="bi bi-filetype-xml me-1"></i>Eksport zaznaczonych (XML)</button>
                 <button type="submit" id="exportComponentsCsvBtn" formaction="{$baseUrl}?controller=computers&action=exportcomponentscsv" formmethod="post" class="btn btn-outline-primary"><i class="bi bi-filetype-csv me-1"></i>Eksport zaznaczonych (CSV)</button>
+                <div class="dropdown">
+                  <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-filetype-json me-1"></i>JSON AI zaznaczonych</button>
+                  <ul class="dropdown-menu">
+                    <li><button type="submit" class="dropdown-item export-components-json-btn" formaction="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=mediamarkt" formmethod="post">MediaMarkt</button></li>
+                    <li><button type="submit" class="dropdown-item export-components-json-btn" formaction="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=eu" formmethod="post">EU</button></li>
+                    <li><button type="submit" class="dropdown-item export-components-json-btn" formaction="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=morele" formmethod="post">Morele</button></li>
+                    <li><button type="submit" class="dropdown-item export-components-json-btn" formaction="{$baseUrl}?controller=computers&amp;action=exportcomponentsjson&amp;marketplace=empik" formmethod="post">Empik</button></li>
+                  </ul>
+                </div>
               </div>
               <div class="component-filters mb-2" aria-label="Filtry komponentów">
                 <div class="row g-2 align-items-center">
@@ -597,17 +617,21 @@
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zamknij"></button>
           </div>
           <div class="modal-body">
-            <label for="componentsImportFile" class="form-label">Plik XML lub CSV (z eksportu komponentów):</label>
-            <input type="file" id="componentsImportFile" name="components_import_file" accept=".xml,.csv" class="form-control" required />
+            <label for="componentsImportFile" class="form-label">Plik JSON, XML lub CSV (z eksportu komponentów):</label>
+            <input type="file" id="componentsImportFile" name="components_import_file" accept=".json,.xml,.csv,application/json" class="form-control" required />
             <p class="mt-3 mb-0 text-muted small">
               Rekordy z ID istniejącego komponentu <strong>zaktualizują</strong> (podmienią) jego dane.
               Rekordy bez ID lub z nieznanym ID zostaną <strong>dodane</strong> jako nowe komponenty.
               Puste kolumny w pliku nie kasują istniejących wartości tylko wtedy, gdy kolumna w ogóle nie występuje w pliku.
+              W formacie JSON każda platforma ma osobną mapę: EU, Morele, Empik, MediaMarkt PC i MediaMarkt zestaw PC.
+              Import pliku „JSON AI” aktualizuje wyłącznie parametry — nazwa, kategoria i specyfikacja służą tylko do identyfikacji podczas researchu.
+              Katalog parametrów i instrukcja AI są częścią tego samego pliku i podczas importu są bezpiecznie pomijane.
+              Po wybraniu pliku JSON zobaczysz podsumowanie zmian i będziesz mógł poprawić parametry przed ich zapisaniem.
             </p>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-            <button type="submit" class="btn btn-success"><i class="bi bi-upload me-1"></i>Importuj</button>
+            <button type="submit" class="btn btn-success"><i class="bi bi-upload me-1"></i>Wczytaj plik</button>
           </div>
         </form>
       </div>
@@ -1301,7 +1325,7 @@
         bulkForm.addEventListener('submit', function(e) {
           const submitter = e.submitter;
           const checked = Array.from(document.querySelectorAll('input.component_checkbox:checked'));
-          if (submitter && (submitter.id === 'exportComponentsXmlBtn' || submitter.id === 'exportComponentsCsvBtn')) {
+          if (submitter && (submitter.id === 'exportComponentsXmlBtn' || submitter.id === 'exportComponentsCsvBtn' || submitter.classList.contains('export-components-json-btn'))) {
             if (checked.length === 0) {
               e.preventDefault();
               alert('Zaznacz przynajmniej jeden komponent do eksportu.');
@@ -1386,19 +1410,57 @@
         }
       }
 
-      // Kliknięcie w wiersz zaznacza checkbox
+      const componentCheckboxes = Array.from(document.querySelectorAll('.component_checkbox'));
+      let selectionAnchor = null;
+
+      function visibleComponentCheckboxes() {
+        return componentCheckboxes.filter(function(checkbox) {
+          const row = checkbox.closest('.component-data-row');
+          return row && !row.classList.contains('d-none');
+        });
+      }
+
+      function selectCheckboxRange(target, checked) {
+        const visible = visibleComponentCheckboxes();
+        const start = visible.indexOf(selectionAnchor);
+        const end = visible.indexOf(target);
+        if (start < 0 || end < 0) {
+          target.checked = checked;
+          return;
+        }
+
+        const from = Math.min(start, end);
+        const to = Math.max(start, end);
+        visible.slice(from, to + 1).forEach(function(checkbox) {
+          checkbox.checked = checked;
+        });
+      }
+
+      // Kliknięcie w wiersz zaznacza checkbox; Shift zaznacza cały widoczny zakres.
       document.querySelectorAll('.clickable-row').forEach(row => {
         row.addEventListener('click', function(e) {
           if (!e.target.closest('a, button, input, details, summary')) {
             const cb = row.querySelector('.component_checkbox');
-            cb.checked = !cb.checked;
+            const checked = !cb.checked;
+            if (e.shiftKey && selectionAnchor) {
+              selectCheckboxRange(cb, checked);
+            } else {
+              cb.checked = checked;
+            }
+            selectionAnchor = cb;
             updateTotal();
           }
         });
       });
 
-      // Kliknięcie samego checkboxa też aktualizuje sumę
-      document.querySelectorAll('.component_checkbox').forEach(cb => {
+      // Shift działa także przy kliknięciu bezpośrednio w checkbox.
+      componentCheckboxes.forEach(cb => {
+        cb.addEventListener('click', function(event) {
+          if (event.shiftKey && selectionAnchor) {
+            selectCheckboxRange(cb, cb.checked);
+          }
+          selectionAnchor = cb;
+        });
         cb.addEventListener('change', updateTotal);
       });
 
@@ -1406,6 +1468,7 @@
       const checkAll = document.getElementById('check_all');
       checkAll.addEventListener('change', function() {
         document.querySelectorAll('.component_checkbox').forEach(cb => cb.checked = checkAll.checked);
+        selectionAnchor = null;
         updateTotal();
       });
     });

@@ -56,6 +56,12 @@ class ComputersController extends Controller
     /** @var array<string, array<string, bool>> */
     private $imageDirIndexCache = array();
 
+    /** @var array<string, array>|null */
+    private $computerAllegroEuParameterDefinitions = null;
+
+    /** @var array<string>|null */
+    private $computerMediaMarktCsvParameterNames = null;
+
     public function __construct()
     {
         $this->ensureSchema();
@@ -999,6 +1005,23 @@ class ComputersController extends Controller
         $this->streamComponentsCsv($componentIds);
     }
 
+    public function exportcomponentsjson(): void
+    {
+        $this->requireModule('computers');
+        $componentIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->input('component_ids', array())))));
+        $marketplace = strtolower(trim((string) $this->input('marketplace', '')));
+        if (in_array($marketplace, array('eu', 'morele', 'empik', 'mediamarkt'), true)) {
+            $this->streamComponentsMarketplaceJson($componentIds, $marketplace);
+        }
+        $this->streamComponentsJson($componentIds);
+    }
+
+    public function exportmediamarktparametersjson(): void
+    {
+        $this->requireModule('computers');
+        $this->streamMediaMarktParametersJson();
+    }
+
     public function importcomponents(): void
     {
         $this->requireModuleWrite('computers');
@@ -1007,7 +1030,13 @@ class ComputersController extends Controller
         }
 
         try {
-            $result = $this->importComponentsFile();
+            $import = $this->readComponentsImportFile();
+            if ($import['extension'] === 'json') {
+                $token = $this->storePendingComponentImport($import['records'], $import['filename']);
+                $this->redirect('./index.php?controller=computers&action=componentsimportpreview&token=' . rawurlencode($token));
+            }
+
+            $result = $this->applyComponentImportRecords($import['records']);
             $message = 'Import zakonczony. Zaktualizowano: ' . $result['updated'] . ', dodano: ' . $result['created'] . '.';
             if ($result['skipped'] > 0) {
                 $message .= ' Pominieto rekordow: ' . $result['skipped'] . '.';
@@ -1018,6 +1047,80 @@ class ComputersController extends Controller
         }
 
         $this->redirect('./index.php?controller=computers&action=components');
+    }
+
+    public function componentsimportpreview(): void
+    {
+        $currentUser = $this->requireModuleWrite('computers');
+        $token = trim((string) $this->input('token', ''));
+        $pending = $this->pendingComponentImport($token);
+        if ($pending === null) {
+            $this->setFlash('error', json_encode(array('Podglad importu wygasl albo nie istnieje. Wybierz plik ponownie.')));
+            $this->redirect('./index.php?controller=computers&action=components');
+        }
+
+        $editorOverrides = $this->isPost() ? (array) $this->input('parameter_json', array()) : array();
+        $selectedOverrides = $this->isPost() ? (array) $this->input('apply_profiles', array()) : null;
+        $skippedParameterOverrides = $this->isPost() ? (array) $this->input('skip_parameters', array()) : array();
+        $this->renderComponentImportPreview(
+            $currentUser,
+            $token,
+            $pending,
+            array(),
+            $editorOverrides,
+            $selectedOverrides,
+            $skippedParameterOverrides
+        );
+    }
+
+    public function applycomponentsimport(): void
+    {
+        $currentUser = $this->requireModuleWrite('computers');
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=computers&action=components');
+        }
+
+        $token = trim((string) $this->input('token', ''));
+        $pending = $this->pendingComponentImport($token);
+        if ($pending === null) {
+            $this->setFlash('error', json_encode(array('Podglad importu wygasl albo nie istnieje. Wybierz plik ponownie.')));
+            $this->redirect('./index.php?controller=computers&action=components');
+        }
+
+        $editors = (array) $this->input('parameter_json', array());
+        $selectedProfiles = (array) $this->input('apply_profiles', array());
+        $skippedParameters = (array) $this->input('skip_parameters', array());
+
+        try {
+            $records = $this->editedComponentImportRecords(
+                (array) ($pending['records'] ?? array()),
+                $editors,
+                $selectedProfiles,
+                $skippedParameters
+            );
+            if ($records === array()) {
+                throw new RuntimeException('Zaznacz przynajmniej jedna mape parametrow do zapisania.');
+            }
+
+            $result = $this->applyComponentImportRecords($records);
+            $this->removePendingComponentImport($token);
+            $message = 'Import JSON zatwierdzony. Zaktualizowano komponentow: ' . $result['updated'] . '.';
+            if ($result['skipped'] > 0) {
+                $message .= ' Pominieto: ' . $result['skipped'] . '.';
+            }
+            $this->setFlash('success', $message);
+            $this->redirect('./index.php?controller=computers&action=components');
+        } catch (Throwable $exception) {
+            $this->renderComponentImportPreview(
+                $currentUser,
+                $token,
+                $pending,
+                array($exception->getMessage()),
+                $editors,
+                $selectedProfiles,
+                $skippedParameters
+            );
+        }
     }
 
     private function productsRedirectUrl(): string
@@ -1441,7 +1544,10 @@ class ComputersController extends Controller
 
             foreach ($this->decodeJsonMap((string) ($component['parameters_eu'] ?? '')) as $name => $value) {
                 if (!array_key_exists($name, $allegroParameters)) {
-                    $allegroParameters[$name] = $value;
+                    $parameterId = trim((string) (explode('|', (string) $name)[0] ?? ''));
+                    $allegroParameters[$name] = $parameterId !== ''
+                        ? $this->formatComputerAllegroEuParameterValue($parameterId, $value)
+                        : $value;
                 }
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $name => $value) {
@@ -1463,7 +1569,7 @@ class ComputersController extends Controller
 
         foreach ($allegroParameters as $name => $value) {
             $label = trim((string) $name);
-            $formattedValue = $this->computerTitleParameterValue($value);
+            $formattedValue = is_string($value) ? trim($value) : $this->computerTitleParameterValue($value);
             if ($label !== '' && $formattedValue !== '') {
                 $allegroParameterLines[] = $label . ': ' . $formattedValue;
             }
@@ -2363,7 +2469,391 @@ class ComputersController extends Controller
         $this->streamCsv($filename, $columns, $rows);
     }
 
-    private function importComponentsFile(): array
+    private function streamComponentsMarketplaceJson(array $componentIds, string $marketplace): void
+    {
+        $marketplaceLabels = array(
+            'eu' => 'EU',
+            'morele' => 'Morele',
+            'empik' => 'Empik',
+            'mediamarkt' => 'MediaMarkt',
+        );
+        $parameterFields = array(
+            'eu' => array('eu' => 'parameters_eu'),
+            'morele' => array('morele' => 'parameters_morele'),
+            'empik' => array('empik' => 'parameters_empik'),
+            'mediamarkt' => array(
+                'mediamarkt_pc' => 'parameters_mediamarkt',
+                'mediamarkt_set_pc' => 'parameters_mediamarkt_set_pc',
+            ),
+        );
+        if (!isset($marketplaceLabels[$marketplace], $parameterFields[$marketplace])) {
+            throw new RuntimeException('Nieznany kanal eksportu JSON AI.');
+        }
+
+        $components = array();
+        foreach ($this->componentsForExport($componentIds) as $component) {
+            if (!is_array($component)) {
+                continue;
+            }
+            $component = $this->normalizeComponentTextFields($component);
+            $parameters = array();
+            foreach ($parameterFields[$marketplace] as $jsonKey => $column) {
+                $parameters[$jsonKey] = $this->componentParameterJsonObject((string) ($component[$column] ?? ''));
+            }
+            $components[] = array(
+                'id' => (int) ($component['id'] ?? 0),
+                'category' => (string) ($component['category'] ?? ''),
+                'name' => (string) ($component['name'] ?? ''),
+                'name_title' => (string) ($component['name_title'] ?? ''),
+                'name_spec' => (string) ($component['name_spec'] ?? ''),
+                'parameters' => $parameters,
+            );
+        }
+
+        $payload = array(
+            '_meta' => array(
+                'format' => 'altreo-components-ai',
+                'version' => 2,
+                'marketplace' => $marketplace,
+                'marketplace_label' => $marketplaceLabels[$marketplace],
+                'generated_at' => date(DATE_ATOM),
+                'component_count' => count($components),
+                'instructions' => $this->marketplaceAiInstructions($marketplace),
+            ),
+            'parameter_catalog' => $this->marketplaceAiParameterCatalog($marketplace),
+            'components' => $components,
+        );
+
+        $this->streamJsonDownload(
+            'komponenty_ai_' . $marketplace . '_' . date('Y-m-d_His') . '.json',
+            $payload
+        );
+    }
+
+    private function marketplaceAiInstructions(string $marketplace): array
+    {
+        $mapNames = $marketplace === 'mediamarkt'
+            ? 'parameters.mediamarkt_pc oraz parameters.mediamarkt_set_pc'
+            : 'parameters.' . $marketplace;
+        $valueRule = 'Dla pola tekstowego wpisz potwierdzona wartosc bez dopisywania nieznanych danych.';
+        if ($marketplace === 'eu') {
+            $valueRule = 'Dla slownika wpisuj allowed_values[].id; dla liczby wpisuj sama liczbe w jednostce wskazanej w katalogu.';
+        } elseif ($marketplace === 'morele') {
+            $valueRule = 'Wartosc Morele musi miec format z katalogu: nazwa_parametru:allowed_values[].value.';
+        } elseif (in_array($marketplace, array('empik', 'mediamarkt'), true)) {
+            $valueRule = 'Dla slownika wpisuj etykiete allowed_values[].value, nie techniczne ID opcji.';
+        }
+
+        return array(
+            'CEL: uzupelnij i popraw parametry komponentow dla wskazanego marketplace na podstawie wiarygodnych danych technicznych.',
+            'Najpierw rozpoznaj dokladny model z pol name i name_spec, a nastepnie sprawdz oficjalna strone producenta lub dokumentacje producenta.',
+            'Edytuj wylacznie mapy ' . $mapNames . '. Nie zmieniaj _meta, parameter_catalog, id, category, name, name_title ani name_spec.',
+            'Dodawaj tylko parametry istotne dla danego komponentu. Klucz musi byc dokladnie rowny parameter_catalog.profiles.*.parameters[].key.',
+            $valueRule,
+            'Popraw takze istniejace wartosci, jezeli sa skopiowane z innego modelu albo sprzeczne ze specyfikacja producenta.',
+            'Nie zgaduj. Jezeli model jest niejednoznaczny lub wartosci nie da sie potwierdzic, zachowaj dotychczasowa wartosc i nie dodawaj nowej.',
+            'Nie usuwaj potwierdzonych wartosci. Puste mapy pozostaw puste, gdy brak danych identyfikujacych konkretny produkt.',
+            'Zwracaj caly plik JSON w tej samej strukturze, bez Markdown, komentarzy i tekstu poza JSON-em. Plik ma byc gotowy do importu w CRM.',
+        );
+    }
+
+    private function marketplaceAiParameterCatalog(string $marketplace): array
+    {
+        $profiles = array();
+        if ($marketplace === 'eu') {
+            $payload = $this->loadEuParameterPayload('');
+            $profiles['eu'] = $this->aiParameterCatalogProfile(
+                $payload,
+                $this->normalizeEuAiParameterDefinitions((array) ($payload['items'] ?? array())),
+                'parameters.eu'
+            );
+        } elseif ($marketplace === 'morele') {
+            $payload = $this->loadMoreleParameterPayload('');
+            $items = (array) ($payload['items']['category_characteristics'] ?? array());
+            $profiles['morele'] = $this->aiParameterCatalogProfile(
+                $payload,
+                $this->normalizeMoreleAiParameterDefinitions($items),
+                'parameters.morele'
+            );
+        } elseif ($marketplace === 'empik') {
+            $payload = $this->loadEmpikParameterPayload('');
+            $profiles['empik'] = $this->aiParameterCatalogProfile(
+                $payload,
+                $this->normalizeLabelAiParameterDefinitions((array) ($payload['items'] ?? array())),
+                'parameters.empik'
+            );
+        } elseif ($marketplace === 'mediamarkt') {
+            foreach (array('pc' => 'mediamarkt_pc', 'set_pc' => 'mediamarkt_set_pc') as $profile => $jsonKey) {
+                $payload = $this->loadMediaMarktParameterPayload('', $profile);
+                $profiles[$jsonKey] = $this->aiParameterCatalogProfile(
+                    $payload,
+                    $this->normalizeLabelAiParameterDefinitions((array) ($payload['items'] ?? array())),
+                    'parameters.' . $jsonKey
+                );
+            }
+        }
+
+        return array(
+            'marketplace' => $marketplace,
+            'profiles' => $profiles,
+        );
+    }
+
+    private function aiParameterCatalogProfile(array $payload, array $parameters, string $componentJsonField): array
+    {
+        return array(
+            'label' => (string) ($payload['meta']['label'] ?? ''),
+            'component_json_field' => $componentJsonField,
+            'category_id' => (string) ($payload['meta']['category_id'] ?? ''),
+            'source' => (string) ($payload['meta']['source'] ?? ''),
+            'error' => (string) ($payload['error'] ?? ''),
+            'parameter_count' => count($parameters),
+            'parameters' => $parameters,
+        );
+    }
+
+    private function normalizeEuAiParameterDefinitions(array $items): array
+    {
+        $result = array();
+        foreach ($items as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+            $id = trim((string) ($definition['id'] ?? ''));
+            $name = trim((string) ($definition['name'] ?? $id));
+            $type = strtolower(trim((string) ($definition['type'] ?? 'string')));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $typeCode = in_array($type, array('dictionary', 'multidictionary', 'boolean'), true)
+                ? '3'
+                : (in_array($type, array('integer', 'float'), true) ? '1' : '2');
+            $result[] = array(
+                'id' => $id,
+                'key' => $id . '|' . $typeCode . '|',
+                'name' => $name,
+                'type' => $type,
+                'unit' => (string) ($definition['unit'] ?? ''),
+                'required' => !empty($definition['required']),
+                'multiple' => !empty($definition['multiple']),
+                'allowed_values' => $this->aiAllowedValues((array) ($definition['dictionary'] ?? array())),
+            );
+        }
+        return $result;
+    }
+
+    private function normalizeMoreleAiParameterDefinitions(array $items): array
+    {
+        $result = array();
+        foreach ($items as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+            $id = trim((string) ($definition['characteristics_id'] ?? ''));
+            $name = trim((string) ($definition['characteristics_name'] ?? $id));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $allowedValues = array();
+            foreach ((array) ($definition['characteristics_values'] ?? array()) as $option) {
+                if (!is_array($option)) {
+                    continue;
+                }
+                $optionId = trim((string) ($option['characteristic_value_id'] ?? $option['id'] ?? ''));
+                $optionValue = trim((string) ($option['characteristic_value_name'] ?? $option['name'] ?? $optionId));
+                if ($optionId !== '' || $optionValue !== '') {
+                    $allowedValues[] = array('id' => $optionId, 'value' => $optionValue);
+                }
+            }
+            $result[] = array(
+                'id' => $id,
+                'key' => $id . '|99|',
+                'name' => $name,
+                'group' => (string) ($definition['characteristics_group_name'] ?? ''),
+                'type' => 'dictionary',
+                'value_format' => $name . ':{allowed_values.value}',
+                'allowed_values' => $allowedValues,
+            );
+        }
+        return $result;
+    }
+
+    private function normalizeLabelAiParameterDefinitions(array $items): array
+    {
+        $result = array();
+        foreach ($items as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+            $id = trim((string) ($definition['id'] ?? ''));
+            $name = trim((string) ($definition['name'] ?? $id));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $result[] = array(
+                'id' => $id,
+                'key' => $name,
+                'name' => $name,
+                'type' => (string) ($definition['type'] ?? 'text'),
+                'required' => !empty($definition['required']),
+                'multiple' => !empty($definition['multiple']),
+                'option_lookup' => !empty($definition['option_lookup']),
+                'allowed_values' => $this->aiAllowedValues((array) ($definition['dictionary'] ?? array())),
+            );
+        }
+        return $result;
+    }
+
+    private function aiAllowedValues(array $dictionary): array
+    {
+        $result = array();
+        foreach ($dictionary as $option) {
+            if (!is_array($option)) {
+                continue;
+            }
+            $id = trim((string) ($option['id'] ?? ''));
+            $value = trim((string) ($option['value'] ?? $id));
+            if ($id !== '' || $value !== '') {
+                $result[] = array('id' => $id, 'value' => $value);
+            }
+        }
+        return $result;
+    }
+
+    private function streamComponentsJson(array $componentIds): void
+    {
+        $components = array();
+        foreach ($this->componentsForExport($componentIds) as $component) {
+            if (!is_array($component)) {
+                continue;
+            }
+
+            $component = $this->normalizeComponentTextFields($component);
+            $components[] = array(
+                'id' => (int) ($component['id'] ?? 0),
+                'category' => (string) ($component['category'] ?? ''),
+                'name' => (string) ($component['name'] ?? ''),
+                'name_title' => (string) ($component['name_title'] ?? ''),
+                'name_spec' => (string) ($component['name_spec'] ?? ''),
+                'parameters' => array(
+                    'eu' => $this->componentParameterJsonObject((string) ($component['parameters_eu'] ?? '')),
+                    'morele' => $this->componentParameterJsonObject((string) ($component['parameters_morele'] ?? '')),
+                    'empik' => $this->componentParameterJsonObject((string) ($component['parameters_empik'] ?? '')),
+                    'mediamarkt_pc' => $this->componentParameterJsonObject((string) ($component['parameters_mediamarkt'] ?? '')),
+                    'mediamarkt_set_pc' => $this->componentParameterJsonObject((string) ($component['parameters_mediamarkt_set_pc'] ?? '')),
+                ),
+            );
+        }
+
+        $payload = array(
+            '_meta' => array(
+                'format' => 'altreo-components-ai',
+                'version' => 1,
+                'generated_at' => date(DATE_ATOM),
+                'component_count' => count($components),
+                'instructions' => array(
+                    'Uzupelnij wylacznie mapy w polu parameters na podstawie wiarygodnych zrodel internetowych.',
+                    'Nie zmieniaj id, category, name, name_title ani name_spec.',
+                    'Zachowaj dokladne klucze parametrow. Dla MediaMarkt uzyj pola key z osobnego katalogu parametrow JSON.',
+                    'Nie zgaduj wartosci. Gdy danych nie da sie potwierdzic, pozostaw dotychczasowa wartosc albo puste pole.',
+                ),
+            ),
+            'components' => $components,
+        );
+
+        $this->streamJsonDownload('komponenty_ai_' . date('Y-m-d_His') . '.json', $payload);
+    }
+
+    private function componentParameterJsonObject(string $json)
+    {
+        $map = $this->decodeJsonMap($json);
+        return $map === array() ? (object) array() : $map;
+    }
+
+    private function streamMediaMarktParametersJson(): void
+    {
+        $profiles = array();
+        foreach (array('pc' => 'mediamarkt_pc', 'set_pc' => 'mediamarkt_set_pc') as $profile => $jsonKey) {
+            $payload = $this->loadMediaMarktParameterPayload('', $profile);
+            $parameters = array();
+
+            foreach ((array) ($payload['items'] ?? array()) as $definition) {
+                if (!is_array($definition)) {
+                    continue;
+                }
+
+                $id = trim((string) ($definition['id'] ?? ''));
+                $name = trim((string) ($definition['name'] ?? $id));
+                if ($id === '' || $name === '') {
+                    continue;
+                }
+
+                $dictionary = array();
+                foreach ((array) ($definition['dictionary'] ?? array()) as $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $optionId = trim((string) ($option['id'] ?? ''));
+                    $optionValue = trim((string) ($option['value'] ?? $optionId));
+                    if ($optionId !== '' || $optionValue !== '') {
+                        $dictionary[] = array('id' => $optionId, 'value' => $optionValue);
+                    }
+                }
+
+                $parameters[] = array(
+                    'id' => $id,
+                    'key' => $name,
+                    'name' => $name,
+                    'type' => (string) ($definition['type'] ?? 'text'),
+                    'required' => !empty($definition['required']),
+                    'multiple' => !empty($definition['multiple']),
+                    'option_lookup' => !empty($definition['option_lookup']),
+                    'allowed_values' => $dictionary,
+                );
+            }
+
+            $profiles[$jsonKey] = array(
+                'label' => (string) ($payload['meta']['label'] ?? ($profile === 'set_pc' ? 'MediaMarkt - zestaw PC' : 'MediaMarkt - PC')),
+                'component_json_field' => 'parameters.' . $jsonKey,
+                'category_id' => (string) ($payload['meta']['category_id'] ?? ''),
+                'error' => (string) ($payload['error'] ?? ''),
+                'parameters' => $parameters,
+            );
+        }
+
+        $this->streamJsonDownload(
+            'parametry_mediamarkt_' . date('Y-m-d_His') . '.json',
+            array(
+                '_meta' => array(
+                    'format' => 'altreo-mediamarkt-parameter-catalog',
+                    'version' => 1,
+                    'generated_at' => date(DATE_ATOM),
+                    'instructions' => array(
+                        'W pliku komponentow uzywaj wartosci key jako dokladnej nazwy klucza parametru.',
+                        'Parametry obu profili sa niezalezne i musza trafic do odpowiadajacych im map.',
+                        'Gdy option_lookup ma wartosc true, lista allowed_values moze byc niepelna i wartosc trzeba potwierdzic w MediaMarkt.',
+                    ),
+                ),
+                'profiles' => $profiles,
+            )
+        );
+    }
+
+    private function streamJsonDownload(string $filename, array $payload): void
+    {
+        $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($json)) {
+            throw new RuntimeException('Nie udalo sie przygotowac pliku JSON.');
+        }
+
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('X-Content-Type-Options: nosniff');
+        echo $json;
+        exit;
+    }
+
+    private function readComponentsImportFile(): array
     {
         if (!isset($_FILES['components_import_file']) || (int) ($_FILES['components_import_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             throw new RuntimeException('Blad przesylania pliku importu.');
@@ -2380,15 +2870,21 @@ class ComputersController extends Controller
             $records = $this->parseComponentsXmlFile($tmpPath);
         } elseif ($extension === 'csv') {
             $records = $this->parseComponentsCsvFile($tmpPath);
+        } elseif ($extension === 'json') {
+            $records = $this->parseComponentsJsonFile($tmpPath);
         } else {
-            throw new RuntimeException('Obslugiwane sa tylko pliki .xml oraz .csv.');
+            throw new RuntimeException('Obslugiwane sa tylko pliki .xml, .csv oraz .json.');
         }
 
         if ($records === array()) {
             throw new RuntimeException('Plik nie zawiera zadnych rekordow do importu.');
         }
 
-        return $this->applyComponentImportRecords($records);
+        return array(
+            'extension' => $extension,
+            'filename' => basename((string) ($file['name'] ?? ('import.' . $extension))),
+            'records' => $records,
+        );
     }
 
     private function parseComponentsXmlFile(string $path): array
@@ -2483,6 +2979,423 @@ class ComputersController extends Controller
         return $records;
     }
 
+    private function parseComponentsJsonFile(string $path): array
+    {
+        $size = filesize($path);
+        if ($size !== false && $size > 20 * 1024 * 1024) {
+            throw new RuntimeException('Plik JSON jest za duzy. Maksymalny rozmiar to 20 MB.');
+        }
+
+        $contents = file_get_contents($path);
+        if (!is_string($contents) || trim($contents) === '') {
+            throw new RuntimeException('Plik JSON jest pusty albo nie mozna go odczytac.');
+        }
+
+        $decoded = json_decode($contents, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Nieprawidlowy plik JSON: ' . json_last_error_msg() . '.');
+        }
+
+        $format = trim((string) ($decoded['_meta']['format'] ?? ''));
+        if ($format === 'altreo-mediamarkt-parameter-catalog') {
+            throw new RuntimeException('Wybrano katalog parametrow MediaMarkt. Do importu wybierz plik komponentow JSON.');
+        }
+        $parametersOnly = $format === 'altreo-components-ai';
+
+        if (isset($decoded['components']) && is_array($decoded['components'])) {
+            $items = $decoded['components'];
+        } elseif (array_key_exists('id', $decoded) || array_key_exists('name', $decoded)) {
+            $items = array($decoded);
+        } else {
+            $items = $decoded;
+        }
+
+        $parameterColumns = array(
+            'eu' => 'parameters_eu',
+            'morele' => 'parameters_morele',
+            'empik' => 'parameters_empik',
+            'mediamarkt' => 'parameters_mediamarkt',
+            'mediamarkt_pc' => 'parameters_mediamarkt',
+            'mediamarkt_set_pc' => 'parameters_mediamarkt_set_pc',
+            'mediamarkt_zestaw_pc' => 'parameters_mediamarkt_set_pc',
+        );
+        $allowedColumns = array_flip($this->componentExportColumns());
+        $records = array();
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $record = array();
+            foreach ($item as $column => $value) {
+                if ($column === 'parameters' || !isset($allowedColumns[$column])) {
+                    continue;
+                }
+                if ($parametersOnly && $column !== 'id') {
+                    continue;
+                }
+                if (strpos((string) $column, 'parameters_') === 0 && is_array($value)) {
+                    $record[$column] = $this->encodeJsonMap($value);
+                } elseif (!is_array($value) && !is_object($value)) {
+                    $record[$column] = $value;
+                }
+            }
+
+            if (isset($item['parameters']) && is_array($item['parameters'])) {
+                foreach ($parameterColumns as $jsonKey => $column) {
+                    if (!array_key_exists($jsonKey, $item['parameters'])) {
+                        continue;
+                    }
+                    $map = $item['parameters'][$jsonKey];
+                    if (!is_array($map)) {
+                        $componentLabel = (string) ($item['id'] ?? $item['name'] ?? '?');
+                        throw new RuntimeException('Parametry "' . $jsonKey . '" komponentu ' . $componentLabel . ' musza byc obiektem JSON.');
+                    }
+                    if ($map !== array() && array_keys($map) === range(0, count($map) - 1)) {
+                        $componentLabel = (string) ($item['id'] ?? $item['name'] ?? '?');
+                        throw new RuntimeException('Parametry "' . $jsonKey . '" komponentu ' . $componentLabel . ' nie moga byc lista JSON.');
+                    }
+                    $record[$column] = $this->encodeJsonMap($map);
+                }
+            }
+
+            if ($record !== array()) {
+                $records[] = $record;
+            }
+        }
+
+        return $records;
+    }
+
+    private function storePendingComponentImport(array $records, string $filename): string
+    {
+        $this->ensureSessionStarted();
+        $token = bin2hex(random_bytes(20));
+        $now = time();
+        if (!isset($_SESSION['computer_component_imports']) || !is_array($_SESSION['computer_component_imports'])) {
+            $_SESSION['computer_component_imports'] = array();
+        }
+        foreach ($_SESSION['computer_component_imports'] as $existingToken => $pending) {
+            if (!is_array($pending) || (int) ($pending['created_at'] ?? 0) < $now - 3600) {
+                unset($_SESSION['computer_component_imports'][$existingToken]);
+            }
+        }
+        while (count($_SESSION['computer_component_imports']) >= 5) {
+            array_shift($_SESSION['computer_component_imports']);
+        }
+        $_SESSION['computer_component_imports'][$token] = array(
+            'created_at' => $now,
+            'filename' => $filename,
+            'records' => $records,
+        );
+        return $token;
+    }
+
+    private function pendingComponentImport(string $token): ?array
+    {
+        if (!preg_match('/^[a-f0-9]{40}$/', $token)) {
+            return null;
+        }
+        $this->ensureSessionStarted();
+        $pending = $_SESSION['computer_component_imports'][$token] ?? null;
+        if (!is_array($pending) || (int) ($pending['created_at'] ?? 0) < time() - 3600) {
+            unset($_SESSION['computer_component_imports'][$token]);
+            return null;
+        }
+        return $pending;
+    }
+
+    private function removePendingComponentImport(string $token): void
+    {
+        $this->ensureSessionStarted();
+        unset($_SESSION['computer_component_imports'][$token]);
+    }
+
+    private function renderComponentImportPreview(
+        array $currentUser,
+        string $token,
+        array $pending,
+        array $errors = array(),
+        array $editorOverrides = array(),
+        $selectedOverrides = null,
+        array $skippedParameterOverrides = array()
+    ): void {
+        $previewErrors = array();
+        $preview = $this->buildComponentImportPreview(
+            (array) ($pending['records'] ?? array()),
+            $editorOverrides,
+            $selectedOverrides,
+            $skippedParameterOverrides,
+            $previewErrors
+        );
+        $errors = array_values(array_unique(array_merge($errors, $previewErrors)));
+
+        $this->render('computers/components_import_preview', array(
+            'pageTitle' => 'Podglad importu komponentow',
+            'contentTitle' => 'Podglad importu JSON',
+            'pageDescription' => 'Porownaj, popraw i zatwierdz parametry przed zapisem.',
+            'breadcrumbCurrent' => 'Podglad importu',
+            'currentUser' => $currentUser,
+            'computerTab' => 'components',
+            'importToken' => $token,
+            'importFilename' => (string) ($pending['filename'] ?? ''),
+            'importCreatedAt' => date('Y-m-d H:i:s', (int) ($pending['created_at'] ?? time())),
+            'previewItems' => $preview['items'],
+            'previewSummary' => $preview['summary'],
+            'previewErrors' => $errors,
+        ));
+    }
+
+    private function buildComponentImportPreview(
+        array $records,
+        array $editorOverrides,
+        $selectedOverrides,
+        array $skippedParameterOverrides,
+        array &$errors
+    ): array {
+        $labels = $this->componentParameterImportLabels();
+        $items = array();
+        $summary = array(
+            'components' => count($records),
+            'profiles' => 0,
+            'selected_profiles' => 0,
+            'added' => 0,
+            'changed' => 0,
+            'removed' => 0,
+            'unchanged' => 0,
+            'selected_added' => 0,
+            'selected_changed' => 0,
+            'selected_removed' => 0,
+            'selected_unchanged' => 0,
+        );
+
+        foreach ($records as $recordIndex => $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $componentId = (int) ($record['id'] ?? 0);
+            $current = $componentId > 0
+                ? $this->db()->fetch('SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id', array('id' => $componentId))
+                : null;
+            $current = is_array($current) ? $this->normalizeComponentTextFields($current) : null;
+            $item = array(
+                'index' => $recordIndex,
+                'id' => $componentId,
+                'exists' => $current !== null,
+                'name' => (string) ($current['name'] ?? $record['name'] ?? ''),
+                'category' => (string) ($current['category'] ?? $record['category'] ?? ''),
+                'profiles' => array(),
+            );
+
+            if ($current === null) {
+                $errors[] = 'Nie znaleziono komponentu ID ' . $componentId . '. Ten rekord nie zostanie zapisany.';
+            }
+
+            foreach ($labels as $column => $label) {
+                if (!array_key_exists($column, $record)) {
+                    continue;
+                }
+                $oldMap = $current !== null ? $this->decodeJsonMap((string) ($current[$column] ?? '')) : array();
+                $originalNewMap = $this->decodeJsonMap((string) $record[$column]);
+                $editorJson = isset($editorOverrides[$recordIndex]) && array_key_exists($column, (array) $editorOverrides[$recordIndex])
+                    ? (string) $editorOverrides[$recordIndex][$column]
+                    : $this->prettyJsonMap($originalNewMap);
+                $invalid = false;
+                try {
+                    $newMap = $this->decodeEditedParameterMap($editorJson, $label);
+                } catch (Throwable $exception) {
+                    $newMap = $originalNewMap;
+                    $invalid = true;
+                    $errors[] = 'Komponent ID ' . $componentId . ', ' . $label . ': ' . $exception->getMessage();
+                }
+
+                $diff = $this->componentParameterMapDiff($oldMap, $newMap);
+                foreach ($diff['counts'] as $status => $count) {
+                    $summary[$status] += $count;
+                }
+                $skippedKeys = array_values(array_unique(array_map(
+                    'strval',
+                    (array) ($skippedParameterOverrides[$recordIndex][$column] ?? array())
+                )));
+                $appliedCounts = $diff['counts'];
+                $skippedCount = 0;
+                foreach ($diff['items'] as $diffIndex => $diffItem) {
+                    $isSkipped = $diffItem['status'] !== 'unchanged'
+                        && in_array((string) $diffItem['key'], $skippedKeys, true);
+                    $diff['items'][$diffIndex]['skipped'] = $isSkipped;
+                    if ($isSkipped) {
+                        $appliedCounts[$diffItem['status']]--;
+                        $skippedCount++;
+                    }
+                }
+                $summary['profiles']++;
+                $defaultSelected = $current !== null && !$invalid
+                    && ($diff['counts']['added'] + $diff['counts']['changed'] + $diff['counts']['removed']) > 0;
+                $selected = is_array($selectedOverrides)
+                    ? !empty($selectedOverrides[$recordIndex][$column])
+                    : $defaultSelected;
+                if ($selected && $current !== null && !$invalid) {
+                    $summary['selected_profiles']++;
+                    foreach ($appliedCounts as $status => $count) {
+                        $summary['selected_' . $status] += $count;
+                    }
+                }
+
+                $item['profiles'][] = array(
+                    'column' => $column,
+                    'label' => $label,
+                    'editor_json' => $editorJson,
+                    'invalid' => $invalid,
+                    'selected' => $selected,
+                    'diffs' => $diff['items'],
+                    'counts' => $diff['counts'],
+                    'applied_counts' => $appliedCounts,
+                    'skipped_count' => $skippedCount,
+                );
+            }
+            $items[] = $item;
+        }
+
+        return array('items' => $items, 'summary' => $summary);
+    }
+
+    private function componentParameterImportLabels(): array
+    {
+        return array(
+            'parameters_eu' => 'EU',
+            'parameters_morele' => 'Morele',
+            'parameters_empik' => 'Empik',
+            'parameters_mediamarkt' => 'MediaMarkt - PC',
+            'parameters_mediamarkt_set_pc' => 'MediaMarkt - zestaw PC',
+        );
+    }
+
+    private function prettyJsonMap(array $map): string
+    {
+        if ($map === array()) {
+            return '{}';
+        }
+        $json = json_encode($map, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return is_string($json) ? $json : '{}';
+    }
+
+    private function decodeEditedParameterMap(string $json, string $label): array
+    {
+        if (strlen($json) > 2 * 1024 * 1024) {
+            throw new RuntimeException('Mapa ' . $label . ' jest za duza.');
+        }
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Nieprawidlowy JSON: ' . json_last_error_msg() . '.');
+        }
+        if ($decoded !== array() && array_keys($decoded) === range(0, count($decoded) - 1)) {
+            throw new RuntimeException('Mapa parametrow musi byc obiektem JSON, a nie lista.');
+        }
+        return $this->trimArrayRecursive($decoded);
+    }
+
+    private function componentParameterMapDiff(array $oldMap, array $newMap): array
+    {
+        $keys = array_values(array_unique(array_merge(array_keys($oldMap), array_keys($newMap))));
+        natcasesort($keys);
+        $items = array();
+        $counts = array('added' => 0, 'changed' => 0, 'removed' => 0, 'unchanged' => 0);
+        foreach ($keys as $key) {
+            $hasOld = array_key_exists($key, $oldMap);
+            $hasNew = array_key_exists($key, $newMap);
+            if (!$hasOld) {
+                $status = 'added';
+            } elseif (!$hasNew) {
+                $status = 'removed';
+            } elseif ($this->comparableImportValue($oldMap[$key]) !== $this->comparableImportValue($newMap[$key])) {
+                $status = 'changed';
+            } else {
+                $status = 'unchanged';
+            }
+            $counts[$status]++;
+            $items[] = array(
+                'key' => (string) $key,
+                'status' => $status,
+                'old' => $hasOld ? $this->displayImportValue($oldMap[$key]) : '',
+                'new' => $hasNew ? $this->displayImportValue($newMap[$key]) : '',
+            );
+        }
+        return array('items' => $items, 'counts' => $counts);
+    }
+
+    private function comparableImportValue($value): string
+    {
+        $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return is_string($encoded) ? $encoded : '';
+    }
+
+    private function displayImportValue($value): string
+    {
+        if (is_array($value)) {
+            $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            return is_string($encoded) ? $encoded : '';
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        return $value === null ? 'null' : (string) $value;
+    }
+
+    private function editedComponentImportRecords(
+        array $pendingRecords,
+        array $editors,
+        array $selectedProfiles,
+        array $skippedParameters = array()
+    ): array
+    {
+        $labels = $this->componentParameterImportLabels();
+        $records = array();
+        foreach ($pendingRecords as $recordIndex => $pendingRecord) {
+            if (!is_array($pendingRecord)) {
+                continue;
+            }
+            $record = array('id' => (int) ($pendingRecord['id'] ?? 0));
+            $currentComponent = null;
+            foreach ($labels as $column => $label) {
+                if (!array_key_exists($column, $pendingRecord) || empty($selectedProfiles[$recordIndex][$column])) {
+                    continue;
+                }
+                if (!isset($editors[$recordIndex]) || !array_key_exists($column, (array) $editors[$recordIndex])) {
+                    throw new RuntimeException('Brak edytowanej mapy ' . $label . ' dla komponentu ID ' . $record['id'] . '.');
+                }
+                $map = $this->decodeEditedParameterMap((string) $editors[$recordIndex][$column], $label);
+                $skippedKeys = array_values(array_unique(array_map(
+                    'strval',
+                    (array) ($skippedParameters[$recordIndex][$column] ?? array())
+                )));
+                if ($skippedKeys !== array()) {
+                    if ($currentComponent === null && $record['id'] > 0) {
+                        $currentComponent = $this->db()->fetch(
+                            'SELECT * FROM ' . self::COMPONENTS_TABLE . ' WHERE id = :id',
+                            array('id' => $record['id'])
+                        );
+                    }
+                    $oldMap = is_array($currentComponent)
+                        ? $this->decodeJsonMap((string) ($currentComponent[$column] ?? ''))
+                        : array();
+                    foreach ($skippedKeys as $skippedKey) {
+                        if (array_key_exists($skippedKey, $oldMap)) {
+                            $map[$skippedKey] = $oldMap[$skippedKey];
+                        } else {
+                            unset($map[$skippedKey]);
+                        }
+                    }
+                }
+                $record[$column] = $this->encodeJsonMap($map);
+            }
+            if (count($record) > 1) {
+                $records[] = $record;
+            }
+        }
+        return $records;
+    }
+
     private function applyComponentImportRecords(array $records): array
     {
         $updated = 0;
@@ -2501,7 +3414,7 @@ class ComputersController extends Controller
                         $payload[$column] = $this->normalizeDecimalInput($value);
                         continue;
                     }
-                    if (in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik'), true)) {
+                    if (in_array($column, array('parameters_eu', 'parameters_morele', 'parameters_empik', 'parameters_mediamarkt', 'parameters_mediamarkt_set_pc'), true)) {
                         $payload[$column] = $this->normalizeJsonMapString((string) $value);
                         continue;
                     }
@@ -4450,6 +5363,9 @@ class ComputersController extends Controller
         }
 
         $delimiter = (string) ($template['delimiter'] ?? ';');
+        if (!in_array($delimiter, array(';', ',', "\t", '|'), true)) {
+            $delimiter = ';';
+        }
         $encoding = strtoupper((string) ($template['encoding'] ?? 'UTF-8'));
         $stream = fopen('php://temp', 'w+b');
         fputcsv($stream, $headers, $delimiter);
@@ -4513,16 +5429,23 @@ class ComputersController extends Controller
         $empikParams = array();
         $mediamarktParams = array();
         $mediamarktSetPcParams = array();
+        $allegroEuParams = array();
         $moreleParams = array();
         foreach ($components as $component) {
+            foreach ($this->decodeJsonMap((string) ($component['parameters_eu'] ?? '')) as $key => $value) {
+                $paramId = trim((string) (explode('|', (string) $key)[0] ?? ''));
+                if ($paramId !== '' && !array_key_exists($paramId, $allegroEuParams)) {
+                    $allegroEuParams[$paramId] = $this->formatComputerAllegroEuParameterValue($paramId, $value);
+                }
+            }
             foreach ($this->decodeJsonMap((string) ($component['parameters_empik'] ?? '')) as $key => $value) {
                 $empikParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt'] ?? '')) as $key => $value) {
-                $mediamarktParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
+                $this->addComputerMediaMarktCsvParam($mediamarktParams, (string) $key, $value);
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_mediamarkt_set_pc'] ?? '')) as $key => $value) {
-                $mediamarktSetPcParams[$this->normalizeEmpikParamKey((string) $key)] = is_array($value) ? implode(' | ', $value) : (string) $value;
+                $this->addComputerMediaMarktCsvParam($mediamarktSetPcParams, (string) $key, $value);
             }
             foreach ($this->decodeJsonMap((string) ($component['parameters_morele'] ?? '')) as $key => $value) {
                 if (!array_key_exists($key, $moreleParams)) {
@@ -4564,6 +5487,8 @@ class ComputersController extends Controller
             'images.mediamarkt' => $imagesMediaMarkt,
             'main_image.empik' => $mainEmpikImage,
             'main_image.mediamarkt' => $mainMediaMarktImage,
+            'allegro_eu_params' => $allegroEuParams,
+            'parameters.eu' => $this->allegroEuParameters($components),
             'empik_params' => $empikParams,
             'mediamarkt_params' => $mediamarktParams,
             'mediamarkt_set_pc_params' => $mediamarktSetPcParams,
@@ -4622,6 +5547,15 @@ class ComputersController extends Controller
         $type = (string) ($column['type'] ?? 'source');
         if ($type === 'static') {
             $value = (string) ($column['value'] ?? '');
+        } elseif ($type === 'conditional') {
+            $condition = isset($column['condition']) && is_array($column['condition']) ? $column['condition'] : array();
+            $left = $this->resolveComputerCsvSource((string) ($condition['source'] ?? ''), $context);
+            $matches = $this->evaluateComputerCsvColumnCondition(
+                $left,
+                (string) ($condition['operator'] ?? 'contains'),
+                (string) ($condition['value'] ?? '')
+            );
+            $value = $matches ? (string) ($column['value'] ?? '') : (string) ($condition['else_value'] ?? '');
         } elseif ($type === 'template') {
             $value = (string) preg_replace_callback(
                 '/\{\{\s*([^{}]+?)\s*\}\}/',
@@ -4636,6 +5570,32 @@ class ComputersController extends Controller
         }
 
         return $this->applyComputerCsvFormat((string) ($column['format'] ?? ''), $value);
+    }
+
+    private function evaluateComputerCsvColumnCondition(string $left, string $operator, string $right): bool
+    {
+        $left = trim($left);
+        $right = trim($right);
+        $leftComparable = function_exists('mb_strtolower') ? mb_strtolower($left, 'UTF-8') : strtolower($left);
+        $rightComparable = function_exists('mb_strtolower') ? mb_strtolower($right, 'UTF-8') : strtolower($right);
+
+        if ($operator === 'empty') {
+            return $left === '';
+        }
+        if ($operator === 'not_empty') {
+            return $left !== '';
+        }
+        if ($operator === 'equals') {
+            return $leftComparable === $rightComparable;
+        }
+        if ($operator === 'not_equals') {
+            return $leftComparable !== $rightComparable;
+        }
+        if ($operator === 'not_contains') {
+            return $rightComparable === '' || strpos($leftComparable, $rightComparable) === false;
+        }
+
+        return $rightComparable !== '' && strpos($leftComparable, $rightComparable) !== false;
     }
 
     private function applyComputerCsvFormat(string $format, string $value): string
@@ -4708,6 +5668,9 @@ class ComputersController extends Controller
         if (strpos($source, 'component.') === 0) {
             return (string) ($context['component_values'][substr($source, 10)] ?? '');
         }
+        if (strpos($source, 'allegro_param:') === 0) {
+            return (string) ($context['allegro_eu_params'][substr($source, 14)] ?? '');
+        }
         if (preg_match('/^component_image\.(easy|morele|empik|mediamarkt)\.([A-Z0-9_-]+)\.(\d+)$/', $source, $matches) === 1) {
             $images = $context['component_images'][$matches[1] . '.' . $matches[2]] ?? array();
             return (string) ($images[max(0, (int) $matches[3] - 1)] ?? '');
@@ -4733,7 +5696,7 @@ class ComputersController extends Controller
         if ($source === 'description') {
             return (string) $context['description'];
         }
-        if ($source === 'parameters.easy' || $source === 'parameters.morele') {
+        if ($source === 'parameters.easy' || $source === 'parameters.eu' || $source === 'parameters.morele') {
             return (string) $context[$source];
         }
         if ($source === 'main_image.empik') {
@@ -4767,6 +5730,7 @@ class ComputersController extends Controller
         }
 
         $productEmpikImages = $this->existingProductImages((string) ($product['img_empik'] ?? ''));
+        $productMediaMarktImages = $this->existingProductImages((string) ($product['img_mediamarkt'] ?? ''));
         $vars = array(
             'title' => (string) ($product['name'] ?? ''),
             'main_img_allegro' => (string) ($this->computerExportImages($product, array(), 'easy')[0] ?? ''),
@@ -4930,6 +5894,10 @@ class ComputersController extends Controller
         $types = (array) $this->input('column_type', array());
         $values = (array) $this->input('column_value', array());
         $formats = (array) $this->input('column_format', array());
+        $conditionSources = (array) $this->input('column_condition_source', array());
+        $conditionOperators = (array) $this->input('column_condition_operator', array());
+        $conditionValues = (array) $this->input('column_condition_value', array());
+        $conditionElseValues = (array) $this->input('column_condition_else_value', array());
         $columns = array();
         foreach ($headers as $index => $header) {
             $header = trim((string) $header);
@@ -4937,12 +5905,29 @@ class ComputersController extends Controller
                 continue;
             }
             $type = (string) ($types[$index] ?? 'source');
-            $columns[] = array(
+            $column = array(
                 'header' => $header,
-                'type' => in_array($type, array('source', 'static', 'template'), true) ? $type : 'source',
+                'type' => in_array($type, array('source', 'static', 'template', 'conditional'), true) ? $type : 'source',
                 'value' => (string) ($values[$index] ?? ''),
                 'format' => trim((string) ($formats[$index] ?? '')),
             );
+            if ($column['type'] === 'conditional') {
+                $operator = (string) ($conditionOperators[$index] ?? 'contains');
+                if (!in_array($operator, array('contains', 'not_contains', 'equals', 'not_equals', 'empty', 'not_empty'), true)) {
+                    $operator = 'contains';
+                }
+                $conditionSource = trim((string) ($conditionSources[$index] ?? ''));
+                if ($conditionSource === '') {
+                    $conditionSource = 'component.MONITOR.name';
+                }
+                $column['condition'] = array(
+                    'source' => $conditionSource,
+                    'operator' => $operator,
+                    'value' => (string) ($conditionValues[$index] ?? ''),
+                    'else_value' => (string) ($conditionElseValues[$index] ?? ''),
+                );
+            }
+            $columns[] = $column;
         }
         if ($columns === array()) {
             throw new RuntimeException('Szablon musi zawierac co najmniej jedna kolumne.');
@@ -5097,6 +6082,31 @@ class ComputersController extends Controller
         $lines[] = '224017|0|' . substr($cleanName, 0, 45) . '|';
         if (trim($ean) !== '') {
             $lines[] = '225693|0|' . trim($ean) . '|';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function allegroEuParameters(array $components): string
+    {
+        $params = array();
+        foreach ($components as $component) {
+            foreach ($this->decodeJsonMap((string) ($component['parameters_eu'] ?? '')) as $key => $value) {
+                if (!array_key_exists($key, $params)) {
+                    $params[$key] = $value;
+                }
+            }
+        }
+
+        $lines = array();
+        foreach ($params as $paramKey => $value) {
+            $values = is_array($value) ? $value : array($value);
+            foreach ($values as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $lines[] = (string) $paramKey . $item . '|';
+                }
+            }
         }
 
         return implode("\n", $lines);
@@ -5418,6 +6428,31 @@ class ComputersController extends Controller
         // klucze parametrow Empik z doklejonym ID atrybutu, np. "Wielkosc ekranu(2177)",
         // podczas gdy szablony CSV odwoluja sie do czystej nazwy "Wielkosc ekranu".
         return trim((string) preg_replace('/\s*\(\d+(?:_dict)?\)\s*$/u', '', trim($key)));
+    }
+
+    private function addComputerMediaMarktCsvParam(array &$params, string $key, $value): void
+    {
+        $key = $this->normalizeEmpikParamKey($key);
+        $value = is_array($value) ? implode(' | ', $value) : (string) $value;
+        if ($key === '' || trim($value) === '') {
+            return;
+        }
+
+        // Zachowujemy pelna nazwe z bazy, ale dodajemy tez alias bez oznaczenia jezyka.
+        // Pliki MediaMarkt maja np. naglowek "Procesor (pl_PL)", podczas gdy zrodlo
+        // szablonu moze byc zapisane jako "Procesor". Obie wersje maja wskazywac na
+        // ten sam parametr komponentu.
+        $aliases = array($key);
+        $withoutLocale = trim((string) preg_replace('/\s*\([a-z]{2}_[a-z]{2}\)\s*$/iu', '', $key));
+        if ($withoutLocale !== '' && $withoutLocale !== $key) {
+            $aliases[] = $withoutLocale;
+        }
+
+        foreach ($aliases as $alias) {
+            if (!array_key_exists($alias, $params) || trim((string) $params[$alias]) === '') {
+                $params[$alias] = $value;
+            }
+        }
     }
 
     private function trimArrayRecursive(array $input): array
@@ -6200,6 +7235,7 @@ class ComputersController extends Controller
             'product.offerid' => 'Produkt: ID oferty',
             'description' => 'Opis z szablonu komputera',
             'parameters.easy' => 'Parametry EasyUploader',
+            'parameters.eu' => 'Parametry Allegro EU',
             'parameters.morele' => 'Parametry Morele',
             'main_image.empik' => 'Empik — zdjecie produktu 1 (zgodnosc ze starym szablonem)',
             'main_image.mediamarkt' => 'MediaMarkt — zdjecie produktu 1',
@@ -6233,14 +7269,183 @@ class ComputersController extends Controller
                 $options['component.' . $category . '.' . $field] = $category . ': ' . $label;
             }
         }
+        foreach ($this->computerAllegroEuParameterOptions() as $paramId => $label) {
+            $options['allegro_param:' . $paramId] = $label;
+        }
         foreach ($this->empikComputerParameterNames() as $name) {
             $options['empik_param:' . $name] = 'Empik parametr: ' . $name;
         }
-        foreach ($this->mediaMarktComputerParameterNames() as $name) {
+        foreach ($this->computerMediaMarktCsvParameterNames() as $name) {
             $options['mediamarkt_param:' . $name] = 'MediaMarkt - PC parametr: ' . $name;
             $options['mediamarkt_set_pc_param:' . $name] = 'MediaMarkt - zestaw PC parametr: ' . $name;
         }
         return $options;
+    }
+
+    private function computerMediaMarktCsvParameterNames(): array
+    {
+        if ($this->computerMediaMarktCsvParameterNames !== null) {
+            return $this->computerMediaMarktCsvParameterNames;
+        }
+
+        $names = array();
+        foreach ($this->mediaMarktComputerParameterNames() as $name) {
+            $name = trim((string) $name);
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+        }
+
+        $rows = $this->db()->fetchAll(
+            'SELECT parameters_mediamarkt, parameters_mediamarkt_set_pc FROM ' . self::COMPONENTS_TABLE
+            . " WHERE (parameters_mediamarkt IS NOT NULL AND parameters_mediamarkt <> '' AND parameters_mediamarkt <> '{}')"
+            . " OR (parameters_mediamarkt_set_pc IS NOT NULL AND parameters_mediamarkt_set_pc <> '' AND parameters_mediamarkt_set_pc <> '{}')"
+        );
+        foreach ($rows as $row) {
+            foreach (array('parameters_mediamarkt', 'parameters_mediamarkt_set_pc') as $field) {
+                foreach ($this->decodeJsonMap((string) ($row[$field] ?? '')) as $key => $value) {
+                    $name = $this->normalizeEmpikParamKey((string) $key);
+                    if ($name !== '') {
+                        $names[$name] = true;
+                    }
+                }
+            }
+        }
+
+        foreach (array('pc', 'set_pc') as $profile) {
+            $payload = $this->loadMediaMarktParameterPayload('', $profile);
+            foreach ((array) ($payload['items'] ?? array()) as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($name !== '') {
+                    $names[$name] = true;
+                }
+            }
+        }
+
+        $result = array_keys($names);
+        natcasesort($result);
+        $this->computerMediaMarktCsvParameterNames = array_values($result);
+        return $this->computerMediaMarktCsvParameterNames;
+    }
+
+    private function computerAllegroEuParameterOptions(): array
+    {
+        $rows = $this->db()->fetchAll(
+            'SELECT parameters_eu FROM ' . self::COMPONENTS_TABLE
+            . " WHERE parameters_eu IS NOT NULL AND parameters_eu <> '' AND parameters_eu <> '{}'"
+        );
+        $ids = array();
+        foreach ($rows as $row) {
+            foreach ($this->decodeJsonMap((string) ($row['parameters_eu'] ?? '')) as $key => $value) {
+                if (!$this->hasMarketParameterValue($value)) {
+                    continue;
+                }
+                $paramId = trim((string) (explode('|', (string) $key)[0] ?? ''));
+                if ($paramId !== '') {
+                    $ids[$paramId] = true;
+                }
+            }
+        }
+        $labels = $this->computerAllegroEuParameterLabels();
+        $options = array();
+        foreach (array_keys($ids) as $paramId) {
+            $name = trim((string) ($labels[$paramId] ?? ''));
+            $options[$paramId] = $name !== ''
+                ? 'Allegro EU parametr: ' . $name . ' (ID ' . $paramId . ')'
+                : 'Allegro EU parametr ID ' . $paramId;
+        }
+        asort($options, SORT_NATURAL | SORT_FLAG_CASE);
+        return $options;
+    }
+
+    private function computerAllegroEuParameterLabels(): array
+    {
+        $labels = array();
+        foreach ($this->computerAllegroEuParameterDefinitionsById() as $id => $parameter) {
+            $name = trim((string) ($parameter['name'] ?? ''));
+            if ($name !== '') {
+                $labels[$id] = $name;
+            }
+        }
+        return $labels;
+    }
+
+    private function computerAllegroEuParameterDefinitionsById(): array
+    {
+        if ($this->computerAllegroEuParameterDefinitions !== null) {
+            return $this->computerAllegroEuParameterDefinitions;
+        }
+
+        try {
+            $desktopCategory = $this->findDesktopCategoryMapping();
+            $categoryId = trim((string) ($desktopCategory['allegro_category_id'] ?? ''));
+            if ($categoryId === '') {
+                $categoryId = self::DEFAULT_DESKTOP_EU_CATEGORY_ID;
+            }
+
+            $definitions = array();
+            foreach ((new AllegroService())->categoryParameters($categoryId) as $parameter) {
+                if (!is_array($parameter)) {
+                    continue;
+                }
+                $id = trim((string) ($parameter['id'] ?? ''));
+                if ($id !== '') {
+                    $definitions[$id] = $parameter;
+                }
+            }
+            $this->computerAllegroEuParameterDefinitions = $definitions;
+        } catch (Throwable $exception) {
+            $this->computerAllegroEuParameterDefinitions = array();
+        }
+
+        return $this->computerAllegroEuParameterDefinitions;
+    }
+
+    private function formatComputerAllegroEuParameterValue(string $parameterId, $value): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $formatted = $this->formatComputerAllegroEuParameterValue($parameterId, $item);
+                if ($formatted !== '') {
+                    $parts[] = $formatted;
+                }
+            }
+
+            return implode(', ', array_values(array_unique($parts)));
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'Tak' : 'Nie';
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return '';
+        }
+
+        $definition = $this->computerAllegroEuParameterDefinitionsById()[$parameterId] ?? array();
+        $dictionary = isset($definition['dictionary']) && is_array($definition['dictionary']) ? $definition['dictionary'] : array();
+        foreach ($dictionary as $option) {
+            if (!is_array($option)) {
+                continue;
+            }
+
+            $optionId = trim((string) ($option['id'] ?? ''));
+            $optionLabel = trim((string) ($option['value'] ?? $optionId));
+            if ($optionId !== '' && $optionId === $normalized) {
+                return $optionLabel !== '' ? $optionLabel : $normalized;
+            }
+        }
+
+        return $normalized;
     }
 
     private function computerProductImageLimits(): array
