@@ -105,10 +105,10 @@ class MoreleController extends Controller
         $this->releaseSessionLock();
 
         try {
-            $result = array('sync' => null, 'enqueue' => null, 'queue' => null);
+            $result = array();
             if ($this->input('sync', '0') === '1') {
                 $result['sync'] = $this->morele->syncOffers(array(
-                    'max_pages' => 0,
+                    'max_pages' => (int) $this->input('max_pages', 0),
                     'page_limit' => (int) $this->input('page_limit', 100),
                     'debug' => $this->input('debug', '0') === '1',
                 ));

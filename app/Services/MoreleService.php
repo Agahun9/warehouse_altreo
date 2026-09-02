@@ -200,18 +200,18 @@ class MoreleService
         $synced = 0;
         $skipped = 0;
         $pages = 0;
-        $removedInvalid = $this->storage->removeInvalidWrapperSnapshots();
+        $offset = 0;
         $seenPageFingerprints = array();
         $debug = !empty($options['debug']);
         $pageDebug = array();
         $stopReason = '';
 
         for ($page = 1; $page <= $maxPages; $page++) {
-            $items = $this->fetchRemoteOfferPage($page, $pageLimit);
+            $items = $this->fetchRemoteOfferPage($page, $offset, $pageLimit);
             if ($items === array()) {
                 $stopReason = 'empty_page_' . $page;
                 if ($debug) {
-                    $pageDebug[] = array('page' => $page, 'items' => 0, 'status' => 'empty');
+                    $pageDebug[] = array('page' => $page, 'offset' => $offset, 'items' => 0, 'status' => 'empty');
                 }
                 break;
             }
@@ -220,13 +220,13 @@ class MoreleService
             if (isset($seenPageFingerprints[$pageFingerprint])) {
                 $stopReason = 'duplicate_page_' . $page;
                 if ($debug) {
-                    $pageDebug[] = array('page' => $page, 'items' => count($items), 'status' => 'duplicate');
+                    $pageDebug[] = array('page' => $page, 'offset' => $offset, 'items' => count($items), 'status' => 'duplicate');
                 }
                 break;
             }
             $seenPageFingerprints[$pageFingerprint] = true;
             if ($debug) {
-                $pageDebug[] = array('page' => $page, 'items' => count($items), 'status' => 'imported');
+                $pageDebug[] = array('page' => $page, 'offset' => $offset, 'items' => count($items), 'status' => 'imported');
             }
 
             foreach ($items as $item) {
@@ -240,16 +240,20 @@ class MoreleService
             }
 
             $pages++;
-            if (count($items) < $pageLimit) {
-                $stopReason = 'short_page_' . $page;
-                break;
-            }
+            // Morele may return fewer rows than requested (the API applies its own page
+            // limit). Advance by the number actually received and keep fetching until the
+            // API returns an empty or repeated page. Comparing the response size with the
+            // requested limit caused imports using page_limit=500 to stop after page one.
+            $offset += count($items);
+        }
+
+        if ($stopReason === '' && $pages >= $maxPages) {
+            $stopReason = 'max_pages_reached';
         }
 
         $result = array(
             'synced_offers' => $synced,
             'skipped_offers' => $skipped,
-            'removed_invalid' => $removedInvalid,
             'pages_processed' => $pages,
             'stats' => $this->storage->offerStats(),
         );
@@ -258,6 +262,7 @@ class MoreleService
             $result['debug'] = array(
                 'page_limit' => $pageLimit,
                 'max_pages' => $maxPages,
+                'final_offset' => $offset,
                 'stop_reason' => $stopReason,
                 'pages' => $pageDebug,
             );
@@ -542,9 +547,9 @@ class MoreleService
         );
     }
 
-    private function fetchRemoteOfferPage(int $page, int $limit): array
+    private function fetchRemoteOfferPage(int $page, int $offset, int $limit): array
     {
-        $start = max(0, ($page - 1) * $limit);
+        $start = max(0, $offset);
         $filterPayload = array(
             'vendor_part_number' => '',
             'marketplace_id' => '',
@@ -573,6 +578,8 @@ class MoreleService
             'quantity' => $limit,
             'limit' => $limit,
             'per_page' => $limit,
+            'start' => $start,
+            'offset' => $start,
         ));
         $requests = array(
             array('path' => '/offer/filter?limit=' . rawurlencode((string) $limit) . '&start=' . rawurlencode((string) $start) . '&offset=' . rawurlencode((string) $start) . '&page=' . rawurlencode((string) $page), 'method' => 'POST', 'body' => $filterPayload),
