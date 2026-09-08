@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Models\AllegroStorageRepository;
 use App\Models\ComputerCsvTitleTemplateRepository;
 use App\Models\ComputerCsvTemplateRepository;
+use App\Models\ComputerProductCategoryRepository;
 use App\Models\EmpikStorageRepository;
 use App\Models\MediaMarktStorageRepository;
 use App\Models\ErliStorageRepository;
@@ -50,6 +51,9 @@ class ComputersController extends Controller
     /** @var ComputerCsvTitleTemplateRepository */
     private $computerTitleTemplates;
 
+    /** @var ComputerProductCategoryRepository */
+    private $computerProductCategories;
+
     /** @var array<string, bool> */
     private $tableExistsCache = array();
 
@@ -71,6 +75,8 @@ class ComputersController extends Controller
         $this->computerCsvTemplates->ensureSchema();
         $this->computerTitleTemplates = new ComputerCsvTitleTemplateRepository($this->db());
         $this->computerTitleTemplates->ensureSchema();
+        $this->computerProductCategories = new ComputerProductCategoryRepository($this->db());
+        $this->computerProductCategories->ensureSchema();
         $this->computerCsvTemplates->seed($this->defaultComputerCsvTemplates());
         $this->computerCsvTemplates->fillEmptyDescriptionTemplates($this->defaultComputerDescriptionTemplate());
     }
@@ -84,6 +90,7 @@ class ComputersController extends Controller
     public function products(): void
     {
         $currentUser = $this->requireModule('computers');
+        $currentUserId = (int) ($currentUser['id'] ?? 0);
 
         if (trim((string) $this->input('price_market_accounts', '')) === '1') {
             $this->priceMarketAccountsForSelection();
@@ -120,6 +127,10 @@ class ComputersController extends Controller
         }
 
         $filterComponents = array_values(array_filter(array_map('intval', (array) $this->input('filter_components', array()))));
+        $filterComponentsMode = $this->normalizeComponentFilterMode($this->input('filter_components_mode', 'all'));
+        $filterComponentGroups = $filterComponentsMode === 'category_any'
+            ? $this->componentFilterGroups($filterComponents, $componentsById)
+            : array();
         $filterName = trim((string) $this->input('filter_name', ''));
         $filterEanSku = trim((string) $this->input('filter_ean_sku', ''));
         $filterCreatedFrom = $this->normalizeDateFilterInput($this->input('filter_created_from', ''));
@@ -129,6 +140,15 @@ class ComputersController extends Controller
         $filterNoImages = (string) $this->input('filter_no_images', '') === '1';
         $filterNoEan = (string) $this->input('filter_no_ean', '') === '1';
         $filterPriceMismatch = (string) $this->input('filter_price_mismatch', '') === '1';
+        $filterCategoryId = max(0, (int) $this->input('filter_category_id', 0));
+        $productCategories = $this->computerProductCategories->allForUser($currentUserId);
+        $activeProductCategory = null;
+        if ($filterCategoryId > 0) {
+            $activeProductCategory = $this->computerProductCategories->findForUser($filterCategoryId, $currentUserId);
+            if (!$activeProductCategory) {
+                $filterCategoryId = 0;
+            }
+        }
         $filterMarketAccounts = $this->selectedMarketAccountFilters((array) $this->input('filter_market_accounts', array()));
         $filterOfferStatus = $this->input('filter_status_offer', '');
         if ($filterMarketAccounts === array() && $filterOfferStatus !== '') {
@@ -158,6 +178,8 @@ class ComputersController extends Controller
 
         $filters = array(
             'components' => $filterComponents,
+            'components_mode' => $filterComponentsMode,
+            'component_groups' => $filterComponentGroups,
             'name' => $filterName,
             'ean_sku' => $filterEanSku,
             'created_from' => $filterCreatedFrom,
@@ -168,6 +190,8 @@ class ComputersController extends Controller
             'no_images' => $filterNoImages,
             'no_ean' => $filterNoEan,
             'price_mismatch' => $filterPriceMismatch,
+            'category_id' => $filterCategoryId,
+            'user_id' => $currentUserId,
         );
         list($filterSql, $filterParams) = $this->computerProductFilterSql($filters);
         $totalProducts = (int) $this->db()->fetchColumn(
@@ -185,6 +209,10 @@ class ComputersController extends Controller
             . $filterSql
             . ' ORDER BY products.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset,
             $filterParams
+        );
+        $productCategoryMap = $this->computerProductCategories->categoriesForProducts(
+            $currentUserId,
+            array_column($products, 'id')
         );
         $products = $this->attachActiveMoreleOffers($this->attachActiveErliProducts($this->attachActiveMediaMarktOffers($this->attachActiveEmpikOffers($this->attachActiveAllegroOffers($products)))));
         $pagedProducts = array();
@@ -213,6 +241,7 @@ class ComputersController extends Controller
                     $product['components'][] = $componentsById[$componentId];
                 }
             }
+            $product['private_categories'] = $productCategoryMap[(int) ($product['id'] ?? 0)] ?? array();
 
             $pagedProducts[] = $product;
         }
@@ -229,6 +258,24 @@ class ComputersController extends Controller
 
         $pageLinks = $this->pageLinks($currentPage, $totalPages);
 
+        $categoryQueryParams = $_GET;
+        unset(
+            $categoryQueryParams['controller'],
+            $categoryQueryParams['action'],
+            $categoryQueryParams['page'],
+            $categoryQueryParams['filter_category_id']
+        );
+        $categoryAllUrl = './index.php?controller=computers&action=products';
+        if ($categoryQueryParams !== array()) {
+            $categoryAllUrl .= '&' . http_build_query($categoryQueryParams);
+        }
+        foreach ($productCategories as $index => $productCategory) {
+            $categoryUrlParams = $categoryQueryParams;
+            $categoryUrlParams['filter_category_id'] = (int) ($productCategory['id'] ?? 0);
+            $productCategories[$index]['filter_url'] = './index.php?controller=computers&action=products&'
+                . http_build_query($categoryUrlParams);
+        }
+
         $this->render('computers/products', array(
             'pageTitle' => 'Komputery',
             'contentTitle' => 'Panel komputerow',
@@ -242,6 +289,7 @@ class ComputersController extends Controller
             'grouped' => $grouped,
             'profit' => (float) $this->input('profit', 0),
             'filterComponents' => $filterComponents,
+            'filterComponentsMode' => $filterComponentsMode,
             'filterName' => $filterName,
             'filterEanSku' => $filterEanSku,
             'filterCreatedFrom' => $filterCreatedFrom,
@@ -252,6 +300,10 @@ class ComputersController extends Controller
             'filterNoImages' => $filterNoImages,
             'filterNoEan' => $filterNoEan,
             'filterPriceMismatch' => $filterPriceMismatch,
+            'filterCategoryId' => $filterCategoryId,
+            'activeProductCategory' => $activeProductCategory,
+            'productCategories' => $productCategories,
+            'categoryAllUrl' => $categoryAllUrl,
             'allegroMarketAccounts' => $allegroMarketAccounts,
             'empikMarketAccounts' => $empikMarketAccounts,
             'mediamarktMarketAccounts' => $mediamarktMarketAccounts,
@@ -1123,10 +1175,13 @@ class ComputersController extends Controller
         }
     }
 
-    private function productsRedirectUrl(): string
+    private function productsRedirectUrl(bool $clearCategoryFilter = false): string
     {
         $queryParams = $_GET;
         unset($queryParams['controller'], $queryParams['action']);
+        if ($clearCategoryFilter) {
+            unset($queryParams['filter_category_id']);
+        }
         $query = http_build_query($queryParams);
         $url = './index.php?controller=computers&action=products';
         if ($query !== '') {
@@ -1138,6 +1193,10 @@ class ComputersController extends Controller
 
     private function handleProductsPost(): void
     {
+        if ($this->handleProductCategoryPost()) {
+            return;
+        }
+
         if ($this->input('create_variants', null) !== null) {
             $this->createVariants();
         }
@@ -1154,10 +1213,86 @@ class ComputersController extends Controller
         }
     }
 
+    private function handleProductCategoryPost(): bool
+    {
+        $isCreate = $this->input('create_product_category', null) !== null;
+        $isRename = $this->input('rename_product_category', null) !== null;
+        $isDelete = $this->input('delete_product_category', null) !== null;
+        if (!$isCreate && !$isRename && !$isDelete) {
+            return false;
+        }
+
+        $currentUser = $this->requireModuleWrite('computers');
+        $userId = (int) ($currentUser['id'] ?? 0);
+        $clearCategoryFilter = false;
+
+        try {
+            if ($isCreate) {
+                $name = $this->validatedProductCategoryName($this->input('category_name', ''));
+                if ($this->computerProductCategories->existsByNameForUser($name, $userId)) {
+                    throw new RuntimeException('Masz juz kategorie o takiej nazwie.');
+                }
+                $this->computerProductCategories->createForUser($name, $userId);
+                $this->setFlash('success', 'Kategoria zostala utworzona.');
+            } elseif ($isRename) {
+                $categoryId = max(0, (int) $this->input('category_id', 0));
+                $name = $this->validatedProductCategoryName($this->input('category_name', ''));
+                if (!$this->computerProductCategories->findForUser($categoryId, $userId)) {
+                    throw new RuntimeException('Nie znaleziono tej kategorii.');
+                }
+                if ($this->computerProductCategories->existsByNameForUser($name, $userId, $categoryId)) {
+                    throw new RuntimeException('Masz juz kategorie o takiej nazwie.');
+                }
+                $this->computerProductCategories->renameForUser($categoryId, $name, $userId);
+                $this->setFlash('success', 'Nazwa kategorii zostala zmieniona.');
+            } else {
+                $categoryId = max(0, (int) $this->input('category_id', 0));
+                if (!$this->computerProductCategories->deleteForUser($categoryId, $userId)) {
+                    throw new RuntimeException('Nie znaleziono tej kategorii.');
+                }
+                $clearCategoryFilter = (int) $this->input('filter_category_id', 0) === $categoryId;
+                $this->setFlash('success', 'Kategoria i jej przypisania zostaly usuniete.');
+            }
+        } catch (Throwable $exception) {
+            $this->setFlash('error', json_encode(array($exception->getMessage())));
+        }
+
+        $this->redirect($this->productsRedirectUrl($clearCategoryFilter));
+        return true;
+    }
+
+    private function validatedProductCategoryName($value): string
+    {
+        $name = trim((string) $value);
+        if ($name === '') {
+            throw new RuntimeException('Nazwa kategorii jest wymagana.');
+        }
+
+        $length = function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : strlen($name);
+        if ($length > 120) {
+            throw new RuntimeException('Nazwa kategorii moze miec maksymalnie 120 znakow.');
+        }
+
+        return $name;
+    }
+
     private function selectionFiltersFromRequest(): array
     {
+        $currentUser = $this->currentUser();
+        $componentIds = array_values(array_filter(array_map(
+            'intval',
+            (array) $this->input('selection_filter_components', array())
+        )));
+        $componentFilterMode = $this->normalizeComponentFilterMode(
+            $this->input('selection_filter_components_mode', 'all')
+        );
+
         return array(
-            'components' => array_values(array_filter(array_map('intval', (array) $this->input('selection_filter_components', array())))),
+            'components' => $componentIds,
+            'components_mode' => $componentFilterMode,
+            'component_groups' => $componentFilterMode === 'category_any'
+                ? $this->componentFilterGroups($componentIds, $this->componentsById())
+                : array(),
             'name' => trim((string) $this->input('selection_filter_name', '')),
             'ean_sku' => trim((string) $this->input('selection_filter_ean_sku', '')),
             'created_from' => $this->normalizeDateFilterInput($this->input('selection_filter_created_from', '')),
@@ -1170,6 +1305,8 @@ class ComputersController extends Controller
             'no_images' => (string) $this->input('selection_filter_no_images', '') === '1',
             'no_ean' => (string) $this->input('selection_filter_no_ean', '') === '1',
             'price_mismatch' => (string) $this->input('selection_filter_price_mismatch', '') === '1',
+            'category_id' => max(0, (int) $this->input('selection_filter_category_id', 0)),
+            'user_id' => (int) ($currentUser['id'] ?? 0),
         );
     }
 
@@ -1746,6 +1883,7 @@ class ComputersController extends Controller
             foreach ($productIds as $productId) {
                 $this->deleteProductFiles($productId);
             }
+            $this->computerProductCategories->purgeProductIds($productIds);
             $placeholders = implode(',', array_fill(0, count($productIds), '?'));
             $this->db()->query('DELETE FROM ' . self::PRODUCTS_TABLE . ' WHERE id IN (' . $placeholders . ')', $productIds);
             $successCount = count($productIds);
@@ -1947,6 +2085,20 @@ class ComputersController extends Controller
                 $successCount = 0;
                 $errors[] = 'Nie znaleziono aktywnych ofert na wybranych kontach dla zaznaczonych produktow.';
             }
+        } elseif (in_array($bulkAction, array('add_to_category', 'remove_from_category'), true)) {
+            $currentUser = $this->requireModuleWrite('computers');
+            $userId = (int) ($currentUser['id'] ?? 0);
+            $categoryId = max(0, (int) $this->input('bulk_category_id', 0));
+            $category = $this->computerProductCategories->findForUser($categoryId, $userId);
+            if (!$category) {
+                $errors[] = 'Wybierz jedna ze swoich kategorii.';
+            } elseif ($bulkAction === 'add_to_category') {
+                $successCount = $this->computerProductCategories->addProductsForUser($categoryId, $productIds, $userId);
+                $successMessage = 'Dodano ' . $successCount . ' przypisan do kategorii „' . (string) $category['name'] . '”.';
+            } else {
+                $successCount = $this->computerProductCategories->removeProductsForUser($categoryId, $productIds, $userId);
+                $successMessage = 'Usunieto ' . $successCount . ' przypisan z kategorii „' . (string) $category['name'] . '”.';
+            }
         } elseif (in_array($bulkAction, array('remove_component', 'replace_component', 'add_component'), true)) {
             $successCount = $this->handleProductComponentBulkChange($bulkAction, $productIds, $componentsById, $errors);
         } else {
@@ -2068,6 +2220,7 @@ class ComputersController extends Controller
     {
         $this->requireModuleWrite('computers');
         $this->deleteProductFiles($productId);
+        $this->computerProductCategories->purgeProductIds(array($productId));
         $this->db()->delete(self::PRODUCTS_TABLE, 'id = :id', array('id' => $productId));
         $this->setFlash('success', 'Produkt ID ' . $productId . ' zostal usuniety.');
         $this->redirect($this->productsRedirectUrl());
@@ -3857,10 +4010,45 @@ class ComputersController extends Controller
             'intval',
             (array) ($filters['components'] ?? array())
         ))));
-        foreach ($componentIds as $index => $componentId) {
-            $key = 'computer_filter_component_' . $index;
-            $where[] = 'FIND_IN_SET(:' . $key . ', products.id_components) > 0';
-            $params[$key] = (string) $componentId;
+        $componentFilterMode = $this->normalizeComponentFilterMode($filters['components_mode'] ?? 'all');
+        if ($componentFilterMode === 'category_any') {
+            $componentGroups = isset($filters['component_groups']) && is_array($filters['component_groups'])
+                ? $filters['component_groups']
+                : $this->componentFilterGroups($componentIds, $this->componentsById());
+            foreach ($componentGroups as $groupIndex => $groupComponentIds) {
+                $groupWhere = array();
+                foreach ((array) $groupComponentIds as $componentIndex => $componentId) {
+                    $componentId = (int) $componentId;
+                    if ($componentId <= 0 || !in_array($componentId, $componentIds, true)) {
+                        continue;
+                    }
+                    $key = 'computer_filter_component_' . $groupIndex . '_' . $componentIndex;
+                    $groupWhere[] = 'FIND_IN_SET(:' . $key . ', products.id_components) > 0';
+                    $params[$key] = (string) $componentId;
+                }
+                if ($groupWhere !== array()) {
+                    $where[] = '(' . implode(' OR ', $groupWhere) . ')';
+                }
+            }
+        } else {
+            foreach ($componentIds as $index => $componentId) {
+                $key = 'computer_filter_component_' . $index;
+                $where[] = 'FIND_IN_SET(:' . $key . ', products.id_components) > 0';
+                $params[$key] = (string) $componentId;
+            }
+        }
+
+        $categoryId = max(0, (int) ($filters['category_id'] ?? 0));
+        $userId = max(0, (int) ($filters['user_id'] ?? 0));
+        if ($categoryId > 0 && $userId > 0) {
+            $where[] = 'EXISTS (SELECT 1 FROM ' . ComputerProductCategoryRepository::ASSIGNMENTS_TABLE . ' category_assignment'
+                . ' INNER JOIN ' . ComputerProductCategoryRepository::CATEGORIES_TABLE . ' private_category'
+                . ' ON private_category.id = category_assignment.category_id'
+                . ' WHERE category_assignment.product_id = products.id'
+                . ' AND private_category.id = :computer_filter_category_id'
+                . ' AND private_category.user_id = :computer_filter_category_user_id)';
+            $params['computer_filter_category_id'] = $categoryId;
+            $params['computer_filter_category_user_id'] = $userId;
         }
 
         $createdFrom = $this->normalizeDateFilterInput($filters['created_from'] ?? '');
@@ -3932,6 +4120,38 @@ class ComputersController extends Controller
             $where === array() ? '' : ' WHERE ' . implode(' AND ', $where),
             $params,
         );
+    }
+
+    private function normalizeComponentFilterMode($value): string
+    {
+        return trim((string) $value) === 'category_any' ? 'category_any' : 'all';
+    }
+
+    /**
+     * Selected values from one component category are alternatives (OR), while
+     * separate categories are required together (AND).
+     *
+     * @param array<int> $componentIds
+     * @return array<int, array<int>>
+     */
+    private function componentFilterGroups(array $componentIds, array $componentsById): array
+    {
+        if ($componentIds === array()) {
+            return array();
+        }
+
+        $groups = array();
+        foreach ($componentIds as $componentId) {
+            $componentId = (int) $componentId;
+            $category = trim((string) ($componentsById[$componentId]['category'] ?? ''));
+            $groupKey = $category !== '' ? 'category:' . $category : 'component:' . $componentId;
+            if (!isset($groups[$groupKey])) {
+                $groups[$groupKey] = array();
+            }
+            $groups[$groupKey][] = $componentId;
+        }
+
+        return array_values($groups);
     }
 
     /**

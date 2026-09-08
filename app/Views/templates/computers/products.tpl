@@ -48,6 +48,43 @@
     </div>
   {/if}
 
+  <div class="card shadow-sm mb-4 border-0 computers-category-card">
+    <div class="card-body d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3">
+      <div class="flex-grow-1 min-width-0">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <i class="bi bi-folder2-open text-primary"></i>
+          <strong>Moje kategorie produktów</strong>
+          <span class="text-muted small">Prywatne — widoczne tylko dla Ciebie</span>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{$categoryAllUrl|escape:'html'}" class="btn btn-sm {if $filterCategoryId == 0}btn-primary{else}btn-outline-primary{/if}">
+            Wszystkie
+          </a>
+          {foreach from=$productCategories item=productCategory}
+            <a href="{$productCategory.filter_url|escape:'html'}" class="btn btn-sm {if $filterCategoryId == $productCategory.id}btn-primary{else}btn-outline-primary{/if}">
+              {$productCategory.name|escape:'html'}
+              <span class="badge {if $filterCategoryId == $productCategory.id}text-bg-light{else}text-bg-secondary{/if} ms-1">{$productCategory.product_count}</span>
+            </a>
+          {/foreach}
+        </div>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <form method="post" action="" class="d-flex align-items-center gap-2">
+          <label for="new_product_category_name" class="visually-hidden">Nazwa nowej kategorii</label>
+          <input type="text" id="new_product_category_name" name="category_name" class="form-control form-control-sm" maxlength="120" placeholder="Nowa kategoria..." required />
+          <button type="submit" name="create_product_category" value="1" class="btn btn-sm btn-success text-nowrap">
+            <i class="bi bi-folder-plus me-1"></i>Dodaj
+          </button>
+        </form>
+        {if $productCategories}
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#manageProductCategoriesModal">
+            <i class="bi bi-gear me-1"></i>Zarządzaj
+          </button>
+        {/if}
+      </div>
+    </div>
+  </div>
+
   <div class="row g-4">
     <!-- Panel generowania wariantów (domyślnie zwinięty) -->
     <div class="col-12 col-lg-4 collapse" id="variantsPanel">
@@ -102,6 +139,7 @@
           <form method="get" action="{$baseUrl}" class="row g-3 computers-filter-form">
             <input type="hidden" name="controller" value="computers" />
             <input type="hidden" name="action" value="products" />
+            <input type="hidden" name="filter_category_id" value="{$filterCategoryId}" />
             <input type="hidden" name="per_page" id="filter_per_page_input" value="{$per_page}" />
             <input type="hidden" name="page" id="filter_page_input" value="{$current_page}" />
             <div class="col-12 col-xl-8">
@@ -252,7 +290,7 @@
                   </div>
                 </div>
                 <div class="d-grid gap-2 computers-filter-actions">
-                  <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Filtruj</button>
+                  <button type="submit" name="filter_components_mode" value="all" class="btn btn-primary"><i class="bi bi-search"></i> Filtruj</button>
                   <a href="{$baseUrl}?controller=computers&action=products" class="btn btn-outline-secondary">Wyczysc</a>
                 </div>
               </div>
@@ -262,7 +300,9 @@
                 <div class="computers-filter-panel__header">
                   <div>
                     <div class="computers-filter-panel__title">Komponenty</div>
-                    <div class="computers-filter-panel__hint">Mozesz zaznaczyc wiele komponentów jednocześnie. Rozwiń kategorię lub wyszukaj po nazwie.</div>
+                    <div class="computers-filter-panel__hint">
+                      Zaznacz wiele komponentów, a następnie użyj wyszukiwania wariantów. W jednej kategorii pasuje dowolny zaznaczony komponent, między kategoriami produkt musi spełniać wszystkie warunki.
+                    </div>
                   </div>
                   <span class="badge rounded-pill text-bg-primary computers-filter-total-badge" id="componentsSelectedTotal">{$filterComponents|@count} wybranych</span>
                 </div>
@@ -281,7 +321,17 @@
                   <button type="button" class="btn btn-outline-secondary btn-sm" id="componentsCollapseAllBtn">
                     <i class="bi bi-arrows-collapse me-1"></i>Zwiń wszystkie
                   </button>
+                  <button type="submit" name="filter_components_mode" value="category_any" class="btn btn-sm {if $filterComponentsMode eq 'category_any'}btn-success{else}btn-outline-success{/if}">
+                    <i class="bi bi-diagram-3 me-1"></i>Szukaj wariantów komponentów
+                  </button>
                 </div>
+
+                {if $filterComponentsMode eq 'category_any' && $filterComponents|@count > 0}
+                  <div class="alert alert-success py-2 px-3 mb-3 small" role="status">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Aktywny tryb wariantów: komponenty z tej samej kategorii są alternatywami, a różne kategorie są wymagane razem.
+                  </div>
+                {/if}
 
                 <div class="accordion computers-filter-accordion" id="componentsAccordion">
                   {foreach from=$grouped item=comps key=category name=catLoop}
@@ -335,7 +385,12 @@
 
       <div class="card shadow-sm">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
-          <span class="fw-bold"><i class="bi bi-table me-2"></i>Lista produktów</span>
+          <span class="fw-bold">
+            <i class="bi bi-table me-2"></i>Lista produktów
+            {if $activeProductCategory}
+              <span class="badge text-bg-primary ms-2">{$activeProductCategory.name|escape:'html'}</span>
+            {/if}
+          </span>
           <div>
             <button type="button" id="select_all_btn" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-check2-square"></i> Zaznacz tę stronę</button>
             <button type="button" id="select_all_filtered_btn" class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-check2-all"></i> Zaznacz na wszystkich stronach</button>
@@ -377,6 +432,7 @@
             {foreach from=$filterComponents item=filterComponentId}
               <input type="hidden" name="selection_filter_components[]" value="{$filterComponentId}" />
             {/foreach}
+            <input type="hidden" name="selection_filter_components_mode" value="{$filterComponentsMode|escape:'html'}" />
             {foreach from=$filterMarketAccounts item=filterMarketAccount}
               <input type="hidden" name="selection_filter_market_accounts[]" value="{$filterMarketAccount|escape:'html'}" />
             {/foreach}
@@ -385,6 +441,7 @@
             <input type="hidden" name="selection_filter_no_images" value="{if $filterNoImages}1{else}0{/if}" />
             <input type="hidden" name="selection_filter_no_ean" value="{if $filterNoEan}1{else}0{/if}" />
             <input type="hidden" name="selection_filter_price_mismatch" value="{if $filterPriceMismatch}1{else}0{/if}" />
+            <input type="hidden" name="selection_filter_category_id" value="{$filterCategoryId}" />
             <div id="excluded_product_ids"></div>
             <div id="all_filtered_selection_notice" class="alert alert-primary py-2 px-3 mb-3 d-none" role="status">
               Zaznaczono wszystkie produkty zgodne z bieżącymi filtrami: <strong>{$total_products}</strong>.
@@ -431,6 +488,16 @@
 
 <li><a class="dropdown-item" href="#" onclick="setBulkAction('update_price'); return false;">
     <i class="bi bi-cash-stack me-1"></i>Aktualizuj ceny z magazynem
+</a></li>
+
+<li><hr class="dropdown-divider"></li>
+
+<li><a class="dropdown-item" href="#" onclick="setBulkAction('add_to_category'); return false;">
+    <i class="bi bi-folder-plus me-1 text-primary"></i>Dodaj do mojej kategorii
+</a></li>
+
+<li><a class="dropdown-item" href="#" onclick="setBulkAction('remove_from_category'); return false;">
+    <i class="bi bi-folder-minus me-1 text-secondary"></i>Usuń z mojej kategorii
 </a></li>
 
 <li><hr class="dropdown-divider"></li>
@@ -547,6 +614,20 @@
               <div id="delete_field" style="display:none; max-width: 400px;">
                 <p class="mb-2 text-danger">Zaznaczone produkty zostaną trwale usunięte z systemu. Tej operacji nie można cofnąć!</p>
               </div>
+              <div id="product_category_field" style="display:none; max-width: 400px;">
+                <label for="bulk_category_id" class="form-label">Moja kategoria:</label>
+                <select name="bulk_category_id" id="bulk_category_id" class="form-select">
+                  <option value="">-- Wybierz kategorię --</option>
+                  {foreach from=$productCategories item=productCategory}
+                    <option value="{$productCategory.id}">{$productCategory.name|escape:'html'} ({$productCategory.product_count})</option>
+                  {/foreach}
+                </select>
+                {if !$productCategories}
+                  <p class="mt-2 text-danger small">Najpierw utwórz kategorię w panelu nad filtrami.</p>
+                {else}
+                  <p class="mt-2 text-muted small">Produkt może należeć jednocześnie do wielu Twoich kategorii.</p>
+                {/if}
+              </div>
                <div id="update_price_field" style="display:none; max-width: 400px;">
                 <p class="mb-2 text-danger">Synchronizuj ceny produktów z magazynem. Tej operacji nie można cofnąć!</p>
               </div>
@@ -641,6 +722,15 @@
               {else}
                 <strong class="product-title" data-prod-id="{$prod.id}">{$prod.name|escape:'html'}</strong>
               {/if}
+                          {if $prod.private_categories|@count > 0}
+                            <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
+                              {foreach from=$prod.private_categories item=privateCategory}
+                                <span class="badge rounded-pill text-bg-primary" title="Twoja prywatna kategoria">
+                                  <i class="bi bi-folder2 me-1"></i>{$privateCategory.name|escape:'html'}
+                                </span>
+                              {/foreach}
+                            </span>
+                          {/if}
                           {if $prod.allegro_accounts|@count > 0}
                             <span class="ms-2 d-inline-flex flex-wrap gap-1 align-items-center">
                               {foreach from=$prod.allegro_accounts item=allegroAccount}
@@ -1030,6 +1120,45 @@
     </div>
   </div>
 </div>
+
+{if $productCategories}
+  <div class="modal fade" id="manageProductCategoriesModal" tabindex="-1" aria-labelledby="manageProductCategoriesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title" id="manageProductCategoriesModalLabel">Zarządzaj moimi kategoriami</h5>
+            <div class="text-muted small">Zmiany dotyczą wyłącznie Twojego konta.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex flex-column gap-2">
+            {foreach from=$productCategories item=productCategory}
+              <form method="post" action="" class="border rounded p-3 d-flex flex-column flex-md-row align-items-md-center gap-2">
+                <input type="hidden" name="category_id" value="{$productCategory.id}" />
+                <div class="flex-grow-1">
+                  <label for="product_category_name_{$productCategory.id}" class="form-label small text-muted mb-1">
+                    Nazwa · {$productCategory.product_count} produktów
+                  </label>
+                  <input type="text" id="product_category_name_{$productCategory.id}" name="category_name" value="{$productCategory.name|escape:'html'}" class="form-control" maxlength="120" required />
+                </div>
+                <div class="d-flex gap-2 align-self-md-end">
+                  <button type="submit" name="rename_product_category" value="1" class="btn btn-primary">
+                    <i class="bi bi-check2 me-1"></i>Zapisz
+                  </button>
+                  <button type="submit" name="delete_product_category" value="1" class="btn btn-outline-danger" formnovalidate onclick="return confirm('Usunąć kategorię „{$productCategory.name|escape:'javascript'}”? Produkty pozostaną bez zmian.');">
+                    <i class="bi bi-trash me-1"></i>Usuń
+                  </button>
+                </div>
+              </form>
+            {/foreach}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- Modal do powiększania obrazka -->
 <div class="modal fade" id="imgModal" tabindex="-1" aria-labelledby="imgModalLabel" aria-hidden="true">
@@ -2403,7 +2532,20 @@
     var data = new FormData();
     if (!form) return data;
 
-    ['selection_scope', 'selection_filter_name', 'selection_filter_ean_sku'].forEach(function (name) {
+    [
+      'selection_scope',
+      'selection_filter_name',
+      'selection_filter_ean_sku',
+      'selection_filter_components_mode',
+      'selection_filter_created_from',
+      'selection_filter_created_to',
+      'selection_filter_updated_from',
+      'selection_filter_updated_to',
+      'selection_filter_no_images',
+      'selection_filter_no_ean',
+      'selection_filter_price_mismatch',
+      'selection_filter_category_id'
+    ].forEach(function (name) {
       var input = form.querySelector('[name="' + name + '"]');
       if (input) data.append(name, input.value || '');
     });
@@ -2520,6 +2662,15 @@
         event.preventDefault();
         titleTemplateSelect.focus();
         titleTemplateSelect.classList.add('is-invalid');
+      }
+      var productCategorySelect = document.getElementById('bulk_category_id');
+      if (actionInput
+        && (actionInput.value === 'add_to_category' || actionInput.value === 'remove_from_category')
+        && productCategorySelect
+        && !productCategorySelect.value) {
+        event.preventDefault();
+        productCategorySelect.focus();
+        productCategorySelect.classList.add('is-invalid');
       }
     });
   }
@@ -2655,6 +2806,7 @@
     document.getElementById('set_ean_field').style.display = 'none';
     document.getElementById('import_ean_field').style.display = 'none';
     document.getElementById('delete_field').style.display = 'none';
+    document.getElementById('product_category_field').style.display = 'none';
     document.getElementById('update_price_field').style.display = 'none';
     document.getElementById('add_component_field').style.display = 'none';
     document.getElementById('replace_component_field').style.display = 'none';
@@ -2671,6 +2823,8 @@
       document.getElementById('change_images_field').style.display = 'block';
     } else if (action === 'delete') {
       document.getElementById('delete_field').style.display = 'block';
+    } else if (action === 'add_to_category' || action === 'remove_from_category') {
+      document.getElementById('product_category_field').style.display = 'block';
     } else if (action === 'set_ean') {
       document.getElementById('set_ean_field').style.display = 'block';
     }
