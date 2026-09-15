@@ -9,7 +9,7 @@ use App\Core\Database;
 
 class AllegroStorageRepository
 {
-    private const SCHEMA_CACHE_KEY = 'schema:allegro_storage:v5';
+    private const SCHEMA_CACHE_KEY = 'schema:allegro_storage:v6';
     private const OFFER_COUNT_CACHE_TTL = 30;
     private const STATS_CACHE_TTL = 60;
     /** @var bool */
@@ -41,6 +41,7 @@ class AllegroStorageRepository
             . "name VARCHAR(120) NOT NULL,\n"
             . "slug VARCHAR(140) NOT NULL,\n"
             . "client_id VARCHAR(190) NOT NULL,\n"
+            . "application_name VARCHAR(120) NOT NULL DEFAULT 'accra_shop magazyn nowy',\n"
             . "client_secret VARCHAR(255) NOT NULL,\n"
             . "redirect_uri VARCHAR(255) NOT NULL,\n"
             . "is_active TINYINT(1) NOT NULL DEFAULT 1,\n"
@@ -59,6 +60,16 @@ class AllegroStorageRepository
             . "KEY idx_allegro_accounts_active (is_active)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        if (!$this->database->fetch("SHOW COLUMNS FROM allegro_accounts LIKE 'application_name'")) {
+            try {
+                $this->database->query("ALTER TABLE allegro_accounts ADD COLUMN application_name VARCHAR(120) NOT NULL DEFAULT 'accra_shop magazyn nowy' AFTER client_id");
+            } catch (\PDOException $exception) {
+                if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
+                    throw $exception;
+                }
+            }
+        }
 
         $this->database->query(
             "CREATE TABLE IF NOT EXISTS allegro_account_tokens (\n"

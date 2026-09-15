@@ -471,6 +471,43 @@ class EmpikStorageRepository
         return isset($rows[0]) ? $rows[0] : null;
     }
 
+    /**
+     * Finds the locally synchronized Empik offer that belongs to an order line.
+     * Mirakl orders normally expose the shop SKU and product SKU, while older
+     * payloads may only contain the product identifier, so all three are used.
+     */
+    public function findOfferForOrder(int $accountId, string $shopSku = '', string $productSku = '', string $productId = ''): array
+    {
+        $identifiers = array_filter(array(
+            'shop_sku' => trim($shopSku),
+            'product_sku' => trim($productSku),
+            'product_id' => trim($productId),
+        ), static function (string $value): bool {
+            return $value !== '';
+        });
+
+        if ($accountId <= 0 || $identifiers === array()) {
+            return array();
+        }
+
+        $conditions = array();
+        $params = array('order_account_id' => $accountId);
+        foreach ($identifiers as $column => $value) {
+            $parameter = 'order_' . $column;
+            $conditions[] = $column . ' = :' . $parameter;
+            $params[$parameter] = $value;
+        }
+
+        $row = $this->database->fetch(
+            'SELECT account_id, offer_id, shop_sku, product_sku, product_id, offer_json'
+            . ' FROM empik_offers WHERE account_id = :order_account_id AND (' . implode(' OR ', $conditions) . ')'
+            . ' ORDER BY last_synced_at DESC, id DESC LIMIT 1',
+            $params
+        );
+
+        return is_array($row) ? $row : array();
+    }
+
     public function listOffersByIds(array $offerRowIds): array
     {
         $offerRowIds = array_values(array_unique(array_filter(array_map('intval', $offerRowIds))));

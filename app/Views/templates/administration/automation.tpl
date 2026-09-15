@@ -307,6 +307,14 @@
                               <input type="text" name="client_id" class="form-control" required>
                             </div>
                             <div class="col-12">
+                              <label class="form-label">Aplikacja w Allegro Developer Apps</label>
+                              <select name="application_name" class="form-select" required>
+                                <option value="accra_shop magazyn nowy">accra_shop magazyn nowy</option>
+                                <option value="Accra_shop Magazyn">Accra_shop Magazyn</option>
+                              </select>
+                              <div class="form-text">Musi odpowiadać aplikacji, do której należy podany Client ID.</div>
+                            </div>
+                            <div class="col-12">
                               <label class="form-label">Client Secret</label>
                               <input type="text" name="client_secret" class="form-control" required>
                             </div>
@@ -398,6 +406,7 @@
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
                                           <input type="hidden" name="name" value="{$account.name|escape}">
                                           <input type="hidden" name="client_id" value="{$account.client_id|escape}">
+                                          <input type="hidden" name="application_name" value="{$account.application_name|default:'accra_shop magazyn nowy'|escape}">
                                           <input type="hidden" name="redirect_uri" value="{$account.redirect_uri|escape}">
                                           <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">
                                           <button type="submit" class="btn btn-sm {if $account.is_active}btn-outline-warning{else}btn-outline-success{/if}">
@@ -418,6 +427,13 @@
                                         <div class="col-lg-3">
                                           <label class="form-label">Client ID</label>
                                           <input type="text" name="client_id" class="form-control form-control-sm" value="{$account.client_id|escape}" required>
+                                        </div>
+                                        <div class="col-lg-3">
+                                          <label class="form-label">Aplikacja Developer Apps</label>
+                                          <select name="application_name" class="form-select form-select-sm" required>
+                                            <option value="accra_shop magazyn nowy" {if $account.application_name|default:'accra_shop magazyn nowy' eq 'accra_shop magazyn nowy'}selected{/if}>accra_shop magazyn nowy</option>
+                                            <option value="Accra_shop Magazyn" {if $account.application_name|default:'' eq 'Accra_shop Magazyn'}selected{/if}>Accra_shop Magazyn</option>
+                                          </select>
                                         </div>
                                         <div class="col-lg-3">
                                           <label class="form-label">Client Secret</label>

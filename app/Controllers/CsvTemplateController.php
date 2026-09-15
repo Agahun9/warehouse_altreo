@@ -133,6 +133,7 @@ class CsvTemplateController extends Controller
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'presets' => $this->presetDefinitions(),
+            'allTemplatesForSelect' => $this->templates->allForSelect(),
         ));
     }
 
@@ -342,15 +343,15 @@ class CsvTemplateController extends Controller
             'formAction' => './index.php?controller=csvtemplates&action=store',
             'template' => $template,
             'availableFields' => $this->availableFieldOptions(),
-            'availableFieldsJson' => json_encode($this->availableFieldOptions()),
+            'availableFieldsJson' => $this->jsonForInlineScript($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
-            'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
-            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'availableFunctionsJson' => $this->jsonForInlineScript($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => $this->jsonForInlineScript($this->availableDescriptionImageSources()),
             'templateCategories' => $this->templates->allCategories(),
             'presets' => $presets,
             'previewCsv' => '',
-            'templateColumnsJson' => json_encode(isset($template['columns']) ? $template['columns'] : array()),
-            'descriptionTemplatesJson' => json_encode(isset($template['description_templates']) ? $template['description_templates'] : array()),
+            'templateColumnsJson' => $this->jsonForInlineScript(isset($template['columns']) ? $template['columns'] : array()),
+            'descriptionTemplatesJson' => $this->jsonForInlineScript(isset($template['description_templates']) ? $template['description_templates'] : array()),
         ));
     }
 
@@ -526,15 +527,15 @@ class CsvTemplateController extends Controller
             'formAction' => './index.php?controller=csvtemplates&action=update&id=' . $id,
             'template' => $template,
             'availableFields' => $this->availableFieldOptions(),
-            'availableFieldsJson' => json_encode($this->availableFieldOptions()),
+            'availableFieldsJson' => $this->jsonForInlineScript($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
-            'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
-            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'availableFunctionsJson' => $this->jsonForInlineScript($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => $this->jsonForInlineScript($this->availableDescriptionImageSources()),
             'templateCategories' => $this->templates->allCategories(),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
-            'templateColumnsJson' => json_encode($this->columnsForPreview(isset($template['columns']) ? $template['columns'] : array())),
-            'descriptionTemplatesJson' => json_encode(isset($template['description_templates']) ? $template['description_templates'] : array()),
+            'templateColumnsJson' => $this->jsonForInlineScript($this->columnsForPreview(isset($template['columns']) ? $template['columns'] : array())),
+            'descriptionTemplatesJson' => $this->jsonForInlineScript(isset($template['description_templates']) ? $template['description_templates'] : array()),
         ));
     }
 
@@ -634,113 +635,230 @@ class CsvTemplateController extends Controller
             }
 
             $includeDescriptions = (string) $this->input('include_descriptions', '0') === '1';
-            $categoryName = null;
-            foreach ($this->templates->allCategories() as $category) {
-                if ((int) ($category['id'] ?? 0) === (int) ($template['category_id'] ?? 0)) {
-                    $categoryName = (string) ($category['name'] ?? '');
-                    break;
-                }
-            }
-
-            $headers = array(
-                'template_name',
-                'category',
-                'delimiter',
-                'encoding',
-                'add_bom',
-                'array_separator',
-            );
-            if ($includeDescriptions) {
-                $headers[] = 'description';
-                $headers[] = 'description_templates_json';
-            }
-            $headers = array_merge($headers, array(
-                'column_order',
-                'header_name',
-                'source_type',
-                'source_value',
-                'settings_json',
-                'mappings_json',
-            ));
-
-            $descriptionTemplatesJson = '';
-            if ($includeDescriptions) {
-                $descriptionTemplatesJson = json_encode(
-                    isset($template['description_templates']) && is_array($template['description_templates'])
-                        ? $template['description_templates']
-                        : array(),
-                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
-                );
-                if ($descriptionTemplatesJson === false) {
-                    throw new RuntimeException('Nie udalo sie zapisac szablonow opisu w CSV.');
-                }
-            }
-
-            $stream = fopen('php://temp', 'w+');
-            if ($stream === false) {
-                throw new RuntimeException('Nie udalo sie przygotowac pliku CSV szablonu.');
-            }
-            fputcsv($stream, $headers, ';', '"', '');
-
-            foreach (($template['columns'] ?? array()) as $index => $column) {
-                if (!is_array($column)) {
-                    continue;
-                }
-
-                $settingsJson = json_encode(
-                    isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array(),
-                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
-                );
-                $mappingsJson = json_encode(
-                    isset($column['mappings']) && is_array($column['mappings']) ? $column['mappings'] : array(),
-                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
-                );
-                if ($settingsJson === false || $mappingsJson === false) {
-                    fclose($stream);
-                    throw new RuntimeException('Nie udalo sie zapisac ustawien kolumn w CSV.');
-                }
-
-                $row = array(
-                    (string) ($template['name'] ?? ''),
-                    (string) ($categoryName ?? ''),
-                    (string) ($template['delimiter'] ?? ';'),
-                    (string) ($template['encoding'] ?? 'UTF-8'),
-                    !empty($template['add_bom']) ? '1' : '0',
-                    (string) ($template['array_separator'] ?? '|'),
-                );
-                if ($includeDescriptions) {
-                    $row[] = (string) ($template['description'] ?? '');
-                    $row[] = $descriptionTemplatesJson;
-                }
-                $row = array_merge($row, array(
-                    (string) ($index + 1),
-                    (string) ($column['header_name'] ?? ''),
-                    (string) ($column['source_type'] ?? 'field'),
-                    (string) ($column['source_value'] ?? ''),
-                    $settingsJson,
-                    $mappingsJson,
-                ));
-                fputcsv($stream, $row, ';', '"', '');
-            }
-
-            rewind($stream);
-            $csv = stream_get_contents($stream);
-            fclose($stream);
-            if ($csv === false) {
-                throw new RuntimeException('Nie udalo sie wygenerowac pliku CSV szablonu.');
-            }
-
-            $filenameBase = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($template['name'] ?? ''));
-            $filenameBase = trim((string) $filenameBase, '_');
-            if ($filenameBase === '') {
-                $filenameBase = 'csv_template_' . $id;
-            }
+            $categoryName = $this->templateCategoryName($template, $this->templates->allCategories());
+            $csv = $this->buildTemplateSettingsCsv($template, $categoryName, $includeDescriptions);
+            $filename = $this->templateSettingsFilename($template, $id, 'csv');
 
             header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename="' . $filenameBase . '_settings.csv"');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
             header('Content-Length: ' . strlen($csv));
             echo $csv;
             exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
+    }
+
+    public function exporttemplatejson(): void
+    {
+        $this->requireModule('csvtemplates');
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0) {
+                throw new RuntimeException('Nieprawidlowe ID szablonu.');
+            }
+
+            $template = $this->templates->findFullById($id);
+            if (!$template) {
+                throw new RuntimeException('Nie znaleziono szablonu.');
+            }
+
+            $includeDescriptions = (string) $this->input('include_descriptions', '0') === '1';
+            $categoryName = $this->templateCategoryName($template, $this->templates->allCategories());
+            $json = $this->buildTemplateSettingsJson($template, $categoryName, $includeDescriptions);
+            $filename = $this->templateSettingsFilename($template, $id, 'json');
+
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($json));
+            echo $json;
+            exit;
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
+    }
+
+    public function exporttemplatesarchive(): void
+    {
+        $this->requireModule('csvtemplates');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
+
+        $zipPath = '';
+        $archive = null;
+        $archiveOpen = false;
+        try {
+            $choice = strtolower(trim((string) $this->input('export_choice', '')));
+            if (preg_match('/^(csv|json|both)_([01])$/', $choice, $matches) !== 1) {
+                throw new RuntimeException('Wybierz format eksportu i wariant opisow.');
+            }
+            $format = (string) $matches[1];
+            $includeDescriptions = (string) $matches[2] === '1';
+
+            $idsInput = $this->input('template_ids', array());
+            $idsInput = is_array($idsInput) ? $idsInput : array();
+            $templateIds = array();
+            foreach ($idsInput as $idInput) {
+                $id = (int) $idInput;
+                if ($id > 0) {
+                    $templateIds[$id] = $id;
+                }
+            }
+            $templateIds = array_values($templateIds);
+            if ($templateIds === array()) {
+                throw new RuntimeException('Zaznacz przynajmniej jeden szablon do pobrania.');
+            }
+            if (count($templateIds) > 100) {
+                throw new RuntimeException('Jednorazowo mozna pobrac maksymalnie 100 szablonow.');
+            }
+            if (!class_exists(\ZipArchive::class)) {
+                throw new RuntimeException('Serwer nie obsluguje tworzenia paczek ZIP.');
+            }
+
+            $zipPath = tempnam(sys_get_temp_dir(), 'altreo_csv_templates_');
+            if ($zipPath === false || $zipPath === '') {
+                throw new RuntimeException('Nie udalo sie przygotowac paczki ZIP.');
+            }
+
+            $archive = new \ZipArchive();
+            if ($archive->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+                throw new RuntimeException('Nie udalo sie otworzyc paczki ZIP do zapisu.');
+            }
+            $archiveOpen = true;
+
+            $categories = $this->templates->allCategories();
+            $exportedCount = 0;
+            foreach ($templateIds as $templateId) {
+                $template = $this->templates->findFullById($templateId);
+                if (!$template) {
+                    continue;
+                }
+
+                $categoryName = $this->templateCategoryName($template, $categories);
+                $formats = $format === 'both' ? array('csv', 'json') : array($format);
+                foreach ($formats as $fileFormat) {
+                    $contents = $fileFormat === 'json'
+                        ? $this->buildTemplateSettingsJson($template, $categoryName, $includeDescriptions)
+                        : $this->buildTemplateSettingsCsv($template, $categoryName, $includeDescriptions);
+                    $filename = $this->templateSettingsFilename($template, $templateId, $fileFormat, true);
+                    if (!$archive->addFromString($filename, $contents)) {
+                        throw new RuntimeException('Nie udalo sie dodac szablonu do paczki ZIP.');
+                    }
+                }
+                $exportedCount++;
+            }
+
+            if (!$archive->close()) {
+                throw new RuntimeException('Nie udalo sie zamknac paczki ZIP.');
+            }
+            $archiveOpen = false;
+            if ($exportedCount === 0) {
+                throw new RuntimeException('Nie znaleziono zaznaczonych szablonow.');
+            }
+
+            $zip = file_get_contents($zipPath);
+            if ($zip === false) {
+                throw new RuntimeException('Nie udalo sie odczytac gotowej paczki ZIP.');
+            }
+            unlink($zipPath);
+            $zipPath = '';
+
+            $descriptionVariant = $includeDescriptions ? 'z_opisami' : 'bez_opisow';
+            $formatVariant = $format === 'both' ? 'csv_json' : $format;
+            $archiveName = 'szablony_' . $formatVariant . '_' . $descriptionVariant . '_' . date('Ymd_His') . '.zip';
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $archiveName . '"');
+            header('Content-Length: ' . strlen($zip));
+            echo $zip;
+            exit;
+        } catch (Throwable $exception) {
+            if ($archiveOpen && $archive instanceof \ZipArchive) {
+                $archive->close();
+            }
+            if ($zipPath !== '' && is_file($zipPath)) {
+                unlink($zipPath);
+            }
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
+    }
+
+    public function importtemplate(): void
+    {
+        $this->requireModuleWrite('csvtemplates');
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=csvtemplates&action=index');
+        }
+
+        try {
+            $mode = (string) $this->input('import_template_mode', 'create');
+            if (!in_array($mode, array('create', 'update'), true)) {
+                throw new RuntimeException('Nieprawidlowy tryb importu szablonu.');
+            }
+
+            $import = $this->readUploadedTemplateDefinition('template_file');
+            $template = $import['template'];
+            $categoryMessage = '';
+            $template['category_id'] = $this->templateCategoryIdFromImportedName(
+                (string) ($import['category_name'] ?? ''),
+                $categoryMessage
+            );
+
+            $targetId = 0;
+            if ($mode === 'update') {
+                $targetId = (int) $this->input('target_template_id', 0);
+                $target = $this->templates->findFullById($targetId);
+                if (!$target) {
+                    throw new RuntimeException('Wybierz istniejacy szablon do edycji.');
+                }
+
+                $template['id'] = $targetId;
+                $template['name'] = (string) ($target['name'] ?? '');
+                if (empty($import['includes_descriptions'])) {
+                    $template['description'] = (string) ($target['description'] ?? '');
+                    $template['description_templates'] = isset($target['description_templates']) && is_array($target['description_templates'])
+                        ? $target['description_templates']
+                        : array();
+                }
+            } else {
+                $template['id'] = 0;
+                $template['name'] = $this->uniqueImportedTemplateName((string) ($template['name'] ?? ''));
+            }
+
+            $message = $mode === 'update'
+                ? 'Ustawienia zostaly wczytane do edycji. Sprawdz dane i kliknij Zapisz szablon, aby zaktualizowac wskazany szablon.'
+                : 'Ustawienia zostaly wczytane jako nowy szablon. Sprawdz dane i kliknij Zapisz szablon, aby go dodac.';
+            if ($categoryMessage !== '') {
+                $message .= ' ' . $categoryMessage;
+            }
+
+            $this->render('csv_templates/form', array(
+                'pageTitle' => $mode === 'update' ? 'Import do edycji szablonu CSV' : 'Import nowego szablonu CSV',
+                'contentTitle' => $mode === 'update' ? 'Edytuj zaimportowany szablon CSV' : 'Dodaj zaimportowany szablon CSV',
+                'pageDescription' => 'Zweryfikuj ustawienia wczytane z pliku przed zapisem.',
+                'breadcrumbCurrent' => 'Import ustawien szablonu',
+                'formAction' => $mode === 'update'
+                    ? './index.php?controller=csvtemplates&action=update&id=' . $targetId
+                    : './index.php?controller=csvtemplates&action=store',
+                'template' => $template,
+                'availableFields' => $this->availableFieldOptions(),
+                'availableFieldsJson' => $this->jsonForInlineScript($this->availableFieldOptions()),
+                'availableFunctions' => $this->availableComputedFunctions(),
+                'availableFunctionsJson' => $this->jsonForInlineScript($this->availableComputedFunctions()),
+                'descriptionImageSourcesJson' => $this->jsonForInlineScript($this->availableDescriptionImageSources()),
+                'templateCategories' => $this->templates->allCategories(),
+                'presets' => $this->presetDefinitions(),
+                'previewCsv' => '',
+                'templateColumnsJson' => $this->jsonForInlineScript($this->columnsForPreview($template['columns'])),
+                'descriptionTemplatesJson' => $this->jsonForInlineScript($template['description_templates']),
+                'flashSuccess' => $message,
+            ));
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
             $this->redirect('./index.php?controller=csvtemplates&action=index');
@@ -783,15 +901,15 @@ class CsvTemplateController extends Controller
                 'formAction' => $formAction,
                 'template' => $previewTemplate,
                 'availableFields' => $this->availableFieldOptions(),
-                'availableFieldsJson' => json_encode($this->availableFieldOptions()),
+                'availableFieldsJson' => $this->jsonForInlineScript($this->availableFieldOptions()),
                 'availableFunctions' => $this->availableComputedFunctions(),
-                'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
-                'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+                'availableFunctionsJson' => $this->jsonForInlineScript($this->availableComputedFunctions()),
+                'descriptionImageSourcesJson' => $this->jsonForInlineScript($this->availableDescriptionImageSources()),
                 'templateCategories' => $this->templates->allCategories(),
                 'presets' => $this->presetDefinitions(),
                 'previewCsv' => $csv,
-                'templateColumnsJson' => json_encode(isset($previewTemplate['columns']) ? $previewTemplate['columns'] : array()),
-                'descriptionTemplatesJson' => json_encode($descriptionTemplates),
+                'templateColumnsJson' => $this->jsonForInlineScript(isset($previewTemplate['columns']) ? $previewTemplate['columns'] : array()),
+                'descriptionTemplatesJson' => $this->jsonForInlineScript($descriptionTemplates),
             ));
         } catch (Throwable $exception) {
             $this->renderFormWithError($mode, $templateId > 0 ? $templateId : null, $exception->getMessage());
@@ -884,6 +1002,537 @@ class CsvTemplateController extends Controller
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(array('items' => $normalized));
+    }
+
+    private function templateCategoryName(array $template, array $categories): string
+    {
+        $categoryId = (int) ($template['category_id'] ?? 0);
+        foreach ($categories as $category) {
+            if ((int) ($category['id'] ?? 0) === $categoryId) {
+                return (string) ($category['name'] ?? '');
+            }
+        }
+
+        return '';
+    }
+
+    private function buildTemplateSettingsCsv(array $template, string $categoryName, bool $includeDescriptions): string
+    {
+        $headers = array(
+            'template_name',
+            'category',
+            'delimiter',
+            'encoding',
+            'add_bom',
+            'array_separator',
+        );
+        if ($includeDescriptions) {
+            $headers[] = 'description';
+            $headers[] = 'description_templates_json';
+        }
+        $headers = array_merge($headers, array(
+            'column_order',
+            'header_name',
+            'source_type',
+            'source_value',
+            'settings_json',
+            'mappings_json',
+        ));
+
+        $descriptionTemplatesJson = '';
+        if ($includeDescriptions) {
+            $descriptionTemplatesJson = json_encode(
+                isset($template['description_templates']) && is_array($template['description_templates'])
+                    ? $template['description_templates']
+                    : array(),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            if ($descriptionTemplatesJson === false) {
+                throw new RuntimeException('Nie udalo sie zapisac szablonow opisu w CSV.');
+            }
+        }
+
+        $stream = fopen('php://temp', 'w+');
+        if ($stream === false) {
+            throw new RuntimeException('Nie udalo sie przygotowac pliku CSV szablonu.');
+        }
+        fputcsv($stream, $headers, ';', '"', '');
+
+        foreach (($template['columns'] ?? array()) as $index => $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $settingsJson = json_encode(
+                isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array(),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            $mappingsJson = json_encode(
+                isset($column['mappings']) && is_array($column['mappings']) ? $column['mappings'] : array(),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            if ($settingsJson === false || $mappingsJson === false) {
+                fclose($stream);
+                throw new RuntimeException('Nie udalo sie zapisac ustawien kolumn w CSV.');
+            }
+
+            $row = array(
+                (string) ($template['name'] ?? ''),
+                $categoryName,
+                (string) ($template['delimiter'] ?? ';'),
+                (string) ($template['encoding'] ?? 'UTF-8'),
+                !empty($template['add_bom']) ? '1' : '0',
+                (string) ($template['array_separator'] ?? '|'),
+            );
+            if ($includeDescriptions) {
+                $row[] = (string) ($template['description'] ?? '');
+                $row[] = $descriptionTemplatesJson;
+            }
+            $row = array_merge($row, array(
+                (string) ($index + 1),
+                (string) ($column['header_name'] ?? ''),
+                (string) ($column['source_type'] ?? 'field'),
+                (string) ($column['source_value'] ?? ''),
+                $settingsJson,
+                $mappingsJson,
+            ));
+            fputcsv($stream, $row, ';', '"', '');
+        }
+
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+        if ($csv === false) {
+            throw new RuntimeException('Nie udalo sie wygenerowac pliku CSV szablonu.');
+        }
+
+        return $csv;
+    }
+
+    private function buildTemplateSettingsJson(array $template, string $categoryName, bool $includeDescriptions): string
+    {
+        $descriptionTemplates = $includeDescriptions && isset($template['description_templates']) && is_array($template['description_templates'])
+            ? $template['description_templates']
+            : array();
+        $templatePayload = array(
+            'name' => (string) ($template['name'] ?? ''),
+            'category' => $categoryName,
+            'delimiter' => (string) ($template['delimiter'] ?? ';'),
+            'encoding' => (string) ($template['encoding'] ?? 'UTF-8'),
+            'add_bom' => !empty($template['add_bom']),
+            'array_separator' => (string) ($template['array_separator'] ?? '|'),
+            'columns' => array(),
+        );
+
+        if ($includeDescriptions) {
+            $templatePayload['description'] = (string) ($template['description'] ?? '');
+            $templatePayload['description_templates'] = $descriptionTemplates;
+        }
+
+        foreach (($template['columns'] ?? array()) as $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $templatePayload['columns'][] = array(
+                'header_name' => (string) ($column['header_name'] ?? ''),
+                'source_type' => (string) ($column['source_type'] ?? 'field'),
+                'source_value' => (string) ($column['source_value'] ?? ''),
+                'settings' => isset($column['settings']) && is_array($column['settings']) ? $column['settings'] : array(),
+                'mappings' => isset($column['mappings']) && is_array($column['mappings']) ? $column['mappings'] : array(),
+            );
+        }
+
+        $json = json_encode(
+            array(
+                'format' => 'altreo_csv_template',
+                'version' => 1,
+                'includes_descriptions' => $includeDescriptions,
+                'ai_instructions' => array(
+                    'Edit the template object. Build template.columns using the available_fields keys.',
+                    'For a database field set source_type to field and source_value to an available_fields key.',
+                    'For a calculated value set source_type to computed and source_value to an available_computed_functions key.',
+                    'Keep the format and version values unchanged so the file can be imported back into ALTREO.',
+                ),
+                'available_fields' => $this->availableFieldOptions($descriptionTemplates),
+                'available_computed_functions' => $this->availableComputedFunctions(),
+                'template' => $templatePayload,
+            ),
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+        if ($json === false) {
+            throw new RuntimeException('Nie udalo sie wygenerowac pliku JSON szablonu.');
+        }
+
+        return $json . "\n";
+    }
+
+    private function templateSettingsFilename(array $template, int $id, string $format, bool $includeId = false): string
+    {
+        $filenameBase = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($template['name'] ?? ''));
+        $filenameBase = trim((string) $filenameBase, '_');
+        $usedFallback = false;
+        if ($filenameBase === '') {
+            $filenameBase = 'csv_template';
+            $usedFallback = true;
+        }
+        if ($includeId || $usedFallback) {
+            $filenameBase .= '_' . $id;
+        }
+
+        return $filenameBase . '_settings.' . ($format === 'json' ? 'json' : 'csv');
+    }
+
+    private function readUploadedTemplateDefinition(string $field): array
+    {
+        if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+            throw new RuntimeException('Wybierz plik CSV lub JSON z ustawieniami szablonu.');
+        }
+
+        $file = $_FILES[$field];
+        $error = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+        if ($error !== UPLOAD_ERR_OK) {
+            if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE) {
+                throw new RuntimeException('Plik ustawien szablonu jest za duzy.');
+            }
+            throw new RuntimeException('Nie udalo sie wgrac pliku ustawien szablonu.');
+        }
+
+        $path = isset($file['tmp_name']) ? (string) $file['tmp_name'] : '';
+        if ($path === '' || !is_uploaded_file($path)) {
+            throw new RuntimeException('Wgrany plik ustawien jest nieprawidlowy.');
+        }
+
+        $size = isset($file['size']) ? (int) $file['size'] : 0;
+        if ($size <= 0) {
+            throw new RuntimeException('Wgrany plik ustawien jest pusty.');
+        }
+        if ($size > 5 * 1024 * 1024) {
+            throw new RuntimeException('Plik ustawien szablonu moze miec maksymalnie 5 MB.');
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false || $contents === '') {
+            throw new RuntimeException('Nie udalo sie odczytac pliku ustawien szablonu.');
+        }
+
+        $contents = preg_replace('/^\xEF\xBB\xBF/', '', $contents);
+        $extension = strtolower((string) pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $firstCharacter = substr(ltrim((string) $contents), 0, 1);
+
+        if ($extension === 'json' || $firstCharacter === '{' || $firstCharacter === '[') {
+            return $this->parseImportedJsonTemplate((string) $contents);
+        }
+        if ($extension === 'csv' || $extension === '') {
+            return $this->parseImportedCsvTemplate((string) $contents);
+        }
+
+        throw new RuntimeException('Obslugiwane sa tylko pliki CSV i JSON.');
+    }
+
+    private function parseImportedJsonTemplate(string $contents): array
+    {
+        $decoded = json_decode($contents, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Plik JSON nie zawiera poprawnych ustawien szablonu: ' . json_last_error_msg() . '.');
+        }
+
+        if (isset($decoded['format']) && (string) $decoded['format'] !== 'altreo_csv_template') {
+            throw new RuntimeException('Plik JSON ma nieobslugiwany format ustawien.');
+        }
+        if (isset($decoded['version']) && (int) $decoded['version'] > 1) {
+            throw new RuntimeException('Plik JSON zostal utworzony w nowszej, nieobslugiwanej wersji formatu.');
+        }
+
+        $templateData = isset($decoded['template']) && is_array($decoded['template'])
+            ? $decoded['template']
+            : $decoded;
+        $includesDescriptions = array_key_exists('includes_descriptions', $decoded)
+            ? !empty($decoded['includes_descriptions'])
+            : array_key_exists('description', $templateData) || array_key_exists('description_templates', $templateData);
+
+        return $this->normalizeImportedTemplateDefinition($templateData, $includesDescriptions);
+    }
+
+    private function parseImportedCsvTemplate(string $contents): array
+    {
+        $stream = fopen('php://temp', 'w+');
+        if ($stream === false) {
+            throw new RuntimeException('Nie udalo sie przygotowac pliku CSV do odczytu.');
+        }
+        fwrite($stream, $contents);
+        rewind($stream);
+
+        $headers = fgetcsv($stream, 0, ';', '"', '');
+        if (!is_array($headers)) {
+            fclose($stream);
+            throw new RuntimeException('Plik CSV nie zawiera naglowka.');
+        }
+        $headers = array_map(function ($header): string {
+            return trim((string) $header);
+        }, $headers);
+
+        $requiredHeaders = array(
+            'template_name', 'category', 'delimiter', 'encoding', 'add_bom', 'array_separator',
+            'column_order', 'header_name', 'source_type', 'source_value', 'settings_json', 'mappings_json',
+        );
+        foreach ($requiredHeaders as $requiredHeader) {
+            if (!in_array($requiredHeader, $headers, true)) {
+                fclose($stream);
+                throw new RuntimeException('Plik CSV nie zawiera wymaganej kolumny: ' . $requiredHeader . '.');
+            }
+        }
+
+        $rows = array();
+        while (($values = fgetcsv($stream, 0, ';', '"', '')) !== false) {
+            $hasValue = false;
+            foreach ($values as $value) {
+                if (trim((string) $value) !== '') {
+                    $hasValue = true;
+                    break;
+                }
+            }
+            if (!$hasValue) {
+                continue;
+            }
+
+            if (count($values) < count($headers)) {
+                $values = array_pad($values, count($headers), '');
+            } elseif (count($values) > count($headers)) {
+                fclose($stream);
+                throw new RuntimeException('Jeden z wierszy CSV ma wiecej pol niz naglowek.');
+            }
+            $rows[] = array_combine($headers, $values);
+        }
+        fclose($stream);
+
+        if ($rows === array()) {
+            throw new RuntimeException('Plik CSV nie zawiera definicji kolumn szablonu.');
+        }
+
+        $first = $rows[0];
+        $columns = array();
+        foreach ($rows as $index => $row) {
+            $settings = json_decode((string) ($row['settings_json'] ?? ''), true);
+            if (!is_array($settings)) {
+                throw new RuntimeException('Niepoprawny settings_json w wierszu ' . ($index + 2) . ' pliku CSV.');
+            }
+            $mappings = json_decode((string) ($row['mappings_json'] ?? ''), true);
+            if (!is_array($mappings)) {
+                throw new RuntimeException('Niepoprawny mappings_json w wierszu ' . ($index + 2) . ' pliku CSV.');
+            }
+
+            $columns[] = array(
+                '_import_order' => max(0, (int) ($row['column_order'] ?? 0)),
+                '_import_index' => $index,
+                'header_name' => (string) ($row['header_name'] ?? ''),
+                'source_type' => (string) ($row['source_type'] ?? 'field'),
+                'source_value' => (string) ($row['source_value'] ?? ''),
+                'settings' => $settings,
+                'mappings' => $mappings,
+            );
+        }
+        usort($columns, function (array $left, array $right): int {
+            $orderComparison = $left['_import_order'] <=> $right['_import_order'];
+            return $orderComparison !== 0 ? $orderComparison : ($left['_import_index'] <=> $right['_import_index']);
+        });
+        foreach ($columns as &$column) {
+            unset($column['_import_order'], $column['_import_index']);
+        }
+        unset($column);
+
+        $includesDescriptions = in_array('description', $headers, true)
+            || in_array('description_templates_json', $headers, true);
+        $descriptionTemplates = array();
+        if ($includesDescriptions && trim((string) ($first['description_templates_json'] ?? '')) !== '') {
+            $descriptionTemplates = json_decode((string) $first['description_templates_json'], true);
+            if (!is_array($descriptionTemplates)) {
+                throw new RuntimeException('Niepoprawny description_templates_json w pliku CSV.');
+            }
+        }
+
+        return $this->normalizeImportedTemplateDefinition(array(
+            'name' => (string) ($first['template_name'] ?? ''),
+            'category' => (string) ($first['category'] ?? ''),
+            'delimiter' => (string) ($first['delimiter'] ?? ';'),
+            'encoding' => (string) ($first['encoding'] ?? 'UTF-8'),
+            'add_bom' => (string) ($first['add_bom'] ?? '1'),
+            'array_separator' => (string) ($first['array_separator'] ?? '|'),
+            'description' => (string) ($first['description'] ?? ''),
+            'description_templates' => $descriptionTemplates,
+            'columns' => $columns,
+        ), $includesDescriptions);
+    }
+
+    private function normalizeImportedTemplateDefinition(array $data, bool $includesDescriptions): array
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            throw new RuntimeException('Importowany szablon nie ma nazwy.');
+        }
+        if (strlen($name) > 190) {
+            throw new RuntimeException('Nazwa importowanego szablonu jest za dluga.');
+        }
+
+        $delimiter = (string) ($data['delimiter'] ?? ';');
+        if (!in_array($delimiter, array(',', ';', '|'), true)) {
+            throw new RuntimeException('Importowany szablon ma niepoprawny separator CSV.');
+        }
+
+        $encoding = strtoupper(trim((string) ($data['encoding'] ?? 'UTF-8')));
+        if (!in_array($encoding, array('UTF-8', 'WINDOWS-1250'), true)) {
+            throw new RuntimeException('Importowany szablon ma niepoprawne kodowanie.');
+        }
+
+        $arraySeparator = (string) ($data['array_separator'] ?? '|');
+        if ($arraySeparator === '') {
+            $arraySeparator = '|';
+        }
+        if (strlen($arraySeparator) > 10) {
+            throw new RuntimeException('Separator tablicy w importowanym szablonie jest za dlugi.');
+        }
+
+        $addBomValue = $data['add_bom'] ?? true;
+        $addBom = is_bool($addBomValue)
+            ? ($addBomValue ? 1 : 0)
+            : (in_array(strtolower(trim((string) $addBomValue)), array('1', 'true', 'yes', 'tak'), true) ? 1 : 0);
+
+        $descriptionTemplates = $includesDescriptions && isset($data['description_templates']) && is_array($data['description_templates'])
+            ? $this->normalizeDescriptionTemplates($data['description_templates'])
+            : array();
+        $columns = isset($data['columns']) && is_array($data['columns'])
+            ? $this->normalizeImportedTemplateColumns($data['columns'])
+            : array();
+        if ($columns === array()) {
+            throw new RuntimeException('Importowany szablon nie zawiera poprawnych kolumn.');
+        }
+
+        return array(
+            'template' => array(
+                'id' => 0,
+                'name' => $name,
+                'description' => $includesDescriptions ? trim((string) ($data['description'] ?? '')) : '',
+                'delimiter' => $delimiter,
+                'encoding' => $encoding,
+                'add_bom' => $addBom,
+                'array_separator' => $arraySeparator,
+                'description_templates' => $descriptionTemplates,
+                'columns' => $columns,
+            ),
+            'category_name' => trim((string) ($data['category'] ?? '')),
+            'includes_descriptions' => $includesDescriptions,
+        );
+    }
+
+    private function normalizeImportedTemplateColumns(array $columns): array
+    {
+        $normalizedColumns = array();
+        foreach ($columns as $column) {
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $normalized = $this->normalizeLegacyColumnDefinition($column);
+            $header = trim((string) ($normalized['header_name'] ?? ''));
+            $sourceType = strtolower(trim((string) ($normalized['source_type'] ?? 'field')));
+            $sourceValue = trim((string) ($normalized['source_value'] ?? ''));
+            if ($header === '') {
+                throw new RuntimeException('Kazda importowana kolumna musi miec naglowek.');
+            }
+            if (!in_array($sourceType, array('field', 'static', 'computed'), true)) {
+                throw new RuntimeException('Niepoprawny typ zrodla importowanej kolumny: ' . $header . '.');
+            }
+            if ($sourceType !== 'static' && $sourceValue === '') {
+                throw new RuntimeException('Brak zrodla wartosci dla importowanej kolumny: ' . $header . '.');
+            }
+
+            $mappings = array();
+            foreach (($normalized['mappings'] ?? array()) as $mapping) {
+                if (!is_array($mapping)) {
+                    continue;
+                }
+                $from = trim((string) ($mapping['from_value'] ?? ''));
+                if ($from === '') {
+                    continue;
+                }
+                $mappings[] = array(
+                    'from_value' => $from,
+                    'to_value' => (string) ($mapping['to_value'] ?? ''),
+                );
+            }
+
+            $normalizedColumns[] = array(
+                'header_name' => $header,
+                'source_type' => $sourceType,
+                'source_value' => $sourceValue,
+                'settings' => isset($normalized['settings']) && is_array($normalized['settings'])
+                    ? $normalized['settings']
+                    : $this->normalizeColumnSettings(array()),
+                'mappings' => $mappings,
+            );
+        }
+
+        return $normalizedColumns;
+    }
+
+    private function templateCategoryIdFromImportedName(string $categoryName, string &$message): ?int
+    {
+        $message = '';
+        if ($categoryName === '') {
+            return null;
+        }
+
+        $needle = function_exists('mb_strtolower') ? mb_strtolower($categoryName, 'UTF-8') : strtolower($categoryName);
+        foreach ($this->templates->allCategories() as $category) {
+            $candidate = trim((string) ($category['name'] ?? ''));
+            $candidate = function_exists('mb_strtolower') ? mb_strtolower($candidate, 'UTF-8') : strtolower($candidate);
+            if ($candidate === $needle) {
+                return (int) ($category['id'] ?? 0);
+            }
+        }
+
+        $message = 'Kategoria "' . $categoryName . '" nie istnieje w tym systemie, dlatego ustawiono Bez kategorii.';
+        return null;
+    }
+
+    private function uniqueImportedTemplateName(string $name): string
+    {
+        if (!$this->templates->existsByName($name)) {
+            return $name;
+        }
+
+        $candidate = $this->templateNameWithSuffix($name, ' (import)');
+        $suffix = 2;
+        while ($this->templates->existsByName($candidate)) {
+            $candidate = $this->templateNameWithSuffix($name, ' (import) ' . $suffix);
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function templateNameWithSuffix(string $name, string $suffix): string
+    {
+        $suffixLength = function_exists('mb_strlen') ? mb_strlen($suffix, 'UTF-8') : strlen($suffix);
+        $nameLimit = max(1, 190 - $suffixLength);
+        $shortName = function_exists('mb_substr')
+            ? mb_substr($name, 0, $nameLimit, 'UTF-8')
+            : substr($name, 0, $nameLimit);
+
+        return rtrim((string) $shortName) . $suffix;
+    }
+
+    private function jsonForInlineScript(array $value): string
+    {
+        $json = json_encode(
+            $value,
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+        );
+        if ($json === false) {
+            throw new RuntimeException('Nie udalo sie przygotowac danych formularza szablonu.');
+        }
+
+        return $json;
     }
 
     private function validatedTemplateData(): array
@@ -1201,15 +1850,15 @@ class CsvTemplateController extends Controller
                 : './index.php?controller=csvtemplates&action=store',
             'template' => $templateData,
             'availableFields' => $this->availableFieldOptions(),
-            'availableFieldsJson' => json_encode($this->availableFieldOptions()),
+            'availableFieldsJson' => $this->jsonForInlineScript($this->availableFieldOptions()),
             'availableFunctions' => $this->availableComputedFunctions(),
-            'availableFunctionsJson' => json_encode($this->availableComputedFunctions()),
-            'descriptionImageSourcesJson' => json_encode($this->availableDescriptionImageSources()),
+            'availableFunctionsJson' => $this->jsonForInlineScript($this->availableComputedFunctions()),
+            'descriptionImageSourcesJson' => $this->jsonForInlineScript($this->availableDescriptionImageSources()),
             'templateCategories' => $this->templates->allCategories(),
             'presets' => $this->presetDefinitions(),
             'previewCsv' => '',
-            'templateColumnsJson' => json_encode(isset($templateData['columns']) ? $templateData['columns'] : array()),
-            'descriptionTemplatesJson' => json_encode($templateData['description_templates']),
+            'templateColumnsJson' => $this->jsonForInlineScript(isset($templateData['columns']) ? $templateData['columns'] : array()),
+            'descriptionTemplatesJson' => $this->jsonForInlineScript($templateData['description_templates']),
             'flashError' => $error,
         ));
     }

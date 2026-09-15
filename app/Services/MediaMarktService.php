@@ -35,6 +35,17 @@ class MediaMarktService
         $this->maybeCleanupExpiredCache();
     }
 
+
+    /** Read-only order import; no order mutations are exposed to the order manager. */
+    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
+    {
+        return $this->requestApi($account, 'GET', '/api/orders', [
+            'start_date'=>$from, 'end_date'=>$to, 'max'=>100, 'offset'=>(int)$cursor,
+            'start_update_date'=>$updatedFrom !== '' ? $updatedFrom : $from, 'end_update_date'=>$to,
+            'sort'=>'dateCreated', 'order'=>'asc',
+        ]);
+    }
+
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();

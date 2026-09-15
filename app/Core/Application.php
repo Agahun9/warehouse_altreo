@@ -52,6 +52,9 @@ class Application
             case 'categories':
                 $controller = new CategoryController();
                 break;
+            case 'orders':
+                $controller = new \App\Controllers\OrdersController();
+                break;
             case 'allegro':
                 $controller = new AllegroController();
                 break;

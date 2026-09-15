@@ -21,6 +21,9 @@ class ErliService
     /** @var ProductRepository */
     private $products;
 
+    /** @var array<string, string> */
+    private $orderImageUrlCache = array();
+
     public function __construct()
     {
         $app = Config::get('app');
@@ -30,6 +33,76 @@ class ErliService
         $this->storage->ensureSchema();
         $this->products = new ProductRepository($database);
         $this->products->ensureSchema();
+    }
+
+
+    /** Read-only order import; no order mutations are exposed to the order manager. */
+    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
+    {
+        // ERLI search uses POST but is strictly read-only (never PATCH orders/status).
+        $pagination = ['sortField'=>'updated', 'order'=>'ASC', 'limit'=>100];
+        if ($cursor !== '') { $pagination['after'] = $cursor; }
+        return $this->requestApi($account, 'POST', '/orders/_search', [], [
+            'pagination' => $pagination,
+            'filter' => ['operator'=>'and', 'value'=>[
+                ['field'=>'created','operator'=>'>=','value'=>$from],
+                ['field'=>'created','operator'=>'<=','value'=>$to],
+                ['field'=>'updated','operator'=>'>=','value'=>$updatedFrom !== '' ? $updatedFrom : $from],
+                ['field'=>'updated','operator'=>'<=','value'=>$to],
+            ]],
+        ]);
+    }
+
+    public function enrichOrderImages(array $account, array $order): array
+    {
+        foreach ($order['items']??[] as $index=>$line) {
+            if (self::firstOrderImage($line)!=='') { continue; }
+            $externalId=trim((string)($line['productExternalId']??$line['externalId']??$line['product']['externalId']??$line['product']['id']??''));
+            $sku=trim((string)($line['sku']??$line['product']['sku']??''));
+            if ($externalId==='' && $sku==='') { continue; }
+            $cacheKey=(int)($account['id']??0).'|'.$externalId.'|'.$sku;
+            if (!array_key_exists($cacheKey,$this->orderImageUrlCache)) {
+                $url='';
+                try {
+                    $stored=$this->storage->findProductForOrder((int)$account['id'],$externalId,$sku);
+                    $url=self::firstOrderImage($stored??[]);
+                    if ($url==='' && $externalId!=='') {
+                        $product=$this->requestApi($account,'GET','/products/'.rawurlencode($externalId));
+                        $url=self::firstOrderImage($product);
+                    }
+                } catch (\Throwable $error) { $url=''; }
+                $this->orderImageUrlCache[$cacheKey]=$url;
+            }
+            if ($this->orderImageUrlCache[$cacheKey]!=='') { $order['items'][$index]['imageUrl']=$this->orderImageUrlCache[$cacheKey]; }
+        }
+        return $order;
+    }
+
+    private static function firstOrderImage($value): string
+    {
+        if (is_scalar($value)) {
+            $url=trim((string)$value);
+            if (strpos($url,'//')===0) { $url='https:'.$url; }
+            return preg_match('#^https://[^\s]+$#i',$url)?$url:'';
+        }
+        if (!is_array($value)) { return ''; }
+        foreach (['primary_image_url','imageUrl','url','images','image','thumbnail'] as $key) {
+            if (!array_key_exists($key,$value)) { continue; }
+            $url=self::firstOrderImage($value[$key]);
+            if ($url!=='') { return $url; }
+        }
+        foreach (['product'] as $key) {
+            if (!array_key_exists($key,$value)) { continue; }
+            $url=self::firstOrderImage($value[$key]);
+            if ($url!=='') { return $url; }
+        }
+        foreach ($value as $child) {
+            if (is_array($child)) {
+                $url=self::firstOrderImage($child);
+                if ($url!=='') { return $url; }
+            }
+        }
+        return '';
     }
 
     public function listAccounts(): array
@@ -750,6 +823,10 @@ class ErliService
             }
 
             throw new RuntimeException('Erli API zwrocilo blad HTTP ' . $httpCode . ($message !== '' ? ': ' . $message : '.'));
+        }
+
+        if ($path === '/orders/_search' && (!is_array($decoded) || substr(ltrim($raw), 0, 1) !== '[' || json_last_error() !== JSON_ERROR_NONE)) {
+            throw new RuntimeException('Erli API zwróciło niepoprawną listę zamówień.');
         }
 
         return is_array($decoded) ? $decoded : array();

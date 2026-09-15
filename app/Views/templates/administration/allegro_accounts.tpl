@@ -44,6 +44,13 @@
                   <input type="text" name="client_id" class="form-control" required>
                 </div>
                 <div class="col-12">
+                  <label class="form-label">Aplikacja w Allegro Developer Apps</label>
+                  <select name="application_name" class="form-select" required>
+                    <option value="accra_shop magazyn nowy">accra_shop magazyn nowy</option>
+                    <option value="Accra_shop Magazyn">Accra_shop Magazyn</option>
+                  </select>
+                </div>
+                <div class="col-12">
                   <label class="form-label">Client Secret</label>
                   <input type="text" name="client_secret" class="form-control" required>
                 </div>
@@ -122,6 +129,7 @@
                               <input type="hidden" name="account_id" value="{$account.id|escape}">
                               <input type="hidden" name="name" value="{$account.name|escape}">
                               <input type="hidden" name="client_id" value="{$account.client_id|escape}">
+                              <input type="hidden" name="application_name" value="{$account.application_name|default:'accra_shop magazyn nowy'|escape}">
                               <input type="hidden" name="client_secret" value="{$account.client_secret|escape}">
                               <input type="hidden" name="redirect_uri" value="{$account.redirect_uri|escape}">
                               <input type="hidden" name="is_active" value="{if $account.is_active}0{else}1{/if}">

@@ -561,6 +561,7 @@ class ComputersController extends Controller
             $this->redirect('./index.php?controller=computers&action=csvtemplates');
         }
 
+        $sourceOptions = $this->computerCsvSourceOptions();
         $this->render('computers/csv_template_form', array(
             'pageTitle' => 'Edycja szablonu CSV',
             'contentTitle' => 'Edytuj szablon CSV komputerow',
@@ -568,8 +569,8 @@ class ComputersController extends Controller
             'breadcrumbCurrent' => 'Edycja szablonu CSV',
             'template' => $template,
             'columnsJson' => json_encode($template['columns'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'sourceOptions' => $this->computerCsvSourceOptions(),
-            'sourceOptionsJson' => json_encode($this->computerCsvSourceOptions(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'sourceOptions' => $sourceOptions,
+            'sourceOptionsJson' => json_encode($sourceOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionTokensJson' => json_encode($this->computerDescriptionTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionParameterTokensJson' => json_encode($this->computerDescriptionParameterTokens(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'descriptionConditionComponentsJson' => json_encode($this->computerDescriptionConditionComponents(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -5557,6 +5558,17 @@ class ComputersController extends Controller
         }
 
         $componentsById = $this->componentsById();
+        $titleTemplateIds = array();
+        $columnsJson = json_encode($template['columns'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (is_string($columnsJson) && preg_match_all('/title_template:(\d+)/', $columnsJson, $titleTemplateMatches) > 0) {
+            $titleTemplateIds = array_fill_keys(array_map('intval', $titleTemplateMatches[1]), true);
+        }
+        $titleTemplates = array_values(array_filter(
+            $this->computerTitleTemplates->allForSelect(),
+            static function (array $titleTemplate) use ($titleTemplateIds): bool {
+                return isset($titleTemplateIds[(int) ($titleTemplate['id'] ?? 0)]);
+            }
+        ));
         $rows = array();
         foreach ($productIds as $productId) {
             $product = $this->productById($productId);
@@ -5574,7 +5586,12 @@ class ComputersController extends Controller
                 return strcmp((string) ($left['category'] ?? ''), (string) ($right['category'] ?? ''));
             });
 
-            $context = $this->computerCsvContext($product, $components, (string) ($template['description_template'] ?? ''));
+            $context = $this->computerCsvContext(
+                $product,
+                $components,
+                (string) ($template['description_template'] ?? ''),
+                $titleTemplates
+            );
             $row = array();
             foreach ($template['columns'] as $column) {
                 $row[] = $this->resolveComputerCsvColumn($column, $context);
@@ -5625,7 +5642,12 @@ class ComputersController extends Controller
         exit;
     }
 
-    private function computerCsvContext(array $product, array $components, string $descriptionTemplate = ''): array
+    private function computerCsvContext(
+        array $product,
+        array $components,
+        string $descriptionTemplate = '',
+        array $titleTemplates = array()
+    ): array
     {
         $imagesEasy = $this->computerExportImages($product, $components, 'easy');
         $imagesMorele = $this->computerExportImages($product, $components, 'morele');
@@ -5696,6 +5718,15 @@ class ComputersController extends Controller
             }
         }
 
+        $generatedTitles = array();
+        foreach ($titleTemplates as $titleTemplate) {
+            $titleTemplateId = (int) ($titleTemplate['id'] ?? 0);
+            $templateBody = trim((string) ($titleTemplate['template_body'] ?? ''));
+            if ($titleTemplateId > 0 && $templateBody !== '') {
+                $generatedTitles[$titleTemplateId] = $this->buildComputerTitlePreview($product, $components, $templateBody);
+            }
+        }
+
         return array(
             'product' => $product,
             'components' => $components,
@@ -5715,6 +5746,7 @@ class ComputersController extends Controller
             'parameters.easy' => $this->easyUploaderParameters($components, (string) ($product['name'] ?? ''), (string) ($product['EAN'] ?? '')),
             'parameters.morele' => implode("|\n", array_values($moreleParams)),
             'description' => $this->renderComputerDescription($product, $components, $descriptionTemplate),
+            'generated_titles' => $generatedTitles,
         );
     }
 
@@ -5875,6 +5907,9 @@ class ComputersController extends Controller
     private function resolveComputerCsvSource(string $source, array $context): string
     {
         $product = $context['product'];
+        if (preg_match('/^title_template:(\d+)$/', $source, $matches) === 1) {
+            return (string) ($context['generated_titles'][(int) $matches[1]] ?? '');
+        }
         if (strpos($source, 'product.') === 0) {
             $field = substr($source, 8);
             if ($field === 'code') {
@@ -7461,6 +7496,13 @@ class ComputersController extends Controller
             'main_image.mediamarkt' => 'MediaMarkt — zdjecie produktu 1',
             'date.today' => 'Dzisiejsza data',
         );
+        foreach ($this->computerTitleTemplates->allForSelect() as $titleTemplate) {
+            $titleTemplateId = (int) ($titleTemplate['id'] ?? 0);
+            $titleTemplateName = trim((string) ($titleTemplate['name'] ?? ''));
+            if ($titleTemplateId > 0 && $titleTemplateName !== '') {
+                $options['title_template:' . $titleTemplateId] = 'Tytuł z szablonu: ' . $titleTemplateName;
+            }
+        }
         $productImageLimits = $this->computerProductImageLimits();
         foreach (array('easy' => 'EasyUploader', 'morele' => 'Morele', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt') as $channel => $channelLabel) {
             for ($index = 1; $index <= $productImageLimits[$channel]; $index++) {

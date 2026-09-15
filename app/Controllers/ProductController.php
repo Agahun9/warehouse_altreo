@@ -1084,6 +1084,7 @@ class ProductController extends Controller
 
         $this->jsonResponse(array(
             'values' => $this->allegroParameters->allForProduct($sourceId),
+            'empik_values' => $this->empikParameters->allForProduct($sourceId),
             'compatibility_list' => $this->allegroParameters->compatibilityListForProduct($sourceId),
             'source' => array(
                 'id' => (int) $sourceProduct['id'],

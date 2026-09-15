@@ -119,6 +119,7 @@ class AllegroController extends Controller
             $this->allegro->saveAccount(array(
                 'name' => $this->input('name', ''),
                 'client_id' => $this->input('client_id', ''),
+                'application_name' => $this->input('application_name', ''),
                 'client_secret' => $this->input('client_secret', ''),
                 'redirect_uri' => $this->input('redirect_uri', ''),
                 'is_active' => $this->input('is_active', '0') === '1' ? 1 : 0,

@@ -22,6 +22,9 @@ class EmpikService
     /** @var EmpikStorageRepository */
     private $storage;
 
+    /** @var array<string, string> */
+    private $orderImageUrlCache = array();
+
     /** @var float */
     private static $lastRequestAtMicros = 0.0;
 
@@ -32,6 +35,114 @@ class EmpikService
         $this->storage = new EmpikStorageRepository(Database::instance());
         $this->storage->ensureSchema();
         $this->maybeCleanupExpiredCache();
+    }
+
+
+    /** Read-only order import; no order mutations are exposed to the order manager. */
+    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
+    {
+        return $this->requestApi($account, 'GET', '/api/orders', [
+            'start_date'=>$from, 'end_date'=>$to, 'max'=>100, 'offset'=>(int)$cursor,
+            'start_update_date'=>$updatedFrom !== '' ? $updatedFrom : $from, 'end_update_date'=>$to,
+            'sort'=>'dateCreated', 'order'=>'asc',
+        ]);
+    }
+
+    /**
+     * Adds product media to an Empik/Mirakl order before it is normalized.
+     * Prefer the synchronized offer cache; P11 is only called for a missing image.
+     */
+    public function enrichOrderImages(array $account, array $order): array
+    {
+        foreach ($order['order_lines'] ?? array() as $index => $line) {
+            if (!is_array($line) || self::firstOrderImage($line) !== '') {
+                continue;
+            }
+
+            $shopSku = trim((string) ($line['offer_sku'] ?? $line['shop_sku'] ?? ''));
+            $productSku = trim((string) ($line['product_sku'] ?? ''));
+            $productId = trim((string) ($line['product_id'] ?? ''));
+            if ($shopSku === '' && $productSku === '' && $productId === '') {
+                continue;
+            }
+
+            $cacheKey = (int) ($account['id'] ?? 0) . '|' . $shopSku . '|' . $productSku . '|' . $productId;
+            if (!array_key_exists($cacheKey, $this->orderImageUrlCache)) {
+                $url = '';
+                try {
+                    $stored = $this->storage->findOfferForOrder((int) ($account['id'] ?? 0), $shopSku, $productSku, $productId);
+                    $url = self::firstOrderImage($stored);
+                    if ($url === '' && !empty($stored['offer_json'])) {
+                        $storedPayload = json_decode((string) $stored['offer_json'], true);
+                        $url = self::firstOrderImage(is_array($storedPayload) ? $storedPayload : array());
+                    }
+
+                    // Mirakl P11 accepts the marketplace product SKU and includes
+                    // product information/media alongside the associated offers.
+                    $lookupProductSku = $productSku !== '' ? $productSku : (string) ($stored['product_sku'] ?? '');
+                    if ($url === '' && $lookupProductSku !== '') {
+                        $payload = $this->requestApi($account, 'GET', '/api/products/offers', array(
+                            'product_ids' => $lookupProductSku,
+                            'max' => 1,
+                            'locale' => (string) ($account['locale'] ?? $this->defaultLocale()),
+                        ));
+                        $url = self::firstOrderImage($payload);
+                    }
+                } catch (\Throwable $error) {
+                    $url = '';
+                }
+                $this->orderImageUrlCache[$cacheKey] = $url;
+            }
+
+            if ($this->orderImageUrlCache[$cacheKey] !== '') {
+                $order['order_lines'][$index]['image_url'] = $this->orderImageUrlCache[$cacheKey];
+            }
+        }
+
+        return $order;
+    }
+
+    private static function firstOrderImage($value): string
+    {
+        if (is_scalar($value)) {
+            $url = trim((string) $value);
+            if (strpos($url, '//') === 0) {
+                $url = 'https:' . $url;
+            }
+            return preg_match('#^https://[^\s]+$#i', $url) ? $url : '';
+        }
+        if (!is_array($value)) {
+            return '';
+        }
+
+        foreach (array('image_url', 'imageUrl', 'media_url', 'mediaUrl', 'thumbnail_url', 'thumbnailUrl', 'thumbnail', 'image', 'images', 'media', 'medias', 'mainImage', 'primaryImage', 'url') as $key) {
+            if (!array_key_exists($key, $value)) {
+                continue;
+            }
+            $url = self::firstOrderImage($value[$key]);
+            if ($url !== '') {
+                return $url;
+            }
+        }
+        foreach (array('product', 'products', 'offer', 'offers') as $key) {
+            if (!array_key_exists($key, $value)) {
+                continue;
+            }
+            $url = self::firstOrderImage($value[$key]);
+            if ($url !== '') {
+                return $url;
+            }
+        }
+        foreach ($value as $child) {
+            if (is_array($child)) {
+                $url = self::firstOrderImage($child);
+                if ($url !== '') {
+                    return $url;
+                }
+            }
+        }
+
+        return '';
     }
 
     public function listAccounts(): array

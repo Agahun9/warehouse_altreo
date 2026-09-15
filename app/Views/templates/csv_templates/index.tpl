@@ -32,6 +32,7 @@
             {if $canWriteCsvTemplates}
               <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#csvTemplateCategoriesModal">Kategorie</button>
               <a href="{$baseUrl}?controller=csvtemplates&action=importproducts" class="btn btn-outline-primary">Import produktow</a>
+              <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#csvTemplateImportModal">Import ustawien</button>
             {/if}
             <a href="{$baseUrl}?controller=csvtemplates&action=titlegenerator" class="btn btn-outline-secondary">Generator tytulow</a>
             {if $canWriteCsvTemplates}
@@ -97,7 +98,10 @@
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div><h3 class="card-title mb-1">Lista szablonow</h3><div class="small text-secondary">Kliknij naglowek kolumny, aby zmienic sortowanie.</div></div>
-          <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-sm btn-outline-secondary">Wroc do kategorii</a>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-dark" id="csvTemplatesBulkExportButton" data-bs-toggle="modal" data-bs-target="#csvTemplatesBulkExportModal" disabled>Pobierz zaznaczone</button>
+            <a href="{$baseUrl}?controller=csvtemplates&action=index" class="btn btn-sm btn-outline-secondary">Wroc do kategorii</a>
+          </div>
         </div>
         <form method="get" action="{$baseUrl}" id="csvTemplatesFiltersForm">
           <input type="hidden" name="controller" value="csvtemplates"><input type="hidden" name="action" value="index">
@@ -108,6 +112,7 @@
             <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0">
               <thead class="table-light">
                 <tr>
+                  <th class="text-center" style="width:42px;"><input type="checkbox" class="form-check-input" id="csvTemplatesSelectAll" aria-label="Zaznacz wszystkie szablony na liscie"></th>
                   <th><a class="text-decoration-none text-reset d-flex justify-content-between" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=name&sort_dir={if $sortBy eq 'name' and $sortDir eq 'asc'}desc{else}asc{/if}">Nazwa {if $sortBy eq 'name'}<span>{if $sortDir eq 'asc'}↑{else}↓{/if}</span>{/if}</a></th>
                   <th><a class="text-decoration-none text-reset d-flex justify-content-between" href="{$baseUrl}?controller=csvtemplates&action=index&filter_name={$nameFilter|escape:'url'}&filter_category={$categoryFilter|escape:'url'}&sort_by=category&sort_dir={if $sortBy eq 'category' and $sortDir eq 'asc'}desc{else}asc{/if}">Kategoria {if $sortBy eq 'category'}<span>{if $sortDir eq 'asc'}↑{else}↓{/if}</span>{/if}</a></th>
                   <th>Opis</th>
@@ -118,6 +123,7 @@
                   <th class="text-end">Akcje</th>
                 </tr>
                 <tr>
+                  <th></th>
                   <th><input form="csvTemplatesFiltersForm" type="search" name="filter_name" class="form-control form-control-sm" value="{$nameFilter|escape}" placeholder="Szukaj po nazwie..."></th>
                   <th><select form="csvTemplatesFiltersForm" name="filter_category" class="form-select form-select-sm" onchange="document.getElementById('csvTemplatesFiltersForm').submit()"><option value="all"{if $categoryFilter eq 'all'} selected{/if}>Wszystkie kategorie</option>{foreach $templateCategories as $category}<option value="{$category.id}"{if $categoryFilter == $category.id} selected{/if}>{$category.name|escape} ({$category.templates_count|default:0})</option>{/foreach}<option value="none"{if $categoryFilter eq 'none'} selected{/if}>Bez kategorii</option></select></th>
                   <th colspan="5"></th>
@@ -128,6 +134,7 @@
                 {if $templates}
                   {foreach $templates as $template}
                     <tr>
+                      <td class="text-center"><input type="checkbox" class="form-check-input csv-template-select" value="{$template.id}" aria-label="Zaznacz szablon {$template.name|escape}"></td>
                       <td class="fw-semibold">{$template.name|escape}</td>
                       <td>{if $template.category_name}<span class="badge text-bg-primary">{$template.category_name|escape}</span>{else}<span class="text-secondary">Bez kategorii</span>{/if}</td>
                       <td>{$template.description|default:'-'|truncate:120|escape}</td>
@@ -139,7 +146,7 @@
                       <td>{$template.created_at|default:'-'|escape}</td>
                       <td>{$template.updated_at|default:'-'|escape}</td>
                       <td class="text-end">
-                        <button type="button" class="btn btn-sm btn-outline-dark csv-template-csv-btn" data-bs-toggle="modal" data-bs-target="#csvTemplateCsvModal" data-template-id="{$template.id}" data-template-name="{$template.name|escape}">CSV</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark csv-template-csv-btn" data-bs-toggle="modal" data-bs-target="#csvTemplateCsvModal" data-template-id="{$template.id}" data-template-name="{$template.name|escape}">Eksport</button>
                         {if $canWriteCsvTemplates}
                           <a href="{$baseUrl}?controller=csvtemplates&action=edit&id={$template.id}" class="btn btn-sm btn-outline-primary">Edytuj</a>
                           <form method="post" action="{$baseUrl}?controller=csvtemplates&action=duplicate" class="d-inline">
@@ -157,7 +164,7 @@
                     </tr>
                   {/foreach}
                 {else}
-                  <tr><td colspan="8" class="text-center py-4">Brak szablonow CSV.</td></tr>
+                  <tr><td colspan="9" class="text-center py-4">Brak szablonow CSV.</td></tr>
                 {/if}
               </tbody>
             </table>
@@ -199,26 +206,147 @@
 </div>
 {/if}
 
+{if $canWriteCsvTemplates}
+<div class="modal fade" id="csvTemplateImportModal" tabindex="-1" aria-labelledby="csvTemplateImportModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <form method="post" action="{$baseUrl}?controller=csvtemplates&action=importtemplate" enctype="multipart/form-data" id="csvTemplateImportForm">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title" id="csvTemplateImportModalLabel">Wgraj ustawienia szablonu</h5>
+            <div class="small text-secondary">Obslugiwane sa pliki ustawien CSV i JSON wyeksportowane z tego modulu.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="csvTemplateImportFile" class="form-label">Plik ustawien</label>
+            <input type="file" name="template_file" id="csvTemplateImportFile" class="form-control" accept=".csv,.json,text/csv,application/json" required>
+            <div class="form-text">Maksymalny rozmiar pliku: 5 MB.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label d-block">Sposob wczytania</label>
+            <div class="form-check">
+              <input class="form-check-input csv-template-import-mode" type="radio" name="import_template_mode" id="csvTemplateImportCreate" value="create" checked>
+              <label class="form-check-label" for="csvTemplateImportCreate">Wczytaj jako nowy szablon</label>
+            </div>
+            <div class="form-check mt-2">
+              <input class="form-check-input csv-template-import-mode" type="radio" name="import_template_mode" id="csvTemplateImportUpdate" value="update">
+              <label class="form-check-label" for="csvTemplateImportUpdate">Wczytaj do edycji istniejacego szablonu</label>
+            </div>
+          </div>
+          <div class="mb-3 d-none" id="csvTemplateImportTargetWrap">
+            <label for="csvTemplateImportTarget" class="form-label">Szablon do edycji</label>
+            <select name="target_template_id" id="csvTemplateImportTarget" class="form-select">
+              <option value="">Wybierz szablon...</option>
+              {foreach $allTemplatesForSelect as $templateOption}
+                <option value="{$templateOption.id}">{$templateOption.name|escape}</option>
+              {/foreach}
+            </select>
+          </div>
+          <div class="alert alert-info mb-0 py-2 px-3 small">
+            Plik najpierw wypelni formularz. Zmiany w bazie zostana zapisane dopiero po ich sprawdzeniu i kliknieciu <strong>Zapisz szablon</strong>.
+            Przy wczytywaniu do istniejacego szablonu plik bez opisow pozostawi jego obecne opisy bez zmian.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-primary">Wczytaj do formularza</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{/if}
+
+<div class="modal fade" id="csvTemplatesBulkExportModal" tabindex="-1" aria-labelledby="csvTemplatesBulkExportModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <form method="post" action="{$baseUrl}?controller=csvtemplates&action=exporttemplatesarchive" id="csvTemplatesBulkExportForm">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title" id="csvTemplatesBulkExportModalLabel">Pobierz zaznaczone szablony</h5>
+            <div class="small text-secondary"><span id="csvTemplatesBulkExportCount">0</span> zaznaczonych szablonow</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-3">Wybierz format plikow w paczce ZIP.</p>
+          <div id="csvTemplatesBulkExportIds"></div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <div class="border rounded p-3 h-100">
+                <div class="fw-semibold mb-2">CSV</div>
+                <div class="d-grid gap-2">
+                  <button type="submit" name="export_choice" value="csv_0" class="btn btn-sm btn-outline-primary">Bez opisow</button>
+                  <button type="submit" name="export_choice" value="csv_1" class="btn btn-sm btn-primary">Z opisami</button>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-6">
+              <div class="border rounded p-3 h-100">
+                <div class="fw-semibold mb-2">JSON</div>
+                <div class="d-grid gap-2">
+                  <button type="submit" name="export_choice" value="json_0" class="btn btn-sm btn-outline-primary">Bez opisow</button>
+                  <button type="submit" name="export_choice" value="json_1" class="btn btn-sm btn-primary">Z opisami</button>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="border rounded p-3">
+                <div class="fw-semibold mb-2">CSV + JSON</div>
+                <div class="d-flex gap-2 flex-wrap">
+                  <button type="submit" name="export_choice" value="both_0" class="btn btn-sm btn-outline-dark">Oba formaty bez opisow</button>
+                  <button type="submit" name="export_choice" value="both_1" class="btn btn-sm btn-dark">Oba formaty z opisami</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="csvTemplateCsvModal" tabindex="-1" aria-labelledby="csvTemplateCsvModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow">
       <div class="modal-header">
         <div>
-          <h5 class="modal-title" id="csvTemplateCsvModalLabel">Zapisz ustawienia do CSV</h5>
+          <h5 class="modal-title" id="csvTemplateCsvModalLabel">Eksportuj ustawienia szablonu</h5>
           <div class="small text-secondary" id="csvTemplateCsvName"></div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
       </div>
       <div class="modal-body">
-        <p class="mb-2">Czy plik ma zawierac opisy?</p>
-        <div class="small text-secondary">Wariant z opisami zawiera pole <strong>Opis</strong> oraz rozbudowane <strong>Szablony opisu</strong>. Wariant bez opisow jest krotszy i latwiejszy do wklejenia.</div>
-      </div>
-      <div class="modal-footer justify-content-between flex-wrap gap-2">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-        <div class="d-flex gap-2 flex-wrap">
-          <a href="#" class="btn btn-outline-primary" id="csvTemplateCsvWithoutDescriptions">Bez opisow</a>
-          <a href="#" class="btn btn-primary" id="csvTemplateCsvWithDescriptions">Z opisami</a>
+        <p class="mb-2">Wybierz format oraz zakres danych.</p>
+        <div class="small text-secondary mb-3">Wariant z opisami zawiera pole <strong>Opis</strong> oraz rozbudowane <strong>Szablony opisu</strong>. Wariant bez opisow jest mniejszy i zawiera pozostale ustawienia oraz wszystkie kolumny. Plik JSON zawiera dodatkowo aktualna liste pol i parametrow dostepnych w bazie, aby mozna bylo przekazac go do uzupelnienia przez ChatGPT.</div>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <div class="border rounded p-3 h-100">
+              <div class="fw-semibold mb-2">CSV</div>
+              <div class="d-grid gap-2">
+                <a href="#" class="btn btn-sm btn-outline-primary" id="csvTemplateCsvWithoutDescriptions">Bez opisow</a>
+                <a href="#" class="btn btn-sm btn-primary" id="csvTemplateCsvWithDescriptions">Z opisami</a>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="border rounded p-3 h-100">
+              <div class="fw-semibold mb-2">JSON</div>
+              <div class="d-grid gap-2">
+                <a href="#" class="btn btn-sm btn-outline-primary" id="csvTemplateJsonWithoutDescriptions">Bez opisow</a>
+                <a href="#" class="btn btn-sm btn-primary" id="csvTemplateJsonWithDescriptions">Z opisami</a>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
       </div>
     </div>
   </div>
@@ -239,11 +367,94 @@
 
     var templateId = String(button.getAttribute('data-template-id') || '');
     var templateName = String(button.getAttribute('data-template-name') || '');
-    var exportUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exporttemplatecsv&id=' + encodeURIComponent(templateId) + '&include_descriptions=';
+    var csvExportUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exporttemplatecsv&id=' + encodeURIComponent(templateId) + '&include_descriptions=';
+    var jsonExportUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exporttemplatejson&id=' + encodeURIComponent(templateId) + '&include_descriptions=';
 
     document.getElementById('csvTemplateCsvName').textContent = templateName;
-    document.getElementById('csvTemplateCsvWithoutDescriptions').href = exportUrl + '0';
-    document.getElementById('csvTemplateCsvWithDescriptions').href = exportUrl + '1';
+    document.getElementById('csvTemplateCsvWithoutDescriptions').href = csvExportUrl + '0';
+    document.getElementById('csvTemplateCsvWithDescriptions').href = csvExportUrl + '1';
+    document.getElementById('csvTemplateJsonWithoutDescriptions').href = jsonExportUrl + '0';
+    document.getElementById('csvTemplateJsonWithDescriptions').href = jsonExportUrl + '1';
   });
+
+  var selectAll = document.getElementById('csvTemplatesSelectAll');
+  var templateCheckboxes = Array.prototype.slice.call(document.querySelectorAll('.csv-template-select'));
+  var bulkExportButton = document.getElementById('csvTemplatesBulkExportButton');
+  var bulkExportModal = document.getElementById('csvTemplatesBulkExportModal');
+  var bulkExportIds = document.getElementById('csvTemplatesBulkExportIds');
+  var bulkExportCount = document.getElementById('csvTemplatesBulkExportCount');
+
+  function selectedTemplateIds() {
+    return templateCheckboxes.filter(function (checkbox) {
+      return checkbox.checked;
+    }).map(function (checkbox) {
+      return checkbox.value;
+    });
+  }
+
+  function refreshBulkSelection() {
+    var selectedCount = selectedTemplateIds().length;
+    if (bulkExportButton) {
+      bulkExportButton.disabled = selectedCount === 0;
+      bulkExportButton.textContent = selectedCount > 0
+        ? 'Pobierz zaznaczone (' + selectedCount + ')'
+        : 'Pobierz zaznaczone';
+    }
+    if (selectAll) {
+      selectAll.checked = templateCheckboxes.length > 0 && selectedCount === templateCheckboxes.length;
+      selectAll.indeterminate = selectedCount > 0 && selectedCount < templateCheckboxes.length;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      templateCheckboxes.forEach(function (checkbox) {
+        checkbox.checked = selectAll.checked;
+      });
+      refreshBulkSelection();
+    });
+  }
+  templateCheckboxes.forEach(function (checkbox) {
+    checkbox.addEventListener('change', refreshBulkSelection);
+  });
+  if (bulkExportModal) {
+    bulkExportModal.addEventListener('show.bs.modal', function (event) {
+      var ids = selectedTemplateIds();
+      if (ids.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      bulkExportIds.innerHTML = '';
+      ids.forEach(function (id) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'template_ids[]';
+        input.value = id;
+        bulkExportIds.appendChild(input);
+      });
+      bulkExportCount.textContent = String(ids.length);
+    });
+  }
+  refreshBulkSelection();
+
+  var importModes = document.querySelectorAll('.csv-template-import-mode');
+  var targetWrap = document.getElementById('csvTemplateImportTargetWrap');
+  var targetSelect = document.getElementById('csvTemplateImportTarget');
+  function refreshImportTarget() {
+    if (!targetWrap || !targetSelect) {
+      return;
+    }
+    var updateMode = document.getElementById('csvTemplateImportUpdate').checked;
+    targetWrap.classList.toggle('d-none', !updateMode);
+    targetSelect.required = updateMode;
+    if (!updateMode) {
+      targetSelect.value = '';
+    }
+  }
+  for (var i = 0; i < importModes.length; i++) {
+    importModes[i].addEventListener('change', refreshImportTarget);
+  }
+  refreshImportTarget();
 }());
 </script>

@@ -18,27 +18,185 @@ class AllegroService
     /** @var array<string, string> */
     private $imageHashCache = array();
 
+    /** @var array<string, string> */
+    private $orderImageUrlCache = array();
+
     /** @var array */
     private $config;
 
     /** @var AllegroStorageRepository */
     private $storage;
 
-    public function __construct()
+    public function __construct(bool $ordersOnly = false)
     {
         $app = Config::get('app');
         $this->config = isset($app['allegro']) && is_array($app['allegro']) ? $app['allegro'] : array();
         $this->storage = new AllegroStorageRepository(Database::instance());
         $this->storage->ensureSchema();
+        if ($ordersOnly) { return; }
         $customFields = new ProductCustomFieldRepository(Database::instance());
         $customFields->ensureSchema();
         $this->storage->cleanupExpiredCache();
         $this->disableStoredWarehouseLinks();
     }
 
+
+    /** Read-only order import; no order mutations are exposed to the order manager. */
+    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
+    {
+        return $this->requestApiWithAccount($account, 'GET', '/order/checkout-forms', [
+            'lineItems.boughtAt.gte' => $from, 'lineItems.boughtAt.lte' => $to,
+            'updatedAt.gte' => $updatedFrom !== '' ? $updatedFrom : $from,
+            'updatedAt.lte' => $to,
+            'limit' => 100, 'offset' => (int) $cursor, 'sort' => 'updatedAt',
+        ]);
+    }
+
+    public function enrichOrderImages(array $account, array $order): array
+    {
+        foreach ($order['lineItems']??[] as $index=>$line) {
+            if (self::firstOrderImage($line)!=='') { continue; }
+            $offerId=trim((string)($line['offer']['id']??''));
+            if ($offerId==='') { continue; }
+            $cacheKey=(int)($account['id']??0).'|'.$offerId;
+            if (!array_key_exists($cacheKey,$this->orderImageUrlCache)) {
+                $url='';
+                try {
+                    $stored=$this->storage->findOfferByAccountAndOfferId((int)$account['id'],$offerId);
+                    $url=self::firstOrderImage($stored??[]);
+                    if ($url==='') {
+                        $offer=$this->requestApiWithAccount($account,'GET','/sale/product-offers/'.rawurlencode($offerId));
+                        $url=self::firstOrderImage($offer);
+                    }
+                } catch (\Throwable $error) { $url=''; }
+                $this->orderImageUrlCache[$cacheKey]=$url;
+            }
+            if ($this->orderImageUrlCache[$cacheKey]!=='') { $order['lineItems'][$index]['imageUrl']=$this->orderImageUrlCache[$cacheKey]; }
+        }
+        return $order;
+    }
+
+    private static function firstOrderImage($value): string
+    {
+        if (is_scalar($value)) {
+            $url=trim((string)$value);
+            if (strpos($url,'//')===0) { $url='https:'.$url; }
+            return preg_match('#^https://[^\s]+$#i',$url)?$url:'';
+        }
+        if (!is_array($value)) { return ''; }
+        foreach (['primary_image_url','imageUrl','url','images','primaryImage'] as $key) {
+            if (!array_key_exists($key,$value)) { continue; }
+            $url=self::firstOrderImage($value[$key]);
+            if ($url!=='') { return $url; }
+        }
+        foreach (['offer','product','productSet'] as $key) {
+            if (!array_key_exists($key,$value)) { continue; }
+            $url=self::firstOrderImage($value[$key]);
+            if ($url!=='') { return $url; }
+        }
+        foreach ($value as $child) {
+            if (is_array($child)) {
+                $url=self::firstOrderImage($child);
+                if ($url!=='') { return $url; }
+            }
+        }
+        return '';
+    }
+
+    public function shipmentProposal(array $account,string $orderId): array
+    {
+        return $this->requestApiWithAccount($account,'GET','/shipment-management/delivery-proposals/'.rawurlencode($orderId));
+    }
+
+    public function sellerIdForAccount(int $accountId): string
+    {
+        $account=$this->storage->findAccountById($accountId);
+        if (!$account) { return ''; }
+        $me=$this->requestApiWithAccount($account,'GET','/me');
+        $sellerId=trim((string)($me['id']??''));
+        return preg_match('/^\d{1,30}$/D',$sellerId)?$sellerId:'';
+    }
+
+    public function shipmentServices(array $account): array
+    {
+        return $this->requestApiWithAccount($account,'GET','/shipment-management/delivery-services');
+    }
+
+    public function createShipmentCommand(array $account,string $commandId,array $input): array
+    {
+        $body=json_encode(['commandId'=>$commandId,'input'=>$input],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+        return $this->requestApiWithAccount($account,'POST','/shipment-management/shipments/create-commands',[],$body,['Content-Type: application/vnd.allegro.public.v1+json']);
+    }
+
+    public function shipmentCommandStatus(array $account,string $commandId): array
+    {
+        return $this->requestApiWithAccount($account,'GET','/shipment-management/shipments/create-commands/'.rawurlencode($commandId));
+    }
+
+    public function shipmentDetails(array $account,string $shipmentId): array
+    {
+        return $this->requestApiWithAccount($account,'GET','/shipment-management/shipments/'.rawurlencode($shipmentId));
+    }
+
+    public function shipmentTracking(array $account,string $carrierId,string $waybill): array
+    {
+        return $this->requestApiWithAccount($account,'GET','/order/carriers/'.rawurlencode($carrierId).'/tracking',['waybill'=>$waybill]);
+    }
+
+    public function shipmentLabel(array $account,string $shipmentId,string $pageSize='A6'): string
+    {
+        $token=$this->accessTokenForAccount($account);
+        $url=rtrim((string)$this->configValue('api_base','https://api.allegro.pl'),'/').'/shipment-management/label';
+        return $this->requestBinary('POST',$url,['Accept: application/octet-stream','Authorization: Bearer '.$token,'Content-Type: application/vnd.allegro.public.v1+json'],json_encode(['shipmentIds'=>[$shipmentId],'pageSize'=>$pageSize,'cutLine'=>$pageSize==='A4'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$account);
+    }
+
+    private function requestBinary(string $method,string $url,array $headers,$body=null,?array $account=null): string
+    {
+        $ch=curl_init($url); if ($ch===false) throw new RuntimeException('Nie można uruchomić pobierania pliku Allegro.');
+        curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$this->headersWithUserAgent($headers,$account),CURLOPT_TIMEOUT=>60,CURLOPT_CONNECTTIMEOUT=>10]);
+        if ($body!==null) curl_setopt($ch,CURLOPT_POSTFIELDS,$body);
+        $raw=curl_exec($ch); $status=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+        if (!is_string($raw)||$status<200||$status>=300) throw new RuntimeException('Allegro nie zwróciło etykiety (HTTP '.$status.').');
+        return $raw;
+    }
+
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();
+    }
+
+    /** Identifier required by Allegro for REST, OAuth and shipment requests. */
+    public function userAgent(?array $account=null): string
+    {
+        $configuredName = $account !== null ? trim((string) ($account['application_name'] ?? '')) : '';
+        $name = $configuredName !== '' ? $configuredName : trim((string) $this->configValue('application_name', 'accra_shop magazyn nowy'));
+        $version = trim((string) $this->configValue('application_version', '2026.09.08'));
+        $documentationUrl = trim((string) $this->configValue('documentation_url', 'https://magazyn.altreo.pl/crm/new_version/allegro-app-info.php'));
+
+        if (!preg_match('/^[A-Za-z0-9._ -]+$/D', $name)) {
+            throw new RuntimeException('Nazwa aplikacji Allegro w User-Agent ma nieprawidłowe znaki.');
+        }
+        $name = preg_replace('/ +/', '-', $name) ?: '';
+        if (!preg_match('/^[A-Za-z0-9._-]+$/D', $version)) {
+            throw new RuntimeException('Wersja aplikacji Allegro w User-Agent ma nieprawidłowy format.');
+        }
+        if (filter_var($documentationUrl, FILTER_VALIDATE_URL) === false || stripos($documentationUrl, 'https://') !== 0) {
+            throw new RuntimeException('Adres dokumentacji w User-Agent Allegro musi być publicznym adresem HTTPS.');
+        }
+
+        return $name . '/' . $version . ' (+' . $documentationUrl . ')';
+    }
+
+    private function headersWithUserAgent(array $headers,?array $account=null): array
+    {
+        $result = array();
+        foreach ($headers as $header) {
+            if (stripos(trim((string) $header), 'User-Agent:') !== 0) {
+                $result[] = $header;
+            }
+        }
+        $result[] = 'User-Agent: ' . $this->userAgent($account);
+        return $result;
     }
 
     public function saveAccount(array $input, ?int $accountId = null): array
@@ -50,6 +208,7 @@ class AllegroService
 
         $name = trim((string) ($input['name'] ?? ''));
         $clientId = trim((string) ($input['client_id'] ?? ''));
+        $applicationName = trim((string) ($input['application_name'] ?? ''));
         $clientSecret = trim((string) ($input['client_secret'] ?? ''));
         $redirectUri = trim((string) ($input['redirect_uri'] ?? ''));
         $isActive = !empty($input['is_active']) ? 1 : 0;
@@ -57,12 +216,20 @@ class AllegroService
         if ($existing) {
             $name = $name !== '' ? $name : (string) ($existing['name'] ?? '');
             $clientId = $clientId !== '' ? $clientId : (string) ($existing['client_id'] ?? '');
+            $applicationName = $applicationName !== '' ? $applicationName : (string) ($existing['application_name'] ?? '');
             $clientSecret = $clientSecret !== '' ? $clientSecret : (string) ($existing['client_secret'] ?? '');
             $redirectUri = $redirectUri !== '' ? $redirectUri : (string) ($existing['redirect_uri'] ?? '');
         }
 
         if ($name === '' || $clientId === '' || $clientSecret === '' || $redirectUri === '') {
             throw new RuntimeException('Uzupelnij nazwe konta, client_id, client_secret i redirect_uri.');
+        }
+
+        if ($applicationName === '') {
+            $applicationName = trim((string) $this->configValue('application_name', 'accra_shop magazyn nowy'));
+        }
+        if (!preg_match('/^[A-Za-z0-9._ -]+$/D', $applicationName)) {
+            throw new RuntimeException('Nazwa aplikacji Allegro ma nieprawidlowe znaki.');
         }
 
         if (filter_var($redirectUri, FILTER_VALIDATE_URL) === false) {
@@ -73,6 +240,7 @@ class AllegroService
             'name' => $name,
             'slug' => $this->uniqueSlug($name, $accountId),
             'client_id' => $clientId,
+            'application_name' => $applicationName,
             'client_secret' => $clientSecret,
             'redirect_uri' => $redirectUri,
             'is_active' => $isActive,
@@ -2253,7 +2421,7 @@ class AllegroService
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Altreo-AllegroSync/1.0');
+        curl_setopt($ch, CURLOPT_USERAGENT, $this->userAgent());
 
         $raw = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -2573,7 +2741,7 @@ class AllegroService
         );
 
         try {
-            return $this->request($method, $url, $requestHeaders, $body, $timeoutSeconds, $connectTimeoutSeconds);
+            return $this->request($method, $url, $requestHeaders, $body, $timeoutSeconds, $connectTimeoutSeconds, $account);
         } catch (RuntimeException $exception) {
             if ($forceRefresh || strpos($exception->getMessage(), '[401]') === false) {
                 throw $exception;
@@ -2656,7 +2824,10 @@ class AllegroService
                 'Content-Type: application/x-www-form-urlencoded',
                 'Accept: application/json',
             ),
-            http_build_query($params)
+            http_build_query($params),
+            30,
+            10,
+            $account
         );
     }
 
@@ -2682,7 +2853,8 @@ class AllegroService
         array $headers = array(),
         $body = null,
         int $timeoutSeconds = 30,
-        int $connectTimeoutSeconds = 10
+        int $connectTimeoutSeconds = 10,
+        ?array $userAgentAccount = null
     ): array
     {
         if (!function_exists('curl_init')) {
@@ -2696,7 +2868,7 @@ class AllegroService
 
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headersWithUserAgent($headers,$userAgentAccount));
         curl_setopt($ch, CURLOPT_TIMEOUT, max(1, $timeoutSeconds));
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(1, $connectTimeoutSeconds));
 
@@ -2719,8 +2891,18 @@ class AllegroService
         }
 
         if ($httpCode >= 400) {
-            $message = isset($decoded['errors'][0]['message']) ? (string) $decoded['errors'][0]['message'] : ('HTTP ' . $httpCode);
-            throw new RuntimeException('Allegro API error [' . $httpCode . ']: ' . $message);
+            $error = isset($decoded['errors'][0]) && is_array($decoded['errors'][0]) ? $decoded['errors'][0] : array();
+            $message = trim((string) ($error['message'] ?? ('HTTP ' . $httpCode)));
+            $message = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $message) ?: ('HTTP ' . $httpCode);
+            $message = mb_substr($message, 0, 300, 'UTF-8');
+            $errorCode = preg_replace('/[^A-Za-z0-9_.-]/', '', (string) ($error['code'] ?? ''));
+            $codeLabel = $errorCode !== '' ? ' {' . substr($errorCode, 0, 80) . '}' : '';
+            $path = preg_replace('/[^A-Za-z0-9_.\[\]-]/', '', (string) ($error['path'] ?? ''));
+            $pathLabel = $path !== '' ? ' (pole: ' . mb_substr($path, 0, 120, 'UTF-8') . ')' : '';
+            $userMessage = trim((string) ($error['userMessage'] ?? ''));
+            $userMessage = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $userMessage) ?: '';
+            $userLabel = $userMessage !== '' && $userMessage !== $message ? ' — ' . mb_substr($userMessage, 0, 220, 'UTF-8') : '';
+            throw new RuntimeException('Allegro API error [' . $httpCode . ']' . $codeLabel . ': ' . $message . $pathLabel . $userLabel);
         }
 
         return $decoded;

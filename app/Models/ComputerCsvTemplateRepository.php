@@ -127,7 +127,7 @@ class ComputerCsvTemplateRepository
     public function all(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT * FROM computer_csv_templates ORDER BY is_active DESC, is_system DESC, name ASC, id ASC'
+            "SELECT * FROM computer_csv_templates ORDER BY SUBSTRING_INDEX(TRIM(name), ' ', 1) ASC, name ASC, id ASC"
         );
 
         return $this->hydrateRows($rows);
@@ -136,7 +136,7 @@ class ComputerCsvTemplateRepository
     public function active(): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT * FROM computer_csv_templates WHERE is_active = 1 ORDER BY is_system DESC, name ASC, id ASC'
+            "SELECT * FROM computer_csv_templates WHERE is_active = 1 ORDER BY SUBSTRING_INDEX(TRIM(name), ' ', 1) ASC, name ASC, id ASC"
         );
 
         return $this->hydrateRows($rows);

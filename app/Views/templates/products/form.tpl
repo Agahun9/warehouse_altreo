@@ -1034,6 +1034,24 @@
                     <span class="product-section-chip"><i class="bi bi-diagram-2"></i>Z kategorii Empik</span>
                   </div>
                   <div id="empik-parameters-info" class="small text-secondary mb-3">Wybierz kategorie powiazana z Empik, aby zaladowac parametry.</div>
+                  <div class="product-section-box soft mb-3">
+                    <div class="row g-2">
+                      <div class="col-md-5">
+                        <label class="form-label">Szukaj produktu do kopiowania</label>
+                        <input type="text" id="empik-copy-product-search" class="form-control form-control-sm" placeholder="Min. 2 znaki">
+                      </div>
+                      <div class="col-md-5">
+                        <label class="form-label">Wyniki</label>
+                        <select id="empik-copy-product-select" class="form-select form-select-sm">
+                          <option value="">Wpisz fraze, aby wyszukac produkt...</option>
+                        </select>
+                      </div>
+                      <div class="col-md-2 d-grid">
+                        <label class="form-label d-none d-md-block">&nbsp;</label>
+                        <button type="button" id="empik-copy-product-button" class="btn btn-outline-secondary btn-sm">Kopiuj</button>
+                      </div>
+                    </div>
+                  </div>
                   <div id="empik-parameters-container"></div>
                 </div>
                 </div>
@@ -1162,6 +1180,9 @@
     var copyProductSearch = document.getElementById('copy-product-search');
     var copyProductSelect = document.getElementById('copy-product-select');
     var copyProductButton = document.getElementById('copy-product-button');
+    var empikCopyProductSearch = document.getElementById('empik-copy-product-search');
+    var empikCopyProductSelect = document.getElementById('empik-copy-product-select');
+    var empikCopyProductButton = document.getElementById('empik-copy-product-button');
     var relatedProductSearch = document.getElementById('related-product-search');
     var relatedProductSelect = document.getElementById('related-product-select');
     var addRelatedProductButton = document.getElementById('add-related-product-button');
@@ -3579,6 +3600,7 @@
     }
 
     var copySearchTimer = null;
+    var empikCopySearchTimer = null;
     var relatedSearchTimer = null;
     var derivedSearchTimer = null;
 
@@ -3633,6 +3655,48 @@
         .catch(function (error) {
           var message = error && error.message ? error.message : 'Blad wyszukiwania';
           copyProductSelect.innerHTML = '<option value="">' + escapeHtml(message) + '</option>';
+        });
+    }
+
+    function renderEmpikCopyProducts(items) {
+      if (!empikCopyProductSelect) {
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < items.length; i++) {
+        var p = items[i] || {};
+        var label = '#' + (p.id || '') + ' | ' + (p.sku || '') + ' | ' + (p.product_name || '');
+        if (p.category_name) {
+          label += ' | ' + p.category_name;
+        }
+        html += '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(label) + '</option>';
+      }
+      empikCopyProductSelect.innerHTML = html;
+    }
+
+    function searchEmpikCopyProducts() {
+      if (!empikCopyProductSearch || !empikCopyProductSelect) {
+        return;
+      }
+      var term = String(empikCopyProductSearch.value || '').trim();
+      if (term.length < 2) {
+        empikCopyProductSelect.innerHTML = '<option value="">Wpisz min. 2 znaki...</option>';
+        return;
+      }
+      var url = '{$baseUrl|escape:"javascript"}?controller=products&action=copyproducts&exclude_id=' + encodeURIComponent(productId || '0') + '&search=' + encodeURIComponent(term);
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) {
+          return response.text().then(function (rawText) {
+            var parsed = {};
+            try { parsed = rawText ? JSON.parse(rawText) : {}; } catch (e) { parsed = { error: rawText || ('HTTP ' + response.status) }; }
+            if (!response.ok) { throw new Error(parsed && parsed.error ? parsed.error : ('HTTP ' + response.status)); }
+            return parsed;
+          });
+        })
+        .then(function (data) { renderEmpikCopyProducts(data && data.items ? data.items : []); })
+        .catch(function (error) {
+          var message = error && error.message ? error.message : 'Blad wyszukiwania';
+          empikCopyProductSelect.innerHTML = '<option value="">' + escapeHtml(message) + '</option>';
         });
     }
 
@@ -3902,6 +3966,27 @@
           allegroInfo.textContent = 'Nie udalo sie skopiowac parametrow produktu.';
         });
     }
+    function copyEmpikParametersFromSelectedProduct() {
+      if (!empikCopyProductSelect || !empikCopyProductSelect.value) {
+        empikInfo.textContent = 'Wybierz produkt do kopiowania parametrow.';
+        return;
+      }
+      var sourceId = empikCopyProductSelect.value;
+      var url = '{$baseUrl|escape:"javascript"}?controller=products&action=copiedparameters&source_id=' + encodeURIComponent(sourceId);
+      fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.error) {
+            empikInfo.textContent = data.error;
+            return;
+          }
+          existingEmpikValues = data && data.empik_values ? data.empik_values : {};
+          renderEmpikParameterFields(currentEmpikItems, existingEmpikValues);
+          empikInfo.textContent = 'Skopiowano parametry Empik z wybranego produktu.';
+        })
+        .catch(function () { empikInfo.textContent = 'Nie udalo sie skopiowac parametrow produktu.'; });
+    }
+
     function loadAllegroParameters() {
       if (!categoryInput || !allegroInfo || !allegroContainer) {
         return;
@@ -3970,6 +4055,19 @@
 
     if (copyProductButton) {
       copyProductButton.addEventListener('click', copyParametersFromSelectedProduct);
+    }
+
+    if (empikCopyProductSearch) {
+      empikCopyProductSearch.addEventListener('input', function () {
+        if (empikCopySearchTimer) {
+          clearTimeout(empikCopySearchTimer);
+        }
+        empikCopySearchTimer = setTimeout(searchEmpikCopyProducts, 250);
+      });
+    }
+
+    if (empikCopyProductButton) {
+      empikCopyProductButton.addEventListener('click', copyEmpikParametersFromSelectedProduct);
     }
 
     function loadEmpikParameters() {
