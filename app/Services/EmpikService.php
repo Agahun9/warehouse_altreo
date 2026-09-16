@@ -48,6 +48,14 @@ class EmpikService
         ]);
     }
 
+    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
+    {
+        $response=$this->requestApi($account,'GET','/api/shipping/carriers');
+        $payload=OrderMarketplaceShipmentService::miraklCarrierPayload(is_array($response['carriers']??null)?$response['carriers']:$response,$carrierCode,$carrierName);
+        $payload['tracking_number']=trim($tracking);
+        $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/tracking', array(), $payload, array('Content-Type: application/json'));
+    }
+
     /**
      * Adds product media to an Empik/Mirakl order before it is normalized.
      * Prefer the synchronized offer cache; P11 is only called for a missing image.
@@ -2132,6 +2140,10 @@ class EmpikService
             }
 
             throw new RuntimeException('Empik API zwrocilo blad HTTP ' . $httpCode . ($message !== '' ? ': ' . $message : '.'));
+        }
+
+        if ($raw === '') {
+            return array();
         }
 
         if (!is_array($decoded)) {

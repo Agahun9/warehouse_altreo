@@ -53,6 +53,15 @@ class ErliService
         ]);
     }
 
+    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
+    {
+        $vendors=['inpost'=>'inpost','pocztex'=>'pocztex24','dhl'=>'dhl','dpd'=>'dpd','fedex'=>'fedex','gls'=>'gls','ups'=>'ups','orlen'=>'orlen'];
+        $vendor=$vendors[$carrierCode]??'';
+        if ($vendor==='') { throw new RuntimeException('ERLI nie obsługuje wybranego przewoźnika „'.$carrierName.'”.'); }
+        $response=$this->requestApi($account,'POST','/shipping/external',array(),array([ 'vendor'=>$vendor,'status'=>'readyToSend','trackingNumber'=>trim($tracking),'orderId'=>$orderId ]));
+        if (!empty($response[0]['error'])) { throw new RuntimeException('ERLI odrzuciło numer przesyłki.'); }
+    }
+
     public function enrichOrderImages(array $account, array $order): array
     {
         foreach ($order['items']??[] as $index=>$line) {

@@ -143,6 +143,17 @@ class AllegroService
         return $this->requestApiWithAccount($account,'GET','/order/carriers/'.rawurlencode($carrierId).'/tracking',['waybill'=>$waybill]);
     }
 
+    public function publishOrderShipment(array $account,string $orderId,string $tracking,string $carrierCode,string $carrierName): void
+    {
+        $known=['inpost'=>'INPOST','dpd'=>'DPD','dhl'=>'DHL','ups'=>'UPS','gls'=>'GLS','fedex'=>'FEDEX','orlen'=>'ORLEN','pocztex'=>'POCZTA_POLSKA'];
+        $carrierId=$known[$carrierCode]??'OTHER';
+        $existing=$this->requestApiWithAccount($account,'GET','/order/checkout-forms/'.rawurlencode($orderId).'/shipments');
+        foreach ((array)($existing['shipments']??[]) as $shipment) { if ((string)($shipment['waybill']??'')===$tracking) { return; } }
+        $payload=['carrierId'=>$carrierId,'waybill'=>$tracking];
+        if ($carrierId==='OTHER') { $payload['carrierName']=mb_substr(trim($carrierName),0,30,'UTF-8'); }
+        $this->requestApiWithAccount($account,'POST','/order/checkout-forms/'.rawurlencode($orderId).'/shipments',[],json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),['Content-Type: application/vnd.allegro.public.v1+json']);
+    }
+
     public function shipmentLabel(array $account,string $shipmentId,string $pageSize='A6'): string
     {
         $token=$this->accessTokenForAccount($account);

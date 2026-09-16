@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260910-6">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260915-2">
   {/if}
   <style>
     /*
@@ -442,6 +442,8 @@
                     <li class="nav-item"><a href="orders.php?tab=statuses" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'statuses'} active{/if}"><i class="nav-icon bi bi-diagram-3"></i><p>Statusy</p></a></li>
                     <li class="nav-item"><a href="orders.php?tab=rules" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'rules'} active{/if}"><i class="nav-icon bi bi-lightning-charge"></i><p>Automatyzacje</p></a></li>
                     <li class="nav-item"><a href="orders.php?tab=shipments" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'shipments'} active{/if}"><i class="nav-icon bi bi-box-seam"></i><p>Przesyłki</p></a></li>
+                    <li class="nav-item"><a href="orders.php?tab=printing" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'printing'} active{/if}"><i class="nav-icon bi bi-printer"></i><p>Drukarki</p></a></li>
+                    <li class="nav-item"><a href="orders.php?tab=payments" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'payments'} active{/if}"><i class="nav-icon bi bi-credit-card"></i><p>Ustaw płatności</p></a></li>
                     <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'documents'} active{/if}"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
                   </ul>
                 </li>

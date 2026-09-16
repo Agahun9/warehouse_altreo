@@ -28,10 +28,12 @@ final class OrderRepository
             'om_rules' => "id $id, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, trigger_name VARCHAR(30) NOT NULL, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL",
             'om_rule_runs' => "id $id, rule_id BIGINT NOT NULL, order_id BIGINT NOT NULL, event_key VARCHAR(80) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(rule_id, order_id, event_key)",
             'om_settings' => "setting_key VARCHAR(100) PRIMARY KEY, value_json LONGTEXT NOT NULL",
-            'om_series' => "id $id, name VARCHAR(100) NOT NULL, kind VARCHAR(30) NOT NULL, pattern VARCHAR(100) NOT NULL, next_number INTEGER NOT NULL DEFAULT 1",
+            'om_series' => "id $id, name VARCHAR(100) NOT NULL, kind VARCHAR(30) NOT NULL, pattern VARCHAR(100) NOT NULL, next_number INTEGER NOT NULL DEFAULT 1, fiscal_printer_id BIGINT NULL",
             'om_documents' => "id $id, order_id BIGINT NOT NULL, series_id BIGINT NOT NULL, kind VARCHAR(30) NOT NULL, number VARCHAR(190) NOT NULL UNIQUE, parent_id BIGINT NULL, request_key VARCHAR(80) NOT NULL UNIQUE, snapshot_json LONGTEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
             'om_shipments' => "id $id, order_id BIGINT NOT NULL, carrier VARCHAR(60) NOT NULL, tracking VARCHAR(100) NOT NULL, weight VARCHAR(30) NOT NULL, state VARCHAR(30) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(order_id, carrier, tracking)",
             'om_carrier_accounts' => "id $id, provider VARCHAR(30) NOT NULL, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, public_config_json TEXT NOT NULL, secret_config_json LONGTEXT NOT NULL, updated_at VARCHAR(30) NOT NULL, UNIQUE(provider, name)",
+            'om_payment_methods' => "id $id, name VARCHAR(100) NOT NULL UNIQUE, is_cod INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1",
+            'om_payment_mappings' => "id $id, platform VARCHAR(20) NOT NULL, source_method VARCHAR(190) NOT NULL, payment_method_id BIGINT NOT NULL, UNIQUE(platform, source_method)",
         ];
         foreach ($tables as $name => $columns) { $this->db->query("CREATE TABLE IF NOT EXISTS $name ($columns)$suffix"); }
         // Upgrade installations created before incremental-sync columns were introduced.
@@ -41,6 +43,11 @@ final class OrderRepository
                 try { $this->db->query("ALTER TABLE om_accounts ADD COLUMN $column $definition"); }
                 catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
             }
+        }
+        $seriesColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_series)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_series'),'Field');
+        if (!in_array('fiscal_printer_id',$seriesColumns,true)) {
+            try { $this->db->query('ALTER TABLE om_series ADD COLUMN fiscal_printer_id BIGINT NULL'); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
         }
         $shipmentColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_shipments)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_shipments'),'Field');
         foreach (['carrier_account_id'=>'BIGINT NULL','external_id'=>'VARCHAR(190) NULL','command_id'=>'VARCHAR(190) NULL','payload_json'=>'LONGTEXT NULL','cod_amount_cents'=>'BIGINT NULL','shipment_currency'=>'VARCHAR(3) NULL'] as $column=>$definition) {
@@ -68,6 +75,9 @@ final class OrderRepository
             foreach ([1=>['Nowe','#6366f1'],2=>['Do spakowania','#f59e0b'],3=>['Gotowe do wysyłki','#06b6d4'],4=>['Wysłane','#10b981'],5=>['Zakończone','#64748b'],6=>['Anulowane','#ef4444']] as $key=>$status) {
                 $this->insertIgnore('om_statuses', ['id'=>$key,'name'=>$status[0],'color'=>$status[1],'position'=>$key]);
             }
+        }
+        foreach ([1=>['Przelew',0],2=>['Płatność przy odbiorze',1]] as $key=>$method) {
+            $this->insertIgnore('om_payment_methods',['id'=>$key,'name'=>$method[0],'is_cod'=>$method[1],'position'=>$key,'enabled'=>1]);
         }
     }
     private function insertIgnore(string $table, array $data): void
@@ -98,6 +108,110 @@ final class OrderRepository
         $this->db->update('om_accounts',['name'=>$name],'platform=:p AND source_id=:s',['p'=>$platform,'s'=>$sourceId]);
     }
     public function statuses(): array { return $this->db->fetchAll('SELECT * FROM om_statuses ORDER BY position,id'); }
+    public function paymentMethods(bool $enabledOnly=false): array
+    {
+        return $this->db->fetchAll('SELECT * FROM om_payment_methods'.($enabledOnly?' WHERE enabled=1':'').' ORDER BY position,id');
+    }
+    public function savePaymentMethod(int $id,string $name,bool $isCod,int $position): void
+    {
+        $name=mb_substr(trim($name),0,100);
+        if ($name==='') { throw new InvalidArgumentException('Podaj nazwę własnej metody płatności.'); }
+        if ($this->db->fetchColumn('SELECT id FROM om_payment_methods WHERE name=:name AND id<>:id',['name'=>$name,'id'=>$id])) { throw new InvalidArgumentException('Taka własna metoda płatności już istnieje.'); }
+        $data=['name'=>$name,'is_cod'=>$isCod?1:0,'position'=>$position,'enabled'=>1];
+        if ($id>0) {
+            if (!$this->db->fetchColumn('SELECT id FROM om_payment_methods WHERE id=:id',['id'=>$id])) { throw new InvalidArgumentException('Nieznana metoda płatności.'); }
+            $this->db->update('om_payment_methods',$data,'id=:id',['id'=>$id]);
+        } else { $id=(int)$this->db->insert('om_payment_methods',$data); }
+        foreach ($this->db->fetchAll('SELECT platform,source_method FROM om_payment_mappings WHERE payment_method_id=:id',['id'=>$id]) as $mapping) {
+            $this->refreshPaymentMapping((string)$mapping['platform'],(string)$mapping['source_method']);
+        }
+    }
+    public function savePaymentMapping(string $platform,string $sourceMethod,int $paymentMethodId): int
+    {
+        $platform=mb_substr(trim($platform),0,20);
+        $sourceMethod=mb_substr(trim($sourceMethod),0,190);
+        if (!in_array($platform,['allegro','erli','empik','mediamarkt','morele'],true)) { throw new InvalidArgumentException('Nieznany marketplace.'); }
+        if (!$this->db->fetchColumn('SELECT id FROM om_payment_methods WHERE id=:id AND enabled=1',['id'=>$paymentMethodId])) { throw new InvalidArgumentException('Wybierz aktywną własną metodę płatności.'); }
+        $this->db->transaction(function () use ($platform,$sourceMethod,$paymentMethodId) {
+            $this->db->delete('om_payment_mappings','platform=:platform AND source_method=:source',['platform'=>$platform,'source'=>$sourceMethod]);
+            $this->db->insert('om_payment_mappings',['platform'=>$platform,'source_method'=>$sourceMethod,'payment_method_id'=>$paymentMethodId]);
+        });
+        return $this->refreshPaymentMapping($platform,$sourceMethod);
+    }
+    public function removePaymentMapping(int $id): void
+    {
+        $this->db->delete('om_payment_mappings','id=:id',['id'=>$id]);
+    }
+    public function paymentSources(): array
+    {
+        $mappings=[];
+        foreach ($this->db->fetchAll('SELECT pm.id mapping_id,pm.platform,pm.source_method,pm.payment_method_id,m.name payment_method_name,m.is_cod FROM om_payment_mappings pm JOIN om_payment_methods m ON m.id=pm.payment_method_id') as $mapping) {
+            $mappings[$mapping['platform']."\0".$mapping['source_method']]=$mapping;
+        }
+        $sources=[];
+        foreach ($this->db->fetchAll("SELECT a.platform,o.details_json FROM om_orders o JOIN om_accounts a ON a.id=o.account_id WHERE a.platform<>'manual'") as $row) {
+            try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
+            catch (\Throwable $error) { continue; }
+            $raw=is_array($details['raw']??null)?$details['raw']:[];
+            $source=array_key_exists('source_payment_method',$details)
+                ? mb_substr(trim((string)$details['source_payment_method']),0,190)
+                : OrderNormalizer::sourcePaymentMethod((string)$row['platform'],$raw,(string)($details['delivery']??''));
+            $key=$row['platform']."\0".$source;
+            if (!isset($sources[$key])) { $sources[$key]=['platform'=>$row['platform'],'source_method'=>$source,'orders_count'=>0,'mapping_id'=>null,'payment_method_id'=>null,'payment_method_name'=>'','is_cod'=>null]; }
+            $sources[$key]['orders_count']++;
+            if (isset($mappings[$key])) { $sources[$key]=array_replace($sources[$key],$mappings[$key]); }
+        }
+        foreach ($mappings as $key=>$mapping) {
+            if (!isset($sources[$key])) { $sources[$key]=array_replace(['orders_count'=>0],$mapping); }
+        }
+        $sources=array_values($sources);
+        usort($sources,static function (array $a,array $b): int { return [$a['platform'],$a['source_method']]<=>[$b['platform'],$b['source_method']]; });
+        return $sources;
+    }
+    private function mappedPayment(string $platform,string $sourceMethod): ?array
+    {
+        $row=$this->db->fetch('SELECT m.name,m.is_cod FROM om_payment_mappings pm JOIN om_payment_methods m ON m.id=pm.payment_method_id AND m.enabled=1 WHERE pm.platform=:platform AND pm.source_method=:source',['platform'=>$platform,'source'=>$sourceMethod]);
+        return $row?:null;
+    }
+    private function applyPaymentMapping(int $accountId,array &$order,array &$details): void
+    {
+        $platform=(string)$this->db->fetchColumn('SELECT platform FROM om_accounts WHERE id=:id',['id'=>$accountId]);
+        if ($platform==='' || $platform==='manual') { return; }
+        $raw=is_array($details['raw']??null)?$details['raw']:[];
+        $source=array_key_exists('source_payment_method',$details)
+            ? mb_substr(trim((string)$details['source_payment_method']),0,190)
+            : OrderNormalizer::sourcePaymentMethod($platform,$raw,(string)($details['delivery']??''));
+        $details['source_payment_method']=$source;
+        $mapping=$this->mappedPayment($platform,$source);
+        if (!$mapping) { return; }
+        $details['payment_method']=(string)$mapping['name'];
+        $details['cash_on_delivery']=(int)(bool)$mapping['is_cod'];
+        if ($details['cash_on_delivery']) { $order['paid']=0; $details['amount_paid_cents']=0; }
+    }
+    private function refreshPaymentMapping(string $platform,string $sourceMethod): int
+    {
+        $mapping=$this->mappedPayment($platform,$sourceMethod);
+        if (!$mapping) { return 0; }
+        $updated=0;
+        foreach ($this->db->fetchAll('SELECT o.id,o.details_json FROM om_orders o JOIN om_accounts a ON a.id=o.account_id WHERE a.platform=:platform',['platform'=>$platform]) as $row) {
+            try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
+            catch (\Throwable $error) { continue; }
+            if (!empty($details['_manual'])) { continue; }
+            $raw=is_array($details['raw']??null)?$details['raw']:[];
+            $source=array_key_exists('source_payment_method',$details)
+                ? mb_substr(trim((string)$details['source_payment_method']),0,190)
+                : OrderNormalizer::sourcePaymentMethod($platform,$raw,(string)($details['delivery']??''));
+            if ($source!==$sourceMethod) { continue; }
+            $details['source_payment_method']=$source;
+            $details['payment_method']=(string)$mapping['name'];
+            $details['cash_on_delivery']=(int)(bool)$mapping['is_cod'];
+            $data=['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')];
+            if ($details['cash_on_delivery']) { $data['paid']=0; $details['amount_paid_cents']=0; $data['details_json']=self::json($details); }
+            $this->db->update('om_orders',$data,'id=:id',['id'=>$row['id']]);
+            $updated++;
+        }
+        return $updated;
+    }
     public function createManualOrder(array $input,string $actor): int
     {
         $this->requireStatus((int)($input['status_id']??0));
@@ -145,7 +259,9 @@ final class OrderRepository
         $row['details']['invoice_lines'] = self::addressLines($row['details']['invoice_address'] ?? []);
         $paymentText=strtolower((string)($row['details']['payment_method']??'').' '.json_encode($row['details']['raw']??[],JSON_UNESCAPED_UNICODE));
         $row['details']['cash_on_delivery']=isset($row['details']['cash_on_delivery']) ? (int)(bool)$row['details']['cash_on_delivery'] : (int)(strpos($paymentText,'pobran')!==false || strpos($paymentText,'cash_on_delivery')!==false || preg_match('/\bcod\b/',$paymentText));
-        $row['details']['payment_method']=trim((string)($row['details']['payment_method']??'')) ?: ($row['details']['cash_on_delivery']?'Płatność przy odbiorze':((int)$row['paid']?'Płatność online':'Nieustalona'));
+        $paymentMethod=trim((string)($row['details']['payment_method']??''));
+        if ($row['details']['cash_on_delivery'] && in_array(mb_strtolower($paymentMethod,'UTF-8'),['','nieustalona','płatność online'],true)) { $paymentMethod='Płatność przy odbiorze'; }
+        $row['details']['payment_method']=$paymentMethod!==''?$paymentMethod:((int)$row['paid']?'Płatność online':'Nieustalona');
         $row['details']['amount_paid_cents']=isset($row['details']['amount_paid_cents']) ? max(0,(int)$row['details']['amount_paid_cents']) : ((int)$row['paid']?(int)$row['total_cents']:0);
         $row['details']['amount_due_cents']=max(0,(int)$row['total_cents']-(int)$row['details']['amount_paid_cents']);
         $rawInvoice=(array)($row['details']['raw']['invoice']??[]);
@@ -489,6 +605,7 @@ final class OrderRepository
         return $this->db->transaction(function () use ($accountId,$order) {
             $old = $this->db->fetch('SELECT * FROM om_orders WHERE account_id=:a AND external_id=:e'.$this->rowLock(),['a'=>$accountId,'e'=>$order['external_id']]);
             $details = $order['details']; unset($order['details']);
+            $this->applyPaymentMapping($accountId,$order,$details);
             if ($old) {
                 try {
                     $previous=json_decode((string)$old['details_json'],true,512,JSON_THROW_ON_ERROR);

@@ -97,6 +97,19 @@
   document.querySelectorAll('[data-confirm-shipment]').forEach(form => form.addEventListener('submit', event => {
     if (!window.confirm('Utworzyć przesyłkę u wybranego operatora? Ta operacja może naliczyć opłatę.')) event.preventDefault();
   }));
+  document.querySelectorAll('[data-source-shipment]').forEach(form => {
+    const carrier = form.querySelector('select[name="source_carrier"]');
+    const other = form.querySelector('[data-other-carrier]');
+    const updateOther = () => {
+      const visible = carrier?.value === 'other';
+      if (other) { other.hidden = !visible; other.required = visible; }
+    };
+    carrier?.addEventListener('change', updateOther); updateOther();
+    form.addEventListener('submit', event => {
+      const label = carrier?.selectedOptions[0]?.textContent || 'wybranego przewoźnika';
+      if (!window.confirm(`Przekazać numer przesyłki do źródła zamówienia jako ${label}?`)) event.preventDefault();
+    });
+  });
   document.querySelectorAll('[data-confirm-action]').forEach(form => form.addEventListener('submit', event => {
     if (!window.confirm(form.dataset.confirmAction || 'Potwierdzić operację?')) event.preventDefault();
   }));
@@ -316,8 +329,8 @@
     });
     const payment = form.querySelector('[data-new-payment]');
     const cod = form.querySelector('[data-new-cod]');
-    payment.addEventListener('change', () => { cod.checked = payment.value === 'Płatność za pobraniem'; });
-    cod.addEventListener('change', () => { if (cod.checked) payment.value = 'Płatność za pobraniem'; });
+    payment.addEventListener('change', () => { cod.checked = payment.selectedOptions[0]?.dataset.cod === '1'; });
+    cod.addEventListener('change', () => { if (cod.checked) { const option = payment.querySelector('option[data-cod="1"]'); if (option) payment.value = option.value; } });
     update();
   });
   document.querySelectorAll('[data-inline-order-form]').forEach(form => {

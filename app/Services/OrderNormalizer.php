@@ -9,6 +9,60 @@ use InvalidArgumentException;
 
 final class OrderNormalizer
 {
+    private static function miraklAddress(array $address, string $fallbackEmail = ''): array
+    {
+        $street=trim((string)($address['street_1']??$address['street']??$address['address']??''));
+        $street=preg_replace('/^\s*ul(?:ica)?\.?\s*:?\s*/iu','',$street)??$street;
+        $country=strtoupper(trim((string)($address['country_iso_code']??$address['country_code']??$address['country']??'PL')));
+        $countries=['POL'=>'PL','DEU'=>'DE','CZE'=>'CZ','SVK'=>'SK','HUN'=>'HU','AUT'=>'AT','ROU'=>'RO','GBR'=>'GB','USA'=>'US','FRA'=>'FR','NLD'=>'NL','BEL'=>'BE','ITA'=>'IT','ESP'=>'ES','POLSKA'=>'PL','POLAND'=>'PL'];
+        $country=$countries[$country]??$country;
+        if (!preg_match('/^[A-Z]{2}$/D',$country)) { $country='PL'; }
+        return [
+            'firstName'=>(string)($address['firstName']??$address['firstname']??$address['first_name']??''),
+            'lastName'=>(string)($address['lastName']??$address['lastname']??$address['last_name']??''),
+            'company_name'=>(string)($address['company_name']??''),
+            'tax_id'=>(string)($address['tax_id']??$address['taxId']??$address['nip']??''),
+            'email'=>(string)($address['email']??$fallbackEmail),
+            'phoneNumber'=>(string)($address['phone']??$address['phone_number']??$address['phoneNumber']??''),
+            'street'=>$street,
+            'buildingNumber'=>(string)($address['street_2']??$address['building_number']??$address['buildingNumber']??''),
+            'zip'=>(string)($address['zip_code']??$address['postal_code']??$address['zip']??''),
+            'city'=>(string)($address['city']??''),
+            'country'=>$country,
+            'additional_info'=>(string)($address['additional_info']??''),
+        ];
+    }
+
+    public static function sourcePaymentMethod(string $platform,array $raw,string $delivery=''): string
+    {
+        $payment=is_array($raw['payment']??null)?$raw['payment']:[];
+        $candidates=$platform==='allegro'
+            ? [$payment['type']??'', $payment['provider']??'', $payment['method']??'']
+            : ($platform==='erli'
+                ? [$payment['method']??'', $payment['type']??'', $raw['paymentMethod']??'', $raw['payment_method']??'']
+                : [$raw['payment_type']??'', $raw['payment_method']??'', $raw['paymentMethod']??'', $payment['type']??'', $payment['method']??'']);
+        foreach ($candidates as $candidate) {
+            $candidate=mb_substr(trim((string)$candidate),0,190,'UTF-8');
+            if ($candidate!=='') { return $candidate; }
+        }
+        return self::cashOnDelivery($raw,$delivery)?mb_substr(trim($delivery),0,190,'UTF-8'):'';
+    }
+
+    public static function cashOnDelivery(array $raw, string $delivery = ''): bool
+    {
+        $payment=is_array($raw['payment']??null)?$raw['payment']:[];
+        $text=strtolower(implode(' ',array_filter([
+            $delivery,
+            (string)($raw['payment_type']??''),
+            (string)($raw['payment_method']??''),
+            (string)($raw['paymentMethod']??''),
+            (string)($payment['type']??''),
+            (string)($payment['method']??''),
+            (string)($payment['name']??''),
+        ])));
+        return strpos($text,'pobran')!==false || strpos($text,'cash_on_delivery')!==false || preg_match('/\bcod\b/',$text)===1;
+    }
+
     public static function money($value): int
     {
         $value = (string) $value;
@@ -82,7 +136,8 @@ final class OrderNormalizer
             $status = $raw['status'] ?? 'unknown';
             $total = (int) ($raw['totalPrice'] ?? 0);
             $currency = $raw['currency'] ?? 'PLN';
-            $paid = ($raw['payment']['status'] ?? '') === 'COMPLETED';
+            $cashOnDelivery = self::cashOnDelivery($raw,(string)($raw['delivery']['name']??''));
+            $paid = !$cashOnDelivery && ($raw['payment']['status'] ?? '') === 'COMPLETED';
             $items = [];
             foreach ($raw['items'] ?? [] as $item) {
                 $items[] = ['name' => $item['name'] ?? '', 'sku' => $item['sku'] ?? $item['externalId'] ?? '', 'external_id'=>(string)($item['productExternalId']??$item['externalId']??$item['product']['externalId']??$item['product']['id']??''), 'quantity' => (int) ($item['quantity'] ?? 1), 'unit_cents' => (int) ($item['unitPrice'] ?? 0), 'vat' => isset($item['taxRate']) ? strtolower(str_replace('TAX_', '', $item['taxRate'])) : null, 'image_url'=>self::imageUrl($item)];
@@ -96,13 +151,16 @@ final class OrderNormalizer
         } elseif (in_array($platform, ['empik', 'mediamarkt'], true)) {
             $created = $raw['created_date'] ?? '';
             $buyer = $raw['customer'] ?? [];
-            $address = $buyer['shipping_address'] ?? $buyer;
-            $invoice = $buyer['billing_address'] ?? $address;
+            $email=(string)($raw['customer_notification_email']??$buyer['email']??'');
+            $address = self::miraklAddress((array)($buyer['shipping_address'] ?? $buyer),$email);
+            $invoice = self::miraklAddress((array)($buyer['billing_address'] ?? $address),$email);
             $id = $raw['order_id'] ?? '';
             $status = $raw['order_state'] ?? 'UNKNOWN';
             $total = self::money($raw['total_price'] ?? '0');
             $currency = $raw['currency_iso_code'] ?? 'PLN';
-            $paid = ($raw['payment_status'] ?? '') === 'PAID';
+            $delivery = (string)($raw['shipping_type_label'] ?? '');
+            $cashOnDelivery = self::cashOnDelivery($raw,$delivery);
+            $paid = !$cashOnDelivery && strtoupper((string)($raw['payment_status'] ?? '')) === 'PAID';
             $items = [];
             foreach ($raw['order_lines'] ?? [] as $item) {
                 $items[] = [
@@ -118,10 +176,9 @@ final class OrderNormalizer
                 ];
             }
             $shipping = self::money($raw['shipping_price'] ?? '0');
-            $delivery = $raw['shipping_type_label'] ?? '';
             $pickup = $address['additional_info'] ?? '';
-            $phone = $address['phone'] ?? '';
-            $invoiceRequired = !empty($raw['invoice_required']) || !empty($raw['invoiceRequired']) || !empty($invoice['company']) || !empty($invoice['tax_id']);
+            $phone = $address['phoneNumber'] ?? '';
+            $invoiceRequired = !empty($raw['invoice_required']) || !empty($raw['invoiceRequired']) || !empty($invoice['company_name']) || !empty($invoice['tax_id']);
             $documentPreference = $invoiceRequired ? 'invoice' : 'receipt';
         } else {
             throw new InvalidArgumentException('Brak zweryfikowanego adaptera zamówień dla tej platformy.');
@@ -136,9 +193,9 @@ final class OrderNormalizer
             'external_id' => (string) $id, 'remote_status' => (string) $status,
             'ordered_at' => $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'buyer_name' => trim(($address['firstName'] ?? $address['firstname'] ?? $buyer['firstname'] ?? '') . ' ' . ($address['lastName'] ?? $address['lastname'] ?? $buyer['lastname'] ?? '')),
-            'email' => $buyer['email'] ?? '', 'phone' => $phone,
+            'email' => $email ?? ($buyer['email'] ?? ''), 'phone' => $phone,
             'total_cents' => $total, 'currency' => $currency, 'paid' => $paid ? 1 : 0,
-            'details' => ['items' => $items, 'address' => $address, 'invoice_address' => $invoice, 'invoice_required' => $invoiceRequired ? 1 : 0, 'document_preference' => $documentPreference, 'shipping_cents' => $shipping, 'delivery' => $delivery, 'pickup' => $pickup, 'payment_method' => isset($cashOnDelivery) && $cashOnDelivery ? 'Płatność przy odbiorze' : '', 'cash_on_delivery' => isset($cashOnDelivery) && $cashOnDelivery ? 1 : 0, 'amount_paid_cents' => $paid ? $total : 0, 'buyer_note' => $raw['messageToSeller'] ?? $raw['comment'] ?? '', 'raw' => $raw],
+            'details' => ['items' => $items, 'address' => $address, 'invoice_address' => $invoice, 'invoice_required' => $invoiceRequired ? 1 : 0, 'document_preference' => $documentPreference, 'shipping_cents' => $shipping, 'delivery' => $delivery, 'pickup' => $pickup, 'source_payment_method' => self::sourcePaymentMethod($platform,$raw,(string)$delivery), 'payment_method' => isset($cashOnDelivery) && $cashOnDelivery ? 'Płatność przy odbiorze' : '', 'cash_on_delivery' => isset($cashOnDelivery) && $cashOnDelivery ? 1 : 0, 'amount_paid_cents' => $paid ? $total : 0, 'buyer_note' => $raw['messageToSeller'] ?? $raw['comment'] ?? '', 'raw' => $raw],
         ];
     }
 }

@@ -17,6 +17,8 @@ $pdo=new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMO
 foreach (['pdo'=>$pdo,'config'=>['driver'=>'sqlite']] as $name=>$value) { $property=$reflection->getProperty($name); $property->setValue($db,$value); }
 $repo=new OrderRepository($db); $repo->ensureSchema(); $repo->ensureSchema();
 check(count($repo->statuses())===6,'Schema idempotency');
+check(in_array('fiscal_printer_id',array_column($db->fetchAll('PRAGMA table_info(om_series)'),'name'),true),'Series printer column exists');
+check(array_column($repo->paymentMethods(),'name')===['Przelew','Płatność przy odbiorze'] && (int)$repo->paymentMethods()[1]['is_cod']===1,'Default payment methods seeded');
 $repo->registerAccount('allegro',1,'Sklep A'); $repo->registerAccount('allegro',2,'Sklep B'); $repo->registerAccount('erli',1,'Sklep C');
 $repo->registerAccount('allegro',1,'Sklep A');
 check(count($repo->accounts())===3,'Account dedupe');
@@ -73,6 +75,11 @@ $repo->updateOrderDetails(1,['buyer_name'=>'Anna Edytowana','email'=>'test@examp
 $repo->import(1,$order); $edited=$repo->order(1);
 check($edited['buyer_name']==='Anna Edytowana' && $edited['details']['delivery']==='Kurier pobranie','Manual order details preserved after sync');
 check($edited['details']['cash_on_delivery']===1 && $edited['details']['amount_due_cents']===2460,'COD and amount due derived');
+$legacyDetailsJson=(string)$db->fetchColumn('SELECT details_json FROM om_orders WHERE id=1');
+$legacyDetails=json_decode($legacyDetailsJson,true);$legacyDetails['payment_method']='Nieustalona';$legacyDetails['cash_on_delivery']=1;
+$db->update('om_orders',['details_json'=>OrderRepository::json($legacyDetails)],'id=:id',['id'=>1]);
+check($repo->order(1)['details']['payment_method']==='Płatność przy odbiorze','Legacy unresolved payment name corrected for COD display');
+$db->update('om_orders',['details_json'=>$legacyDetailsJson],'id=:id',['id'=>1]);
 check($edited['details']['document_preference']==='invoice','Manual document preference preserved after sync');
 check($repo->listing(['q'=>'test@example','account_id'=>1])['total']===1,'Search with account filter');
 check($repo->listing(['q'=>"' OR 1=1 --"])['total']===0,'SQL injection search');
@@ -83,10 +90,28 @@ check($repo->listing(['platform'=>'erli'])['total']===1,'Filter by marketplace')
 check($repo->listing(['amount_to'=>'12,30'])['total']===1,'Filter by maximum amount with Polish decimal separator');
 check($repo->listing(['date_from'=>'2026-09-09'])['total']===0,'Filter by date range');
 check($repo->listing(['sort'=>'amount_asc'])['rows'][0]['external_id']==='e1','Sort by amount');
-$mirakl=['order_id'=>'m1','created_date'=>'2026-09-08T10:00:00Z','total_price'=>12.30,'currency_iso_code'=>'PLN','order_lines'=>[['product_title'=>'M','offer_sku'=>'EMP-1','product_sku'=>'P-1','product_id'=>'EAN-1','image_url'=>'https://img.example.invalid/empik.jpg','quantity'=>1,'price_unit'=>12.30]]];
+$mirakl=['order_id'=>'m1','created_date'=>'2026-09-08T10:00:00Z','total_price'=>12.30,'currency_iso_code'=>'PLN','payment_type'=>'CARD','order_lines'=>[['product_title'=>'M','offer_sku'=>'EMP-1','product_sku'=>'P-1','product_id'=>'EAN-1','image_url'=>'https://img.example.invalid/empik.jpg','quantity'=>1,'price_unit'=>12.30]]];
 $miraklOrder=OrderNormalizer::normalize('empik',$mirakl,$cutoff,$now);
 check($miraklOrder['total_cents']===1230,'Mirakl money');
 check($miraklOrder['details']['items'][0]['image_url']==='https://img.example.invalid/empik.jpg' && $miraklOrder['details']['items'][0]['product_sku']==='P-1','Empik image and identifiers normalization');
+check($miraklOrder['details']['source_payment_method']==='CARD','Marketplace payment method preserved');
+$repo->registerAccount('empik',7,'Empik test');
+$empikAccountId=(int)$db->fetchColumn('SELECT id FROM om_accounts WHERE platform=:platform AND source_id=:source',['platform'=>'empik','source'=>7]);
+$repo->import($empikAccountId,$miraklOrder);
+check(count(array_filter($repo->paymentSources(),fn($source)=>$source['platform']==='empik' && $source['source_method']==='CARD'))===1,'Payment source discovered from stored orders');
+$empikOrderId=(int)$db->fetchColumn('SELECT id FROM om_orders WHERE account_id=:account AND external_id=:external',['account'=>$empikAccountId,'external'=>'m1']);
+check($repo->savePaymentMapping('empik','CARD',1)===1 && $repo->order($empikOrderId)['details']['payment_method']==='Przelew','Payment mapping updates existing order');
+$miraklCod=$mirakl;
+$miraklCod['order_id']='m-cod';
+$miraklCod['shipping_type_label']='Kurier - płatność za pobraniem';
+$miraklCod['payment_status']='UNPAID';
+$miraklCod['customer_notification_email']='relay@example.invalid';
+$miraklCod['customer']=['shipping_address'=>['firstname'=>'Ewelina','lastname'=>'Testowa','street_1'=>'Ul.: Testowa','street_2'=>'37','zip_code'=>'23-204','city'=>'Kraśnik','country_iso_code'=>'POL','phone'=>'+48123123123']];
+$miraklCodOrder=OrderNormalizer::normalize('empik',$miraklCod,$cutoff,$now);
+check($miraklCodOrder['details']['cash_on_delivery']===1 && $miraklCodOrder['paid']===0,'Mirakl COD recognized from delivery label');
+check($miraklCodOrder['email']==='relay@example.invalid' && $miraklCodOrder['phone']==='+48123123123','Mirakl customer contact normalization');
+check($miraklCodOrder['details']['address']['street']==='Testowa' && $miraklCodOrder['details']['address']['buildingNumber']==='37' && $miraklCodOrder['details']['address']['zip']==='23-204' && $miraklCodOrder['details']['address']['country']==='PL','Mirakl delivery address normalization');
+check($repo->savePaymentMapping('allegro','',1)===1 && $repo->order(1)['details']['payment_method']==='Pobranie','Payment mapping preserves manually edited order');
 rejects(fn()=>OrderNormalizer::money('1e3'),'Reject scientific money'); rejects(fn()=>OrderNormalizer::money('12.345'),'Reject subcent money');
 $calc=OrderDocumentService::calculate([['name'=>'Test','quantity'=>2,'price'=>'12.30','vat'=>'23']]);
 check($calc['net_cents']===2000 && $calc['tax_cents']===460 && $calc['gross_cents']===2460,'VAT calculation');
@@ -175,8 +200,12 @@ $db->update('om_accounts',['enabled'=>0],'id=:id',['id'=>1]);check($sync->sync(f
 // Compile and render all Smarty branches, with synthetic records only.
 $smarty=App\Core\SmartyFactory::create();
 $smarty->setCompileDir(sys_get_temp_dir().'/om-smarty-test');
-$smarty->assign(['csrf'=>'test','canWrite'=>true,'flashSuccess'=>null,'flashError'=>null,'listing'=>$repo->listing([]),'filters'=>['q'=>'','status_id'=>'','account_id'=>'','platform'=>'','paid'=>'','date_from'=>'','date_to'=>'','amount_from'=>'','amount_to'=>'','sort'=>'newest'],'listQuery'=>'','activeFilterCount'=>0,'dashboard'=>$repo->dashboard(),'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$repo->order(1),'events'=>[],'orderDocs'=>$db->fetchAll('SELECT * FROM om_documents'),'orderShipments'=>[],'mappings'=>[],'rules'=>$repo->rules(),'series'=>$db->fetchAll('SELECT * FROM om_series'),'seller'=>['name'=>'Test','address'=>'Test','nip'=>'TEST','bank'=>''],'documents'=>$db->fetchAll('SELECT * FROM om_documents'),'shipments'=>[],'carrierAccounts'=>[],'documentKey'=>str_repeat('a',40)]);
-foreach (['list','accounts','statuses','rules','documents','shipments'] as $tab) { $smarty->assign('tab',$tab);$html=$smarty->fetch('orders/index.tpl');check(strpos($html,'Centrum zamówień')!==false,'Render '.$tab); }
+$smarty->assign(['csrf'=>'test','canWrite'=>true,'flashSuccess'=>null,'flashError'=>null,'listing'=>$repo->listing([]),'filters'=>['q'=>'','status_id'=>'','account_id'=>'','platform'=>'','paid'=>'','date_from'=>'','date_to'=>'','amount_from'=>'','amount_to'=>'','sort'=>'newest'],'listQuery'=>'','activeFilterCount'=>0,'dashboard'=>$repo->dashboard(),'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),'detail'=>$repo->order(1),'events'=>[],'orderDocs'=>$db->fetchAll('SELECT * FROM om_documents'),'orderShipments'=>[],'mappings'=>[],'rules'=>$repo->rules(),'series'=>$db->fetchAll('SELECT * FROM om_series'),'seller'=>['name'=>'Test','address'=>'Test','nip'=>'TEST','bank'=>''],'documents'=>$db->fetchAll('SELECT * FROM om_documents'),'shipments'=>[],'carrierAccounts'=>[],'sourceCarrierOptions'=>App\Services\OrderMarketplaceShipmentService::carrierOptions(),'printStations'=>[],'printJobs'=>[],'printFiscalPrinters'=>[],'printFiscalJobs'=>[],'receiptPrinterSettings'=>['printer_id'=>0],'printAgentApiUrl'=>'https://example.test/print-agent-api.php','documentKey'=>str_repeat('a',40)]);
+foreach (['list','accounts','statuses','rules','documents','shipments','payments','printing'] as $tab) { $smarty->assign('tab',$tab);$html=$smarty->fetch('orders/index.tpl');check(strpos($html,'Centrum zamówień')!==false,'Render '.$tab); }
+$receiptSeriesId=$db->insert('om_series',['name'=>'Paragony punkt A','kind'=>'receipt','pattern'=>'PA/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>7]);
+$smarty->assign(['series'=>array_merge($db->fetchAll('SELECT * FROM om_series WHERE id<>:id ORDER BY id',['id'=>$receiptSeriesId]),[['id'=>$receiptSeriesId,'name'=>'Paragony punkt A','kind'=>'receipt','pattern'=>'PA/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>7,'effective_printer_id'=>7]]),'printFiscalPrinters'=>[['id'=>7,'name'=>'Posnet punkt A','host'=>'127.0.0.1','port'=>6666,'enabled'=>1,'environment'=>'sandbox']]]);
+$smarty->assign('tab','documents');$seriesHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($seriesHtml,'name="series_id" value="'.$receiptSeriesId.'"')!==false && strpos($seriesHtml,'Posnet punkt A')!==false,'Series edit renders assigned fiscal printer');
 $smarty->assign(['tab'=>'list','operatorName'=>'Operator testowy']);
 check(strpos($smarty->fetch('orders/shell.tpl'),'orders-standalone')!==false,'Render standalone order shell');
 $smarty->assign(['tab'=>'list','detail'=>null,'listing'=>['rows'=>[],'total'=>0,'page'=>1,'pages'=>1]]);
@@ -193,12 +222,40 @@ $smarty->assign(['detail'=>$repo->order(1),'orderShipments'=>[$renderShipment]])
 $detailHtml=$smarty->fetch('orders/index.tpl');
 check(strpos($detailHtml,'om-order-console')!==false && strpos($detailHtml,'data-inline-order-form')!==false && strpos($detailHtml,'id="om-data-grid"')!==false && strpos($detailHtml,'id="om-shipping"')!==false,'Compact order console renders');
 check(strpos($detailHtml,'STATUS U PRZEWOŹNIKA')!==false && strpos($detailHtml,'InPost Paczkomat 24/7')!==false && strpos($detailHtml,'W drodze')!==false,'Shipment status, carrier and service render');
+check(strpos($detailHtml,'Drukuj najnowszą')!==false && strpos($detailHtml,'Drukuj wszystkie')!==false,'Newest and all label actions render without Smarty syntax errors');
+$published=[];
+$publisherStub=new class($published) {
+    public $published;
+    public function __construct(&$published) { $this->published=&$published; }
+    public function listAccounts(): array { return [['id'=>7,'is_active'=>1,'name'=>'Empik test']]; }
+    public function publishOrderShipment(array $account,string $orderId,string $tracking,string $carrierCode,string $carrierName): void { $this->published=compact('account','orderId','tracking','carrierCode','carrierName'); }
+};
+$publisher=new App\Services\OrderMarketplaceShipmentService($repo,['empik'=>$publisherStub]);
+$message=$publisher->publish(['platform'=>'empik','account_source_id'=>7,'external_id'=>'M-1'],'TRACK-1','dpd','DPD');
+check($published['orderId']==='M-1' && $published['tracking']==='TRACK-1' && $published['carrierCode']==='dpd' && strpos($message,'Empik')!==false,'Shipment tracking routed to source marketplace account');
+$miraklCarrier=App\Services\OrderMarketplaceShipmentService::miraklCarrierPayload([['code'=>'DPD_PL','label'=>'DPD Polska','standard_code'=>'dpd']], 'dpd','DPD');
+check($miraklCarrier['carrier_code']==='DPD_PL' && $miraklCarrier['carrier_name']==='DPD Polska','Mirakl carrier uses marketplace SH21 code instead of guessed generic code');
+$miraklOther=App\Services\OrderMarketplaceShipmentService::miraklCarrierPayload([['code'=>'UPS_EMP','label'=>'UPS']], 'other','Kurier lokalny');
+check(!isset($miraklOther['carrier_code']) && $miraklOther['carrier_name']==='Kurier lokalny','Unknown Mirakl carrier is sent as unregistered carrier name');
+$publishShipmentId=(int)$db->insert('om_shipments',['order_id'=>$empikOrderId,'carrier'=>'Apaczka','tracking'=>'TRACK-2','weight'=>'1','state'=>'created','payload_json'=>OrderRepository::json(['provider'=>'apaczka','meta'=>[]]),'created_at'=>'2026-09-15 08:00:00']);
+$publisher->publishShipment($publishShipmentId,'inpost','','Tester');
+$publication=json_decode((string)$db->fetchColumn('SELECT payload_json FROM om_shipments WHERE id=:id',['id'=>$publishShipmentId]),true)['meta']['source_publication'];
+check($publication['state']==='received' && $publication['carrier_name']==='InPost' && $publication['sent_at']!=='' && $publication['received_at']!=='','Shipment source send and receipt confirmation persisted');
+$rejectedShipmentId=(int)$db->insert('om_shipments',['order_id'=>$empikOrderId,'carrier'=>'Apaczka','tracking'=>'TRACK-3','weight'=>'1','state'=>'created','payload_json'=>OrderRepository::json(['provider'=>'apaczka','meta'=>[]]),'created_at'=>'2026-09-15 08:01:00']);
+$rejectingStub=new class {
+    public function listAccounts(): array { return [['id'=>7,'is_active'=>1,'name'=>'Empik test']]; }
+    public function publishOrderShipment(array $account,string $orderId,string $tracking,string $carrierCode,string $carrierName): void { throw new RuntimeException('HTTP 400'); }
+};
+$rejectingPublisher=new App\Services\OrderMarketplaceShipmentService($repo,['empik'=>$rejectingStub]);
+rejects(fn()=>$rejectingPublisher->publishShipment($rejectedShipmentId,'dpd','','Tester'),'Rejected marketplace publication throws');
+$rejectedPublication=json_decode((string)$db->fetchColumn('SELECT payload_json FROM om_shipments WHERE id=:id',['id'=>$rejectedShipmentId]),true)['meta']['source_publication'];
+check($rejectedPublication['state']==='rejected' && $rejectedPublication['attempted_at']!=='' && $rejectedPublication['sent_at']==='' && $rejectedPublication['received_at']==='','Rejected marketplace request is not displayed as sent');
 $doc=$db->fetch('SELECT * FROM om_documents WHERE id=2');$doc['snapshot']=json_decode($doc['snapshot_json'],true);$smarty->assign('document',$doc);check(strpos($smarty->fetch('orders/print.tpl'),'Faktura korygująca')!==false,'Render correction A4');
 if (getenv('OM_PREVIEW_DIR')) {
     $dir=getenv('OM_PREVIEW_DIR'); if (!is_dir($dir)) mkdir($dir,0700,true);
     file_put_contents($dir.'/detail.html','<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:Inter,Arial,sans-serif}*{box-sizing:border-box}</style><style>'.file_get_contents(BASE_PATH.'/dist/css/orders.css').'</style>'.$detailHtml.'</html>');
     $smarty->assign('detail',null);
-    foreach (['list','accounts','statuses','rules','documents','shipments'] as $tab) {
+    foreach (['list','accounts','statuses','rules','documents','shipments','payments'] as $tab) {
         $smarty->assign('tab',$tab);$body=$smarty->fetch('orders/index.tpl');
         file_put_contents($dir.'/'.$tab.'.html','<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:Arial,sans-serif}*{box-sizing:border-box}</style>'.$body.'</html>');
     }

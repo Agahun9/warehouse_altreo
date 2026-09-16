@@ -293,7 +293,17 @@ final class OrderShipmentService
         [$label,$tone]=self::statusLabel($remote,$provider);
         $updatedAt=trim((string)($meta['tracking_updated_at']??'')); $updatedTimestamp=$updatedAt!==''?strtotime($updatedAt):false;
         if ($updatedTimestamp!==false) { $updatedAt=gmdate('Y-m-d H:i',$updatedTimestamp).' UTC'; }
-        return ['delivery_method'=>$delivery!==''?$delivery:'Brak danych','carrier'=>$carrier,'service'=>$service,'service_code'=>(string)($meta['service_code']??''),'remote_status'=>$remote,'status_label'=>$label,'status_tone'=>$tone,'status_description'=>self::statusDescription((string)($meta['status_description']??''),$remote),'status_updated_at'=>$updatedAt,'technical_status'=>(string)($shipment['state']??'')];
+        $publication=is_array($meta['source_publication']??null)?$meta['source_publication']:[];
+        if (($publication['state']??'')!=='received' && empty($publication['attempted_at']) && !empty($publication['sent_at'])) {
+            $publication['attempted_at']=$publication['sent_at'];
+            $publication['sent_at']='';
+        }
+        foreach (['attempted_at','sent_at','received_at'] as $field) {
+            $timestamp=trim((string)($publication[$field]??''));
+            $parsed=$timestamp!==''?strtotime($timestamp):false;
+            $publication[$field.'_label']=$parsed!==false?gmdate('Y-m-d H:i',$parsed).' UTC':'';
+        }
+        return ['delivery_method'=>$delivery!==''?$delivery:'Brak danych','carrier'=>$carrier,'service'=>$service,'service_code'=>(string)($meta['service_code']??''),'remote_status'=>$remote,'status_label'=>$label,'status_tone'=>$tone,'status_description'=>self::statusDescription((string)($meta['status_description']??''),$remote),'status_updated_at'=>$updatedAt,'technical_status'=>(string)($shipment['state']??''),'source_publication'=>$publication];
     }
     private function shipmentPayload(string $provider,array $response,array $meta): string { return OrderRepository::json(['provider'=>$provider,'response'=>$this->safeResponse($response),'meta'=>$meta]); }
     private function serviceMeta(int $orderId,int $carrierAccountId,string $selected,string $fallbackName,string $fallbackCarrier): array

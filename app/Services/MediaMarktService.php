@@ -46,6 +46,14 @@ class MediaMarktService
         ]);
     }
 
+    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
+    {
+        $response=$this->requestApi($account,'GET','/api/shipping/carriers');
+        $payload=OrderMarketplaceShipmentService::miraklCarrierPayload(is_array($response['carriers']??null)?$response['carriers']:$response,$carrierCode,$carrierName);
+        $payload['tracking_number']=trim($tracking);
+        $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/tracking', array(), $payload, array('Content-Type: application/json'));
+    }
+
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();
@@ -2184,6 +2192,10 @@ class MediaMarktService
                 . ' Endpoint: ' . strtoupper($method) . ' ' . $baseUrl . $path
                 . '; shop_id: ' . ($shopIdIncluded ? 'dodany' : 'pominiety')
             );
+        }
+
+        if ($raw === '') {
+            return array();
         }
 
         if (!is_array($decoded)) {

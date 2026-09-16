@@ -3,10 +3,13 @@
 declare(strict_types=1);
 namespace App\Controllers;
 use App\Core\Controller;
+use App\Core\Config;
 use App\Core\SmartyFactory;
 use App\Models\OrderRepository;
+use App\Models\PrintAgentRepository;
 use App\Services\OrderSyncService;
 use App\Services\OrderDocumentService;
+use App\Services\OrderMarketplaceShipmentService;
 use App\Services\OrderShipmentService;
 use InvalidArgumentException;
 
@@ -32,8 +35,9 @@ final class OrdersController extends Controller
     public function index(): void
     {
         $user=$this->requireModule('orders'); $csrf=$this->token(); $repo=$this->repository();
+        $printAgents=new PrintAgentRepository($this->db()); $printAgents->ensureSchema();
         $tab=(string)$this->input('tab','list');
-        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments'],true)) { $tab='list'; }
+        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments','payments','printing'],true)) { $tab='list'; }
         $filters=[
             'q'=>(string)$this->input('q',''),
             'status_id'=>$this->input('status_id',''),
@@ -76,18 +80,24 @@ final class OrdersController extends Controller
         $shippingDefaults=$this->shippingDefaults($repo);
         $shipmentSuggestion=$detail?$this->shipmentSuggestion($detail,$carrierAccounts,$shippingDefaults):[];
         $documentDefaults=$repo->setting('document_defaults')+['vat'=>'23'];
+        $receiptPrinterSettings=$repo->setting('receipt_printer')+['printer_id'=>0];
+        $series=$this->db()->fetchAll('SELECT * FROM om_series ORDER BY id');
+        foreach ($series as &$item) { $item['effective_printer_id']=$item['fiscal_printer_id']===null?(int)$receiptPrinterSettings['printer_id']:(int)$item['fiscal_printer_id']; }
+        unset($item);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
         $this->renderOrders([
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
             'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$repo->dashboard(),
             'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,
+            'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),
             'mappings'=>$this->db()->fetchAll('SELECT m.*,a.name account_name,a.platform,s.name status_name FROM om_mappings m JOIN om_accounts a ON a.id=m.account_id JOIN om_statuses s ON s.id=m.status_id ORDER BY a.platform,a.name,m.remote_status'),
             'rules'=>$repo->rules(),
-            'series'=>$this->db()->fetchAll('SELECT * FROM om_series ORDER BY id'),
+            'series'=>$series,
             'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>''],
             'documents'=>$this->db()->fetchAll('SELECT id,order_id,number,kind,created_at FROM om_documents ORDER BY id DESC LIMIT 100'),
             'shipments'=>$this->db()->fetchAll('SELECT * FROM om_shipments ORDER BY id DESC LIMIT 100'),
-            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,
+            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
+            'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
     }
@@ -197,6 +207,7 @@ final class OrdersController extends Controller
         $user=$this->writeGuard(); $repo=$this->repository(); $db=$this->db();
         $actor=(string)($user['name']??$user['email']??('użytkownik #'.$user['id']));
         $op=(string)($_POST['operation']??''); $tab=(string)($_POST['tab']??'list'); $id=(int)($_POST['order_id']??0);
+        $successMessage='Zapisano.';
         try {
             switch ($op) {
                 case 'discover':
@@ -227,6 +238,18 @@ final class OrdersController extends Controller
                     });
                     break;
                 case 'unmap': $db->delete('om_mappings','id=:id',['id'=>(int)$_POST['mapping_id']]); break;
+                case 'payment_method':
+                    $repo->savePaymentMethod((int)($_POST['payment_method_id']??0),$this->required('name',100),!empty($_POST['is_cod']),(int)($_POST['position']??0));
+                    $successMessage='Zapisano własną metodę płatności.';
+                    break;
+                case 'payment_mapping':
+                    $updated=$repo->savePaymentMapping((string)($_POST['platform']??''),(string)($_POST['source_method']??''),(int)($_POST['payment_method_id']??0));
+                    $successMessage='Zapisano przypisanie. Zaktualizowano zamówienia: '.$updated.'.';
+                    break;
+                case 'unmap_payment':
+                    $repo->removePaymentMapping((int)($_POST['payment_mapping_id']??0));
+                    $successMessage='Usunięto przypisanie metody płatności.';
+                    break;
                 case 'order':
                     $db->transaction(function () use ($repo,$db,$id,$actor) {
                         $repo->changeStatus($id,(int)$_POST['status_id'],$actor);
@@ -269,15 +292,51 @@ final class OrdersController extends Controller
                 case 'seller':
                     $repo->saveSetting('seller',['name'=>$this->required('name',200),'address'=>$this->required('address',1000),'nip'=>$this->required('nip',30),'bank'=>substr((string)($_POST['bank']??''),0,100)]);
                     break;
+                case 'receipt_printer':
+                    (new PrintAgentRepository($db))->ensureSchema();
+                    $printerId=(int)($_POST['fiscal_printer_id']??0);
+                    if ($printerId>0 && !$db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE id=:id AND enabled=1',['id'=>$printerId])) {
+                        throw new InvalidArgumentException('Wybierz aktywną drukarkę z zakładki Drukowanie.');
+                    }
+                    $repo->saveSetting('receipt_printer',['printer_id'=>$printerId]);
+                    $successMessage=$printerId>0?'Zapisano drukarkę do automatycznego druku paragonów.':'Wyłączono automatyczny druk paragonów.';
+                    $tab='documents';
+                    break;
                 case 'series':
                     $kind=(string)($_POST['kind']??''); $pattern=$this->required('pattern',100);
                     if (!in_array($kind,['invoice','receipt','invoice_correction','receipt_correction'],true) || strpos($pattern,'{N}')===false || preg_match('/[{}]/',strtr($pattern,['{N}'=>'','{YYYY}'=>'','{MM}'=>'']))) { throw new InvalidArgumentException('Wzór musi zawierać {N}; dostępne także {YYYY} i {MM}.'); }
                     $next=(int)($_POST['next_number']??1);
                     if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Numer początkowy musi być dodatni.'); }
-                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next]);
+                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind)]);
+                    break;
+                case 'series_update':
+                    $seriesId=(int)($_POST['series_id']??0);
+                    $existing=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$seriesId]);
+                    if (!$existing) { throw new InvalidArgumentException('Nie znaleziono serii.'); }
+                    $kind=(string)($_POST['kind']??''); $pattern=$this->required('pattern',100);
+                    if (!in_array($kind,['invoice','receipt','invoice_correction','receipt_correction'],true) || strpos($pattern,'{N}')===false || preg_match('/[{}]/',strtr($pattern,['{N}'=>'','{YYYY}'=>'','{MM}'=>'']))) { throw new InvalidArgumentException('Wzór musi zawierać {N}; dostępne także {YYYY} i {MM}.'); }
+                    $next=(int)($_POST['next_number']??0);
+                    if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Następny numer musi być dodatni.'); }
+                    $used=(bool)$db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId]);
+                    if ($used && ($kind!==$existing['kind'] || $next<(int)$existing['next_number'])) { throw new InvalidArgumentException('Dla używanej serii nie można zmienić typu ani cofnąć licznika.'); }
+                    $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind)],'id=:id',['id'=>$seriesId]);
+                    $successMessage='Zapisano serię numeracji.';
                     break;
                 case 'document':
+                    $documentSeries=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>(int)($_POST['series_id']??0)]);
+                    $receiptPrinterId=$documentSeries && $documentSeries['kind']==='receipt'?$this->receiptPrinterId($documentSeries,$repo):0;
+                    if ($receiptPrinterId>0) {
+                        (new PrintAgentRepository($db))->ensureSchema();
+                        if (!$db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE id=:id AND enabled=1',['id'=>$receiptPrinterId])) {
+                            throw new InvalidArgumentException('Przypisana drukarka paragonów jest nieaktywna. Zmień ją w zakładce Dokumenty.');
+                        }
+                    }
                     $doc=(new OrderDocumentService($repo))->issue($id,$_POST,$actor);
+                    if ($receiptPrinterId>0) {
+                        try { $fiscalJobId=(new PrintAgentRepository($db))->queueFiscalReceipt($id,$receiptPrinterId,$actor,$doc); }
+                        catch (\Throwable $printError) { throw new InvalidArgumentException('Paragon został wystawiony, ale nie trafił do drukarki: '.$printError->getMessage(),0,$printError); }
+                        $repo->event($id,'Automatycznie dodano wystawiony paragon do kolejki drukarki Posnet (zadanie '.$fiscalJobId.').',$actor);
+                    }
                     $this->redirect('./index.php?controller=orders&action=printdocument&id='.$doc);
                     break;
                 case 'quick_document':
@@ -286,8 +345,23 @@ final class OrdersController extends Controller
                     if ($db->fetchColumn('SELECT id FROM om_documents WHERE order_id=:order_id AND kind=:kind LIMIT 1',['order_id'=>$id,'kind'=>$kind])) {
                         throw new InvalidArgumentException($kind==='receipt'?'Paragon dla tego zamówienia został już wystawiony.':'Faktura dla tego zamówienia została już wystawiona.');
                     }
-                    $series=$this->documentSeries($db,$kind);
+                    $series=!empty($_POST['series_id'])?$db->fetch('SELECT * FROM om_series WHERE id=:id AND kind=:kind',['id'=>(int)$_POST['series_id'],'kind'=>$kind]):$this->documentSeries($db,$kind);
+                    if (!$series) { throw new InvalidArgumentException('Wybierz serię właściwego typu.'); }
+                    $receiptPrinterId=0;
+                    if ($kind==='receipt') {
+                        $receiptPrinterId=$this->receiptPrinterId($series,$repo);
+                        if ($receiptPrinterId>0) { (new PrintAgentRepository($db))->ensureSchema(); }
+                        if ($receiptPrinterId>0 && !$db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE id=:id AND enabled=1',['id'=>$receiptPrinterId])) {
+                            throw new InvalidArgumentException('Przypisana drukarka paragonów jest nieaktywna. Zmień ją w zakładce Dokumenty.');
+                        }
+                    }
                     $doc=(new OrderDocumentService($repo))->issue($id,$this->documentPayload($repo,$repo->order($id),$kind,(string)($_POST['request_key']??''))+['series_id'=>$series['id']],$actor);
+                    if ($kind==='receipt' && $receiptPrinterId>0) {
+                        $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                        try { $fiscalJobId=$printAgents->queueFiscalReceipt($id,$receiptPrinterId,$actor,$doc); }
+                        catch (\Throwable $printError) { throw new InvalidArgumentException('Paragon został wystawiony, ale nie trafił do drukarki: '.$printError->getMessage(),0,$printError); }
+                        $repo->event($id,'Automatycznie dodano wystawiony paragon do kolejki drukarki Posnet (zadanie '.$fiscalJobId.').',$actor);
+                    }
                     $this->redirect('./index.php?controller=orders&action=printdocument&id='.$doc);
                     break;
                 case 'quick_correction':
@@ -306,11 +380,65 @@ final class OrdersController extends Controller
                 case 'refresh_shipment':
                     (new OrderShipmentService($repo))->refresh((int)($_POST['shipment_id']??0),$actor);
                     break;
+                case 'publish_shipment':
+                    $successMessage=(new OrderMarketplaceShipmentService($repo))->publishShipment((int)($_POST['shipment_id']??0),(string)($_POST['source_carrier']??''),(string)($_POST['source_carrier_other']??''),$actor);
+                    break;
                 case 'cancel_shipment':
                     (new OrderShipmentService($repo))->cancel((int)($_POST['shipment_id']??0),$actor);
                     break;
                 case 'delete_shipment':
                     (new OrderShipmentService($repo))->deleteLocal((int)($_POST['shipment_id']??0),$actor);
+                    break;
+                case 'queue_label':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    [$stationId,$printerName]=array_pad(explode('|',(string)($_POST['printer_target']??''),2),2,'');
+                    $width=(float)str_replace(',','.',(string)($_POST['label_width_mm']??'100'));
+                    $height=(float)str_replace(',','.',(string)($_POST['label_height_mm']??'150'));
+                    $scope=(string)($_POST['label_scope']??'shipment');
+                    if ($scope==='shipment') {
+                        $shipmentId=(int)($_POST['shipment_id']??0);
+                        $jobIds=[$printAgents->queueShipmentLabel($shipmentId,(int)$stationId,$printerName,$width,$height,$actor,$this->printAgentApiBase())];
+                        $orderId=(int)$db->fetchColumn('SELECT order_id FROM om_shipments WHERE id=:id',['id'=>$shipmentId]);
+                    } else {
+                        $orderId=(int)($_POST['order_id']??0);
+                        $jobIds=$printAgents->queueOrderLabels($orderId,$scope,(int)$stationId,$printerName,$width,$height,$actor,$this->printAgentApiBase());
+                    }
+                    if ($orderId>0) { $repo->event($orderId,'Dodano '.count($jobIds).' etykiet do kolejki druku ('.implode(', ',$jobIds).').',$actor); $id=$orderId; }
+                    $successMessage=count($jobIds)===1?'Etykieta trafiła do kolejki wybranej drukarki.':'Dodano '.count($jobIds).' etykiet do kolejki wybranej drukarki.';
+                    break;
+                case 'print_station_create':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $plainToken=$printAgents->createStation($this->required('station_name',150));
+                    $successMessage='Stanowisko utworzone. Token (skopiuj teraz): '.$plainToken;
+                    $tab='printing';
+                    break;
+                case 'print_station_toggle':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->setStationEnabled((int)($_POST['station_id']??0),!empty($_POST['enabled']));
+                    $successMessage=!empty($_POST['enabled'])?'Włączono stanowisko druku.':'Wyłączono stanowisko druku.';
+                    $tab='printing';
+                    break;
+                case 'print_station_token':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $plainToken=$printAgents->regenerateToken((int)($_POST['station_id']??0));
+                    $successMessage='Wygenerowano nowy token; poprzedni przestał działać. Skopiuj teraz: '.$plainToken;
+                    $tab='printing';
+                    break;
+                case 'print_station_delete':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->deleteStation((int)($_POST['station_id']??0));
+                    $successMessage='Agent został usunięty, jego token unieważniono, a zakończoną historię druku usunięto.';
+                    $tab='printing';
+                    break;
+                case 'fiscal_printer_configure':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->configureFiscalPrinter((int)($_POST['fiscal_printer_id']??0),(string)($_POST['receipt_series']??''),(string)($_POST['environment']??'sandbox'),!empty($_POST['enabled']));
+                    $successMessage='Zapisano ustawienia drukarki fiskalnej.'; $tab='printing';
+                    break;
+                case 'fiscal_printer_add':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->addFiscalPrinter((int)($_POST['station_id']??0),$this->required('fiscal_printer_name',150),$this->required('fiscal_printer_host',255),(int)($_POST['fiscal_printer_port']??6666));
+                    $successMessage='Dodano drukarkę fiskalną. Ustaw serię, tryb i włącz urządzenie.'; $tab='printing';
                     break;
                 case 'carrier_account':
                     $provider=(string)($_POST['provider']??'');
@@ -353,10 +481,14 @@ final class OrdersController extends Controller
                     break;
                 default: throw new InvalidArgumentException('Nieznana operacja.');
             }
-            $this->setFlash('success','Zapisano.');
+            $this->setFlash('success',$successMessage);
         } catch (\Throwable $e) {
             $safeMessage=$e instanceof InvalidArgumentException ? $e->getMessage() : 'Nie udało się zapisać. Sprawdź, czy numer dokumentu lub przesyłki nie został już użyty.';
-            if (in_array($op,['create_shipment','refresh_shipment','cancel_shipment'],true)) {
+            if ($op==='publish_shipment') {
+                $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'source_shipment','order_id'=>$id]);
+                $reason=mb_substr(trim((string)$e->getMessage()),0,300,'UTF-8');
+                $safeMessage='Nie udało się przekazać numeru przesyłki do źródła. '.$reason.' [ID: '.$diagnostic['reference'].']';
+            } elseif (in_array($op,['create_shipment','refresh_shipment','cancel_shipment'],true)) {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'shipment','order_id'=>$id]);
                 $reason=$e instanceof InvalidArgumentException ? $e->getMessage() : $diagnostic['message'];
                 $safeMessage='Nie udało się obsłużyć przesyłki. '.$reason.' [ID: '.$diagnostic['reference'].']';
@@ -371,14 +503,35 @@ final class OrdersController extends Controller
         if ($value==='' || mb_strlen($value)>$limit) { throw new InvalidArgumentException('Uzupełnij pole '.$key.' (maks. '.$limit.' znaków).'); }
         return $value;
     }
+    private function printAgentApiBase(): string
+    {
+        $config=Config::get('app');
+        $public=rtrim((string)($config['public_base_url']??''),'/');
+        if ($public==='') { return 'print-agent-api.php'; }
+        return preg_replace('#/index\.php$#','/print-agent-api.php',$public)?:'print-agent-api.php';
+    }
     private function documentSeries($db,string $kind): array
     {
         $series=$db->fetch('SELECT * FROM om_series WHERE kind=:kind ORDER BY id LIMIT 1',['kind'=>$kind]);
         if ($series) { return $series; }
         $labels=['invoice'=>['Faktury','FV'],'receipt'=>['Paragony','PAR'],'invoice_correction'=>['Korekty faktur','KOR-FV'],'receipt_correction'=>['Korekty paragonów','KOR-PAR']];
         if (!isset($labels[$kind])) { throw new InvalidArgumentException('Nieprawidłowy rodzaj dokumentu.'); }
-        $id=(int)$db->insert('om_series',['name'=>$labels[$kind][0],'kind'=>$kind,'pattern'=>$labels[$kind][1].'/{YYYY}/{N}','next_number'=>1]);
+        $id=(int)$db->insert('om_series',['name'=>$labels[$kind][0],'kind'=>$kind,'pattern'=>$labels[$kind][1].'/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>null]);
         return $db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$id]);
+    }
+    private function seriesPrinterId($db,string $kind): int
+    {
+        $printerId=(int)($_POST['fiscal_printer_id']??0);
+        if ($printerId<0 || ($printerId>0 && $kind!=='receipt')) { throw new InvalidArgumentException('Drukarkę można przypisać tylko do serii paragonów.'); }
+        if ($printerId>0) {
+            (new PrintAgentRepository($db))->ensureSchema();
+            if (!$db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE id=:id AND enabled=1',['id'=>$printerId])) { throw new InvalidArgumentException('Wybierz aktywną drukarkę z zakładki Drukowanie.'); }
+        }
+        return $printerId;
+    }
+    private function receiptPrinterId(array $series,OrderRepository $repo): int
+    {
+        return $series['fiscal_printer_id']===null?(int)($repo->setting('receipt_printer')['printer_id']??0):(int)$series['fiscal_printer_id'];
     }
     private function documentPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey): array
     {
