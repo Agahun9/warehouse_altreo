@@ -1,0 +1,24 @@
+{assign var=ds value=$documentSettings|default:[]}
+<fieldset class="om-series-settings">
+  <legend>Dane i rozliczenie dokumentu</legend>
+  <label><input name="non_fiscal" type="checkbox" value="1" {if !empty($ds.non_fiscal)}checked{/if} {if !$canWrite}disabled{/if}> Paragon niefiskalny — bez kolejki drukarki</label>
+  <label>Seria korekty<select name="correct_series_id" {if !$canWrite}disabled{/if}><option value="0">Domyślna seria korekt</option>{foreach $series as $correctionSeries}{if $correctionSeries.kind eq 'invoice_correction' or $correctionSeries.kind eq 'receipt_correction'}<option value="{$correctionSeries.id}" {if ($ds.correct_series_id|default:0) eq $correctionSeries.id}selected{/if}>{$correctionSeries.name|escape} ({$correctionSeries.kind|escape})</option>{/if}{/foreach}</select></label>
+  <label>Data sprzedaży<select name="sale_date_source" {if !$canWrite}disabled{/if}><option value="order" {if ($ds.sale_date_source|default:'order') eq 'order'}selected{/if}>Data zamówienia</option><option value="payment" {if ($ds.sale_date_source|default:'') eq 'payment'}selected{/if}>Data płatności (gdy brak — wystawienia)</option><option value="issue_date" {if ($ds.sale_date_source|default:'') eq 'issue_date'}selected{/if}>Data wystawienia</option></select></label>
+  <label>Źródło VAT produktów<select name="vat_source" {if !$canWrite}disabled{/if}><option value="order" {if ($ds.vat_source|default:'order') eq 'order'}selected{/if}>Stawki z zamówienia</option><option value="static" {if ($ds.vat_source|default:'') eq 'static'}selected{/if}>Dokładna stawka</option></select></label>
+  <label>Dokładna stawka VAT<select name="vat_rate" {if !$canWrite}disabled{/if}>{foreach ['23','8','5','0','zw','np'] as $vat}<option value="{$vat}" {if ($ds.vat_rate|default:'23') eq $vat}selected{/if}>{$vat}{if $vat ne 'zw' and $vat ne 'np'}%{/if}</option>{/foreach}</select></label>
+  <label>VAT dostawy<select name="shipment_vat_type" {if !$canWrite}disabled{/if}><option value="order" {if ($ds.shipment_vat_type|default:'order') eq 'order'}selected{/if}>Stawka z ustawień dokumentów</option><option value="static" {if ($ds.shipment_vat_type|default:'') eq 'static'}selected{/if}>Dokładna stawka</option></select></label>
+  <label>Dokładna stawka VAT dostawy<select name="shipment_vat" {if !$canWrite}disabled{/if}>{foreach ['23','8','5','0','zw','np'] as $vat}<option value="{$vat}" {if ($ds.shipment_vat|default:'23') eq $vat}selected{/if}>{$vat}{if $vat ne 'zw' and $vat ne 'np'}%{/if}</option>{/foreach}</select></label>
+  <label>Nazwa pozycji dostawy<input name="shipment_name" maxlength="100" value="{$ds.shipment_name|default:'Dostawa'|escape}" {if !$canWrite}disabled{/if}></label>
+  <label><input name="add_shipment_name" type="checkbox" value="1" {if !empty($ds.add_shipment_name)}checked{/if} {if !$canWrite}disabled{/if}> Dodaj metodę dostawy do nazwy pozycji</label>
+  <label>Termin płatności<select name="payment_term_days" {if !$canWrite}disabled{/if}>{foreach ['0','3','5','7','10','14','21','30','45','60','90','120','365'] as $days}<option value="{$days}" {if ($ds.payment_term_days|default:'0') eq $days}selected{/if}>{if $days eq '0'}Zapłacono / bez terminu{else}{$days} dni{/if}</option>{/foreach}</select></label>
+  <label>Split payment<select name="split_payment" {if !$canWrite}disabled{/if}><option value="0" {if ($ds.split_payment|default:'0') eq '0'}selected{/if}>Nie</option><option value="1" {if ($ds.split_payment|default:'0') eq '1'}selected{/if}>Tak</option></select></label>
+  <label><input name="buyer_validation_disabled" type="checkbox" value="1" {if !empty($ds.buyer_validation_disabled)}checked{/if} {if !$canWrite}disabled{/if}> Wyłącz walidację danych kupującego</label>
+</fieldset>
+<fieldset class="om-series-settings">
+  <legend>Dane firmowe dla tej serii</legend>
+  <small class="om-muted">Puste pola korzystają z globalnych danych sprzedawcy. Zmiana dotyczy tylko nowych dokumentów.</small>
+  <label>Nazwa firmy<input name="seller_name" maxlength="200" value="{$ds.seller_name|default:''|escape}" {if !$canWrite}disabled{/if}></label>
+  <label>NIP<input name="seller_nip" maxlength="30" value="{$ds.seller_nip|default:''|escape}" {if !$canWrite}disabled{/if}></label>
+  <label>Rachunek bankowy<input name="seller_bank" maxlength="200" value="{$ds.seller_bank|default:''|escape}" {if !$canWrite}disabled{/if}></label>
+  <label>Adres firmy<textarea name="seller_address" maxlength="1000" {if !$canWrite}disabled{/if}>{$ds.seller_address|default:''|escape}</textarea></label>
+</fieldset>

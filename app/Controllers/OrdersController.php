@@ -62,6 +62,7 @@ final class OrdersController extends Controller
             $detail=$repo->order((int)$this->input('id'));
             $sellerId=$detail['platform']==='allegro'?$this->allegroSellerId($repo,(int)($detail['account_source_id']??0)):'';
             $detail['source_order_url']=$this->sourceOrderUrl((string)$detail['platform'],(string)$detail['external_id'],$sellerId);
+            $detail['raw_debug']=json_encode($detail['details']['raw']??[],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
             $orderDocs=$this->db()->fetchAll('SELECT id,number,kind,created_at FROM om_documents WHERE order_id=:id ORDER BY id DESC',['id'=>$detail['id']]);
             foreach ($orderDocs as $orderDocument) {
@@ -85,6 +86,7 @@ final class OrdersController extends Controller
         $seriesUsage=array_column($this->db()->fetchAll('SELECT series_id,COUNT(*) c FROM om_documents GROUP BY series_id'),'c','series_id');
         foreach ($series as &$item) {
             $item['numbering']=json_decode((string)($item['numbering_json']??''),true)?:[];
+            $item['document_settings']=json_decode((string)($item['document_settings_json']??''),true)?:[];
             $item['effective_printer_id']=$item['fiscal_printer_id']===null?(int)$receiptPrinterSettings['printer_id']:(int)$item['fiscal_printer_id'];
             $item['document_count']=(int)($seriesUsage[$item['id']]??0);
         }
@@ -361,7 +363,7 @@ final class OrdersController extends Controller
                     if (!in_array($kind,['invoice','receipt','invoice_correction','receipt_correction'],true) || strpos($pattern,'{N}')===false || preg_match('/[{}]/',strtr($pattern,['{N}'=>'','{YYYY}'=>'','{MM}'=>'']))) { throw new InvalidArgumentException('Wzór musi zawierać {N}; dostępne także {YYYY} i {MM}.'); }
                     $next=(int)($_POST['next_number']??1);
                     if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Numer początkowy musi być dodatni.'); }
-                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null]);
+                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'document_settings_json'=>OrderRepository::json($this->seriesDocumentSettings($kind))]);
                     break;
                 case 'series_update':
                     $seriesId=(int)($_POST['series_id']??0);
@@ -374,7 +376,7 @@ final class OrdersController extends Controller
                     $used=(bool)$db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId]);
                     if ($used && ($kind!==$existing['kind'] || $next<(int)$existing['next_number'])) { throw new InvalidArgumentException('Dla używanej serii nie można zmienić typu ani cofnąć licznika.'); }
                     $period=$numbering && $used ? (new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format($numbering['format']==='MONTHLY'?'Y-m':'Y') : null;
-                    $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'numbering_period'=>$period],'id=:id',['id'=>$seriesId]);
+                    $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'numbering_period'=>$period,'document_settings_json'=>OrderRepository::json($this->seriesDocumentSettings($kind))],'id=:id',['id'=>$seriesId]);
                     $successMessage='Zapisano serię numeracji.';
                     break;
                 case 'series_delete':
@@ -393,7 +395,7 @@ final class OrdersController extends Controller
                     if ($buyer==='') { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
                     $calculated=OrderDocumentService::calculate($_POST['items']??[]);
                     $old=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
-                    $snapshot=$calculated+['seller'=>$old['seller'],'buyer'=>$buyer,'currency'=>$old['currency'],'sale_date'=>$old['sale_date'],'issue_date'=>$old['issue_date'],'reason'=>$old['reason']??'','order_number'=>$old['order_number'],'settlement_state'=>$old['settlement_state']??'local','fiscalized'=>$old['fiscalized']??false];
+                    $snapshot=array_replace($old,$calculated,['buyer'=>$buyer]);
                     if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['parent_number']=$old['parent_number']; }
                     $snapshot['edited_at']=gmdate('Y-m-d H:i:s');
                     $db->update('om_documents',['snapshot_json'=>OrderRepository::json($snapshot)],'id=:id',['id'=>$documentId]);
@@ -434,15 +436,16 @@ final class OrdersController extends Controller
                     }
                     $series=!empty($_POST['series_id'])?$db->fetch('SELECT * FROM om_series WHERE id=:id AND kind=:kind',['id'=>(int)$_POST['series_id'],'kind'=>$kind]):$this->documentSeries($db,$kind);
                     if (!$series) { throw new InvalidArgumentException('Wybierz serię właściwego typu.'); }
+                    $seriesSettings=json_decode((string)($series['document_settings_json']??''),true)?:[];
                     $receiptPrinterId=0;
-                    if ($kind==='receipt') {
+                    if ($kind==='receipt' && empty($seriesSettings['non_fiscal'])) {
                         $receiptPrinterId=$this->receiptPrinterId($series,$repo);
                         if ($receiptPrinterId>0) { (new PrintAgentRepository($db))->ensureSchema(); }
                         if ($receiptPrinterId>0 && !$db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE id=:id AND enabled=1',['id'=>$receiptPrinterId])) {
                             throw new InvalidArgumentException('Przypisana drukarka paragonów jest nieaktywna. Zmień ją w zakładce Dokumenty.');
                         }
                     }
-                    $doc=(new OrderDocumentService($repo))->issue($id,$this->documentPayload($repo,$repo->order($id),$kind,(string)($_POST['request_key']??''))+['series_id'=>$series['id']],$actor);
+                    $doc=(new OrderDocumentService($repo))->issue($id,$this->documentPayload($repo,$repo->order($id),$kind,(string)($_POST['request_key']??''),$series)+['series_id'=>$series['id']],$actor);
                     if ($kind==='receipt' && $receiptPrinterId>0) {
                         $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                         try { $fiscalJobId=$printAgents->queueFiscalReceipt($id,$receiptPrinterId,$actor,$doc); }
@@ -455,8 +458,12 @@ final class OrdersController extends Controller
                     $parent=$db->fetch('SELECT * FROM om_documents WHERE id=:id AND order_id=:order_id',['id'=>(int)($_POST['parent_id']??0),'order_id'=>$id]);
                     if (!$parent || !in_array($parent['kind'],['invoice','receipt'],true)) { throw new InvalidArgumentException('Wybierz fakturę albo paragon do korekty.'); }
                     $reason=$this->required('reason',500);
-                    $kind=$parent['kind'].'_correction'; $series=$this->documentSeries($db,$kind);
-                    $payload=$this->documentPayload($repo,$repo->order($id),$parent['kind'],(string)($_POST['request_key']??''));
+                    $kind=$parent['kind'].'_correction';
+                    $parentSeries=$db->fetch('SELECT document_settings_json FROM om_series WHERE id=:id',['id'=>$parent['series_id']]);
+                    $parentSettings=json_decode((string)($parentSeries['document_settings_json']??''),true)?:[];
+                    $series=!empty($parentSettings['correct_series_id'])?$db->fetch('SELECT * FROM om_series WHERE id=:id AND kind=:kind',['id'=>(int)$parentSettings['correct_series_id'],'kind'=>$kind]):null;
+                    $series=$series?:$this->documentSeries($db,$kind);
+                    $payload=$this->documentPayload($repo,$repo->order($id),$parent['kind'],(string)($_POST['request_key']??''),$series);
                     $payload+=['series_id'=>$series['id'],'parent_id'=>$parent['id'],'reason'=>$reason];
                     $doc=(new OrderDocumentService($repo))->issue($id,$payload,$actor);
                     $this->redirect('./index.php?controller=orders&action=printdocument&id='.$doc);
@@ -623,9 +630,35 @@ final class OrdersController extends Controller
         if (!in_array($format,['MONTHLY','YEARLY'],true) || $start<1 || $start>100000000 || $length<0 || $length>8 || mb_strlen($prefix)>20 || mb_strlen($suffix)>20 || mb_strlen($notes)>2000 || !preg_match('/^#[0-9a-fA-F]{6}$/D',$color) || preg_match('/[{}\x00-\x1f]/',$prefix.$suffix)) { throw new InvalidArgumentException('Sprawdź ustawienia numeracji serii.'); }
         return ['format'=>$format,'reset'=>!empty($_POST['reset_numbering']),'start'=>$start,'length'=>$length,'prefix'=>$prefix,'suffix'=>$suffix,'color'=>$color,'notes'=>$notes];
     }
+    private function seriesDocumentSettings(string $kind): array
+    {
+        $choices=['sale_date_source'=>['order','payment','issue_date'],'vat_source'=>['order','static'],'vat_rate'=>['23','8','5','0','zw','np'],'shipment_vat_type'=>['order','static'],'shipment_vat'=>['23','8','5','0','zw','np'],'payment_term_days'=>['0','3','5','7','10','14','21','30','45','60','90','120','365'],'split_payment'=>['0','1']];
+        $defaults=['sale_date_source'=>'order','vat_source'=>'order','vat_rate'=>'23','shipment_vat_type'=>'order','shipment_vat'=>'23','payment_term_days'=>'0','split_payment'=>'0'];
+        $settings=[];
+        foreach ($choices as $key=>$allowed) {
+            $value=(string)($_POST[$key]??$defaults[$key]);
+            if (!in_array($value,$allowed,true)) { throw new InvalidArgumentException('Nieprawidłowe ustawienie serii: '.$key); }
+            $settings[$key]=$value;
+        }
+        foreach (['shipment_name'=>100,'seller_name'=>200,'seller_address'=>1000,'seller_nip'=>30,'seller_bank'=>200] as $key=>$max) {
+            $value=trim((string)($_POST[$key]??''));
+            if (mb_strlen($value)>$max) { throw new InvalidArgumentException('Za długa wartość pola: '.$key); }
+            $settings[$key]=$value;
+        }
+        $settings['shipment_name']=$settings['shipment_name']?:'Dostawa';
+        foreach (['add_shipment_name','buyer_validation_disabled'] as $key) { $settings[$key]=!empty($_POST[$key]); }
+        $settings['non_fiscal']=!empty($_POST['non_fiscal']) && $kind==='receipt';
+        $correctionId=(int)($_POST['correct_series_id']??0);
+        if ($correctionId>0) {
+            $correctKind=$kind==='invoice'?'invoice_correction':($kind==='receipt'?'receipt_correction':'');
+            if ($correctKind==='' || !$this->db()->fetchColumn('SELECT id FROM om_series WHERE id=:id AND kind=:kind',['id'=>$correctionId,'kind'=>$correctKind])) { throw new InvalidArgumentException('Wybierz serię korekt właściwego typu.'); }
+        }
+        $settings['correct_series_id']=$correctionId;
+        return $settings;
+    }
     private function seriesPattern(array $numbering): string
     {
-        $pattern=$numbering['prefix'].'/{N}/'.($numbering['format']==='MONTHLY'?'{MM}/':'').'{YYYY}'.$numbering['suffix'];
+        $pattern=($numbering['prefix']!==''?$numbering['prefix'].'/':'').'{N}/'.($numbering['format']==='MONTHLY'?'{MM}/':'').'{YYYY}'.($numbering['suffix']!==''?'/'.$numbering['suffix']:'');
         if (strlen($pattern)>100) { throw new InvalidArgumentException('Wzór numeru jest za długi.'); }
         return $pattern;
     }
@@ -643,18 +676,24 @@ final class OrdersController extends Controller
     {
         return $series['fiscal_printer_id']===null?(int)($repo->setting('receipt_printer')['printer_id']??0):(int)$series['fiscal_printer_id'];
     }
-    private function documentPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey): array
+    private function documentPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey,array $series=[]): array
     {
+        $settings=json_decode((string)($series['document_settings_json']??''),true)?:[];
         $defaultVat=(string)(($repo->setting('document_defaults')['vat']??'23'));
         if (!in_array($defaultVat,['23','8','5','0','zw','np'],true)) { $defaultVat='23'; }
         $items=[]; $sum=0;
         foreach ((array)($order['details']['items']??[]) as $item) {
-            $vat=(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { $vat=$defaultVat; }
+            $vat=($settings['vat_source']??'order')==='static'?(string)($settings['vat_rate']??$defaultVat):(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { $vat=$defaultVat; }
             $quantity=max(0,(int)($item['quantity']??0)); $unit=(int)($item['unit_cents']??0); $sum+=$quantity*$unit;
             $items[]=['name'=>(string)($item['name']??'Produkt'),'quantity'=>$quantity,'price'=>number_format($unit/100,2,'.',''),'vat'=>$vat];
         }
         $shipping=(int)($order['details']['shipping_cents']??0);
-        if ($shipping>0) { $items[]=['name'=>'Dostawa','quantity'=>1,'price'=>number_format($shipping/100,2,'.',''),'vat'=>$defaultVat]; $sum+=$shipping; }
+        if ($shipping>0) {
+            $shippingVat=($settings['shipment_vat_type']??'order')==='static'?(string)($settings['shipment_vat']??$defaultVat):$defaultVat;
+            $shippingName=trim((string)($settings['shipment_name']??'Dostawa'))?:'Dostawa';
+            if (!empty($settings['add_shipment_name']) && !empty($order['details']['delivery'])) { $shippingName.=' — '.substr((string)$order['details']['delivery'],0,100); }
+            $items[]=['name'=>$shippingName,'quantity'=>1,'price'=>number_format($shipping/100,2,'.',''),'vat'=>$shippingVat]; $sum+=$shipping;
+        }
         $difference=(int)$order['total_cents']-$sum;
         if ($difference!==0) { $items[]=['name'=>$difference<0?'Rabat / korekta wartości':'Pozostałe opłaty','quantity'=>1,'price'=>number_format($difference/100,2,'.',''),'vat'=>$defaultVat]; }
         $buyerLines=$buyerKind==='invoice'?(array)($order['details']['invoice_lines']??[]):(array)($order['details']['address_lines']??[]);

@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260916-4">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260916-5">
   {/if}
   <style>
     /*

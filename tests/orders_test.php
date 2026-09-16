@@ -123,7 +123,8 @@ $db->insert('om_series',['name'=>'Faktury','kind'=>'invoice','pattern'=>'FV/{YYY
 $db->insert('om_series',['name'=>'Korekty','kind'=>'invoice_correction','pattern'=>'KOR/{YYYY}/{N}','next_number'=>1]);
 $docService=new OrderDocumentService($repo);
 $input=['series_id'=>1,'request_key'=>str_repeat('a',40),'buyer'=>'Anna Testowa','items'=>[['name'=>'Test','quantity'=>2,'price'=>'12.30','vat'=>'23']]];
-$docId=$docService->issue(1,$input,'test');check($docId===1,'Issue invoice'); check($docService->issue(1,$input,'test')===$docId,'Document idempotency');
+$docId=$docService->issue(1,$input,'test');check($docId===1,'Issue invoice');
+check($docService->issue(1,$input,'test')===$docId,'Document idempotency');
 check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=1')===2,'No skipped sequence on retry');
 $cor=$input; $cor['series_id']=2;$cor['parent_id']=1;$cor['reason']='Zwrot jednej sztuki';$cor['request_key']=str_repeat('b',40);$cor['items'][0]['quantity']=1;
 $corId=$docService->issue(1,$cor,'test');$snapshot=json_decode($db->fetchColumn('SELECT snapshot_json FROM om_documents WHERE id=2'),true);
@@ -263,11 +264,14 @@ if (getenv('OM_PREVIEW_DIR')) {
 }
 $repo->saveSetting('seller',['name'=>'Firma testowa','address'=>'Testowa 1, Warszawa','nip'=>'TEST','bank'=>'']);
 $numbering=['format'=>'MONTHLY','reset'=>true,'start'=>4,'length'=>3,'prefix'=>'TEST','suffix'=>'','color'=>'#123456','notes'=>'Uwagi serii'];
-$numberingId=$db->insert('om_series',['name'=>'Seria miesięczna','kind'=>'invoice','pattern'=>'TEST/{N}/{MM}/{YYYY}','next_number'=>42,'numbering_json'=>OrderRepository::json($numbering),'numbering_period'=>'2020-01']);
+$documentSettings=['sale_date_source'=>'issue_date','payment_term_days'=>'7','split_payment'=>'1','seller_name'=>'Firma dla serii','vat_source'=>'static','vat_rate'=>'8'];
+$numberingId=$db->insert('om_series',['name'=>'Seria miesięczna','kind'=>'invoice','pattern'=>'TEST/{N}/{MM}/{YYYY}','next_number'=>42,'numbering_json'=>OrderRepository::json($numbering),'numbering_period'=>'2020-01','document_settings_json'=>OrderRepository::json($documentSettings)]);
 $standard=$input;$standard['series_id']=$numberingId;$standard['request_key']=str_repeat('e',40);
 $standardId=$docService->issue(1,$standard,'test');
 $standardRow=$db->fetch('SELECT number,snapshot_json FROM om_documents WHERE id=:id',['id'=>$standardId]);
 check(strpos($standardRow['number'],'TEST/004/')===0 && json_decode($standardRow['snapshot_json'],true)['series_notes']==='Uwagi serii','Monthly numbering resets, pads and snapshots notes');
+$seriesSnapshot=json_decode($standardRow['snapshot_json'],true);
+check($seriesSnapshot['seller']['name']==='Firma dla serii' && $seriesSnapshot['sale_date']===$seriesSnapshot['issue_date'] && $seriesSnapshot['split_payment']===true && $seriesSnapshot['payment_due_date']!=='' && $seriesSnapshot['items'][0]['vat']==='8','Series seller, VAT, date and payment settings applied');
 check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===5,'Monthly counter advances after reset');
 $standard['request_key']=str_repeat('f',40);$nextStandard=$docService->issue(1,$standard,'test');
 check(strpos((string)$db->fetchColumn('SELECT number FROM om_documents WHERE id=:id',['id'=>$nextStandard]),'TEST/005/')===0,'Monthly counter does not reset again in same period');
