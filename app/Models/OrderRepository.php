@@ -353,8 +353,19 @@ final class OrderRepository
             $documentPreference=in_array((string)($input['document_preference']??''),['invoice','receipt'],true)?(string)$input['document_preference']:'receipt';
             $detailOverride=['items'=>$items,'address'=>$address,'invoice_address'=>$invoice,'invoice_required'=>$documentPreference==='invoice'?1:0,'document_preference'=>$documentPreference,'delivery'=>$text($input,'delivery',255),'pickup'=>$text($input,'pickup',190),'shipping_cents'=>$shipping,'payment_method'=>$text($input,'payment_method',150),'cash_on_delivery'=>empty($input['cash_on_delivery'])?0:1,'amount_paid_cents'=>$paidAmount,'buyer_note'=>$text($input,'buyer_note',10000)];
             $orderOverride=['buyer_name'=>$buyerName,'email'=>$email,'phone'=>$phone,'total_cents'=>$total,'currency'=>$currency,'paid'=>empty($input['paid'])?0:1];
+            // Only fields the operator actually changed get frozen against future sync; untouched
+            // fields (e.g. "paid" left as-is while only fixing the address) keep following the marketplace.
+            $previousManual=is_array($details['_manual']??null)?$details['_manual']:[];
+            $manualOrder=is_array($previousManual['order']??null)?$previousManual['order']:[];
+            $manualDetails=is_array($previousManual['details']??null)?$previousManual['details']:[];
+            foreach ($orderOverride as $field=>$value) {
+                if ((string)$value!==(string)($stored[$field]??null)) { $manualOrder[$field]=$value; }
+            }
+            foreach ($detailOverride as $field=>$value) {
+                if (json_encode($value,JSON_UNESCAPED_UNICODE)!==json_encode($details[$field]??null,JSON_UNESCAPED_UNICODE)) { $manualDetails[$field]=$value; }
+            }
             $details=array_replace_recursive($details,$detailOverride);
-            $details['_manual']=['order'=>$orderOverride,'details'=>$detailOverride,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
+            $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
             $this->db->update('om_orders',$orderOverride+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
             $this->event($id,'Zmieniono dane klienta, płatności, dostawy, faktury lub pozycji zamówienia.',$actor);
         });
