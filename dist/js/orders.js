@@ -113,10 +113,38 @@
   document.querySelectorAll('[data-confirm-action]').forEach(form => form.addEventListener('submit', event => {
     if (!window.confirm(form.dataset.confirmAction || 'Potwierdzić operację?')) event.preventDefault();
   }));
-  document.querySelectorAll('[data-confirm-action]').forEach(form => form.addEventListener('submit', event => {
-    if (!window.confirm(form.dataset.confirmAction || 'Wykonać tę operację?')) event.preventDefault();
+  document.querySelectorAll('[data-double-confirm]').forEach(form => form.addEventListener('submit', event => {
+    const [first, second] = (form.dataset.doubleConfirm || '').split('||');
+    if (!window.confirm(first || 'Potwierdzić operację?')) { event.preventDefault(); return; }
+    if (!window.confirm(second || 'Potwierdź ponownie, aby usunąć na trwałe.')) event.preventDefault();
   }));
-
+  document.querySelectorAll('[data-confirm-click]').forEach(button => button.addEventListener('click', event => {
+    if (!window.confirm(button.dataset.confirmClick || 'Potwierdzić operację?')) event.preventDefault();
+  }));
+  document.querySelectorAll('[data-series-filter-form] select').forEach(select => select.addEventListener('change', () => select.form.submit()));
+  document.querySelectorAll('[data-doc-items]').forEach(container => {
+    const money = value => { const n = Number(String(value ?? '').trim().replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+    const reindex = () => container.querySelectorAll('.om-doc-item-row').forEach((row, index) => row.querySelectorAll('[name]').forEach(field => { field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`); }));
+    const update = () => container.querySelectorAll('.om-doc-item-row').forEach(row => {
+      const qty = Math.max(0, money(row.querySelector('[data-doc-qty]')?.value));
+      const price = money(row.querySelector('[data-doc-price]')?.value);
+      const output = row.querySelector('[data-doc-line-total]');
+      if (output) output.textContent = `${(qty * price).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN`;
+    });
+    container.addEventListener('input', update);
+    const form = container.closest('form');
+    form?.querySelector('[data-doc-add-item]')?.addEventListener('click', () => {
+      const row = container.querySelector('.om-doc-item-row').cloneNode(true);
+      row.querySelectorAll('input').forEach(input => { input.value = input.hasAttribute('data-doc-qty') ? '1' : input.hasAttribute('data-doc-price') ? '0.00' : ''; });
+      container.append(row); reindex(); update(); row.querySelector('input').focus();
+    });
+    container.addEventListener('click', event => {
+      const remove = event.target.closest('[data-doc-remove-item]');
+      if (!remove || container.children.length === 1) return;
+      remove.closest('.om-doc-item-row').remove(); reindex(); update();
+    });
+    update();
+  });
   document.querySelectorAll('[data-auto-order-settings]').forEach(form => {
     const state = form.querySelector('[data-autosave-state]');
     const note = form.querySelector('textarea[name="note"]');

@@ -159,8 +159,9 @@ final class OrderNormalizer
             $total = self::money($raw['total_price'] ?? '0');
             $currency = $raw['currency_iso_code'] ?? 'PLN';
             $delivery = (string)($raw['shipping_type_label'] ?? '');
-            $cashOnDelivery = self::cashOnDelivery($raw,$delivery);
-            $paid = !$cashOnDelivery && strtoupper((string)($raw['payment_status'] ?? '')) === 'PAID';
+            $cashOnDelivery = self::cashOnDelivery($raw,$delivery) || strtoupper((string)($raw['payment_workflow'] ?? '')) === 'PAY_ON_DELIVERY';
+            // Mirakl has no "payment_status" field; customer_debited is the actual charge signal (OR11).
+            $paid = !$cashOnDelivery && !empty($raw['customer_debited']);
             $items = [];
             foreach ($raw['order_lines'] ?? [] as $item) {
                 $items[] = [

@@ -261,4 +261,14 @@ if (getenv('OM_PREVIEW_DIR')) {
     }
     file_put_contents($dir.'/print.html',$smarty->fetch('orders/print.tpl'));
 }
+$repo->saveSetting('seller',['name'=>'Firma testowa','address'=>'Testowa 1, Warszawa','nip'=>'TEST','bank'=>'']);
+$numbering=['format'=>'MONTHLY','reset'=>true,'start'=>4,'length'=>3,'prefix'=>'TEST','suffix'=>'','color'=>'#123456','notes'=>'Uwagi serii'];
+$numberingId=$db->insert('om_series',['name'=>'Seria miesięczna','kind'=>'invoice','pattern'=>'TEST/{N}/{MM}/{YYYY}','next_number'=>42,'numbering_json'=>OrderRepository::json($numbering),'numbering_period'=>'2020-01']);
+$standard=$input;$standard['series_id']=$numberingId;$standard['request_key']=str_repeat('e',40);
+$standardId=$docService->issue(1,$standard,'test');
+$standardRow=$db->fetch('SELECT number,snapshot_json FROM om_documents WHERE id=:id',['id'=>$standardId]);
+check(strpos($standardRow['number'],'TEST/004/')===0 && json_decode($standardRow['snapshot_json'],true)['series_notes']==='Uwagi serii','Monthly numbering resets, pads and snapshots notes');
+check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===5,'Monthly counter advances after reset');
+$standard['request_key']=str_repeat('f',40);$nextStandard=$docService->issue(1,$standard,'test');
+check(strpos((string)$db->fetchColumn('SELECT number FROM om_documents WHERE id=:id',['id'=>$nextStandard]),'TEST/005/')===0,'Monthly counter does not reset again in same period');
 echo "OK: $checks checks; no network or production database used.\n";

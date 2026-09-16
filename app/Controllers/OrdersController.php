@@ -82,8 +82,31 @@ final class OrdersController extends Controller
         $documentDefaults=$repo->setting('document_defaults')+['vat'=>'23'];
         $receiptPrinterSettings=$repo->setting('receipt_printer')+['printer_id'=>0];
         $series=$this->db()->fetchAll('SELECT * FROM om_series ORDER BY id');
-        foreach ($series as &$item) { $item['effective_printer_id']=$item['fiscal_printer_id']===null?(int)$receiptPrinterSettings['printer_id']:(int)$item['fiscal_printer_id']; }
+        $seriesUsage=array_column($this->db()->fetchAll('SELECT series_id,COUNT(*) c FROM om_documents GROUP BY series_id'),'c','series_id');
+        foreach ($series as &$item) {
+            $item['numbering']=json_decode((string)($item['numbering_json']??''),true)?:[];
+            $item['effective_printer_id']=$item['fiscal_printer_id']===null?(int)$receiptPrinterSettings['printer_id']:(int)$item['fiscal_printer_id'];
+            $item['document_count']=(int)($seriesUsage[$item['id']]??0);
+        }
         unset($item);
+        $documentSeriesFilter=(int)$this->input('series_id',0);
+        $documentsSql='SELECT d.*,s.name AS series_name FROM om_documents d LEFT JOIN om_series s ON s.id=d.series_id';
+        $documentsParams=[];
+        if ($documentSeriesFilter>0) { $documentsSql.=' WHERE d.series_id=:sid'; $documentsParams['sid']=$documentSeriesFilter; }
+        $documentsSql.=' ORDER BY d.id DESC LIMIT 100';
+        $correctionParents=array_flip(array_column($this->db()->fetchAll('SELECT DISTINCT parent_id FROM om_documents WHERE parent_id IS NOT NULL'),'parent_id'));
+        $documents=[];
+        foreach ($this->db()->fetchAll($documentsSql,$documentsParams) as $docRow) {
+            $snap=json_decode($docRow['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
+            $docRow['buyer']=(string)($snap['buyer']??'');
+            $docRow['gross_cents']=(int)($snap['gross_cents']??0);
+            $docRow['currency']=(string)($snap['currency']??'PLN');
+            $docRow['has_correction']=isset($correctionParents[$docRow['id']]);
+            $docRow['items']=array_map(static function ($it) {
+                return ['name'=>(string)($it['name']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
+            },(array)($snap['items']??[]));
+            $documents[]=$docRow;
+        }
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
         $this->renderOrders([
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
@@ -94,7 +117,7 @@ final class OrdersController extends Controller
             'rules'=>$repo->rules(),
             'series'=>$series,
             'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>''],
-            'documents'=>$this->db()->fetchAll('SELECT id,order_id,number,kind,created_at FROM om_documents ORDER BY id DESC LIMIT 100'),
+            'documents'=>$documents,'documentSeriesFilter'=>$documentSeriesFilter,
             'shipments'=>$this->db()->fetchAll('SELECT * FROM om_shipments ORDER BY id DESC LIMIT 100'),
             'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
             'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
@@ -220,6 +243,13 @@ final class OrdersController extends Controller
                     if ($account['platform']==='morele' && !empty($_POST['enabled'])) { throw new InvalidArgumentException('Morele oczekuje na specyfikację zamówień API.'); }
                     $db->update('om_accounts',['enabled'=>empty($_POST['enabled'])?0:1],'id=:id',['id'=>$account['id']]);
                     break;
+                case 'account_auto_accept':
+                    $account=$db->fetch('SELECT * FROM om_accounts WHERE id=:id',['id'=>(int)$_POST['account_id']]);
+                    if (!$account) { throw new InvalidArgumentException('Nieznane konto.'); }
+                    if (!in_array($account['platform'],['empik','mediamarkt'],true)) { throw new InvalidArgumentException('Automatyczna akceptacja jest dostępna tylko dla kont Empik i MediaMarkt.'); }
+                    $db->update('om_accounts',['auto_accept'=>empty($_POST['auto_accept'])?0:1],'id=:id',['id'=>$account['id']]);
+                    $successMessage=empty($_POST['auto_accept'])?'Wyłączono automatyczną akceptację zamówień.':'Włączono automatyczną akceptację zamówień.';
+                    break;
                 case 'status':
                     $name=$this->required('name',100); $color=(string)($_POST['color']??'');
                     if (!preg_match('/^#[a-fA-F0-9]{6}$/D',$color)) { throw new InvalidArgumentException('Nieprawidłowy kolor.'); }
@@ -260,6 +290,14 @@ final class OrdersController extends Controller
                 case 'order_details':
                     $repo->updateOrderDetails($id,$_POST,$actor);
                     break;
+                case 'delete_order':
+                    if ($db->fetchColumn('SELECT id FROM om_documents WHERE order_id=:id LIMIT 1',['id'=>$id])) { throw new InvalidArgumentException('Nie można usunąć zamówienia, dla którego wystawiono paragon lub fakturę. Usuń najpierw dokumenty.'); }
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->purgeOrderJobs($id);
+                    $repo->deleteOrder($id);
+                    $successMessage='Usunięto zamówienie.';
+                    $tab='list'; $id=0;
+                    break;
                 case 'create_order':
                     $id=$repo->createManualOrder($_POST,$actor);
                     $tab='list';
@@ -269,6 +307,22 @@ final class OrdersController extends Controller
                     $ids=array_unique(array_map('intval',(array)($_POST['ids']??[])));
                     if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
                     $db->transaction(function () use ($repo,$ids,$actor) { foreach ($ids as $oid) { $repo->changeStatus($oid,(int)$_POST['status_id'],$actor); } });
+                    break;
+                case 'bulk_delete':
+                    $ids=array_unique(array_map('intval',(array)($_POST['ids']??[])));
+                    if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $deleted=0; $skipped=[];
+                    foreach ($ids as $oid) {
+                        try {
+                            if ($db->fetchColumn('SELECT id FROM om_documents WHERE order_id=:id LIMIT 1',['id'=>$oid])) { throw new InvalidArgumentException('wystawiono dokument'); }
+                            $printAgents->purgeOrderJobs($oid);
+                            $repo->deleteOrder($oid);
+                            $deleted++;
+                        } catch (\Throwable $e) { $skipped[]='#'.$oid.' ('.($e instanceof InvalidArgumentException?$e->getMessage():'błąd').')'; }
+                    }
+                    $successMessage=$deleted.' usuniętych zamówień.'.($skipped?' Pominięto: '.implode(', ',$skipped).'.':'');
+                    $tab='list';
                     break;
                 case 'rule':
                     $conditions=[]; $actions=[];
@@ -303,24 +357,57 @@ final class OrdersController extends Controller
                     $tab='documents';
                     break;
                 case 'series':
-                    $kind=(string)($_POST['kind']??''); $pattern=$this->required('pattern',100);
+                    $kind=(string)($_POST['kind']??''); $numbering=$this->seriesNumbering(); $pattern=$numbering ? $this->seriesPattern($numbering) : $this->required('pattern',100);
                     if (!in_array($kind,['invoice','receipt','invoice_correction','receipt_correction'],true) || strpos($pattern,'{N}')===false || preg_match('/[{}]/',strtr($pattern,['{N}'=>'','{YYYY}'=>'','{MM}'=>'']))) { throw new InvalidArgumentException('Wzór musi zawierać {N}; dostępne także {YYYY} i {MM}.'); }
                     $next=(int)($_POST['next_number']??1);
                     if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Numer początkowy musi być dodatni.'); }
-                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind)]);
+                    $db->insert('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null]);
                     break;
                 case 'series_update':
                     $seriesId=(int)($_POST['series_id']??0);
                     $existing=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$seriesId]);
                     if (!$existing) { throw new InvalidArgumentException('Nie znaleziono serii.'); }
-                    $kind=(string)($_POST['kind']??''); $pattern=$this->required('pattern',100);
+                    $kind=(string)($_POST['kind']??''); $numbering=$this->seriesNumbering(); $pattern=$numbering ? $this->seriesPattern($numbering) : $this->required('pattern',100);
                     if (!in_array($kind,['invoice','receipt','invoice_correction','receipt_correction'],true) || strpos($pattern,'{N}')===false || preg_match('/[{}]/',strtr($pattern,['{N}'=>'','{YYYY}'=>'','{MM}'=>'']))) { throw new InvalidArgumentException('Wzór musi zawierać {N}; dostępne także {YYYY} i {MM}.'); }
                     $next=(int)($_POST['next_number']??0);
                     if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Następny numer musi być dodatni.'); }
                     $used=(bool)$db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId]);
                     if ($used && ($kind!==$existing['kind'] || $next<(int)$existing['next_number'])) { throw new InvalidArgumentException('Dla używanej serii nie można zmienić typu ani cofnąć licznika.'); }
-                    $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind)],'id=:id',['id'=>$seriesId]);
+                    $period=$numbering && $used ? (new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format($numbering['format']==='MONTHLY'?'Y-m':'Y') : null;
+                    $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'numbering_period'=>$period],'id=:id',['id'=>$seriesId]);
                     $successMessage='Zapisano serię numeracji.';
+                    break;
+                case 'series_delete':
+                    $seriesId=(int)($_POST['series_id']??0);
+                    $existingSeries=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$seriesId]);
+                    if (!$existingSeries) { throw new InvalidArgumentException('Nie znaleziono serii.'); }
+                    if ($db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId])) { throw new InvalidArgumentException('Nie można usunąć serii, w której wystawiono już dokumenty.'); }
+                    $db->delete('om_series','id=:id',['id'=>$seriesId]);
+                    $successMessage='Usunięto serię „'.$existingSeries['name'].'”.';
+                    break;
+                case 'document_update':
+                    $documentId=(int)($_POST['document_id']??0);
+                    $document=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$documentId]);
+                    if (!$document) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
+                    $buyer=trim((string)($_POST['buyer']??''));
+                    if ($buyer==='') { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
+                    $calculated=OrderDocumentService::calculate($_POST['items']??[]);
+                    $old=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
+                    $snapshot=$calculated+['seller'=>$old['seller'],'buyer'=>$buyer,'currency'=>$old['currency'],'sale_date'=>$old['sale_date'],'issue_date'=>$old['issue_date'],'reason'=>$old['reason']??'','order_number'=>$old['order_number'],'settlement_state'=>$old['settlement_state']??'local','fiscalized'=>$old['fiscalized']??false];
+                    if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['parent_number']=$old['parent_number']; }
+                    $snapshot['edited_at']=gmdate('Y-m-d H:i:s');
+                    $db->update('om_documents',['snapshot_json'=>OrderRepository::json($snapshot)],'id=:id',['id'=>$documentId]);
+                    $repo->event((int)$document['order_id'],'Zaktualizowano dokument '.$document['number'].' (edycja nabywcy/pozycji).',$actor);
+                    $successMessage='Zaktualizowano dokument '.$document['number'].'.';
+                    break;
+                case 'document_delete':
+                    $documentId=(int)($_POST['document_id']??0);
+                    $document=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$documentId]);
+                    if (!$document) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
+                    if ($db->fetchColumn('SELECT id FROM om_documents WHERE parent_id=:id LIMIT 1',['id'=>$documentId])) { throw new InvalidArgumentException('Nie można usunąć dokumentu, do którego wystawiono korektę. Usuń najpierw korektę.'); }
+                    $db->delete('om_documents','id=:id',['id'=>$documentId]);
+                    $repo->event((int)$document['order_id'],'Usunięto dokument '.$document['number'].'.',$actor);
+                    $successMessage='Usunięto dokument '.$document['number'].'.';
                     break;
                 case 'document':
                     $documentSeries=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>(int)($_POST['series_id']??0)]);
@@ -440,6 +527,11 @@ final class OrdersController extends Controller
                     $printAgents->addFiscalPrinter((int)($_POST['station_id']??0),$this->required('fiscal_printer_name',150),$this->required('fiscal_printer_host',255),(int)($_POST['fiscal_printer_port']??6666));
                     $successMessage='Dodano drukarkę fiskalną. Ustaw serię, tryb i włącz urządzenie.'; $tab='printing';
                     break;
+                case 'fiscal_printer_delete':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->deleteFiscalPrinter((int)($_POST['fiscal_printer_id']??0));
+                    $successMessage='Usunięto drukarkę fiskalną i odłączono ją od serii paragonów. Historia zakończonych zadań została zachowana.'; $tab='printing';
+                    break;
                 case 'carrier_account':
                     $provider=(string)($_POST['provider']??'');
                     if (!in_array($provider,['allegro_wza','inpost_shipx','apaczka'],true)) { throw new InvalidArgumentException('Nieznany operator przesyłek.'); }
@@ -518,6 +610,24 @@ final class OrdersController extends Controller
         if (!isset($labels[$kind])) { throw new InvalidArgumentException('Nieprawidłowy rodzaj dokumentu.'); }
         $id=(int)$db->insert('om_series',['name'=>$labels[$kind][0],'kind'=>$kind,'pattern'=>$labels[$kind][1].'/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>null]);
         return $db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$id]);
+    }
+    private function seriesNumbering(): ?array
+    {
+        if ((string)($_POST['numbering_mode']??'custom')!=='standard') { return null; }
+        $format=(string)($_POST['numbering_format']??'');
+        $start=(int)($_POST['numbering_start']??0);
+        $length=(int)($_POST['document_number_length']??0);
+        $prefix=trim((string)($_POST['prefix']??'')); $suffix=trim((string)($_POST['suffix']??''));
+        $notes=trim((string)($_POST['additional_text']??''));
+        $color=(string)($_POST['color_series']??'#64748b');
+        if (!in_array($format,['MONTHLY','YEARLY'],true) || $start<1 || $start>100000000 || $length<0 || $length>8 || mb_strlen($prefix)>20 || mb_strlen($suffix)>20 || mb_strlen($notes)>2000 || !preg_match('/^#[0-9a-fA-F]{6}$/D',$color) || preg_match('/[{}\x00-\x1f]/',$prefix.$suffix)) { throw new InvalidArgumentException('Sprawdź ustawienia numeracji serii.'); }
+        return ['format'=>$format,'reset'=>!empty($_POST['reset_numbering']),'start'=>$start,'length'=>$length,'prefix'=>$prefix,'suffix'=>$suffix,'color'=>$color,'notes'=>$notes];
+    }
+    private function seriesPattern(array $numbering): string
+    {
+        $pattern=$numbering['prefix'].'/{N}/'.($numbering['format']==='MONTHLY'?'{MM}/':'').'{YYYY}'.$numbering['suffix'];
+        if (strlen($pattern)>100) { throw new InvalidArgumentException('Wzór numeru jest za długi.'); }
+        return $pattern;
     }
     private function seriesPrinterId($db,string $kind): int
     {

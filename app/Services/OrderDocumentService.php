@@ -64,10 +64,16 @@ final class OrderDocumentService
                 throw new InvalidArgumentException('Suma dokumentu musi zgadzać się z zamówieniem (uwzględnij dostawę i rabaty).');
             }
             $now=new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw'));
-            $number=strtr($series['pattern'],['{N}'=>(string)$series['next_number'],'{YYYY}'=>$now->format('Y'),'{MM}'=>$now->format('m')]);
-            $snapshot+=['seller'=>$seller,'buyer'=>$buyer,'currency'=>$order['currency'],'sale_date'=>substr($order['ordered_at'],0,10),'issue_date'=>$now->format('Y-m-d'),'reason'=>trim((string)($input['reason']??'')),'order_number'=>$order['external_id'],'settlement_state'=>'local','fiscalized'=>false];
+            $numbering=json_decode((string)($series['numbering_json']??''),true)?:[];
+            $period=($numbering['format']??'')==='MONTHLY'?$now->format('Y-m'):$now->format('Y');
+            $counter=(int)$series['next_number'];
+            if (!empty($numbering['reset']) && !empty($series['numbering_period']) && $series['numbering_period']!==$period) { $counter=(int)$numbering['start']; }
+            $digits=(string)$counter;
+            if ($numbering) { $digits=str_pad($digits,(int)($numbering['length']??0),'0',STR_PAD_LEFT); }
+            $number=strtr($series['pattern'],['{N}'=>$digits,'{YYYY}'=>$now->format('Y'),'{MM}'=>$now->format('m')]);
+            $snapshot+=['seller'=>$seller,'buyer'=>$buyer,'currency'=>$order['currency'],'sale_date'=>substr($order['ordered_at'],0,10),'issue_date'=>$now->format('Y-m-d'),'reason'=>trim((string)($input['reason']??'')),'order_number'=>$order['external_id'],'settlement_state'=>'local','fiscalized'=>false,'series_notes'=>(string)($numbering['notes']??'')];
             $id=(int)$db->insert('om_documents',['order_id'=>$orderId,'series_id'=>$series['id'],'kind'=>$series['kind'],'number'=>$number,'parent_id'=>$parentId,'request_key'=>$key,'snapshot_json'=>OrderRepository::json($snapshot),'created_at'=>gmdate('Y-m-d H:i:s')]);
-            $db->update('om_series',['next_number'=>(int)$series['next_number']+1],'id=:id',['id'=>$series['id']]);
+            $db->update('om_series',['next_number'=>$counter+1,'numbering_period'=>$numbering?$period:null],'id=:id',['id'=>$series['id']]);
             $this->repo->event($orderId,'Zapisano dokument lokalny '.$number,$actor);
             return $id;
         });

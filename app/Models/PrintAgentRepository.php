@@ -20,8 +20,13 @@ final class PrintAgentRepository
         $suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin';
         $this->db->query("CREATE TABLE IF NOT EXISTS print_agent_stations (id $stationId, name VARCHAR(150) NOT NULL, token_hash CHAR(64) NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, printers_json LONGTEXT NOT NULL, default_printer VARCHAR(300) NULL, agent_version VARCHAR(50) NULL, last_seen_at VARCHAR(30) NULL, created_at VARCHAR(30) NOT NULL)$suffix");
         $this->db->query("CREATE TABLE IF NOT EXISTS print_agent_jobs (id CHAR(36) PRIMARY KEY, station_id BIGINT NOT NULL, shipment_id BIGINT NOT NULL, pdf_url LONGTEXT NOT NULL, download_token_hash CHAR(64) NOT NULL, download_expires_at VARCHAR(30) NOT NULL, printer_name VARCHAR(300) NOT NULL, print_settings VARCHAR(300) NULL, status VARCHAR(30) NOT NULL DEFAULT 'queued', status_message VARCHAR(1000) NULL, created_by VARCHAR(150) NOT NULL, created_at VARCHAR(30) NOT NULL, claimed_at VARCHAR(30) NULL, reported_at VARCHAR(30) NULL)$suffix");
-        $this->db->query("CREATE TABLE IF NOT EXISTS print_fiscal_printers (id $stationId, station_id BIGINT NOT NULL, device_key VARCHAR(190) NOT NULL, name VARCHAR(150) NOT NULL, host VARCHAR(255) NOT NULL, port INTEGER NOT NULL, serial_number VARCHAR(100) NULL, receipt_series VARCHAR(40) NOT NULL DEFAULT 'POS', next_number BIGINT NOT NULL DEFAULT 1, environment VARCHAR(20) NOT NULL DEFAULT 'sandbox', enabled INTEGER NOT NULL DEFAULT 0, last_seen_at VARCHAR(30) NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(station_id,device_key))$suffix");
+        $this->db->query("CREATE TABLE IF NOT EXISTS print_fiscal_printers (id $stationId, station_id BIGINT NOT NULL, device_key VARCHAR(190) NOT NULL, name VARCHAR(150) NOT NULL, host VARCHAR(255) NOT NULL, port INTEGER NOT NULL, serial_number VARCHAR(100) NULL, receipt_series VARCHAR(40) NOT NULL DEFAULT 'POS', next_number BIGINT NOT NULL DEFAULT 1, environment VARCHAR(20) NOT NULL DEFAULT 'sandbox', enabled INTEGER NOT NULL DEFAULT 0, last_seen_at VARCHAR(30) NULL, created_at VARCHAR(30) NOT NULL, deleted_at VARCHAR(30) NULL, UNIQUE(station_id,device_key))$suffix");
         $this->db->query("CREATE TABLE IF NOT EXISTS print_fiscal_jobs (id CHAR(36) PRIMARY KEY, printer_id BIGINT NOT NULL, order_id BIGINT NOT NULL, local_number VARCHAR(100) NOT NULL, payload_json LONGTEXT NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'queued', status_message VARCHAR(1000) NULL, fiscal_number VARCHAR(100) NULL, created_by VARCHAR(150) NOT NULL, created_at VARCHAR(30) NOT NULL, claimed_at VARCHAR(30) NULL, reported_at VARCHAR(30) NULL, UNIQUE(printer_id,order_id))$suffix");
+        $printerColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(print_fiscal_printers)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM print_fiscal_printers'),'Field');
+        if (!in_array('deleted_at',$printerColumns,true)) {
+            try { $this->db->query('ALTER TABLE print_fiscal_printers ADD COLUMN deleted_at VARCHAR(30) NULL'); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+        }
         foreach (['print_agent_job_next'=>'station_id,status,created_at','print_agent_job_shipment'=>'shipment_id,created_at'] as $name=>$columns) {
             if ($sqlite) { $this->db->query("CREATE INDEX IF NOT EXISTS $name ON print_agent_jobs ($columns)"); }
             elseif (!$this->db->fetch("SHOW INDEX FROM print_agent_jobs WHERE Key_name=:name",['name'=>$name])) {
@@ -51,13 +56,16 @@ final class PrintAgentRepository
 
     public function fiscalPrinters(): array
     {
-        return $this->db->fetchAll('SELECT p.*,s.name station_name FROM print_fiscal_printers p JOIN print_agent_stations s ON s.id=p.station_id ORDER BY p.enabled DESC,p.name,p.id');
+        $rows=$this->db->fetchAll('SELECT p.*,s.name station_name,s.enabled station_enabled,s.last_seen_at station_last_seen_at FROM print_fiscal_printers p JOIN print_agent_stations s ON s.id=p.station_id WHERE p.deleted_at IS NULL ORDER BY p.enabled DESC,p.name,p.id');
+        foreach ($rows as &$row) { $row['station_online']=$row['station_enabled'] && !empty($row['station_last_seen_at']) && strtotime((string)$row['station_last_seen_at'].' UTC')>=time()-180; }
+        unset($row);
+        return $rows;
     }
 
     public function fiscalJobs(int $limit=100): array
     {
         $limit=max(1,min(250,$limit));
-        return $this->db->fetchAll('SELECT j.*,p.name printer_name,p.environment FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id ORDER BY j.created_at DESC LIMIT '.$limit);
+        return $this->db->fetchAll('SELECT j.*,p.name printer_name,p.environment,p.enabled printer_enabled,p.deleted_at printer_deleted_at,p.station_id printer_station_id FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id ORDER BY j.created_at DESC LIMIT '.$limit);
     }
 
     public function createStation(string $name): string
@@ -99,6 +107,18 @@ final class PrintAgentRepository
         });
     }
 
+    /** Called before an order is deleted: blocks while a print job for it is still in flight, otherwise purges finished job history. */
+    public function purgeOrderJobs(int $orderId): void
+    {
+        $activeFiscal=(int)$this->db->fetchColumn("SELECT COUNT(*) FROM print_fiscal_jobs WHERE order_id=:order AND status IN ('queued','processing')",['order'=>$orderId]);
+        $activeLabels=(int)$this->db->fetchColumn("SELECT COUNT(*) FROM print_agent_jobs WHERE status IN ('queued','processing') AND shipment_id IN (SELECT id FROM om_shipments WHERE order_id=:order)",['order'=>$orderId]);
+        if ($activeFiscal+$activeLabels>0) { throw new InvalidArgumentException('Nie można usunąć zamówienia z aktywnymi zadaniami druku. Poczekaj na zakończenie albo najpierw je rozstrzygnij.'); }
+        $this->db->transaction(function () use ($orderId) {
+            $this->db->delete('print_fiscal_jobs','order_id=:order',['order'=>$orderId]);
+            $this->db->query('DELETE FROM print_agent_jobs WHERE shipment_id IN (SELECT id FROM om_shipments WHERE order_id=:order)',['order'=>$orderId]);
+        });
+    }
+
     public function authenticate(string $plainToken): ?array
     {
         if ($plainToken==='' || strlen($plainToken)>500) { return null; }
@@ -128,7 +148,7 @@ final class PrintAgentRepository
 
     public function configureFiscalPrinter(int $printerId,string $series,string $environment,bool $enabled): void
     {
-        $printer=$this->db->fetch('SELECT id,environment FROM print_fiscal_printers WHERE id=:id',['id'=>$printerId]);
+        $printer=$this->db->fetch('SELECT id,environment FROM print_fiscal_printers WHERE id=:id AND deleted_at IS NULL',['id'=>$printerId]);
         if (!$printer) { throw new InvalidArgumentException('Nie znaleziono drukarki fiskalnej.'); }
         $series=strtoupper(trim($series));
         if (preg_match('/^[A-Z0-9_-]{1,40}$/D',$series)!==1) { throw new InvalidArgumentException('Seria może zawierać litery, cyfry, _ i -.'); }
@@ -139,6 +159,26 @@ final class PrintAgentRepository
         $this->db->update('print_fiscal_printers',['receipt_series'=>$series,'environment'=>$environment,'enabled'=>$enabled?1:0],'id=:id',['id'=>$printerId]);
     }
 
+    public function deleteFiscalPrinter(int $printerId): void
+    {
+        $printer=$this->db->fetch('SELECT id FROM print_fiscal_printers WHERE id=:id AND deleted_at IS NULL',['id'=>$printerId]);
+        if (!$printer) { throw new InvalidArgumentException('Nie znaleziono drukarki fiskalnej.'); }
+        $active=(int)$this->db->fetchColumn("SELECT COUNT(*) FROM print_fiscal_jobs WHERE printer_id=:id AND status IN ('queued','processing')",['id'=>$printerId]);
+        if ($active>0) { throw new InvalidArgumentException('Drukarka ma aktywne zadania fiskalne. Najpierw je rozstrzygnij.'); }
+        $this->db->transaction(function () use ($printerId) {
+            $this->db->update('print_fiscal_printers',['enabled'=>0,'deleted_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$printerId]);
+            $this->db->query('UPDATE om_series SET fiscal_printer_id=0 WHERE fiscal_printer_id=:id',['id'=>$printerId]);
+            $setting=$this->db->fetch("SELECT value_json FROM om_settings WHERE setting_key='receipt_printer'");
+            if ($setting) {
+                $value=json_decode((string)$setting['value_json'],true);
+                if (is_array($value) && (int)($value['printer_id']??0)===$printerId) {
+                    $value['printer_id']=0;
+                    $this->db->update('om_settings',['value_json'=>json_encode($value,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)],'setting_key=:key',['key'=>'receipt_printer']);
+                }
+            }
+        });
+    }
+
     public function addFiscalPrinter(int $stationId,string $name,string $host,int $port): int
     {
         $this->requireStation($stationId,true);
@@ -147,7 +187,12 @@ final class PrintAgentRepository
         if ($host==='' || preg_match('/^[A-Za-z0-9._:-]+$/D',$host)!==1) { throw new InvalidArgumentException('Podaj poprawny adres IP lub nazwę hosta.'); }
         if ($port<1 || $port>65535) { throw new InvalidArgumentException('Port musi mieścić się między 1 a 65535.'); }
         $key='manual:'.strtolower($host).':'.$port;
-        if ($this->db->fetchColumn('SELECT id FROM print_fiscal_printers WHERE station_id=:station AND device_key=:key',['station'=>$stationId,'key'=>$key])) { throw new InvalidArgumentException('Ta drukarka jest już dodana do stanowiska.'); }
+        $existing=$this->db->fetch('SELECT id,deleted_at FROM print_fiscal_printers WHERE station_id=:station AND device_key=:key',['station'=>$stationId,'key'=>$key]);
+        if ($existing && $existing['deleted_at']===null) { throw new InvalidArgumentException('Ta drukarka jest już dodana do stanowiska.'); }
+        if ($existing) {
+            $this->db->update('print_fiscal_printers',['name'=>$name,'host'=>$host,'port'=>$port,'enabled'=>0,'deleted_at'=>null],'id=:id',['id'=>$existing['id']]);
+            return (int)$existing['id'];
+        }
         return (int)$this->db->insert('print_fiscal_printers',['station_id'=>$stationId,'device_key'=>$key,'name'=>$name,'host'=>$host,'port'=>$port,'serial_number'=>null,'receipt_series'=>'POS','next_number'=>1,'environment'=>'sandbox','enabled'=>0,'last_seen_at'=>null,'created_at'=>gmdate('Y-m-d H:i:s')]);
     }
 
@@ -320,7 +365,7 @@ final class PrintAgentRepository
             $serial=mb_substr(trim((string)($device['serialNumber']??'')),0,100,'UTF-8')?:null;
             $existing=$this->db->fetch('SELECT id FROM print_fiscal_printers WHERE station_id=:station AND device_key=:key',['station'=>$stationId,'key'=>$key]);
             $data=['name'=>$name,'host'=>$host,'port'=>$port,'serial_number'=>$serial,'last_seen_at'=>gmdate('Y-m-d H:i:s')];
-            if ($existing) { $this->db->update('print_fiscal_printers',$data,'id=:id',['id'=>$existing['id']]); }
+            if ($existing) { $this->db->update('print_fiscal_printers',$data,'id=:id AND deleted_at IS NULL',['id'=>$existing['id']]); }
             else { $this->db->insert('print_fiscal_printers',$data+['station_id'=>$stationId,'device_key'=>$key,'receipt_series'=>'POS','next_number'=>1,'environment'=>$environment,'enabled'=>1,'created_at'=>gmdate('Y-m-d H:i:s')]); }
             $count++;
         }

@@ -54,6 +54,29 @@ class MediaMarktService
         $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/tracking', array(), $payload, array('Content-Type: application/json'));
     }
 
+    /** Mirakl OR21: accepts every line of an order still in WAITING_ACCEPTANCE. */
+    public function acceptOrder(array $account, array $rawOrder): void
+    {
+        $orderId = trim((string) ($rawOrder['order_id'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Brak identyfikatora zamowienia MediaMarkt do akceptacji.');
+        }
+
+        $lines = array();
+        foreach ($rawOrder['order_lines'] ?? array() as $line) {
+            $lineId = trim((string) ($line['id'] ?? ''));
+            if ($lineId === '') {
+                continue;
+            }
+            $lines[] = array('id' => $lineId, 'accepted' => true);
+        }
+        if ($lines === array()) {
+            throw new RuntimeException('Zamowienie MediaMarkt nie zawiera pozycji do akceptacji.');
+        }
+
+        $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/accept', array(), array('order_lines' => $lines), array('Content-Type: application/json'));
+    }
+
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();

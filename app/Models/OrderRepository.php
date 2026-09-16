@@ -28,7 +28,7 @@ final class OrderRepository
             'om_rules' => "id $id, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, trigger_name VARCHAR(30) NOT NULL, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL",
             'om_rule_runs' => "id $id, rule_id BIGINT NOT NULL, order_id BIGINT NOT NULL, event_key VARCHAR(80) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(rule_id, order_id, event_key)",
             'om_settings' => "setting_key VARCHAR(100) PRIMARY KEY, value_json LONGTEXT NOT NULL",
-            'om_series' => "id $id, name VARCHAR(100) NOT NULL, kind VARCHAR(30) NOT NULL, pattern VARCHAR(100) NOT NULL, next_number INTEGER NOT NULL DEFAULT 1, fiscal_printer_id BIGINT NULL",
+            'om_series' => "id $id, name VARCHAR(100) NOT NULL, kind VARCHAR(30) NOT NULL, pattern VARCHAR(100) NOT NULL, next_number INTEGER NOT NULL DEFAULT 1, fiscal_printer_id BIGINT NULL, numbering_json TEXT NULL, numbering_period VARCHAR(7) NULL",
             'om_documents' => "id $id, order_id BIGINT NOT NULL, series_id BIGINT NOT NULL, kind VARCHAR(30) NOT NULL, number VARCHAR(190) NOT NULL UNIQUE, parent_id BIGINT NULL, request_key VARCHAR(80) NOT NULL UNIQUE, snapshot_json LONGTEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
             'om_shipments' => "id $id, order_id BIGINT NOT NULL, carrier VARCHAR(60) NOT NULL, tracking VARCHAR(100) NOT NULL, weight VARCHAR(30) NOT NULL, state VARCHAR(30) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(order_id, carrier, tracking)",
             'om_carrier_accounts' => "id $id, provider VARCHAR(30) NOT NULL, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, public_config_json TEXT NOT NULL, secret_config_json LONGTEXT NOT NULL, updated_at VARCHAR(30) NOT NULL, UNIQUE(provider, name)",
@@ -38,7 +38,7 @@ final class OrderRepository
         foreach ($tables as $name => $columns) { $this->db->query("CREATE TABLE IF NOT EXISTS $name ($columns)$suffix"); }
         // Upgrade installations created before incremental-sync columns were introduced.
         $accountColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_accounts)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_accounts'),'Field');
-        foreach (['synced_until'=>'VARCHAR(30) NULL','next_attempt'=>'BIGINT NOT NULL DEFAULT 0','cursor_json'=>'TEXT NULL'] as $column=>$definition) {
+        foreach (['synced_until'=>'VARCHAR(30) NULL','next_attempt'=>'BIGINT NOT NULL DEFAULT 0','cursor_json'=>'TEXT NULL','auto_accept'=>'INTEGER NOT NULL DEFAULT 0'] as $column=>$definition) {
             if (!in_array($column,$accountColumns,true)) {
                 try { $this->db->query("ALTER TABLE om_accounts ADD COLUMN $column $definition"); }
                 catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
@@ -48,6 +48,12 @@ final class OrderRepository
         if (!in_array('fiscal_printer_id',$seriesColumns,true)) {
             try { $this->db->query('ALTER TABLE om_series ADD COLUMN fiscal_printer_id BIGINT NULL'); }
             catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+        }
+        foreach (['numbering_json'=>'TEXT NULL','numbering_period'=>'VARCHAR(7) NULL'] as $column=>$definition) {
+            if (!in_array($column,$seriesColumns,true)) {
+                try { $this->db->query("ALTER TABLE om_series ADD COLUMN $column $definition"); }
+                catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+            }
         }
         $shipmentColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_shipments)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_shipments'),'Field');
         foreach (['carrier_account_id'=>'BIGINT NULL','external_id'=>'VARCHAR(190) NULL','command_id'=>'VARCHAR(190) NULL','payload_json'=>'LONGTEXT NULL','cod_amount_cents'=>'BIGINT NULL','shipment_currency'=>'VARCHAR(3) NULL'] as $column=>$definition) {
@@ -636,6 +642,24 @@ final class OrderRepository
             $this->event($id,'Pobrano zamówienie. Marketplace pozostaje bez zmian.','synchronizacja');
             $this->runRules($id,'import','import');
             return true;
+        });
+    }
+    /**
+     * Marketplace orders are re-created by the next sync pass unless their account's
+     * import is paused first — the confirm dialog on the delete button says so.
+     */
+    public function deleteOrder(int $id): void
+    {
+        $this->db->transaction(function () use ($id) {
+            $order=$this->db->fetch('SELECT id FROM om_orders WHERE id=:id'.$this->rowLock(),['id'=>$id]);
+            if (!$order) { throw new InvalidArgumentException('Nie znaleziono zamówienia.'); }
+            if ($this->db->fetchColumn('SELECT id FROM om_documents WHERE order_id=:id LIMIT 1',['id'=>$id])) {
+                throw new InvalidArgumentException('Nie można usunąć zamówienia, dla którego wystawiono paragon lub fakturę. Usuń najpierw dokumenty.');
+            }
+            $this->db->delete('om_shipments','order_id=:id',['id'=>$id]);
+            $this->db->delete('om_rule_runs','order_id=:id',['id'=>$id]);
+            $this->db->delete('om_events','order_id=:id',['id'=>$id]);
+            $this->db->delete('om_orders','id=:id',['id'=>$id]);
         });
     }
     public function changeStatus(int $id,int $status,string $actor,bool $rules=true): void

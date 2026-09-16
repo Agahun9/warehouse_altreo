@@ -76,6 +76,7 @@ final class OrderSyncService
                     $order=OrderNormalizer::normalize($platform,$raw,$cutoff,$now);
                     if ($order===null) { $skipped++; continue; }
                     if ($this->repo->import((int)$account['id'],$order)) { $added++; } else { $updated++; }
+                    $this->autoAcceptIfEligible($platform,$integration,$source,$account,$raw,(string)$order['remote_status'],(string)$order['external_id']);
                 }
                 $more=count($rows)>0;
                 if ($more) {
@@ -106,5 +107,26 @@ final class OrderSyncService
             } finally { $db->releaseAdvisoryLock($lock); }
         }
         return $results;
+    }
+
+    /**
+     * Mirakl (Empik/MediaMarkt) orders arrive without full delivery data while
+     * WAITING_ACCEPTANCE; accepting via OR21 lets Mirakl release the buyer's
+     * address and payment confirmation on the next sync pass. One order's
+     * acceptance failure must never block the rest of the page.
+     */
+    private function autoAcceptIfEligible(string $platform, $integration, array $source, array $account, array $raw, string $remoteStatus, string $externalId): void
+    {
+        if (!in_array($platform, ['empik', 'mediamarkt'], true) || empty($account['auto_accept'])) { return; }
+        if (strtoupper($remoteStatus) !== 'WAITING_ACCEPTANCE') { return; }
+        if (!method_exists($integration, 'acceptOrder')) { return; }
+        $orderId=(int)$this->repo->db()->fetchColumn('SELECT id FROM om_orders WHERE account_id=:a AND external_id=:e',['a'=>(int)$account['id'],'e'=>$externalId]);
+        try {
+            $integration->acceptOrder($source, $raw);
+            if ($orderId) { $this->repo->event($orderId,'Automatyczna akceptacja zamówienia w Mirakl (OR21).','auto-akceptacja'); }
+        } catch (\Throwable $e) {
+            $diagnostic=OrderSyncError::log($e,['account_id'=>(int)$account['id'],'platform'=>$platform,'external_id'=>$externalId]);
+            if ($orderId) { $this->repo->event($orderId,'Automatyczna akceptacja nie powiodła się: '.$diagnostic['message'].' [ID: '.$diagnostic['reference'].']','auto-akceptacja'); }
+        }
     }
 }
