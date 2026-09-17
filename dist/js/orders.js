@@ -197,8 +197,8 @@
   const storageKey = 'altreo-orders-list-v2';
   const columnDefaults = [
     ['order', 170, true], ['buyer', 190, true], ['products', 300, true], ['amount', 130, true],
-    ['status', 145, true], ['payment', 130, false], ['delivery', 170, false], ['source', 135, false],
-    ['tags', 160, false], ['date', 150, true]
+    ['status', 145, true], ['payment', 130, false], ['delivery', 170, false], ['fulfillment', 180, false],
+    ['source', 135, false], ['tags', 160, false], ['date', 110, true]
   ];
   const defaultView = () => ({
     order: columnDefaults.map(column => column[0]),
@@ -325,6 +325,13 @@
       window.setTimeout(() => { if (label) label.textContent = original; }, 1600);
     }
   }));
+  document.querySelectorAll('tr[data-order-url]').forEach(row => row.addEventListener('click', event => {
+    if (event.target.closest('.om-select-cell, [data-copy-order], input, select, textarea, label')) return;
+    if (event.target.closest('.om-order-number') || window.getSelection()?.toString()) return;
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey) { window.open(row.dataset.orderUrl, '_blank'); return; }
+    window.location.href = row.dataset.orderUrl;
+  }));
   document.querySelectorAll('[data-product-image]').forEach(image => image.addEventListener('error', () => {
     image.parentElement?.classList.add('is-missing');
   }, { once: true }));
@@ -390,7 +397,9 @@
       if (dueLabel) dueLabel.textContent = cod ? 'Do pobrania' : 'Do zapłaty';
       dueBox?.classList.toggle('is-due', due > 0);
     };
-    form.querySelectorAll('[data-line-quantity],[data-line-price],input[name="total"],input[name="amount_paid"],input[name="currency"],input[name="cash_on_delivery"]').forEach(field => field.addEventListener('input', updateTotals));
+    form.addEventListener('input', event => {
+      if (event.target.closest('[data-line-quantity],[data-line-price]') || event.target.matches('input[name="total"],input[name="amount_paid"],input[name="currency"],input[name="cash_on_delivery"]')) updateTotals();
+    });
     const documentPreference = form.querySelector('[data-document-preference]');
     const invoiceFields = form.querySelector('[data-invoice-fields]');
     const documentCallout = form.querySelector('[data-document-callout]');
@@ -407,6 +416,40 @@
       }
     };
     documentPreference?.addEventListener('change', updateDocumentPreference);
+
+    const productsTable = form.querySelector('[data-products-table]');
+    const rowTemplate = productsTable?.querySelector('[data-product-row-template]');
+    const reindexProductRows = () => {
+      productsTable?.querySelectorAll('.om-inline-product-row').forEach((row, index) => {
+        row.querySelectorAll('[name]').forEach(field => { field.name = field.name.replace(/items\[[^\]]*\]/, `items[${index}]`); });
+      });
+    };
+    form.querySelector('[data-add-product-row]')?.addEventListener('click', () => {
+      if (!rowTemplate || !productsTable) return;
+      const row = rowTemplate.content.firstElementChild.cloneNode(true);
+      const shippingRow = productsTable.querySelector('.oc-product-shipping');
+      if (shippingRow) shippingRow.before(row); else productsTable.append(row);
+      reindexProductRows();
+      updateTotals();
+      row.querySelector('input')?.focus();
+    });
+    productsTable?.addEventListener('click', event => {
+      const remove = event.target.closest('[data-remove-product-row]');
+      if (!remove) return;
+      if (productsTable.querySelectorAll('.om-inline-product-row').length <= 1) return;
+      remove.closest('.om-inline-product-row')?.remove();
+      reindexProductRows();
+      updateTotals();
+    });
+
+    const dataGrid = form.querySelector('#om-data-grid');
+    const dataSavebar = form.querySelector('[data-data-savebar]');
+    if (dataGrid && dataSavebar) {
+      const revealDataSavebar = () => { dataSavebar.hidden = false; };
+      dataGrid.addEventListener('input', revealDataSavebar);
+      dataGrid.addEventListener('change', revealDataSavebar);
+    }
+
     updateTotals();
   });
   document.querySelectorAll('[data-smart-shipment]').forEach(form => {

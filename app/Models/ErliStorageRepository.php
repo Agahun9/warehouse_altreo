@@ -89,6 +89,7 @@ class ErliStorageRepository
             . "status_override VARCHAR(20) DEFAULT NULL,\n"
             . "remote_exists TINYINT(1) NOT NULL DEFAULT 0,\n"
             . "remote_status VARCHAR(20) DEFAULT NULL,\n"
+            . "buyable_problems VARCHAR(500) DEFAULT NULL,\n"
             . "marketplace_id BIGINT DEFAULT NULL,\n"
             . "payload_json LONGTEXT DEFAULT NULL,\n"
             . "remote_created_at DATETIME DEFAULT NULL,\n"
@@ -696,16 +697,29 @@ class ErliStorageRepository
         $this->database->update('erli_products', $payload, 'id = :id', array('id' => $productRowId));
     }
 
-    public function markProductSyncSuccess(int $productRowId, array $payload, string $status, bool $remoteExists = true): void
+    public function markProductSyncSuccess(int $productRowId, array $payload, ?string $status, bool $remoteExists = true): void
     {
-        $this->database->update('erli_products', array(
+        $data = array(
             'remote_exists' => $remoteExists ? 1 : 0,
-            'remote_status' => $status,
             'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'last_synced_at' => date('Y-m-d H:i:s'),
             'last_error_at' => null,
             'last_error_message' => null,
-        ), 'id = :id', array('id' => $productRowId));
+        );
+        if ($status !== null) {
+            $row = $this->database->fetch('SELECT buyable_problems FROM erli_products WHERE id = :id LIMIT 1', array('id' => $productRowId));
+            $problems = $this->splitBuyableProblems((string) ($row['buyable_problems'] ?? ''));
+            // Problem "active" means the ERLI switch is off - it follows the PATCHed status.
+            $problems = array_values(array_diff($problems, array('active')));
+            if ($status === 'inactive') {
+                $problems[] = 'active';
+            }
+
+            $data['buyable_problems'] = $problems !== array() ? implode(',', $problems) : null;
+            $data['remote_status'] = $problems === array() ? 'active' : 'inactive';
+        }
+
+        $this->database->update('erli_products', $data, 'id = :id', array('id' => $productRowId));
     }
 
     public function markProductSyncError(int $productRowId, string $message): void
@@ -732,6 +746,7 @@ class ErliStorageRepository
             'remote_updated_at' => 'DATETIME DEFAULT NULL',
             'archived_at' => 'DATETIME DEFAULT NULL',
             'last_seen_cycle' => 'CHAR(36) DEFAULT NULL',
+            'buyable_problems' => 'VARCHAR(500) DEFAULT NULL',
         );
 
         foreach ($columnDefinitions as $column => $definition) {
@@ -845,6 +860,7 @@ class ErliStorageRepository
             'primary_image_url' => isset($images[0]) ? (string) $images[0] : null,
             'remote_exists' => 1,
             'remote_status' => $status,
+            'buyable_problems' => $this->buyableProblemsValue($remoteProduct['buyableProblems'] ?? null),
             'marketplace_id' => isset($remoteProduct['marketplaceId']) ? (int) $remoteProduct['marketplaceId'] : null,
             'payload_json' => json_encode($remoteProduct, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'remote_created_at' => $this->dateTimeOrNull($remoteProduct['created'] ?? null),
@@ -884,6 +900,14 @@ class ErliStorageRepository
         $row['effective_quantity'] = $row['stock_override'] !== null && $row['stock_override'] !== ''
             ? (int) $row['stock_override']
             : (int) ($row['quantity'] ?? 0);
+        if (($row['buyable_problems'] ?? null) === null) {
+            $snapshot = json_decode((string) ($row['payload_json'] ?? ''), true);
+            $row['buyable_problems'] = is_array($snapshot) ? $this->buyableProblemsValue($snapshot['buyableProblems'] ?? null) : null;
+        }
+        $row['buyable_problems'] = $this->splitBuyableProblems((string) ($row['buyable_problems'] ?? ''));
+        $row['buyable_problems_text'] = implode(', ', array_map(static function (string $problem): string {
+            return self::BUYABLE_PROBLEM_LABELS[$problem] ?? $problem;
+        }, $row['buyable_problems']));
         $row['effective_status'] = trim((string) ($row['status_override'] ?? '')) !== ''
             ? strtolower(trim((string) $row['status_override']))
             : (trim((string) ($row['remote_status'] ?? '')) !== ''
@@ -893,8 +917,57 @@ class ErliStorageRepository
         return $row;
     }
 
+    private const BUYABLE_PROBLEM_LABELS = array(
+        'active' => 'wylaczony w Erli',
+        'stock' => 'brak stanu',
+        'delivery' => 'brak cennika dostaw',
+        'category' => 'brak kategorii',
+        'image' => 'brak zdjec',
+        'shop-activity' => 'sklep nieaktywny',
+        'shopKyc' => 'weryfikacja sklepu (KYC)',
+        'missingPrice' => 'brak ceny',
+        'minPrice' => 'cena za niska',
+        'maxPrice' => 'cena za wysoka',
+        'terms' => 'brak warunkow sprzedazy',
+        'blocked' => 'zablokowany',
+        'condition' => 'brak stanu produktu',
+        'archived' => 'zarchiwizowany',
+        'translations' => 'brak tlumaczen',
+        'name' => 'niepoprawna nazwa',
+        'missingTaxRate' => 'brak stawki VAT',
+        'marketInactive' => 'rynek nieaktywny',
+    );
+
+    private function buyableProblemsValue($problems): ?string
+    {
+        if (!is_array($problems)) {
+            return null;
+        }
+
+        $problems = array_values(array_unique(array_filter(array_map(static function ($problem): string {
+            return trim((string) $problem);
+        }, $problems), 'strlen')));
+
+        return $problems !== array() ? substr(implode(',', $problems), 0, 500) : null;
+    }
+
+    private function splitBuyableProblems(string $value): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', $value)), 'strlen'));
+    }
+
     private function normalizeRemoteStatus(array $remoteProduct): ?string
     {
+        // ERLI "status" is only the seller switch (almost always "active"). Whether the
+        // product is really offered is reported by buyableProblems / archived.
+        if (!empty($remoteProduct['archived'])) {
+            return 'inactive';
+        }
+
+        if (isset($remoteProduct['buyableProblems']) && is_array($remoteProduct['buyableProblems']) && $remoteProduct['buyableProblems'] !== array()) {
+            return 'inactive';
+        }
+
         $candidates = array(
             $remoteProduct['status'] ?? null,
             $remoteProduct['state'] ?? null,
@@ -1016,6 +1089,16 @@ class ErliStorageRepository
             $params['status'] = $status;
         }
 
+        if (trim((string) ($filters['resume_ready'] ?? '')) === '1') {
+            // Switched off in ERLI (or locally) while the warehouse has stock above the
+            // category "end offers below" threshold (0 when the category has none).
+            $whereParts[] = ' AND ' . $this->effectiveStatusSql() . ' = "inactive"'
+                . ' AND (products.status_override = "inactive"'
+                . '   OR ((products.status_override IS NULL OR products.status_override = "") AND ' . $this->switchedOffInErliSql() . '))'
+                . ' AND warehouse.id IS NOT NULL'
+                . ' AND COALESCE(shared_stock_groups.quantity, warehouse.quantity, 0) > COALESCE(warehouse_categories.end_offers_below_quantity, 0)';
+        }
+
         $queueStatus = strtolower(trim((string) ($filters['queue_status'] ?? '')));
         if (in_array($queueStatus, array('pending', 'retry', 'error', 'done', 'processing'), true)) {
             $whereParts[] = ' AND EXISTS ('
@@ -1097,7 +1180,20 @@ class ErliStorageRepository
             . '   GROUP BY sku'
             . ' ) warehouse_latest ON warehouse_latest.max_id = warehouse_source.id'
             . ' ) warehouse ON warehouse.sku = products.sku'
-            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
+            . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id';
+    }
+
+    private function switchedOffInErliSql(): string
+    {
+        // Rows synced before the buyable_problems column existed only carry the raw
+        // ERLI snapshot in payload_json, so fall back to it until the next sync.
+        return '(CASE WHEN products.buyable_problems IS NOT NULL'
+            . ' THEN FIND_IN_SET("active", products.buyable_problems) > 0'
+            . ' ELSE (products.payload_json LIKE \'%"status":"inactive"%\''
+            . '   OR (products.payload_json LIKE \'%"buyableProblems":[%\''
+            . '     AND SUBSTRING_INDEX(SUBSTRING_INDEX(products.payload_json, \'"buyableProblems":[\', -1), \']\', 1) LIKE \'%"active"%\'))'
+            . ' END)';
     }
 
     private function effectiveStatusSql(): string

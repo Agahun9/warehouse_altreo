@@ -59,7 +59,8 @@
         <i class="bi bi-chevron-down oc-chevron"></i>
       </summary>
       <div class="om-doc-body">
-        <div class="om-actions"><a class="om-btn om-small" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Podgląd A4 ↗</a></div>
+        <div class="om-actions"><a class="om-btn om-small" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Podgląd A4 ↗</a>{if $canWrite}<a class="om-btn om-small" href="?controller=orders&action=correctdocument&id={$d.id}"><i class="bi bi-arrow-counterclockwise"></i> Wystaw korektę</a>{/if}</div>
+        {include file='orders/ksef_document.tpl' doc=$d ksefTab='documents' ksefOrderId=0}
         {if $canWrite}
         <details class="om-doc-edit"><summary><i class="bi bi-pencil"></i> Edytuj dokument</summary>
           <form class="om-form om-doc-edit-form" method="post" action="?controller=orders&action=save">

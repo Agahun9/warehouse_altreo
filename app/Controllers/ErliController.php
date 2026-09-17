@@ -358,6 +358,7 @@ class ErliController extends Controller
             'queue_status' => trim((string) $this->input('queue_status', '')),
             'error_query' => trim((string) $this->input('error_query', '')),
             'linked' => trim((string) $this->input('linked', '')),
+            'resume_ready' => trim((string) $this->input('resume_ready', '')),
             'warehouse_quantity_from' => trim((string) $this->input('warehouse_quantity_from', '')),
             'warehouse_quantity_to' => trim((string) $this->input('warehouse_quantity_to', '')),
         );

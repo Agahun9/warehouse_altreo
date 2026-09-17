@@ -17,6 +17,7 @@
 <fieldset class="om-series-settings">
   <legend>Dane firmowe dla tej serii</legend>
   <small class="om-muted">Puste pola korzystają z globalnych danych sprzedawcy. Zmiana dotyczy tylko nowych dokumentów.</small>
+  <label>Konto KSeF (faktury i korekty)<select name="ksef_account_id" {if !$canWrite}disabled{/if}><option value="0">Bez konta KSeF (korekty dziedziczą konto faktury)</option>{foreach $ksefAccounts|default:[] as $ksefAccount}<option value="{$ksefAccount.id}" {if ($ds.ksef_account_id|default:0) eq $ksefAccount.id}selected{/if}>{$ksefAccount.name|escape} · NIP {$ksefAccount.nip|escape} · {if $ksefAccount.environment eq 'production'}PRODUKCJA{else}SANDBOX{/if}</option>{/foreach}</select><small class="om-muted">Konta dodajesz w zakładce Ustawienia ogólne. Paragony nie są wysyłane do KSeF.</small></label>
   <label>Nazwa firmy<input name="seller_name" maxlength="200" value="{$ds.seller_name|default:''|escape}" {if !$canWrite}disabled{/if}></label>
   <label>NIP<input name="seller_nip" maxlength="30" value="{$ds.seller_nip|default:''|escape}" {if !$canWrite}disabled{/if}></label>
   <label>Rachunek bankowy<input name="seller_bank" maxlength="200" value="{$ds.seller_bank|default:''|escape}" {if !$canWrite}disabled{/if}></label>

@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260916-5">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260917-5">
   {/if}
   <style>
     /*
@@ -287,7 +287,7 @@
     }
   </style>
 </head>
-<body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
+<body class="layout-fixed sidebar-expand-lg bg-body-tertiary{if $currentController eq 'orders'} sidebar-mini sidebar-collapse{/if}">
   <div class="app-page-loader" id="appPageLoader" aria-hidden="true" aria-live="polite">
     <div class="app-page-loader-card" role="status">
       <div class="spinner-border text-primary app-page-loader-spinner" aria-hidden="true"></div>
@@ -445,6 +445,7 @@
                     <li class="nav-item"><a href="orders.php?tab=printing" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'printing'} active{/if}"><i class="nav-icon bi bi-printer"></i><p>Drukarki</p></a></li>
                     <li class="nav-item"><a href="orders.php?tab=payments" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'payments'} active{/if}"><i class="nav-icon bi bi-credit-card"></i><p>Ustaw płatności</p></a></li>
                     <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'documents'} active{/if}"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
+                    <li class="nav-item"><a href="orders.php?tab=general" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'general'} active{/if}"><i class="nav-icon bi bi-sliders"></i><p>Ustawienia ogólne</p></a></li>
                   </ul>
                 </li>
               {/if}

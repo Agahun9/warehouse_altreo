@@ -30,7 +30,7 @@
                 <dt class="col-5">Konto</dt><dd class="col-7">{$product.account_name|default:'-'|escape}</dd>
                 <dt class="col-5">External ID</dt><dd class="col-7"><code>{$product.external_id|default:'-'|escape}</code></dd>
                 <dt class="col-5">SKU</dt><dd class="col-7"><code>{$product.sku|default:'-'|escape}</code></dd>
-                <dt class="col-5">Status</dt><dd class="col-7">{$product.effective_status|default:'-'|escape}</dd>
+                <dt class="col-5">Status</dt><dd class="col-7">{$product.effective_status|default:'-'|escape}{if $product.buyable_problems_text|default:'' neq ''} <small class="text-muted">({$product.buyable_problems_text|escape})</small>{/if}</dd>
                 <dt class="col-5">Cena</dt><dd class="col-7">{$product.effective_price|string_format:"%.2f"} zl</dd>
                 <dt class="col-5">Stan Erli</dt><dd class="col-7">{$product.effective_quantity|default:0|escape}</dd>
                 <dt class="col-5">Magazyn</dt><dd class="col-7">{$product.warehouse_quantity|default:'-'|escape}</dd>

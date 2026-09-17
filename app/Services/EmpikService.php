@@ -38,11 +38,15 @@ class EmpikService
     }
 
 
-    /** Read-only order import; no order mutations are exposed to the order manager. */
+    /**
+     * Read-only order import; no order mutations are exposed to the order manager.
+     * OR11 filters by update date only: a creation-date filter would hide later changes
+     * (e.g. payment days after purchase) of orders older than the admission window.
+     */
     public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
     {
         return $this->requestApi($account, 'GET', '/api/orders', [
-            'start_date'=>$from, 'end_date'=>$to, 'max'=>100, 'offset'=>(int)$cursor,
+            'max'=>100, 'offset'=>(int)$cursor,
             'start_update_date'=>$updatedFrom !== '' ? $updatedFrom : $from, 'end_update_date'=>$to,
             'sort'=>'dateCreated', 'order'=>'asc',
         ]);
@@ -66,7 +70,8 @@ class EmpikService
 
         $lines = array();
         foreach ($rawOrder['order_lines'] ?? array() as $line) {
-            $lineId = trim((string) ($line['id'] ?? ''));
+            // OR11 names the line identifier order_line_id; OR21 expects it as "id".
+            $lineId = trim((string) ($line['order_line_id'] ?? $line['id'] ?? ''));
             if ($lineId === '') {
                 continue;
             }

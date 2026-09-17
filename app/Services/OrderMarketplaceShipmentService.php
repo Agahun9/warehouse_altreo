@@ -78,6 +78,7 @@ final class OrderMarketplaceShipmentService
             $stored['meta']=$meta;
             $this->savePayload($shipment,$stored);
             $this->repo->event((int)$shipment['order_id'],$message,$actor);
+            $this->repo->automationEvent((int)$shipment['order_id'],'tracking_sent',['shipment_id'=>$shipmentId]);
             return $message;
         } catch (\Throwable $error) {
             $safe=mb_substr(trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',$error->getMessage())??''),0,240,'UTF-8');

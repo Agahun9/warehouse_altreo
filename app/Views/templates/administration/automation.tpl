@@ -255,6 +255,19 @@
 
       <div class="accordion administration-accordion" id="administrationAccordion">
         <div class="accordion-item mb-4">
+          <h2 class="accordion-header" id="headingAltreoShop"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAltreoShop" aria-expanded="false" aria-controls="collapseAltreoShop">Sklep ALTREO</button></h2>
+          <div id="collapseAltreoShop" class="accordion-collapse collapse" aria-labelledby="headingAltreoShop" data-bs-parent="#administrationAccordion">
+            <div class="accordion-body">
+              <p>Bezpośredni import zamówień, płatności i statusów do centrum zamówień. Ustaw w sklepie zmienną <code>WAREHOUSE_ORDERS_TOKEN</code> z tym samym tokenem.</p>
+              <form method="post" action="{$baseUrl}?controller=administration&amp;action=savealtreoshop" class="row g-3" autocomplete="off">
+                <div class="col-md-6"><label class="form-label" for="altreo-shop-url">Adres sklepu</label><input class="form-control" id="altreo-shop-url" type="url" name="altreo_shop_url" value="{$altreoShopUrl|escape}" placeholder="https://altreo.pl" required></div>
+                <div class="col-md-6"><label class="form-label" for="altreo-shop-token">Token API {if $altreoShopConfigured}(zapisany){/if}</label><input class="form-control" id="altreo-shop-token" type="password" name="altreo_shop_token" minlength="32" placeholder="{if $altreoShopConfigured}Pozostaw puste, aby zachować{else}Minimum 32 znaki{/if}" autocomplete="new-password"></div>
+                <div class="col-12"><button class="btn btn-primary" type="submit">Zapisz integrację</button> <a class="btn btn-outline-secondary" href="{$baseUrl}?controller=orders&amp;tab=accounts">Konta i mapowanie statusów</a></div>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item mb-4">
           <h2 class="accordion-header" id="headingMarketplaces">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMarketplaces" aria-expanded="true" aria-controls="collapseMarketplaces">
               Marketplace i konta
@@ -401,6 +414,13 @@
                                         <a href="{$baseUrl}?controller=allegro&action=connect&id={$account.id}" class="btn btn-sm btn-primary">Autoryzuj</a>
                                         <a href="{$account.trigger_url|escape}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noreferrer">Sync</a>
                                         <a href="{$baseUrl}?controller=allegro&action=refreshtoken&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-info">Refresh token</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=deleteaccount" class="d-grid gap-1" onsubmit="return confirm('Usunąć konto Allegro i jego {$account.linked_offers_count} powiązanych ofert/produktów z lokalnej bazy? Tej operacji nie można cofnąć.');">
+  <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+  <input type="hidden" name="platform" value="allegro">
+  <input type="hidden" name="account_id" value="{$account.id|escape}">
+  <label class="small text-secondary"><input type="checkbox" name="confirm_delete" value="1" required> Potwierdzam usunięcie {$account.linked_offers_count} ofert/produktów</label>
+  <button type="submit" class="btn btn-sm btn-outline-danger">Usuń konto i powiązane aukcje</button>
+</form>
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editAllegroAccount{$account.id|escape}" aria-expanded="false" aria-controls="editAllegroAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
@@ -518,6 +538,15 @@
                             </div>
                             <div class="col-12"><div id="temu-test-result" class="small"></div></div>
                           </form>
+                          {if $temuConfigured}
+                            <form method="post" action="{$baseUrl}?controller=administration&amp;action=deleteaccount" class="mt-4 border-top pt-3" onsubmit="return confirm('Usunąć połączenie konta Temu?');">
+                              <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+                              <input type="hidden" name="platform" value="temu">
+                              <input type="hidden" name="account_id" value="1">
+                              <label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="confirm_delete" value="1" required> <span class="form-check-label">Potwierdzam usunięcie połączenia Temu.</span></label>
+                              <button type="submit" class="btn btn-outline-danger btn-sm">Usuń konto Temu</button>
+                            </form>
+                          {/if}
                         </div>
                       </div>
                     </div>
@@ -657,6 +686,13 @@
                                       <div class="d-grid gap-2">
                                         <a href="{$baseUrl}?controller=empik&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
                                         <a href="{$baseUrl}?controller=empik&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=deleteaccount" class="d-grid gap-1" onsubmit="return confirm('Usunąć konto Empik i jego {$account.linked_offers_count} powiązanych ofert/produktów z lokalnej bazy? Tej operacji nie można cofnąć.');">
+  <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+  <input type="hidden" name="platform" value="empik">
+  <input type="hidden" name="account_id" value="{$account.id|escape}">
+  <label class="small text-secondary"><input type="checkbox" name="confirm_delete" value="1" required> Potwierdzam usunięcie {$account.linked_offers_count} ofert/produktów</label>
+  <button type="submit" class="btn btn-sm btn-outline-danger">Usuń konto i powiązane aukcje</button>
+</form>
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editEmpikAccount{$account.id|escape}" aria-expanded="false" aria-controls="editEmpikAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=administration&action=saveempik" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
@@ -845,6 +881,13 @@
                                       <div class="d-grid gap-2">
                                         <a href="{$baseUrl}?controller=mediamarkt&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
                                         <a href="{$baseUrl}?controller=mediamarkt&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Oferty</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=deleteaccount" class="d-grid gap-1" onsubmit="return confirm('Usunąć konto MediaMarkt i jego {$account.linked_offers_count} powiązanych ofert/produktów z lokalnej bazy? Tej operacji nie można cofnąć.');">
+  <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+  <input type="hidden" name="platform" value="mediamarkt">
+  <input type="hidden" name="account_id" value="{$account.id|escape}">
+  <label class="small text-secondary"><input type="checkbox" name="confirm_delete" value="1" required> Potwierdzam usunięcie {$account.linked_offers_count} ofert/produktów</label>
+  <button type="submit" class="btn btn-sm btn-outline-danger">Usuń konto i powiązane aukcje</button>
+</form>
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editMediaMarktAccount{$account.id|escape}" aria-expanded="false" aria-controls="editMediaMarktAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=administration&action=savemediamarkt" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
@@ -1010,6 +1053,13 @@
                                       <div class="d-grid gap-2">
                                         <a href="{$baseUrl}?controller=erli&action=sync&account={$account.slug|escape:'url'}" class="btn btn-sm btn-outline-primary">Synchronizuj</a>
                                         <a href="{$baseUrl}?controller=erli&action=index&account_id={$account.id|escape:'url'}" class="btn btn-sm btn-outline-secondary">Produkty</a>
+                                        <form method="post" action="{$baseUrl}?controller=administration&action=deleteaccount" class="d-grid gap-1" onsubmit="return confirm('Usunąć konto ERLI i jego {$account.linked_offers_count} powiązanych ofert/produktów z lokalnej bazy? Tej operacji nie można cofnąć.');">
+  <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+  <input type="hidden" name="platform" value="erli">
+  <input type="hidden" name="account_id" value="{$account.id|escape}">
+  <label class="small text-secondary"><input type="checkbox" name="confirm_delete" value="1" required> Potwierdzam usunięcie {$account.linked_offers_count} ofert/produktów</label>
+  <button type="submit" class="btn btn-sm btn-outline-danger">Usuń konto i powiązane aukcje</button>
+</form>
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#editErliAccount{$account.id|escape}" aria-expanded="false" aria-controls="editErliAccount{$account.id|escape}">Edytuj</button>
                                         <form method="post" action="{$baseUrl}?controller=administration&action=saveerli" class="d-grid">
                                           <input type="hidden" name="account_id" value="{$account.id|escape}">
@@ -1113,6 +1163,15 @@
                               <button type="submit" class="btn btn-primary">Zapisz ustawienia Morele</button>
                             </div>
                           </form>
+                          {if $moreleConfigured}
+                            <form method="post" action="{$baseUrl}?controller=administration&amp;action=deleteaccount" class="mt-4 border-top pt-3" onsubmit="return confirm('Usunąć konto Morele i {$moreleOfferCount} powiązanych ofert z lokalnej bazy?');">
+                              <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+                              <input type="hidden" name="platform" value="morele">
+                              <input type="hidden" name="account_id" value="1">
+                              <label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="confirm_delete" value="1" required> <span class="form-check-label">Potwierdzam usunięcie konta i {$moreleOfferCount} powiązanych ofert.</span></label>
+                              <button type="submit" class="btn btn-outline-danger btn-sm">Usuń konto Morele i powiązane aukcje</button>
+                            </form>
+                          {/if}
                         </div>
                       </div>
                     </div>

@@ -244,8 +244,9 @@ class ErliService
     {
         $operations = $operations !== array() ? $operations : array('set_price_from_product', 'set_stock_from_product');
         $filters = array(
+            // No status filter: ERLI reports products without stock as inactive
+            // (buyableProblems), and exactly those need the warehouse stock pushed.
             'linked' => '1',
-            'status' => 'active',
         );
 
         if (trim($accountSelector) !== '') {
@@ -634,7 +635,9 @@ class ErliService
 
         try {
             $this->requestApi($account, 'PATCH', '/products/' . rawurlencode($externalId), array(), $payload);
-            $effectiveStatus = strtolower(trim((string) ($product['effective_status'] ?? 'inactive')));
+            // Only a status PATCH changes the ERLI switch; otherwise keep the synced
+            // status, which also reflects buyableProblems reported by ERLI.
+            $effectiveStatus = isset($payload['status']) ? (string) $payload['status'] : null;
             $this->storage->markProductSyncSuccess((int) $product['id'], $payload, $effectiveStatus, true);
         } catch (RuntimeException $exception) {
             $this->storage->markProductSyncError((int) $product['id'], $exception->getMessage());
@@ -672,8 +675,13 @@ class ErliService
                     'name' => $title !== '' ? $title : trim((string) ($product['external_id'] ?? '')),
                     'price' => $priceInGrosze,
                     'stock' => $stock,
-                    'status' => in_array($status, array('active', 'inactive'), true) ? $status : 'inactive',
                 );
+
+                // effective_status is inactive also for buyableProblems, so push the
+                // status switch only when it was explicitly overridden locally.
+                if (trim((string) ($product['status_override'] ?? '')) !== '' && in_array($status, array('active', 'inactive'), true)) {
+                    $payload['status'] = $status;
+                }
 
                 if ($description !== '') {
                     $payload['description'] = $this->normalizeDescriptionPayload($description);
@@ -730,6 +738,8 @@ class ErliService
                 'price',
                 'stock',
                 'status',
+                'archived',
+                'buyableProblems',
                 'marketplaceId',
                 'created',
                 'updated',

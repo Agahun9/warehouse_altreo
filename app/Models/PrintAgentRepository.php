@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Core\Config;
 use App\Core\Database;
 use InvalidArgumentException;
 
@@ -12,6 +13,15 @@ final class PrintAgentRepository
     private $db;
 
     public function __construct(Database $db) { $this->db=$db; }
+
+    /** Public print-agent endpoint used in queued label jobs. */
+    public static function apiBase(): string
+    {
+        $config=Config::get('app');
+        $public=rtrim((string)($config['public_base_url']??''),'/');
+        if ($public==='') { return 'print-agent-api.php'; }
+        return preg_replace('#/index\.php$#','/print-agent-api.php',$public)?:'print-agent-api.php';
+    }
 
     public function ensureSchema(): void
     {

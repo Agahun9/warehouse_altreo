@@ -9,6 +9,7 @@ use App\Models\OrderRepository;
 use App\Models\PrintAgentRepository;
 use App\Services\OrderSyncService;
 use App\Services\OrderDocumentService;
+use App\Services\KsefService;
 use App\Services\OrderMarketplaceShipmentService;
 use App\Services\OrderShipmentService;
 use InvalidArgumentException;
@@ -18,6 +19,15 @@ final class OrdersController extends Controller
     private function repository(): OrderRepository
     {
         $repo=new OrderRepository($this->db()); $repo->ensureSchema(); return $repo;
+    }
+    private function ksef(OrderRepository $repo): KsefService
+    {
+        $ksef=new KsefService($repo); $ksef->ensureSchema(); return $ksef;
+    }
+    /** Auto-send to KSeF after issuing an invoice; failures never block the issued document. */
+    private function ksefAutoSend(OrderRepository $repo,int $documentId,string $actor): void
+    {
+        $this->ksef($repo)->autoSend($documentId,$actor);
     }
     private function token(): string
     {
@@ -37,10 +47,11 @@ final class OrdersController extends Controller
         $user=$this->requireModule('orders'); $csrf=$this->token(); $repo=$this->repository();
         $printAgents=new PrintAgentRepository($this->db()); $printAgents->ensureSchema();
         $tab=(string)$this->input('tab','list');
-        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments','payments','printing'],true)) { $tab='list'; }
+        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments','payments','printing','general'],true)) { $tab='list'; }
         $filters=[
             'q'=>(string)$this->input('q',''),
             'status_id'=>$this->input('status_id',''),
+            'group'=>(string)$this->input('group',''),
             'account_id'=>$this->input('account_id',''),
             'platform'=>(string)$this->input('platform',''),
             'paid'=>$this->input('paid',''),
@@ -55,7 +66,7 @@ final class OrdersController extends Controller
             return $key!=='page' && $value!=='' && $value!==null;
         },ARRAY_FILTER_USE_BOTH));
         $activeFilterCount=count(array_filter($filters,static function ($value,$key) {
-            return !in_array($key,['page','sort','status_id'],true) && $value!=='' && $value!==null;
+            return !in_array($key,['page','sort','status_id','group'],true) && $value!=='' && $value!==null;
         },ARRAY_FILTER_USE_BOTH));
         $detail=null; $events=[]; $orderDocs=[]; $orderShipments=[]; $issuedDocuments=['receipt'=>null,'invoice'=>null];
         if ((int)$this->input('id',0)>0) {
@@ -81,6 +92,7 @@ final class OrdersController extends Controller
         $shippingDefaults=$this->shippingDefaults($repo);
         $shipmentSuggestion=$detail?$this->shipmentSuggestion($detail,$carrierAccounts,$shippingDefaults):[];
         $documentDefaults=$repo->setting('document_defaults')+['vat'=>'23'];
+        $orderGeneralSettings=$repo->setting('order_general')+['default_currency'=>'PLN'];
         $receiptPrinterSettings=$repo->setting('receipt_printer')+['printer_id'=>0];
         $series=$this->db()->fetchAll('SELECT * FROM om_series ORDER BY id');
         $seriesUsage=array_column($this->db()->fetchAll('SELECT series_id,COUNT(*) c FROM om_documents GROUP BY series_id'),'c','series_id');
@@ -109,19 +121,51 @@ final class OrdersController extends Controller
             },(array)($snap['items']??[]));
             $documents[]=$docRow;
         }
+        $ksef=$this->ksef($repo);
+        $ksefDocumentIds=array_merge(array_column($documents,'id'),array_column($orderDocs,'id'));
+        $ksefSubmissions=$ksef->latest($ksefDocumentIds);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
+        $automation=$repo->automation();
+        $automationView=['stats'=>['active'=>0,'paused'=>0,'runs_24h'=>0,'errors_24h'=>0],'log'=>[],'edit'=>null,'catalog_json'=>'{}','rule_json'=>'null','template'=>''];
+        if ($tab==='rules') {
+            $automationView['stats']=$automation->stats();
+            $automationView['log']=$automation->log(40);
+            $ruleParam=(string)$this->input('rule','');
+            if ($settingsAccess && $ruleParam!=='') {
+                $editId=$ruleParam==='new'?0:max(0,(int)$ruleParam);
+                $editRule=$editId>0?$automation->rule($editId):null;
+                if ($editId===0 || $editRule) {
+                    $draft=$_SESSION['orders_rule_draft']??null; unset($_SESSION['orders_rule_draft']);
+                    $draftRule=is_array($draft) && (int)($draft['id']??-1)===$editId && is_array($draft['rule']??null)?$draft['rule']:null;
+                    $jsonFlags=JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR;
+                    $automationView['edit']=['id'=>$editId,'name'=>(string)($editRule['name']??'')];
+                    $automationView['catalog_json']=json_encode($automation->catalog(),$jsonFlags);
+                    $automationView['rule_json']=json_encode($draftRule??$editRule,$jsonFlags);
+                    $automationView['template']=preg_replace('/[^a-z_]/','',(string)$this->input('template',''));
+                }
+            }
+        }
+        $dashboard=$repo->dashboard();
+        $statusGroups=[];
+        foreach ($dashboard['statuses'] as $status) {
+            $groupName=(string)($status['group_name']??'Pozostałe');
+            if (!isset($statusGroups[$groupName])) { $statusGroups[$groupName]=['name'=>$groupName,'total'=>0,'statuses'=>[]]; }
+            $statusGroups[$groupName]['total']+=(int)$status['total'];
+            $statusGroups[$groupName]['statuses'][]=$status;
+        }
         $this->renderOrders([
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
-            'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$repo->dashboard(),
+            'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$dashboard,'statusGroups'=>$statusGroups,
             'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,
             'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),
             'mappings'=>$this->db()->fetchAll('SELECT m.*,a.name account_name,a.platform,s.name status_name FROM om_mappings m JOIN om_accounts a ON a.id=m.account_id JOIN om_statuses s ON s.id=m.status_id ORDER BY a.platform,a.name,m.remote_status'),
-            'rules'=>$repo->rules(),
+            'rules'=>$tab==='rules'?$repo->rules():[],'automation'=>$automationView,'manualRules'=>$automation->manualRules(),
+            'orderAutomation'=>$detail?['rules'=>$automation->explain((int)$detail['id']),'runs'=>$automation->log(12,(int)$detail['id'])]:['rules'=>[],'runs'=>[]],
             'series'=>$series,
             'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>''],
-            'documents'=>$documents,'documentSeriesFilter'=>$documentSeriesFilter,
+            'documents'=>$documents,'documentSeriesFilter'=>$documentSeriesFilter,'ksefAccounts'=>$ksef->accounts(),'ksefTargets'=>$ksef->targets($ksefDocumentIds),'ksefSubmissions'=>$ksefSubmissions,
             'shipments'=>$this->db()->fetchAll('SELECT * FROM om_shipments ORDER BY id DESC LIMIT 100'),
-            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
+            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'orderGeneralSettings'=>$orderGeneralSettings,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
             'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
@@ -195,15 +239,18 @@ final class OrdersController extends Controller
             if ($id<1 || $status<1) { throw new InvalidArgumentException('Nieprawidłowe zamówienie lub status.'); }
             $user=$this->currentUser(); $actor=(string)($user['name']??$user['email']??('użytkownik #'.($user['id']??0)));
             $repo=$this->repository(); $db=$this->db();
-            $db->transaction(function () use ($repo,$db,$id,$status,$actor) {
-                $order=$repo->order($id);
-                if ((int)$order['status_id']!==$status) { $repo->changeStatus($id,$status,$actor); }
-                $note=mb_substr((string)($_POST['note']??''),0,10000);
-                $tags=mb_substr((string)($_POST['tags']??''),0,1000);
-                if ((string)$order['note']!==$note || (string)$order['tags']!==$tags) {
-                    $db->update('om_orders',['note'=>$note,'tags'=>$tags,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
-                }
-            });
+            try {
+                $db->transaction(function () use ($repo,$db,$id,$status,$actor) {
+                    $order=$repo->order($id);
+                    if ((int)$order['status_id']!==$status) { $repo->changeStatus($id,$status,$actor); }
+                    $note=mb_substr((string)($_POST['note']??''),0,10000);
+                    $tags=mb_substr((string)($_POST['tags']??''),0,1000);
+                    if ((string)$order['note']!==$note || (string)$order['tags']!==$tags) {
+                        $db->update('om_orders',['note'=>$note,'tags'=>$tags,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
+                    }
+                });
+            } catch (\Throwable $e) { $repo->discardAutomations(); throw $e; }
+            $repo->flushAutomations();
             $this->jsonResponse(['ok'=>true,'saved_at'=>date('H:i:s')]);
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
@@ -232,7 +279,7 @@ final class OrdersController extends Controller
         $user=$this->writeGuard(); $repo=$this->repository(); $db=$this->db();
         $actor=(string)($user['name']??$user['email']??('użytkownik #'.$user['id']));
         $op=(string)($_POST['operation']??''); $tab=(string)($_POST['tab']??'list'); $id=(int)($_POST['order_id']??0);
-        $successMessage='Zapisano.';
+        $successMessage='Zapisano.'; $redirectQuery='';
         try {
             switch ($op) {
                 case 'discover':
@@ -255,7 +302,8 @@ final class OrdersController extends Controller
                 case 'status':
                     $name=$this->required('name',100); $color=(string)($_POST['color']??'');
                     if (!preg_match('/^#[a-fA-F0-9]{6}$/D',$color)) { throw new InvalidArgumentException('Nieprawidłowy kolor.'); }
-                    $data=['name'=>$name,'color'=>$color,'position'=>(int)($_POST['position']??0)];
+                    $groupName=$this->required('group_name',100);
+                    $data=['name'=>$name,'color'=>$color,'position'=>(int)($_POST['position']??0),'group_name'=>$groupName];
                     if (!empty($_POST['status_id'])) { $repo->requireStatus((int)$_POST['status_id']); $db->update('om_statuses',$data,'id=:id',['id'=>(int)$_POST['status_id']]); }
                     else { $db->insert('om_statuses',$data); }
                     break;
@@ -326,24 +374,49 @@ final class OrdersController extends Controller
                     $successMessage=$deleted.' usuniętych zamówień.'.($skipped?' Pominięto: '.implode(', ',$skipped).'.':'');
                     $tab='list';
                     break;
-                case 'rule':
-                    $conditions=[]; $actions=[];
-                    foreach (['account_id','status_id','paid'] as $field) { if (isset($_POST['when_'.$field]) && $_POST['when_'.$field]!=='') { $conditions[$field]=(int)$_POST['when_'.$field]; } }
-                    if (isset($conditions['status_id'])) { $repo->requireStatus($conditions['status_id']); }
-                    if (!empty($_POST['then_status_id'])) { $repo->requireStatus((int)$_POST['then_status_id']); $actions['status_id']=(int)$_POST['then_status_id']; }
-                    foreach (['tag','note'] as $field) { if (trim((string)($_POST['then_'.$field]??''))!=='') { $actions[$field]=substr(trim((string)$_POST['then_'.$field]),0,500); } }
-                    if (!$actions) { throw new InvalidArgumentException('Dodaj przynajmniej jedną akcję.'); }
-                    $trigger=(string)($_POST['trigger_name']??'');
-                    if (!in_array($trigger,['import','status'],true)) { throw new InvalidArgumentException('Nieprawidłowy wyzwalacz.'); }
-                    if (isset($conditions['account_id']) && !$db->fetchColumn('SELECT id FROM om_accounts WHERE id=:id',['id'=>$conditions['account_id']])) { throw new InvalidArgumentException('Nieznane konto w warunku.'); }
-                    if (isset($conditions['paid']) && !in_array($conditions['paid'],[0,1],true)) { throw new InvalidArgumentException('Nieprawidłowy warunek płatności.'); }
-                    $db->insert('om_rules',['name'=>$this->required('name',150),'trigger_name'=>$trigger,'conditions_json'=>OrderRepository::json($conditions),'actions_json'=>OrderRepository::json($actions),'enabled'=>1]);
+                case 'rule_save':
+                    $ruleId=max(0,(int)($_POST['rule_id']??0));
+                    $ruleInput=json_decode((string)($_POST['rule_json']??''),true);
+                    try {
+                        if (!is_array($ruleInput) || strlen((string)$_POST['rule_json'])>200000) { throw new InvalidArgumentException('Nie udało się odczytać formularza automatyzacji. Odśwież stronę.'); }
+                        $savedId=$repo->automation()->saveRule($ruleId,$ruleInput);
+                    } catch (InvalidArgumentException $e) {
+                        if (is_array($ruleInput)) { $_SESSION['orders_rule_draft']=['id'=>$ruleId,'rule'=>$ruleInput]; }
+                        $redirectQuery='&rule='.($ruleId>0?$ruleId:'new').'#oa-editor';
+                        throw $e;
+                    }
+                    $successMessage=$ruleId>0?'Zapisano automatyzację.':'Utworzono automatyzację.';
+                    $redirectQuery='#oa-rule-'.$savedId;
                     break;
-                case 'toggle_rule': $db->update('om_rules',['enabled'=>empty($_POST['enabled'])?0:1],'id=:id',['id'=>(int)$_POST['rule_id']]); break;
+                case 'toggle_rule':
+                    $db->update('om_rules',['enabled'=>empty($_POST['enabled'])?0:1,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>(int)$_POST['rule_id']]);
+                    $successMessage=empty($_POST['enabled'])?'Wstrzymano automatyzację.':'Włączono automatyzację.';
+                    $redirectQuery='#oa-rule-'.(int)$_POST['rule_id'];
+                    break;
+                case 'rule_duplicate':
+                    $copyId=$repo->automation()->duplicateRule((int)($_POST['rule_id']??0));
+                    $successMessage='Utworzono wstrzymaną kopię automatyzacji. Sprawdź ją i włącz.';
+                    $redirectQuery='&rule='.$copyId.'#oa-editor';
+                    break;
+                case 'rule_delete':
+                    $repo->automation()->deleteRule((int)($_POST['rule_id']??0));
+                    $successMessage='Usunięto automatyzację i jej dziennik.';
+                    break;
+                case 'rule_move':
+                    $repo->automation()->moveRule((int)($_POST['rule_id']??0),($_POST['direction']??'')==='up'?'up':'down');
+                    $successMessage='Zmieniono kolejność wykonywania automatyzacji.';
+                    $redirectQuery='#oa-rule-'.(int)($_POST['rule_id']??0);
+                    break;
+                case 'run_rule':
+                    $ids=isset($_POST['ids'])?array_values(array_unique(array_filter(array_map('intval',(array)$_POST['ids'])))):($id>0?[$id]:[]);
+                    if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
+                    $report=$repo->automation()->runManual($ids,(int)($_POST['rule_id']??0),$actor);
+                    if (isset($_POST['ids'])) { $tab='list'; $id=0; } else { $redirectQuery='#om-automation'; }
+                    if ($report['errors']) { throw new InvalidArgumentException($report['message']); }
+                    $successMessage=$report['message'];
+                    break;
                 case 'preview_rule':
-                    $matched=$repo->runRules($id,'import','preview',true);
-                    $this->setFlash('success','Test bez wykonania — pasujące reguły: '.($matched?implode(', ',$matched):'brak'));
-                    $this->redirect('./index.php?controller=orders&id='.$id);
+                    $this->redirect('./index.php?controller=orders&id='.$id.'#om-automation');
                     break;
                 case 'seller':
                     $repo->saveSetting('seller',['name'=>$this->required('name',200),'address'=>$this->required('address',1000),'nip'=>$this->required('nip',30),'bank'=>substr((string)($_POST['bank']??''),0,100)]);
@@ -391,12 +464,13 @@ final class OrdersController extends Controller
                     $documentId=(int)($_POST['document_id']??0);
                     $document=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$documentId]);
                     if (!$document) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
+                    if ($ksefLock=$this->ksef($repo)->lockReason($documentId)) { throw new InvalidArgumentException($ksefLock); }
                     $buyer=trim((string)($_POST['buyer']??''));
                     if ($buyer==='') { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
                     $calculated=OrderDocumentService::calculate($_POST['items']??[]);
                     $old=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
                     $snapshot=array_replace($old,$calculated,['buyer'=>$buyer]);
-                    if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['parent_number']=$old['parent_number']; }
+                    if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['difference_net_cents']=$snapshot['net_cents']-(int)$old['before']['net_cents']; $snapshot['difference_tax_cents']=$snapshot['tax_cents']-(int)$old['before']['tax_cents']; $snapshot['parent_number']=$old['parent_number']; }
                     $snapshot['edited_at']=gmdate('Y-m-d H:i:s');
                     $db->update('om_documents',['snapshot_json'=>OrderRepository::json($snapshot)],'id=:id',['id'=>$documentId]);
                     $repo->event((int)$document['order_id'],'Zaktualizowano dokument '.$document['number'].' (edycja nabywcy/pozycji).',$actor);
@@ -407,6 +481,7 @@ final class OrdersController extends Controller
                     $document=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$documentId]);
                     if (!$document) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
                     if ($db->fetchColumn('SELECT id FROM om_documents WHERE parent_id=:id LIMIT 1',['id'=>$documentId])) { throw new InvalidArgumentException('Nie można usunąć dokumentu, do którego wystawiono korektę. Usuń najpierw korektę.'); }
+                    if ($ksefLock=$this->ksef($repo)->lockReason($documentId)) { throw new InvalidArgumentException($ksefLock); }
                     $db->delete('om_documents','id=:id',['id'=>$documentId]);
                     $repo->event((int)$document['order_id'],'Usunięto dokument '.$document['number'].'.',$actor);
                     $successMessage='Usunięto dokument '.$document['number'].'.';
@@ -421,6 +496,7 @@ final class OrdersController extends Controller
                         }
                     }
                     $doc=(new OrderDocumentService($repo))->issue($id,$_POST,$actor);
+                    $this->ksefAutoSend($repo,$doc,$actor);
                     if ($receiptPrinterId>0) {
                         try { $fiscalJobId=(new PrintAgentRepository($db))->queueFiscalReceipt($id,$receiptPrinterId,$actor,$doc); }
                         catch (\Throwable $printError) { throw new InvalidArgumentException('Paragon został wystawiony, ale nie trafił do drukarki: '.$printError->getMessage(),0,$printError); }
@@ -446,6 +522,7 @@ final class OrdersController extends Controller
                         }
                     }
                     $doc=(new OrderDocumentService($repo))->issue($id,$this->documentPayload($repo,$repo->order($id),$kind,(string)($_POST['request_key']??''),$series)+['series_id'=>$series['id']],$actor);
+                    $this->ksefAutoSend($repo,$doc,$actor);
                     if ($kind==='receipt' && $receiptPrinterId>0) {
                         $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                         try { $fiscalJobId=$printAgents->queueFiscalReceipt($id,$receiptPrinterId,$actor,$doc); }
@@ -466,7 +543,43 @@ final class OrdersController extends Controller
                     $payload=$this->documentPayload($repo,$repo->order($id),$parent['kind'],(string)($_POST['request_key']??''),$series);
                     $payload+=['series_id'=>$series['id'],'parent_id'=>$parent['id'],'reason'=>$reason];
                     $doc=(new OrderDocumentService($repo))->issue($id,$payload,$actor);
+                    $this->ksefAutoSend($repo,$doc,$actor);
                     $this->redirect('./index.php?controller=orders&action=printdocument&id='.$doc);
+                    break;
+                case 'document_correction':
+                    $parent=$db->fetch('SELECT id,kind,order_id FROM om_documents WHERE id=:id AND order_id=:order_id',['id'=>(int)($_POST['parent_id']??0),'order_id'=>$id]);
+                    if (!$parent || !in_array($parent['kind'],['invoice','receipt','invoice_correction','receipt_correction'],true)) { throw new InvalidArgumentException('Wybierz istniejący dokument do korekty.'); }
+                    $kind=strpos($parent['kind'],'invoice')===0?'invoice_correction':'receipt_correction';
+                    $seriesId=(int)($_POST['series_id']??0);
+                    $series=$seriesId>0?$db->fetch('SELECT id FROM om_series WHERE id=:id AND kind=:kind',['id'=>$seriesId,'kind'=>$kind]):$this->documentSeries($db,$kind);
+                    if (!$series) { throw new InvalidArgumentException('Wybierz serię korekt właściwego typu.'); }
+                    $payload=$_POST; $payload['series_id']=$series['id']; $payload['parent_id']=$parent['id'];
+                    $doc=(new OrderDocumentService($repo))->issue($id,$payload,$actor);
+                    $this->ksefAutoSend($repo,$doc,$actor);
+                    $this->redirect('./index.php?controller=orders&action=printdocument&id='.$doc);
+                    break;
+                case 'ksef_account':
+                    $ksefAccountId=(int)($_POST['ksef_account_id']??0);
+                    $tab='general'; $redirectQuery='#om-ksef';
+                    $savedAccountId=$this->ksef($repo)->saveAccount($ksefAccountId,$_POST,$actor);
+                    $successMessage=$ksefAccountId>0?'Zapisano konto KSeF.':'Dodano konto KSeF. Przypisz je do serii faktur w zakładce Dokumenty.';
+                    $redirectQuery='#om-ksef-'.$savedAccountId;
+                    break;
+                case 'ksef_account_delete':
+                    $tab='general'; $redirectQuery='#om-ksef';
+                    $successMessage='Usunięto konto KSeF „'.$this->ksef($repo)->deleteAccount((int)($_POST['ksef_account_id']??0)).'”.';
+                    break;
+                case 'ksef_test':
+                    $tab='general'; $redirectQuery='#om-ksef-'.(int)($_POST['ksef_account_id']??0);
+                    $successMessage=$this->ksef($repo)->testConnection((int)($_POST['ksef_account_id']??0));
+                    break;
+                case 'ksef_send':
+                case 'ksef_refresh':
+                    $documentId=(int)($_POST['document_id']??0);
+                    $ksef=$this->ksef($repo);
+                    $submission=$op==='ksef_send'?$ksef->send($documentId,$actor):$ksef->refresh($documentId,$actor);
+                    $successMessage=KsefService::describe($submission).(!empty($submission['upo_error'])?' Nie pobrano UPO: '.$submission['upo_error']:'');
+                    if ($submission['state']==='rejected') { throw new InvalidArgumentException($successMessage); }
                     break;
                 case 'create_shipment':
                     (new OrderShipmentService($repo))->create($id,(int)($_POST['carrier_account_id']??0),$_POST,$actor);
@@ -578,15 +691,26 @@ final class OrdersController extends Controller
                     $repo->saveSetting('shipping_defaults',['default_carrier_account_id'=>$accountId,'default_package'=>$defaultPackage,'service'=>$service,'apaczka_service_id'=>(int)($_POST['apaczka_service_id']??0),'pickup_type'=>($_POST['pickup_type']??'SELF')==='COURIER'?'COURIER':'SELF','default_point'=>substr(trim((string)($_POST['default_point']??'')),0,100),'content'=>mb_substr(trim((string)($_POST['shipment_content']??'')),0,180,'UTF-8'),'cod_bank_account'=>$bankAccount,'presets'=>$presets,'sender'=>['name'=>substr(trim((string)($_POST['sender_name']??'')),0,150),'email'=>substr(trim((string)($_POST['sender_email']??'')),0,200),'phone'=>substr(trim((string)($_POST['sender_phone']??'')),0,30),'street'=>substr(trim((string)($_POST['sender_street']??'')),0,150),'building'=>substr(trim((string)($_POST['sender_building']??'')),0,30),'postal_code'=>substr(trim((string)($_POST['sender_postal_code']??'')),0,20),'city'=>substr(trim((string)($_POST['sender_city']??'')),0,100)]]);
                     $repo->saveSetting('document_defaults',['vat'=>in_array((string)($_POST['default_vat']??'23'),['23','8','5','0','zw','np'],true)?(string)$_POST['default_vat']:'23']);
                     break;
+                case 'order_general_settings':
+                    $currency=strtoupper(trim((string)($_POST['default_currency']??'PLN')));
+                    if (!preg_match('/^[A-Z]{3}$/D',$currency)) { throw new InvalidArgumentException('Waluta musi być trzyliterowym kodem, np. PLN.'); }
+                    $repo->saveSetting('order_general',['default_currency'=>$currency]);
+                    $successMessage='Zapisano ustawienia ogólne.'; $tab='general';
+                    break;
                 default: throw new InvalidArgumentException('Nieznana operacja.');
             }
+            $repo->flushAutomations();
             $this->setFlash('success',$successMessage);
         } catch (\Throwable $e) {
+            $repo->discardAutomations();
             $safeMessage=$e instanceof InvalidArgumentException ? $e->getMessage() : 'Nie udało się zapisać. Sprawdź, czy numer dokumentu lub przesyłki nie został już użyty.';
             if ($op==='publish_shipment') {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'source_shipment','order_id'=>$id]);
                 $reason=mb_substr(trim((string)$e->getMessage()),0,300,'UTF-8');
                 $safeMessage='Nie udało się przekazać numeru przesyłki do źródła. '.$reason.' [ID: '.$diagnostic['reference'].']';
+            } elseif (in_array($op,['ksef_test','ksef_send','ksef_refresh'],true) && !$e instanceof InvalidArgumentException) {
+                $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'ksef','order_id'=>$id]);
+                $safeMessage='Operacja KSeF nie powiodła się: '.mb_substr(trim($e->getMessage()),0,300,'UTF-8').' [ID: '.$diagnostic['reference'].']';
             } elseif (in_array($op,['create_shipment','refresh_shipment','cancel_shipment'],true)) {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'shipment','order_id'=>$id]);
                 $reason=$e instanceof InvalidArgumentException ? $e->getMessage() : $diagnostic['message'];
@@ -594,7 +718,8 @@ final class OrdersController extends Controller
             }
             $this->setFlash('error',$safeMessage);
         }
-        $this->redirect('./index.php?controller=orders&tab='.rawurlencode($tab).($id?'&id='.$id:''));
+        if ($op==='document_correction' && !empty($_POST['parent_id'])) { $this->redirect('./index.php?controller=orders&action=correctdocument&id='.(int)$_POST['parent_id']); }
+        $this->redirect('./index.php?controller=orders&tab='.rawurlencode($tab).($id?'&id='.$id:'').$redirectQuery);
     }
     private function required(string $key,int $limit): string
     {
@@ -604,19 +729,11 @@ final class OrdersController extends Controller
     }
     private function printAgentApiBase(): string
     {
-        $config=Config::get('app');
-        $public=rtrim((string)($config['public_base_url']??''),'/');
-        if ($public==='') { return 'print-agent-api.php'; }
-        return preg_replace('#/index\.php$#','/print-agent-api.php',$public)?:'print-agent-api.php';
+        return PrintAgentRepository::apiBase();
     }
     private function documentSeries($db,string $kind): array
     {
-        $series=$db->fetch('SELECT * FROM om_series WHERE kind=:kind ORDER BY id LIMIT 1',['kind'=>$kind]);
-        if ($series) { return $series; }
-        $labels=['invoice'=>['Faktury','FV'],'receipt'=>['Paragony','PAR'],'invoice_correction'=>['Korekty faktur','KOR-FV'],'receipt_correction'=>['Korekty paragonów','KOR-PAR']];
-        if (!isset($labels[$kind])) { throw new InvalidArgumentException('Nieprawidłowy rodzaj dokumentu.'); }
-        $id=(int)$db->insert('om_series',['name'=>$labels[$kind][0],'kind'=>$kind,'pattern'=>$labels[$kind][1].'/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>null]);
-        return $db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$id]);
+        return OrderDocumentService::defaultSeries($db,$kind);
     }
     private function seriesNumbering(): ?array
     {
@@ -654,6 +771,12 @@ final class OrdersController extends Controller
             if ($correctKind==='' || !$this->db()->fetchColumn('SELECT id FROM om_series WHERE id=:id AND kind=:kind',['id'=>$correctionId,'kind'=>$correctKind])) { throw new InvalidArgumentException('Wybierz serię korekt właściwego typu.'); }
         }
         $settings['correct_series_id']=$correctionId;
+        $ksefAccountId=in_array($kind,['invoice','invoice_correction'],true)?(int)($_POST['ksef_account_id']??0):0;
+        if ($ksefAccountId>0) {
+            $this->ksef($this->repository());
+            if (!$this->db()->fetchColumn('SELECT id FROM om_ksef_accounts WHERE id=:id',['id'=>$ksefAccountId])) { throw new InvalidArgumentException('Wybierz istniejące konto KSeF.'); }
+        }
+        $settings['ksef_account_id']=$ksefAccountId;
         return $settings;
     }
     private function seriesPattern(array $numbering): string
@@ -678,33 +801,11 @@ final class OrdersController extends Controller
     }
     private function documentPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey,array $series=[]): array
     {
-        $settings=json_decode((string)($series['document_settings_json']??''),true)?:[];
-        $defaultVat=(string)(($repo->setting('document_defaults')['vat']??'23'));
-        if (!in_array($defaultVat,['23','8','5','0','zw','np'],true)) { $defaultVat='23'; }
-        $items=[]; $sum=0;
-        foreach ((array)($order['details']['items']??[]) as $item) {
-            $vat=($settings['vat_source']??'order')==='static'?(string)($settings['vat_rate']??$defaultVat):(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { $vat=$defaultVat; }
-            $quantity=max(0,(int)($item['quantity']??0)); $unit=(int)($item['unit_cents']??0); $sum+=$quantity*$unit;
-            $items[]=['name'=>(string)($item['name']??'Produkt'),'quantity'=>$quantity,'price'=>number_format($unit/100,2,'.',''),'vat'=>$vat];
-        }
-        $shipping=(int)($order['details']['shipping_cents']??0);
-        if ($shipping>0) {
-            $shippingVat=($settings['shipment_vat_type']??'order')==='static'?(string)($settings['shipment_vat']??$defaultVat):$defaultVat;
-            $shippingName=trim((string)($settings['shipment_name']??'Dostawa'))?:'Dostawa';
-            if (!empty($settings['add_shipment_name']) && !empty($order['details']['delivery'])) { $shippingName.=' — '.substr((string)$order['details']['delivery'],0,100); }
-            $items[]=['name'=>$shippingName,'quantity'=>1,'price'=>number_format($shipping/100,2,'.',''),'vat'=>$shippingVat]; $sum+=$shipping;
-        }
-        $difference=(int)$order['total_cents']-$sum;
-        if ($difference!==0) { $items[]=['name'=>$difference<0?'Rabat / korekta wartości':'Pozostałe opłaty','quantity'=>1,'price'=>number_format($difference/100,2,'.',''),'vat'=>$defaultVat]; }
-        $buyerLines=$buyerKind==='invoice'?(array)($order['details']['invoice_lines']??[]):(array)($order['details']['address_lines']??[]);
-        array_unshift($buyerLines,(string)$order['buyer_name']);
-        return ['request_key'=>$requestKey,'buyer'=>implode("\n",array_filter($buyerLines)),'items'=>$items];
+        return OrderDocumentService::orderPayload($repo,$order,$buyerKind,$requestKey,$series);
     }
     private function shippingDefaults(OrderRepository $repo): array
     {
-        $defaults=$repo->setting('shipping_defaults');
-        $base=['default_carrier_account_id'=>0,'default_package'=>'auto','service'=>'auto','apaczka_service_id'=>0,'pickup_type'=>'SELF','default_point'=>'','content'=>'Towar','cod_bank_account'=>'','presets'=>['small'=>['length'=>23,'width'=>16,'height'=>10,'weight'=>0.5],'medium'=>['length'=>30,'width'=>20,'height'=>15,'weight'=>1],'large'=>['length'=>40,'width'=>30,'height'=>20,'weight'=>2]],'sender'=>['name'=>'','email'=>'','phone'=>'','street'=>'','building'=>'','postal_code'=>'','city'=>'']];
-        return array_replace_recursive($base,$defaults);
+        return OrderShipmentService::defaults($repo);
     }
     private function allegroSellerId(OrderRepository $repo,int $sourceId): string
     {
@@ -730,29 +831,58 @@ final class OrdersController extends Controller
     }
     private function shipmentSuggestion(array $order,array $accounts,array $defaults): array
     {
-        $quantity=array_sum(array_map(static function ($item) { return max(0,(int)($item['quantity']??0)); },(array)($order['details']['items']??[])));
-        $size=$defaults['default_package']==='auto'?($quantity<=1?'small':($quantity<=4?'medium':'large')):$defaults['default_package'];
-        $delivery=strtolower((string)($order['details']['delivery']??'').' '.(string)($order['details']['pickup']??''));
-        $service=$defaults['service']==='auto'?((strpos($delivery,'paczkomat')!==false||strpos($delivery,'locker')!==false||!empty($order['details']['pickup']))?'inpost_locker_standard':'inpost_courier_standard'):$defaults['service'];
-        $selected=0; $reason='Pierwsze aktywne konto nadawcze';
-        foreach ($accounts as $account) {
-            if (!(int)$account['enabled']) { continue; }
-            $public=json_decode((string)$account['public_config_json'],true)?:[];
-            if ($order['platform']==='allegro' && $account['provider']==='allegro_wza' && (int)($public['order_account_id']??0)===(int)$order['account_id']) { $selected=(int)$account['id']; $reason='Dopasowano konto Wysyłam z Allegro do źródła zamówienia'; break; }
-            if (!$selected && (strpos($delivery,'inpost')!==false||strpos($delivery,'paczkomat')!==false) && $account['provider']==='inpost_shipx') { $selected=(int)$account['id']; $reason='Dopasowano InPost na podstawie metody dostawy'; }
-        }
-        if (!$selected && (int)$defaults['default_carrier_account_id']) { foreach ($accounts as $account) { if ((int)$account['id']===(int)$defaults['default_carrier_account_id']&&(int)$account['enabled']) { $selected=(int)$account['id']; $reason='Użyto globalnego konta domyślnego'; break; } } }
-        if (!$selected) { foreach ($accounts as $account) { if (!(int)$account['enabled'] || ($account['provider']==='allegro_wza' && $order['platform']!=='allegro')) { continue; } $selected=(int)$account['id']; $reason=$account['provider']==='apaczka'?'Dopasowano Apaczkę do zamówienia spoza Allegro':'Pierwsze zgodne konto nadawcze'; break; } }
-        return ['carrier_account_id'=>$selected,'reason'=>$reason,'preset'=>$size,'package'=>$defaults['presets'][$size],'service'=>$service];
+        return OrderShipmentService::suggestion($order,$accounts,$defaults);
     }
     public function printdocument(): void
     {
-        $this->requireModule('orders'); $this->repository();
+        $user=$this->requireModule('orders'); $this->repository();
         $document=$this->db()->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>(int)$this->input('id',0)]);
         if (!$document) { http_response_code(404); exit('Nie znaleziono dokumentu.'); }
         $document['snapshot']=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
+        $document['vat_summary']=[];
+        foreach ((array)($document['snapshot']['items']??[]) as $item) {
+            $vat=(string)($item['vat']??'');
+            if (!isset($document['vat_summary'][$vat])) { $document['vat_summary'][$vat]=['vat'=>$vat,'net_cents'=>0,'tax_cents'=>0,'gross_cents'=>0]; }
+            foreach (['net_cents','tax_cents','gross_cents'] as $field) { $document['vat_summary'][$vat][$field]+=(int)($item[$field]??0); }
+        }
+        $ksef=new KsefService(new OrderRepository($this->db())); $ksef->ensureSchema();
+        $document['ksef']=$ksef->latest([(int)$document['id']])[(int)$document['id']]??null;
         header('Cache-Control: no-store');
-        $smarty=SmartyFactory::create(); $smarty->assign('document',$document); $smarty->display('orders/print.tpl');
+        $smarty=SmartyFactory::create(); $smarty->assign(['document'=>$document,'canWrite'=>$this->moduleAccessLevel($user,'orders')==='edit']); $smarty->display('orders/print.tpl');
+    }
+    /** Downloads FA(3) XML preview (kind=xml) or the UPO of an accepted KSeF submission (kind=upo). */
+    public function ksefdownload(): void
+    {
+        $this->requireModule('orders');
+        try {
+            $ksef=$this->ksef($this->repository());
+            $documentId=(int)$this->input('id',0);
+            $file=(string)$this->input('kind','xml')==='upo'?$ksef->upo($documentId):$ksef->preview($documentId);
+            header('Content-Type: application/xml; charset=utf-8');
+            header('Content-Disposition: attachment; filename="'.$file['name'].'"');
+            header('Cache-Control: no-store, private');
+            echo $file['xml'];
+        } catch (InvalidArgumentException $e) { http_response_code(409); header('Content-Type: text/plain; charset=utf-8'); echo $e->getMessage(); }
+        catch (\Throwable $e) { $d=\App\Services\OrderSyncError::log($e,['stage'=>'ksef']); http_response_code(502); header('Content-Type: text/plain; charset=utf-8'); echo 'Nie udało się pobrać pliku z KSeF: '.$e->getMessage().' [ID: '.$d['reference'].']'; }
+    }
+    public function correctdocument(): void
+    {
+        $this->requireModuleWrite('orders'); $this->repository();
+        $parent=$this->db()->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>(int)$this->input('id',0)]);
+        if (!$parent || !in_array($parent['kind'],['invoice','receipt','invoice_correction','receipt_correction'],true)) { http_response_code(404); exit('Nie znaleziono dokumentu do korekty.'); }
+        $descendants=[(int)$parent['id']=>true]; $latest=null;
+        foreach ($this->db()->fetchAll('SELECT id,parent_id,number,snapshot_json FROM om_documents WHERE order_id=:order_id AND parent_id IS NOT NULL ORDER BY id',['order_id'=>$parent['order_id']]) as $candidate) {
+            if (isset($descendants[(int)$candidate['parent_id']])) { $descendants[(int)$candidate['id']]=true; $latest=$candidate; }
+        }
+        $parent['source_revision_id']=(int)($latest['id']??$parent['id']);
+        $parent['source_revision_number']=(string)($latest['number']??$parent['number']);
+        $parent['snapshot']=json_decode($latest['snapshot_json']??$parent['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
+        $correctionKind=strpos($parent['kind'],'invoice')===0?'invoice_correction':'receipt_correction';
+        $series=$this->db()->fetchAll('SELECT id,name FROM om_series WHERE kind=:kind ORDER BY id',['kind'=>$correctionKind]);
+        header('Cache-Control: no-store, private');
+        $smarty=SmartyFactory::create();
+        $smarty->assign(['parent'=>$parent,'series'=>$series,'csrf'=>$this->token(),'requestKey'=>bin2hex(random_bytes(24)),'correctionKind'=>$correctionKind,'today'=>(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format('Y-m-d'),'flashError'=>$this->getFlash('error')]);
+        $smarty->display('orders/correct.tpl');
     }
     public function labelshipment(): void
     {

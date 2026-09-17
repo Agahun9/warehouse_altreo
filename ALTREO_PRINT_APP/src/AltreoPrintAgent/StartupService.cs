@@ -39,6 +39,7 @@ public static class StartupService
             <plist version="1.0"><dict>
               <key>Label</key><string>{{BuildProfile.Identifier}}</string>
               <key>ProgramArguments</key><array><string>{{safePath}}</string><string>--background</string></array>
+              <key>AssociatedBundleIdentifiers</key><array><string>{{BuildProfile.Identifier}}</string></array>
               <key>RunAtLoad</key><true/>
               <key>KeepAlive</key><false/>
             </dict></plist>

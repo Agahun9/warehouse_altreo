@@ -11,6 +11,30 @@ final class OrderShipmentService
 {
     private $repo;
     public function __construct(OrderRepository $repo) { $this->repo=$repo; }
+    public static function defaults(OrderRepository $repo): array
+    {
+        $defaults=$repo->setting('shipping_defaults');
+        $base=['default_carrier_account_id'=>0,'default_package'=>'auto','service'=>'auto','apaczka_service_id'=>0,'pickup_type'=>'SELF','default_point'=>'','content'=>'Towar','cod_bank_account'=>'','presets'=>['small'=>['length'=>23,'width'=>16,'height'=>10,'weight'=>0.5],'medium'=>['length'=>30,'width'=>20,'height'=>15,'weight'=>1],'large'=>['length'=>40,'width'=>30,'height'=>20,'weight'=>2]],'sender'=>['name'=>'','email'=>'','phone'=>'','street'=>'','building'=>'','postal_code'=>'','city'=>'']];
+        return array_replace_recursive($base,$defaults);
+    }
+    /** Carrier account, package preset and InPost service suggested for an order. */
+    public static function suggestion(array $order,array $accounts,array $defaults): array
+    {
+        $quantity=array_sum(array_map(static function ($item) { return max(0,(int)($item['quantity']??0)); },(array)($order['details']['items']??[])));
+        $size=$defaults['default_package']==='auto'?($quantity<=1?'small':($quantity<=4?'medium':'large')):$defaults['default_package'];
+        $delivery=strtolower((string)($order['details']['delivery']??'').' '.(string)($order['details']['pickup']??''));
+        $service=$defaults['service']==='auto'?((strpos($delivery,'paczkomat')!==false||strpos($delivery,'locker')!==false||!empty($order['details']['pickup']))?'inpost_locker_standard':'inpost_courier_standard'):$defaults['service'];
+        $selected=0; $reason='Pierwsze aktywne konto nadawcze';
+        foreach ($accounts as $account) {
+            if (!(int)$account['enabled']) { continue; }
+            $public=json_decode((string)$account['public_config_json'],true)?:[];
+            if ($order['platform']==='allegro' && $account['provider']==='allegro_wza' && (int)($public['order_account_id']??0)===(int)$order['account_id']) { $selected=(int)$account['id']; $reason='Dopasowano konto Wysyłam z Allegro do źródła zamówienia'; break; }
+            if (!$selected && (strpos($delivery,'inpost')!==false||strpos($delivery,'paczkomat')!==false) && $account['provider']==='inpost_shipx') { $selected=(int)$account['id']; $reason='Dopasowano InPost na podstawie metody dostawy'; }
+        }
+        if (!$selected && (int)$defaults['default_carrier_account_id']) { foreach ($accounts as $account) { if ((int)$account['id']===(int)$defaults['default_carrier_account_id']&&(int)$account['enabled']) { $selected=(int)$account['id']; $reason='Użyto globalnego konta domyślnego'; break; } } }
+        if (!$selected) { foreach ($accounts as $account) { if (!(int)$account['enabled'] || ($account['provider']==='allegro_wza' && $order['platform']!=='allegro')) { continue; } $selected=(int)$account['id']; $reason=$account['provider']==='apaczka'?'Dopasowano Apaczkę do zamówienia spoza Allegro':'Pierwsze zgodne konto nadawcze'; break; } }
+        return ['carrier_account_id'=>$selected,'reason'=>$reason,'preset'=>$size,'package'=>$defaults['presets'][$size],'service'=>$service];
+    }
 
     public function options(int $orderId,int $carrierAccountId): array
     {
@@ -129,6 +153,7 @@ final class OrderShipmentService
         $meta=['delivery_method'=>$deliveryMethod,'service_code'=>$serviceCode,'service_name'=>$serviceName,'carrier_name'=>$carrierName,'tracking_status'=>$provider==='allegro_wza'?'':$state,'tracking_updated_at'=>$provider==='allegro_wza'?'':gmdate('c')];
         $id=(int)$db->insert('om_shipments',['order_id'=>$orderId,'carrier_account_id'=>$carrierAccountId,'carrier'=>$carrier['name'],'tracking'=>$tracking,'weight'=>(string)$weight,'state'=>$state,'external_id'=>$external,'command_id'=>$requestKey,'payload_json'=>$this->shipmentPayload($provider,$response,$meta),'cod_amount_cents'=>$codAmountCents,'shipment_currency'=>(string)$order['currency'],'created_at'=>gmdate('Y-m-d H:i:s')]);
         $this->repo->event($orderId,'Utworzono przesyłkę przez '.$carrier['name'].'; status: '.$state,$actor);
+        $this->repo->automationEvent($orderId,'shipment_created',['shipment_id'=>$id,'carrier_account_id'=>$carrierAccountId]);
         return $id;
     }
 
@@ -178,6 +203,7 @@ final class OrderShipmentService
         $public=json_decode($carrier['public_config_json'],true,512,JSON_THROW_ON_ERROR); $secret=OrderSecretBox::decrypt($carrier['secret_config_json']);
         $state=$shipment['state']; $external=$shipment['external_id']; $tracking=$shipment['tracking']; $response=[]; $details=[];
         $stored=json_decode((string)($shipment['payload_json']??''),true); $meta=is_array($stored['meta']??null)?$stored['meta']:[];
+        $previousTrackingStatus=(string)($meta['tracking_status']??'');
         if ($carrier['provider']==='allegro_wza') {
             $account=$this->allegroAccount((int)$public['order_account_id']); $allegro=new AllegroService(true);
             if ($state==='SUCCESS') { $details=$allegro->shipmentDetails($account,(string)$external); $response=$details; $tracking=(string)($details['packages'][0]['waybill']??$tracking); }
@@ -217,6 +243,9 @@ final class OrderShipmentService
         }
         $db->update('om_shipments',['state'=>$state,'external_id'=>$external,'tracking'=>$tracking,'payload_json'=>$this->shipmentPayload((string)$carrier['provider'],$response,$meta)],'id=:id',['id'=>$shipmentId]);
         $this->repo->event((int)$shipment['order_id'],'Odświeżono przesyłkę '.$carrier['name'].'; status: '.$state,$actor);
+        if ((string)$state!==(string)$shipment['state'] || (string)($meta['tracking_status']??'')!==(string)$previousTrackingStatus) {
+            $this->repo->automationEvent((int)$shipment['order_id'],'shipment_status',['shipment_id'=>$shipmentId,'shipment_state'=>(string)$state]);
+        }
     }
 
     public function cancel(int $shipmentId,string $actor): void

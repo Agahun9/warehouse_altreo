@@ -17,6 +17,7 @@ $pdo=new PDO('sqlite::memory:'); $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMO
 foreach (['pdo'=>$pdo,'config'=>['driver'=>'sqlite']] as $name=>$value) { $property=$reflection->getProperty($name); $property->setValue($db,$value); }
 $repo=new OrderRepository($db); $repo->ensureSchema(); $repo->ensureSchema();
 check(count($repo->statuses())===6,'Schema idempotency');
+check(($repo->statuses()[0]['group_name']??'')==='Do realizacji','Default status groups seeded');
 check(in_array('fiscal_printer_id',array_column($db->fetchAll('PRAGMA table_info(om_series)'),'name'),true),'Series printer column exists');
 check(array_column($repo->paymentMethods(),'name')===['Przelew','Płatność przy odbiorze'] && (int)$repo->paymentMethods()[1]['is_cod']===1,'Default payment methods seeded');
 $repo->registerAccount('allegro',1,'Sklep A'); $repo->registerAccount('allegro',2,'Sklep B'); $repo->registerAccount('erli',1,'Sklep C');
@@ -58,6 +59,7 @@ check(OrderNormalizer::normalize('allegro',$old,$cutoff,$now)===null,'Reject fut
 $missing=$raw;unset($missing['lineItems'][0]['boughtAt']);rejects(fn()=>OrderNormalizer::normalize('allegro',$missing,$cutoff,$now),'Missing date');
 check($repo->import(1,$order),'Initial import'); check(!$repo->import(1,$order),'Duplicate updates'); check($repo->import(2,$order),'Same external ID, distinct account');
 check($repo->dashboard()['total']===2,'Uniqueness enforced');
+check($repo->listing(['group'=>'Do realizacji'])['total']===2 && $repo->listing(['group'=>'Zamknięte'])['total']===0,'Status group filter');
 $canonical=$repo->order(1);
 check($canonical['shipping_address']['postal_code']==='00-001' && $canonical['shipping_address']['street']==='Testowa' && $canonical['shipping_address']['building']==='12/3','Allegro delivery address canonical fields');
 check($canonical['details']['invoice_form']['company']==='Firma Test' && $canonical['details']['invoice_form']['nip']==='5252674798' && $canonical['details']['invoice_form']['postal_code']==='00-002','Allegro invoice address canonical fields');
@@ -83,6 +85,9 @@ $db->update('om_orders',['details_json'=>$legacyDetailsJson],'id=:id',['id'=>1])
 check($edited['details']['document_preference']==='invoice','Manual document preference preserved after sync');
 check($repo->listing(['q'=>'test@example','account_id'=>1])['total']===1,'Search with account filter');
 check($repo->listing(['q'=>"' OR 1=1 --"])['total']===0,'SQL injection search');
+check($repo->listing(['q'=>'TEST@EXAMPLE'])['total']>=1,'Search is case-insensitive');
+check($repo->listing(['q'=>'test@example zzz-nonexistent'])['total']===0,'Search requires every word to match');
+check($repo->listing(['q'=>'100%'])['total']===0,'Search escapes LIKE wildcards');
 $erli=['id'=>'e1','created'=>'2026-09-08T10:00:00Z','status'=>'purchased','totalPrice'=>1230,'currency'=>'PLN','items'=>[['name'=>'E','quantity'=>1,'unitPrice'=>1230,'taxRate'=>'TAX_23']]];
 $en=OrderNormalizer::normalize('erli',$erli,$cutoff,$now); check($en['total_cents']===1230 && $en['details']['items'][0]['vat']==='23','Erli cents and VAT');
 $repo->import(3,$en);
@@ -95,6 +100,11 @@ $miraklOrder=OrderNormalizer::normalize('empik',$mirakl,$cutoff,$now);
 check($miraklOrder['total_cents']===1230,'Mirakl money');
 check($miraklOrder['details']['items'][0]['image_url']==='https://img.example.invalid/empik.jpg' && $miraklOrder['details']['items'][0]['product_sku']==='P-1','Empik image and identifiers normalization');
 check($miraklOrder['details']['source_payment_method']==='CARD','Marketplace payment method preserved');
+$empikLocker=$mirakl;
+$empikLocker['shipping_type_label']='Paczkomaty InPost';
+$empikLocker['customer']=['shipping_address'=>['firstname'=>'BUS03M','lastname'=>'','additional_info'=>'Na parkingu po prawej stronie','street_1'=>'Wojska Polskiego','street_2'=>'33','zip_code'=>'28-100','city'=>'Busko-Zdrój'],'billing_address'=>['firstname'=>'Anna','lastname'=>'Testowa']];
+$lockerOrder=OrderNormalizer::normalize('empik',$empikLocker,$cutoff,$now);
+check($lockerOrder['details']['pickup']==='BUS03M' && $lockerOrder['details']['address']['firstName']==='' && $lockerOrder['buyer_name']==='Anna Testowa','Empik locker code mapped to pickup instead of customer name');
 $repo->registerAccount('empik',7,'Empik test');
 $empikAccountId=(int)$db->fetchColumn('SELECT id FROM om_accounts WHERE platform=:platform AND source_id=:source',['platform'=>'empik','source'=>7]);
 $repo->import($empikAccountId,$miraklOrder);
@@ -110,7 +120,14 @@ $miraklCod['customer']=['shipping_address'=>['firstname'=>'Ewelina','lastname'=>
 $miraklCodOrder=OrderNormalizer::normalize('empik',$miraklCod,$cutoff,$now);
 check($miraklCodOrder['details']['cash_on_delivery']===1 && $miraklCodOrder['paid']===0,'Mirakl COD recognized from delivery label');
 check($miraklCodOrder['email']==='relay@example.invalid' && $miraklCodOrder['phone']==='+48123123123','Mirakl customer contact normalization');
+$miraklAccepted=$miraklCod;$miraklAccepted['order_additional_fields']=[['code'=>'customer-email','type'=>'STRING','value'=>'kupujacy@example.invalid']];
+check(OrderNormalizer::normalize('empik',$miraklAccepted,$cutoff,$now)['email']==='kupujacy@example.invalid','Mirakl customer-email additional field used after acceptance');
 check($miraklCodOrder['details']['address']['street']==='Testowa' && $miraklCodOrder['details']['address']['buildingNumber']==='37' && $miraklCodOrder['details']['address']['zip']==='23-204' && $miraklCodOrder['details']['address']['country']==='PL','Mirakl delivery address normalization');
+check($miraklOrder['paid']===0,'Mirakl order without customer_debited_date stays unpaid');
+$miraklPaid=$mirakl;$miraklPaid['customer_debited_date']='2026-09-08T11:00:00Z';
+check(OrderNormalizer::normalize('empik',$miraklPaid,$cutoff,$now)['paid']===1,'Mirakl payment recognized from OR11 customer_debited_date');
+$miraklCod['customer_debited_date']='2026-09-08T11:00:00Z';
+check(OrderNormalizer::normalize('empik',$miraklCod,$cutoff,$now)['paid']===0,'Mirakl COD never marked paid');
 check($repo->savePaymentMapping('allegro','',1)===1 && $repo->order(1)['details']['payment_method']==='Pobranie','Payment mapping preserves manually edited order');
 rejects(fn()=>OrderNormalizer::money('1e3'),'Reject scientific money'); rejects(fn()=>OrderNormalizer::money('12.345'),'Reject subcent money');
 $calc=OrderDocumentService::calculate([['name'=>'Test','quantity'=>2,'price'=>'12.30','vat'=>'23']]);
@@ -197,12 +214,24 @@ $stub->pages=[['checkoutForms'=>[],'totalCount'=>0]];$sync->sync(true,1);
 $nextWindow=json_decode($db->fetchColumn('SELECT cursor_json FROM om_accounts WHERE id=1'),true);
 check($nextWindow['updated_from']===$split['to'] && $nextWindow['to']===$split['horizon'],'Split window resumes remaining range');
 $db->update('om_accounts',['enabled'=>0],'id=:id',['id'=>1]);check($sync->sync(false,1)===[],'Disabled account not polled');
+$miraklStub = new class {
+    public $pages=[];
+    public function listAccounts(): array { return [['id'=>7,'is_active'=>1,'name'=>'Empik test']]; }
+    public function readOrderPage(array $account,string $from,string $to,string $cursor='',string $updatedFrom=''): array { return array_shift($this->pages) ?? ['orders'=>[],'total_count'=>0]; }
+};
+$syncRef->getProperty('services')->setValue($sync,['allegro'=>$stub,'empik'=>$miraklStub]);
+$paidLater=$mirakl;$paidLater['created_date']=gmdate('c',time()-10*86400);$paidLater['order_state']='SHIPPING';$paidLater['customer_debited_date']=gmdate('c',time()-60);
+$unknownOld=$paidLater;$unknownOld['order_id']='m-old-unknown';
+$miraklStub->pages=[['orders'=>[$paidLater,$unknownOld],'total_count'=>2]];
+$result=$sync->sync(true,$empikAccountId);
+check($result[0]['added']===0 && $result[0]['updated']===1 && $result[0]['skipped']===1 && !$db->fetchColumn('SELECT id FROM om_orders WHERE external_id=:e',['e'=>'m-old-unknown']),'Orders older than seven days are updated but never created');
+check((int)$db->fetchColumn('SELECT paid FROM om_orders WHERE id=:id',['id'=>$empikOrderId])===1 && (int)$db->fetchColumn('SELECT COUNT(*) FROM om_events WHERE order_id=:id AND message=:m',['id'=>$empikOrderId,'m'=>'Płatność potwierdzona w źródle.'])===1,'Late Mirakl payment updates existing order and history');
 
 // Compile and render all Smarty branches, with synthetic records only.
 $smarty=App\Core\SmartyFactory::create();
 $smarty->setCompileDir(sys_get_temp_dir().'/om-smarty-test');
-$smarty->assign(['csrf'=>'test','canWrite'=>true,'flashSuccess'=>null,'flashError'=>null,'listing'=>$repo->listing([]),'filters'=>['q'=>'','status_id'=>'','account_id'=>'','platform'=>'','paid'=>'','date_from'=>'','date_to'=>'','amount_from'=>'','amount_to'=>'','sort'=>'newest'],'listQuery'=>'','activeFilterCount'=>0,'dashboard'=>$repo->dashboard(),'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),'detail'=>$repo->order(1),'events'=>[],'orderDocs'=>$db->fetchAll('SELECT * FROM om_documents'),'orderShipments'=>[],'mappings'=>[],'rules'=>$repo->rules(),'series'=>$db->fetchAll('SELECT * FROM om_series'),'seller'=>['name'=>'Test','address'=>'Test','nip'=>'TEST','bank'=>''],'documents'=>$db->fetchAll('SELECT * FROM om_documents'),'shipments'=>[],'carrierAccounts'=>[],'sourceCarrierOptions'=>App\Services\OrderMarketplaceShipmentService::carrierOptions(),'printStations'=>[],'printJobs'=>[],'printFiscalPrinters'=>[],'printFiscalJobs'=>[],'receiptPrinterSettings'=>['printer_id'=>0],'printAgentApiUrl'=>'https://example.test/print-agent-api.php','documentKey'=>str_repeat('a',40)]);
-foreach (['list','accounts','statuses','rules','documents','shipments','payments','printing'] as $tab) { $smarty->assign('tab',$tab);$html=$smarty->fetch('orders/index.tpl');check(strpos($html,'Centrum zamówień')!==false,'Render '.$tab); }
+$smarty->assign(['csrf'=>'test','canWrite'=>true,'flashSuccess'=>null,'flashError'=>null,'listing'=>$repo->listing([]),'filters'=>['q'=>'','status_id'=>'','group'=>'','account_id'=>'','platform'=>'','paid'=>'','date_from'=>'','date_to'=>'','amount_from'=>'','amount_to'=>'','sort'=>'newest'],'listQuery'=>'','activeFilterCount'=>0,'dashboard'=>$repo->dashboard(),'statusGroups'=>array_reduce($repo->dashboard()['statuses'],static function ($groups,$status) { $name=$status['group_name']; if (!isset($groups[$name])) { $groups[$name]=['name'=>$name,'total'=>0,'statuses'=>[]]; } $groups[$name]['total']+=(int)$status['total']; $groups[$name]['statuses'][]=$status; return $groups; },[]),'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),'detail'=>$repo->order(1),'events'=>[],'orderDocs'=>$db->fetchAll('SELECT * FROM om_documents'),'orderShipments'=>[],'mappings'=>[],'rules'=>$repo->rules(),'series'=>$db->fetchAll('SELECT * FROM om_series'),'seller'=>['name'=>'Test','address'=>'Test','nip'=>'TEST','bank'=>''],'documents'=>$db->fetchAll('SELECT * FROM om_documents'),'shipments'=>[],'carrierAccounts'=>[],'sourceCarrierOptions'=>App\Services\OrderMarketplaceShipmentService::carrierOptions(),'printStations'=>[],'printJobs'=>[],'printFiscalPrinters'=>[],'printFiscalJobs'=>[],'receiptPrinterSettings'=>['printer_id'=>0],'orderGeneralSettings'=>['default_currency'=>'PLN'],'printAgentApiUrl'=>'https://example.test/print-agent-api.php','documentKey'=>str_repeat('a',40)]);
+foreach (['list','accounts','statuses','rules','documents','shipments','payments','printing','general'] as $tab) { $smarty->assign('tab',$tab);$html=$smarty->fetch('orders/index.tpl');check(strpos($html,'Centrum zamówień')!==false,'Render '.$tab); }
 $receiptSeriesId=$db->insert('om_series',['name'=>'Paragony punkt A','kind'=>'receipt','pattern'=>'PA/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>7]);
 $smarty->assign(['series'=>array_merge($db->fetchAll('SELECT * FROM om_series WHERE id<>:id ORDER BY id',['id'=>$receiptSeriesId]),[['id'=>$receiptSeriesId,'name'=>'Paragony punkt A','kind'=>'receipt','pattern'=>'PA/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>7,'effective_printer_id'=>7]]),'printFiscalPrinters'=>[['id'=>7,'name'=>'Posnet punkt A','host'=>'127.0.0.1','port'=>6666,'enabled'=>1,'environment'=>'sandbox']]]);
 $smarty->assign('tab','documents');$seriesHtml=$smarty->fetch('orders/index.tpl');
@@ -222,6 +251,7 @@ $renderShipment=['id'=>1,'carrier'=>'Wysyłam z Allegro TEST','carrier_provider'
 $smarty->assign(['detail'=>$repo->order(1),'orderShipments'=>[$renderShipment]]);
 $detailHtml=$smarty->fetch('orders/index.tpl');
 check(strpos($detailHtml,'om-order-console')!==false && strpos($detailHtml,'data-inline-order-form')!==false && strpos($detailHtml,'id="om-data-grid"')!==false && strpos($detailHtml,'id="om-shipping"')!==false,'Compact order console renders');
+check(strpos($detailHtml,'form="om-issue-receipt" name="series_id" value="'.$receiptSeriesId.'"')!==false && strpos($detailHtml,'<div class="oc-doc-series">')!==false,'Receipt series renders as its own issue button');
 check(strpos($detailHtml,'STATUS U PRZEWOŹNIKA')!==false && strpos($detailHtml,'InPost Paczkomat 24/7')!==false && strpos($detailHtml,'W drodze')!==false,'Shipment status, carrier and service render');
 check(strpos($detailHtml,'Drukuj najnowszą')!==false && strpos($detailHtml,'Drukuj wszystkie')!==false,'Newest and all label actions render without Smarty syntax errors');
 $published=[];
@@ -251,7 +281,7 @@ $rejectingPublisher=new App\Services\OrderMarketplaceShipmentService($repo,['emp
 rejects(fn()=>$rejectingPublisher->publishShipment($rejectedShipmentId,'dpd','','Tester'),'Rejected marketplace publication throws');
 $rejectedPublication=json_decode((string)$db->fetchColumn('SELECT payload_json FROM om_shipments WHERE id=:id',['id'=>$rejectedShipmentId]),true)['meta']['source_publication'];
 check($rejectedPublication['state']==='rejected' && $rejectedPublication['attempted_at']!=='' && $rejectedPublication['sent_at']==='' && $rejectedPublication['received_at']==='','Rejected marketplace request is not displayed as sent');
-$doc=$db->fetch('SELECT * FROM om_documents WHERE id=2');$doc['snapshot']=json_decode($doc['snapshot_json'],true);$smarty->assign('document',$doc);check(strpos($smarty->fetch('orders/print.tpl'),'Faktura korygująca')!==false,'Render correction A4');
+$doc=$db->fetch('SELECT * FROM om_documents WHERE id=2');$doc['snapshot']=json_decode($doc['snapshot_json'],true);$doc['vat_summary']=[];foreach ($doc['snapshot']['items'] as $item) { $vat=$item['vat'];if (!isset($doc['vat_summary'][$vat])) $doc['vat_summary'][$vat]=['vat'=>$vat,'net_cents'=>0,'tax_cents'=>0,'gross_cents'=>0];foreach (['net_cents','tax_cents','gross_cents'] as $field) $doc['vat_summary'][$vat][$field]+=$item[$field]; }$smarty->assign('document',$doc);check(strpos($smarty->fetch('orders/print.tpl'),'Faktura korygująca')!==false,'Render correction A4');
 if (getenv('OM_PREVIEW_DIR')) {
     $dir=getenv('OM_PREVIEW_DIR'); if (!is_dir($dir)) mkdir($dir,0700,true);
     file_put_contents($dir.'/detail.html','<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:Inter,Arial,sans-serif}*{box-sizing:border-box}</style><style>'.file_get_contents(BASE_PATH.'/dist/css/orders.css').'</style>'.$detailHtml.'</html>');
@@ -275,4 +305,203 @@ check($seriesSnapshot['seller']['name']==='Firma dla serii' && $seriesSnapshot['
 check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===5,'Monthly counter advances after reset');
 $standard['request_key']=str_repeat('f',40);$nextStandard=$docService->issue(1,$standard,'test');
 check(strpos((string)$db->fetchColumn('SELECT number FROM om_documents WHERE id=:id',['id'=>$nextStandard]),'TEST/005/')===0,'Monthly counter does not reset again in same period');
+$parentCorrection=$db->fetch('SELECT * FROM om_documents WHERE id=2');$parentCorrection['snapshot']=json_decode($parentCorrection['snapshot_json'],true);$parentCorrection['source_revision_id']=2;$parentCorrection['source_revision_number']=$parentCorrection['number'];
+$smarty->assign(['parent'=>$parentCorrection,'series'=>[['id'=>2,'name'=>'Korekty']],'csrf'=>'test','requestKey'=>str_repeat('7',48),'correctionKind'=>'invoice_correction','today'=>'2026-09-16']);
+$correctionForm=$smarty->fetch('orders/correct.tpl');
+if (getenv('OM_PREVIEW_DIR')) file_put_contents(getenv('OM_PREVIEW_DIR').'/correct.html',$correctionForm);
+check(strpos($correctionForm,'Wystaw korektę')!==false && strpos($correctionForm,$parentCorrection['number'])!==false,'Correction form rendered from selected document');
+$reCorrection=['operation'=>'document_correction','series_id'=>2,'parent_id'=>2,'source_revision_id'=>2,'request_key'=>str_repeat('7',48),'buyer'=>'Nowy nabywca','seller_name'=>'Poprawiony sprzedawca','seller_address'=>'Nowa 2, Warszawa','seller_nip'=>'1234567890','seller_bank'=>'PL001','sale_date'=>'2026-09-15','issue_date'=>'2026-09-16','payment_due_date'=>'2026-09-23','currency'=>'PLN','order_number'=>'ZAM-1','payment_method'=>'Przelew testowy','amount_paid'=>'5.00','split_payment'=>'1','series_notes'=>'Po zmianie','reason'=>'Zmiana ilości i danych','items'=>[['name'=>'Test','quantity'=>2,'price'=>'12.30','vat'=>'23']]];
+$reCorrectionId=$docService->issue(1,$reCorrection,'test');
+$reSnapshot=json_decode($db->fetchColumn('SELECT snapshot_json FROM om_documents WHERE id=:id',['id'=>$reCorrectionId]),true);
+check($reSnapshot['before']['gross_cents']===1230 && $reSnapshot['gross_cents']===2460 && $reSnapshot['difference_cents']===1230 && $reSnapshot['seller']['name']==='Poprawiony sprzedawca' && $reSnapshot['buyer']==='Nowy nabywca' && $reSnapshot['payment_method']==='Przelew testowy' && $reSnapshot['amount_paid_cents']===500,'Correction of correction updates quantities, parties and payment');
+$invalidCorrection=$reCorrection;$invalidCorrection['request_key']=str_repeat('8',48);$invalidCorrection['source_revision_id']=$reCorrectionId;$invalidCorrection['currency']='EUR';rejects(fn()=>$docService->issue(1,$invalidCorrection,'test'),'Reject correction with unconverted currency');
+$invalidCorrection['currency']='PLN';$invalidCorrection['issue_date']='2026-02-30';rejects(fn()=>$docService->issue(1,$invalidCorrection,'test'),'Reject impossible issue date');
+$invalidCorrection['issue_date']='2026-09-16';$invalidCorrection['source_revision_id']=2;rejects(fn()=>$docService->issue(1,$invalidCorrection,'test'),'Reject stale correction form');
+$receiptSeriesId=$db->insert('om_series',['name'=>'Paragony korekta test','kind'=>'receipt','pattern'=>'PTEST/{YYYY}/{N}','next_number'=>1]);
+$receiptCorrectionSeriesId=$db->insert('om_series',['name'=>'Korekty paragonów test','kind'=>'receipt_correction','pattern'=>'KPTEST/{YYYY}/{N}','next_number'=>1]);
+$receiptInput=$input;$receiptInput['series_id']=$receiptSeriesId;$receiptInput['request_key']=str_repeat('9',48);$receiptId=$docService->issue(1,$receiptInput,'test');
+$receiptCorrection=$reCorrection;$receiptCorrection['series_id']=$receiptCorrectionSeriesId;$receiptCorrection['parent_id']=$receiptId;$receiptCorrection['source_revision_id']=$receiptId;$receiptCorrection['request_key']=str_repeat('0',48);$receiptCorrectionId=$docService->issue(1,$receiptCorrection,'test');
+check($db->fetchColumn('SELECT kind FROM om_documents WHERE id=:id',['id'=>$receiptCorrectionId])==='receipt_correction','Receipt can be corrected');
+foreach ([$docId=>'Faktura ',$receiptId=>'Paragon ',$reCorrectionId=>'Faktura korygująca',$receiptCorrectionId=>'Korekta paragonu'] as $printId=>$expectedTitle) {
+    $printRow=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$printId]);$printRow['snapshot']=json_decode($printRow['snapshot_json'],true);$printRow['vat_summary']=[];
+    foreach ($printRow['snapshot']['items'] as $item) { $vat=$item['vat'];if (!isset($printRow['vat_summary'][$vat])) $printRow['vat_summary'][$vat]=['vat'=>$vat,'net_cents'=>0,'tax_cents'=>0,'gross_cents'=>0];foreach (['net_cents','tax_cents','gross_cents'] as $field) $printRow['vat_summary'][$vat][$field]+=$item[$field]; }
+    $smarty->assign('document',$printRow);$html=$smarty->fetch('orders/print.tpl');
+    check(strpos($html,$expectedTitle)!==false && strpos($html,'m-document')===false && strpos($html,'Wartość brutto')!==false,'A4 layout for '.$expectedTitle);
+}
+
+// Automations: triggers → conditions → ordered actions, chains, loop protection, buttons, schedule.
+$db->query('DELETE FROM om_rule_runs'); $db->query('DELETE FROM om_rules');
+$automation=$repo->automation();
+$ruleBase=['enabled'=>true,'triggers'=>['order_created'],'actions'=>[['type'=>'add_tags','params'=>['tags'=>'x']]]];
+rejects(fn()=>$automation->saveRule(0,['name'=>'Bez wyzwalacza','triggers'=>[]]+$ruleBase),'Automation requires a trigger');
+rejects(fn()=>$automation->saveRule(0,['name'=>'Zły warunek','conditions'=>[['field'=>'nope','op'=>'in','value'=>['1']]]]+$ruleBase),'Automation rejects unknown condition');
+rejects(fn()=>$automation->saveRule(0,['name'=>'Zły status','actions'=>[['type'=>'set_status','params'=>['status_id'=>'999']]]]+$ruleBase),'Automation rejects unknown status');
+rejects(fn()=>$automation->saveRule(0,['name'=>'Brak efektów','actions'=>[]]+$ruleBase),'Automation requires an action');
+rejects(fn()=>$automation->saveRule(0,['name'=>'Webhook http','actions'=>[['type'=>'webhook','params'=>['url'=>'http://example.invalid/hook']]]]+$ruleBase),'Webhook requires https');
+rejects(fn()=>$automation->saveRule(0,['name'=>'Czas','triggers'=>['scheduled'],'options'=>['delay'=>['value'=>61,'unit'=>'days','from'=>'ordered']]]+$ruleBase),'Scheduled delay is limited');
+$packRule=$automation->saveRule(0,['name'=>'Allegro → pakowanie','enabled'=>true,'triggers'=>['order_created'],'conditions'=>[['field'=>'platform','op'=>'in','value'=>['allegro']],['field'=>'total','op'=>'between','value'=>['10','100,50']],['field'=>'sku','op'=>'any','value'=>'AUTO-*, INNE'],['field'=>'delivery_method','op'=>'not_contains','value'=>'kurier'],['field'=>'country','op'=>'not_in','value'=>['DE']]],'actions'=>[['type'=>'add_tags','params'=>['tags'=>'auto, allegro']],['type'=>'set_status','params'=>['status_id'=>'2']],['type'=>'append_note','params'=>['text'=>'Kwota {kwota} {waluta} dla {kupujacy}']]],'options'=>['run_limit'=>'once']]);
+$chainRule=$automation->saveRule(0,['name'=>'Po pakowaniu','enabled'=>true,'triggers'=>['status'],'conditions'=>[['field'=>'status','op'=>'in','value'=>['2']],['field'=>'status_source','op'=>'in','value'=>['automation']]],'actions'=>[['type'=>'add_tags','params'=>['tags'=>'łańcuch']],['type'=>'set_status','params'=>['status_id'=>'3']]]]);
+$loopRule=$automation->saveRule(0,['name'=>'Pętla','enabled'=>true,'triggers'=>['status'],'conditions'=>[['field'=>'status','op'=>'in','value'=>['3']]],'actions'=>[['type'=>'set_status','params'=>['status_id'=>'2']]]]);
+$autoRaw=$raw; $autoRaw['id']='auto-1'; $autoRaw['status']='AUTO_NEW'; $autoRaw['lineItems'][0]['offer']['external']['id']='AUTO-7';
+$repo->import(1,OrderNormalizer::normalize('allegro',$autoRaw,$cutoff,$now));
+$autoId=(int)$db->fetchColumn('SELECT id FROM om_orders WHERE external_id=:e',['e'=>'auto-1']);
+$autoOrder=$repo->order($autoId);
+check($autoOrder['tags']==='auto, allegro, łańcuch','Automation steps run in order and trigger chained rules');
+check((int)$autoOrder['status_id']===2 && (int)$db->fetchColumn('SELECT COUNT(*) FROM om_rule_runs WHERE order_id=:o',['o'=>$autoId])===3,'Automation chain never loops');
+check(strpos((string)$autoOrder['note'],'Kwota 24,60 PLN dla ')===0,'Automation placeholders rendered');
+$repo->import(1,OrderNormalizer::normalize('allegro',$autoRaw,$cutoff,$now));
+check((int)$db->fetchColumn('SELECT COUNT(*) FROM om_rule_runs WHERE rule_id=:r',['r'=>$packRule])===1,'New order automation runs once');
+$otherRaw=$raw; $otherRaw['id']='auto-2'; $otherRaw['status']='AUTO_NEW'; $otherRaw['lineItems'][0]['offer']['external']['id']='BRAK-1';
+$repo->import(1,OrderNormalizer::normalize('allegro',$otherRaw,$cutoff,$now));
+$otherId=(int)$db->fetchColumn('SELECT id FROM om_orders WHERE external_id=:e',['e'=>'auto-2']);
+check(!$db->fetchColumn('SELECT id FROM om_rule_runs WHERE order_id=:o',['o'=>$otherId]) && $repo->order($otherId)['tags']==='','Unmatched conditions skip automation');
+$db->query('UPDATE om_rules SET enabled=0');
+$deferredRule=$automation->saveRule(0,['name'=>'Ręczna zmiana','enabled'=>true,'triggers'=>['status'],'conditions'=>[['field'=>'status_source','op'=>'in','value'=>['user']]],'actions'=>[['type'=>'add_event','params'=>['text'=>'Po zatwierdzeniu {status}']]]]);
+$deferredRuns=fn()=>(int)$db->fetchColumn('SELECT COUNT(*) FROM om_rule_runs WHERE rule_id=:r',['r'=>$deferredRule]);
+$db->transaction(function () use ($repo,$autoId,$deferredRuns) { $repo->changeStatus($autoId,4,'Tester'); check($deferredRuns()===0,'Automation waits for transaction commit'); });
+$repo->flushAutomations();
+check($deferredRuns()===1,'Automation runs after commit');
+try { $db->transaction(function () use ($repo,$autoId) { $repo->changeStatus($autoId,5,'Tester'); throw new RuntimeException('rollback'); }); } catch (RuntimeException $e) { $repo->discardAutomations(); }
+$repo->flushAutomations();
+check($deferredRuns()===1 && (int)$repo->order($autoId)['status_id']===4,'Rolled back events never run');
+$manualRule=$automation->saveRule(0,['name'=>'Przycisk','enabled'=>true,'triggers'=>['manual'],'conditions'=>[['field'=>'tags','op'=>'any','value'=>'łańcuch']],'actions'=>[['type'=>'set_paid','params'=>['state'=>'unpaid']],['type'=>'add_tags','params'=>['tags'=>'ręcznie']]],'options'=>['button_order'=>true,'button_list'=>true,'run_limit'=>'once']]);
+$report=$automation->runManual([$autoId,$otherId],$manualRule,'Tester');
+check($report['executed']===1 && $report['skipped']===1 && $report['errors']===0,'Manual run checks conditions per order');
+check($automation->runManual([$autoId],$manualRule,'Tester')['executed']===1,'Manual run ignores run limit');
+check((int)$repo->order($autoId)['paid']===0 && $repo->order($autoId)['tags']==='auto, allegro, łańcuch, ręcznie','Manual automation changes payment and tags');
+$repo->import(1,OrderNormalizer::normalize('allegro',$autoRaw,$cutoff,$now));
+check((int)$repo->order($autoId)['paid']===0,'Automation payment change survives sync');
+check(array_column($automation->manualRules()['order'],'id')===[$manualRule] && array_column($automation->manualRules()['list'],'id')===[$manualRule],'Manual rule buttons listed');
+$explained=array_values(array_filter($automation->explain($autoId),fn($rule)=>$rule['id']===$manualRule))[0];
+check($explained['match'] && $explained['conditions'][0]['state']==='pass','Order preview explains each condition');
+check($repo->runRules($autoId,'manual','preview',true)===['Przycisk'],'Legacy preview reports matching rule names');
+rejects(fn()=>$automation->runManual([$autoId],$packRule,'Tester'),'Disabled automation cannot be run');
+$db->update('om_rules',['enabled'=>0],'id=:id',['id'=>$deferredRule]);
+$scheduledRule=$automation->saveRule(0,['name'=>'Po czasie','enabled'=>true,'triggers'=>['scheduled'],'conditions'=>[['field'=>'payment_state','op'=>'in','value'=>['unpaid']]],'actions'=>[['type'=>'add_event','params'=>['text'=>'Minął czas']]],'options'=>['delay'=>['value'=>1,'unit'=>'hours','from'=>'ordered']]]);
+$db->update('om_orders',['ordered_at'=>gmdate('Y-m-d H:i:s',time()-7200)],'id=:id',['id'=>$autoId]);
+$automation->runScheduled(); $automation->runScheduled();
+check((int)$db->fetchColumn('SELECT COUNT(*) FROM om_rule_runs WHERE rule_id=:r AND order_id=:o',['r'=>$scheduledRule,'o'=>$autoId])===1,'Scheduled automation runs once per reference time');
+$hookRule=$automation->saveRule(0,['name'=>'Webhook lokalny','enabled'=>true,'triggers'=>['manual'],'actions'=>[['type'=>'webhook','params'=>['url'=>'https://127.0.0.1/hook']],['type'=>'add_tags','params'=>['tags'=>'po webhooku']]],'options'=>['stop_on_error'=>true]]);
+$hookReport=$automation->runManual([$autoId],$hookRule,'Tester');
+$hookRun=$db->fetch('SELECT result,message FROM om_rule_runs WHERE rule_id=:r',['r'=>$hookRule]);
+check($hookReport['errors']===1 && $hookRun['result']==='error' && strpos($hookRun['message'],'prywatnego')!==false && strpos($repo->order($autoId)['tags'],'po webhooku')===false,'Webhook blocks private addresses and error stops later steps');
+$copyId=$automation->duplicateRule($manualRule);
+check(!$automation->rule($copyId)['enabled'] && $automation->rule($copyId)['actions']===$automation->rule($manualRule)['actions'],'Duplicated automation starts paused');
+$automation->moveRule($copyId,'up');
+$ruleOrder=array_column($automation->allRules(),'id');
+check(array_search($copyId,$ruleOrder,true)===array_search($hookRule,$ruleOrder,true)-1 && end($ruleOrder)===$hookRule,'Automation order can be changed');
+$xssRule=$automation->saveRule(0,['name'=>'</script><script>alert(1)</script>','enabled'=>true,'triggers'=>['manual'],'actions'=>[['type'=>'add_tags','params'=>['tags'=>'x']]],'options'=>['button_list'=>true]]);
+$jsonFlags=JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR;
+$smarty->assign(['tab'=>'rules','detail'=>null,'rules'=>$repo->rules(),'manualRules'=>$automation->manualRules(),'automation'=>['stats'=>$automation->stats(),'log'=>$automation->log(),'edit'=>['id'=>$packRule,'name'=>'x'],'catalog_json'=>json_encode($automation->catalog(),$jsonFlags),'rule_json'=>json_encode($automation->rule($packRule),$jsonFlags),'template'=>'']]);
+$rulesHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($rulesHtml,'data-oa-form')!==false && strpos($rulesHtml,'id="oa-rule-'.$packRule.'"')!==false && strpos($rulesHtml,'WYKONAJ PO KOLEI')!==false,'Automation page and editor render');
+check(strpos($rulesHtml,'<script>alert(1)')===false && strpos($rulesHtml,'&lt;/script&gt;')!==false,'Automation names escaped in HTML and JSON');
+$smarty->assign(['tab'=>'list','listing'=>$repo->listing([])]);
+check(strpos($smarty->fetch('orders/index.tpl'),'data-oa-bulk-run')!==false,'List bulk automation action renders');
+$automationDetail=$repo->order($autoId); $automationDetail['raw_debug']='{}';
+$smarty->assign(['detail'=>$automationDetail,'orderShipments'=>[],'series'=>[],'orderAutomation'=>['rules'=>$automation->explain($autoId),'runs'=>$automation->log(12,$autoId)]]);
+$automationDetailHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($automationDetailHtml,'id="oa-run-order"')!==false && strpos($automationDetailHtml,'id="om-automation"')!==false && strpos($automationDetailHtml,'value="'.$manualRule.'"')!==false,'Order automation menu and panel render');
+$automation->deleteRule($hookRule);
+check(!$automation->rule($hookRule) && !$db->fetchColumn('SELECT id FROM om_rule_runs WHERE rule_id=:r',['r'=>$hookRule]),'Deleting automation removes its log');
+
+// KSeF: FA(3) XML, RSA-OAEP and the full send flow against an in-memory fake of the KSeF API.
+use App\Services\KsefService;
+use App\Services\KsefClient;
+check(KsefService::validNip('5252674798') && KsefService::validNip(KsefService::normalizeNip('PL 525-267-47-98')) && !KsefService::validNip('5252674797'),'KSeF NIP checksum');
+$parsedBuyer=KsefService::parseBuyer("Anna Testowa\nFirma Test sp. z o.o.\nNIP: 525-267-47-98\nFirmowa 8\n00-002\nWarszawa\nPL");
+check($parsedBuyer['name']==='Firma Test sp. z o.o.' && $parsedBuyer['nip']==='5252674798' && $parsedBuyer['country']==='PL' && $parsedBuyer['address']===['Firmowa 8','00-002 Warszawa'],'KSeF buyer parsing');
+check(KsefService::parseBuyer("Jan Kowalski\nDługa 1\n00-001 Kraków")['nip']===null,'KSeF consumer buyer without NIP');
+$ksefSnapshot=['seller'=>['name'=>'Firma testowa','address'=>"Testowa 1\n00-001 Warszawa",'nip'=>'5252674798','bank'=>'61 1090 1014 0000 0712 1981 2874'],'buyer'=>"Firma Test sp. z o.o.\nNIP 5252674798\nFirmowa 8, 00-002 Warszawa",'currency'=>'PLN','issue_date'=>'2026-09-17','sale_date'=>'2026-09-16','items'=>[['name'=>'Produkt','quantity'=>2,'unit_cents'=>1230,'vat'=>'23','net_cents'=>2000,'tax_cents'=>460,'gross_cents'=>2460],['name'=>'Książka','quantity'=>1,'unit_cents'=>1080,'vat'=>'8','net_cents'=>1000,'tax_cents'=>80,'gross_cents'=>1080]],'net_cents'=>3000,'tax_cents'=>540,'gross_cents'=>3540,'amount_paid_cents'=>3540,'payment_method'=>'Przelew','order_number'=>'ORD-1','split_payment'=>false,'series_notes'=>''];
+$ksefXml=KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/KSEF/1'],$ksefSnapshot,['generated_at'=>new DateTimeImmutable('2026-09-17T10:00:00Z')]);
+check(strpos($ksefXml,'<P_13_1>20.00</P_13_1>')!==false && strpos($ksefXml,'<P_14_2>0.80</P_14_2>')!==false && strpos($ksefXml,'<P_15>35.40</P_15>')!==false && strpos($ksefXml,'<Zaplacono>1</Zaplacono>')!==false,'KSeF FA(3) invoice totals, payment and XSD validation');
+$ksefCorrection=$ksefSnapshot; $ksefCorrection['items']=[$ksefSnapshot['items'][1]]; $ksefCorrection['before']=['items'=>$ksefSnapshot['items']]; $ksefCorrection['difference_cents']=-2460; $ksefCorrection['reason']='Zwrot towaru';
+$ksefCorrectionXml=KsefService::buildInvoiceXml(['kind'=>'invoice_correction','number'=>'KOR/KSEF/1'],$ksefCorrection,['corrected'=>['number'=>'FV/KSEF/1','issue_date'=>'2026-09-17','ksef_number'=>'']]);
+check(strpos($ksefCorrectionXml,'<RodzajFaktury>KOR</RodzajFaktury>')!==false && strpos($ksefCorrectionXml,'<P_13_1>-20.00</P_13_1>')!==false && substr_count($ksefCorrectionXml,'<StanPrzed>1</StanPrzed>')===2 && strpos($ksefCorrectionXml,'<NrKSeFN>1</NrKSeFN>')!==false,'KSeF FA(3) correction with state before');
+$exempt=$ksefSnapshot; $exempt['items'][1]['vat']='zw';
+rejects(fn()=>KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/ZW'],$exempt),'KSeF exempt items require exemption basis');
+check(strpos(KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/ZW'],$exempt,['exemption_basis'=>'art. 113 ust. 1 ustawy o VAT']),'<P_19A>art. 113 ust. 1 ustawy o VAT</P_19A>')!==false,'KSeF exemption basis in XML');
+rejects(fn()=>KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/EUR'],['currency'=>'EUR']+$ksefSnapshot),'KSeF rejects foreign currency without rate');
+rejects(fn()=>KsefService::buildInvoiceXml(['kind'=>'receipt','number'=>'PAR/1'],$ksefSnapshot),'KSeF rejects receipts');
+rejects(fn()=>KsefService::validateXml('<Faktura xmlns="'.KsefService::NS.'"/>'),'KSeF XSD validation rejects incomplete XML');
+$ksefPrivate=openssl_pkey_new(['private_key_bits'=>2048,'private_key_type'=>OPENSSL_KEYTYPE_RSA]);
+openssl_x509_export(openssl_csr_sign(openssl_csr_new(['commonName'=>'KSeF test'],$ksefPrivate),null,$ksefPrivate,30),$ksefPem);
+$ksefCertificate=preg_replace('/-----[^-]+-----|\s+/','',$ksefPem);
+$oaepDecrypt=static function (string $cipher) use ($ksefPrivate): string {
+    // Reverse RSA-OAEP(SHA-256) manually so the check does not depend on the PHP version.
+    openssl_private_decrypt($cipher,$em,$ksefPrivate,OPENSSL_NO_PADDING); $em=str_pad($em,256,"\0",STR_PAD_LEFT);
+    $mgf=static function (string $seed,int $len): string { $m=''; for ($c=0;strlen($m)<$len;$c++) { $m.=hash('sha256',$seed.pack('N',$c),true); } return substr($m,0,$len); };
+    $seed=substr($em,1,32)^$mgf(substr($em,33),32); $db=substr($em,33)^$mgf($seed,223);
+    if (substr($db,0,32)!==hash('sha256','',true)) { throw new RuntimeException('OAEP label hash mismatch'); }
+    return substr($db,strpos($db,"\x01",32)+1);
+};
+check($oaepDecrypt(KsefClient::rsaOaepEncrypt('token|1726560000000',$ksefCertificate))==='token|1726560000000','KSeF RSA-OAEP SHA-256 encryption');
+$ksefCalls=[]; $ksefSessionKey=null; $ksefSentXml=null;
+$ksefTransport=function (string $method,string $url,array $headers,?string $body) use (&$ksefCalls,&$ksefSessionKey,&$ksefSentXml,$ksefCertificate,$oaepDecrypt): array {
+    $path=preg_replace('#^https://api-test\.ksef\.mf\.gov\.pl/v2#','',$url,1,$count);
+    if ($count!==1) { throw new RuntimeException('Test transport called a non-sandbox URL: '.$url); }
+    $ksefCalls[]=$method.' '.$path; $json=$body!==null?json_decode($body,true):null;
+    $auth=$headers['Authorization']??'';
+    switch ($method.' '.$path) {
+        case 'GET /security/public-key-certificates': return [200,json_encode([['certificate'=>$ksefCertificate,'certificateId'=>'c1','publicKeyId'=>str_repeat('A',44),'usage'=>['KsefTokenEncryption','SymmetricKeyEncryption'],'validFrom'=>'2025-01-01T00:00:00Z','validTo'=>'2030-01-01T00:00:00Z']])];
+        case 'POST /auth/challenge': return [200,json_encode(['challenge'=>str_repeat('c',36),'timestamp'=>'2026-09-17T10:00:00Z','timestampMs'=>1726560000000,'clientIp'=>'127.0.0.1'])];
+        case 'POST /auth/ksef-token':
+            if ($json['contextIdentifier']!==['type'=>'Nip','value'=>'5252674798'] || $oaepDecrypt(base64_decode($json['encryptedToken']))!=='sandbox-token|1726560000000') { return [400,'{"title":"bad token"}']; }
+            return [202,json_encode(['referenceNumber'=>'AUTH-1','authenticationToken'=>['token'=>'auth-jwt','validUntil'=>'2030-01-01T00:00:00Z']])];
+        case 'GET /auth/AUTH-1': return [$auth==='Bearer auth-jwt'?200:401,json_encode(['status'=>['code'=>200,'description'=>'Uwierzytelnianie zakończone sukcesem']])];
+        case 'POST /auth/token/redeem': return [200,json_encode(['accessToken'=>['token'=>'access-jwt','validUntil'=>gmdate('c',time()+900)],'refreshToken'=>['token'=>'refresh-jwt','validUntil'=>'2030-01-01T00:00:00Z']])];
+        case 'POST /sessions/online':
+            if ($auth!=='Bearer access-jwt' || $json['formCode']!==KsefClient::FORM_CODE) { return [401,'{}']; }
+            $ksefSessionKey=[$oaepDecrypt(base64_decode($json['encryption']['encryptedSymmetricKey'])),base64_decode($json['encryption']['initializationVector'])];
+            return [201,json_encode(['referenceNumber'=>'SES-1','validUntil'=>'2030-01-01T00:00:00Z'])];
+        case 'POST /sessions/online/SES-1/invoices':
+            $ksefSentXml=openssl_decrypt(base64_decode($json['encryptedInvoiceContent']),'aes-256-cbc',$ksefSessionKey[0],OPENSSL_RAW_DATA,$ksefSessionKey[1]);
+            if ($ksefSentXml===false || base64_encode(hash('sha256',$ksefSentXml,true))!==$json['invoiceHash']) { return [400,'{"title":"hash"}']; }
+            return [202,json_encode(['referenceNumber'=>'INV-1'])];
+        case 'GET /sessions/SES-1/invoices/INV-1': return [200,json_encode(['ordinalNumber'=>1,'referenceNumber'=>'INV-1','invoiceHash'=>'x','invoicingDate'=>'2026-09-17T10:00:00Z','ksefNumber'=>'5252674798-20260917-0123456789AB-CD','status'=>['code'=>200,'description'=>'Sukces']])];
+        case 'POST /sessions/online/SES-1/close': return [204,''];
+        case 'GET /sessions/SES-1/invoices/INV-1/upo': return [200,'<UPO>test</UPO>'];
+    }
+    return [404,'{"title":"not mocked"}'];
+};
+$repo->saveSetting('ksef',['environment'=>'sandbox','nip'=>'5252674798','auto_send'=>false,'exemption_basis'=>'','tokens'=>['sandbox'=>App\Services\OrderSecretBox::encrypt(['token'=>'sandbox-token']),'production'=>'']]);
+$ksefService=new KsefService($repo,$ksefTransport,static function (int $ms): void { });
+$ksefService->ensureSchema(); $ksefService->ensureSchema();
+$ksefAccounts=$ksefService->accounts();
+check(count($ksefAccounts)===1 && $ksefAccounts[0]['ready'] && $ksefAccounts[0]['series']===['Faktury','Korekty','Seria miesięczna'] && $repo->setting('ksef')===[],'Legacy KSeF settings migrated to one account assigned to invoice series');
+$ksefAccountId=$ksefAccounts[0]['id'];
+rejects(fn()=>$ksefService->saveAccount($ksefAccountId,['name'=>'Firma A','environment'=>'production','nip'=>'5252674798'],'test'),'KSeF production requires explicit confirmation');
+check($ksefService->saveAccount($ksefAccountId,['name'=>'Firma A','environment'=>'sandbox','nip'=>'525-267-47-98','auto_send'=>'1'],'test')===$ksefAccountId,'KSeF account updated without re-entering token');
+check(strpos((string)$db->fetchColumn('SELECT tokens_json FROM om_ksef_accounts WHERE id=:id',['id'=>$ksefAccountId]),'sandbox-token')===false && $ksefService->accounts()[0]['ready'],'KSeF account token kept encrypted');
+$ksefAccountB=$ksefService->saveAccount(0,['name'=>'Firma B','environment'=>'sandbox','nip'=>'1234563218','token_sandbox'=>'company-b-token'],'test');
+$seriesB=(int)$db->insert('om_series',['name'=>'Faktury firma B','kind'=>'invoice','pattern'=>'FB/{YYYY}/{N}','next_number'=>1,'document_settings_json'=>OrderRepository::json(['ksef_account_id'=>$ksefAccountB])]);
+rejects(fn()=>$ksefService->deleteAccount($ksefAccountB),'KSeF account assigned to a series cannot be deleted');
+$ksefDocId=(int)$db->insert('om_documents',['order_id'=>1,'series_id'=>1,'kind'=>'invoice','number'=>'FV/KSEF/1','request_key'=>str_repeat('k',40),'snapshot_json'=>OrderRepository::json($ksefSnapshot),'created_at'=>'2026-09-17 10:00:00']);
+$ksefDocB=(int)$db->insert('om_documents',['order_id'=>1,'series_id'=>$seriesB,'kind'=>'invoice','number'=>'FB/KSEF/1','request_key'=>str_repeat('n',40),'snapshot_json'=>OrderRepository::json($ksefSnapshot),'created_at'=>'2026-09-17 10:00:00']);
+$ksefTargets=$ksefService->targets([$ksefDocId,$ksefDocB]);
+check($ksefTargets[$ksefDocId]['name']==='Firma A' && $ksefTargets[$ksefDocB]['name']==='Firma B','KSeF account resolved from document series');
+$ksefCallsBefore=count($ksefCalls);
+rejects(fn()=>$ksefService->send($ksefDocB,'test'),'KSeF blocks seller NIP different from series account NIP');
+check(count($ksefCalls)===$ksefCallsBefore,'KSeF NIP mismatch stops before any API call');
+$ksefSubmission=$ksefService->send($ksefDocId,'test');
+check($ksefSubmission['state']==='accepted' && (int)$ksefSubmission['ksef_account_id']===$ksefAccountId && $ksefSubmission['ksef_number']==='5252674798-20260917-0123456789AB-CD' && strpos((string)$ksefSentXml,'<P_2>FV/KSEF/1</P_2>')!==false,'KSeF sandbox send accepted with KSeF number');
+check(in_array('POST /sessions/online/SES-1/close',$ksefCalls,true),'KSeF session closed after sending');
+rejects(fn()=>$ksefService->send($ksefDocId,'test'),'KSeF blocks duplicate send of accepted invoice');
+$ksefRefreshed=$ksefService->refresh($ksefDocId,'test');
+check($ksefRefreshed['upo']==='<UPO>test</UPO>' && $ksefService->upo($ksefDocId)['xml']==='<UPO>test</UPO>','KSeF UPO downloaded and stored');
+check($ksefService->lockReason($ksefDocId)===null,'Sandbox submissions do not lock documents');
+$db->update('om_series',['document_settings_json'=>OrderRepository::json([])],'id=2');
+$ksefCallCount=count($ksefCalls); $ksefCorrectionDoc=(int)$db->insert('om_documents',['order_id'=>1,'series_id'=>2,'kind'=>'invoice_correction','number'=>'KOR/KSEF/1','parent_id'=>$ksefDocId,'request_key'=>str_repeat('m',40),'snapshot_json'=>OrderRepository::json($ksefCorrection),'created_at'=>'2026-09-17 11:00:00']);
+check($ksefService->autoSend($ksefCorrectionDoc,'test')!==null && strpos((string)$ksefSentXml,'<NrKSeFFaKorygowanej>5252674798-20260917-0123456789AB-CD</NrKSeFFaKorygowanej>')!==false,'KSeF correction inherits invoice account and references corrected KSeF number');
+check(!in_array('POST /auth/challenge',array_slice($ksefCalls,$ksefCallCount),true),'KSeF access token reused from encrypted cache');
+$ksefInvalidMessage=$ksefService->autoSend(1,'test');
+check(strpos((string)$ksefInvalidMessage,'KSeF: ')===0 && (bool)$db->fetchColumn("SELECT id FROM om_events WHERE order_id=1 AND message LIKE 'Automatyczna wysyłka do KSeF pominięta%'"),'KSeF auto-send reports invalid data without throwing');
+$db->update('om_ksef_submissions',['environment'=>'production'],'document_id=:d',['d'=>$ksefDocId]);
+check(strpos((string)$ksefService->lockReason($ksefDocId),'5252674798-20260917')!==false,'Production KSeF invoice is locked against edits');
+$smarty->assign(['tab'=>'documents','detail'=>null,'series'=>$db->fetchAll('SELECT * FROM om_series'),'documents'=>$db->fetchAll('SELECT * FROM om_documents WHERE id=:id',['id'=>$ksefDocId]),'ksefAccounts'=>$ksefService->accounts(),'ksefTargets'=>$ksefService->targets([$ksefDocId]),'ksefSubmissions'=>$ksefService->latest([$ksefDocId])]);
+$ksefHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($ksefHtml,'KSeF 5252674798-20260917-0123456789AB-CD')!==false && strpos($ksefHtml,'name="ksef_account_id"')!==false && strpos($ksefHtml,'id="om-ksef"')===false,'KSeF document status and series account select render on documents tab');
+$smarty->assign('tab','general');
+$ksefGeneralHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($ksefGeneralHtml,'id="om-ksef-'.$ksefAccountB.'"')!==false && strpos($ksefGeneralHtml,'Faktury firma B')!==false && strpos($ksefGeneralHtml,'sandbox-token')===false && strpos($ksefGeneralHtml,'company-b-token')===false,'KSeF accounts render in general settings without secrets');
 echo "OK: $checks checks; no network or production database used.\n";

@@ -73,16 +73,35 @@ public sealed class PosnetClient : IAsyncDisposable
             started = true;
             await PrintFormLineAsync("ALTREO - PARAGON NIEFISKALNY", cancellationToken);
             await PrintFormLineAsync("NIE JEST DOWODEM SPRZEDAZY", cancellationToken);
-            await PrintFormLineAsync("Zamowienie: " + Clean(job.Receipt.OrderNumber, 25), cancellationToken);
+            var reference = ReceiptReference(job);
+            if (reference.Length <= 39)
+                await PrintFormLineAsync(reference, cancellationToken);
+            else
+            {
+                await PrintFormLineAsync(job.Receipt.OrderNumber, cancellationToken);
+                await PrintFormLineAsync("zam:#" + job.Receipt.OrderId, cancellationToken);
+            }
             await PrintFormLineAsync(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), cancellationToken);
             await PrintFormLineAsync("--------------------------------", cancellationToken);
             foreach (var item in job.Receipt.Items)
             {
                 await PrintFormLineAsync(Clean(item.Name, 36), cancellationToken);
-                await PrintFormLineAsync($"{item.Quantity} x {Money(item.UnitCents)} = {Money(checked(item.UnitCents * item.Quantity))} PLN", cancellationToken);
+                await PrintFormLineAsync($"{item.Quantity} x {Money(item.UnitCents)} = {Money(checked(item.UnitCents * item.Quantity))} VAT {item.Vat}{(item.Vat == "zw" ? "" : "%")}", cancellationToken);
             }
             await PrintFormLineAsync("--------------------------------", cancellationToken);
+            foreach (var group in job.Receipt.Items.GroupBy(item => NormalizeVat(item.Vat)))
+            {
+                var rate = group.Key == "zw" ? 0 : int.Parse(group.Key, CultureInfo.InvariantCulture);
+                var tax = group.Sum(item =>
+                {
+                    var itemGross = checked(item.UnitCents * item.Quantity);
+                    var itemNet = decimal.ToInt64(decimal.Round(itemGross * 100m / (100 + rate), 0, MidpointRounding.AwayFromZero));
+                    return itemGross - itemNet;
+                });
+                await PrintFormLineAsync($"VAT {group.Key}{(group.Key == "zw" ? "" : "%")}: {Money(tax)} PLN", cancellationToken);
+            }
             await PrintFormLineAsync("RAZEM: " + Money(job.Receipt.TotalCents) + " PLN", cancellationToken);
+            await PrintFormLineAsync("Platnosc: " + job.Receipt.PaymentName, cancellationToken);
             await PrintFormLineAsync("Wydruk testowy - bez fiskalizacji", cancellationToken);
             await SendAsync("formend", cancellationToken, "fn200");
             started = false;
@@ -100,17 +119,21 @@ public sealed class PosnetClient : IAsyncDisposable
         SendAsync("formline", cancellationToken, "fn200", "fl664", "s1" + Clean(value, 39) + "\n");
 
     private static string Money(long cents) => (cents / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+    private static string ReceiptReference(FiscalJob job) => job.Receipt.OrderNumber + " zam:#" + job.Receipt.OrderId;
 
     public async Task<string?> PrintFiscalReceiptAsync(FiscalJob job, CancellationToken cancellationToken)
     {
         await EnsureReadyAsync(cancellationToken, requireNoOpenTransaction: true);
         var vatRates = await ReadVatRatesAsync(cancellationToken);
+        var reference = ReceiptReference(job);
+        if (reference.Length > 30)
+            throw new InvalidOperationException("Numer dokumentu i zamówienia przekracza 30 znaków pola Posnet.");
         var transactionStarted = false;
         var finalizationAttempted = false;
         try
         {
             await SendAsync("ftrcfg", cancellationToken,
-                "ccALTREO", "cnAGENT", "sn" + Clean(job.Receipt.OrderNumber, 30));
+                "ccALTREO", "cnAGENT", "sn" + reference);
             await SendAsync("trinit", cancellationToken, "bm0");
             transactionStarted = true;
 

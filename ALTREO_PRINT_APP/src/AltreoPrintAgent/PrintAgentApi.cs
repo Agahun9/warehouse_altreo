@@ -9,7 +9,7 @@ public sealed class PrintAgentApi
 {
     private readonly HttpClient _http;
     private readonly AgentSettings _settings;
-    private bool _fiscalEndpointAvailable=true;
+    private DateTimeOffset _nextFiscalProbeAt=DateTimeOffset.MinValue;
 
     public PrintAgentApi(AgentSettings settings):this(settings,new HttpClientHandler()) { }
 
@@ -72,12 +72,12 @@ public sealed class PrintAgentApi
 
     public async Task<FiscalJob?> GetNextFiscalJobAsync(CancellationToken cancellationToken, string? environment = null)
     {
-        if (!_fiscalEndpointAvailable) return null;
+        if (DateTimeOffset.UtcNow<_nextFiscalProbeAt) return null;
         using var request=new HttpRequestMessage(HttpMethod.Get,Endpoint("fiscal/next"));
         request.Headers.Add("X-Fiscal-Environment",environment??BuildProfile.Name);
         using var response=await _http.SendAsync(request,cancellationToken);
         if (response.StatusCode==HttpStatusCode.NoContent) return null;
-        if (response.StatusCode==HttpStatusCode.NotFound) { _fiscalEndpointAvailable=false; return null; }
+        if (response.StatusCode==HttpStatusCode.NotFound) { _nextFiscalProbeAt=DateTimeOffset.UtcNow.AddMinutes(1); return null; }
         await EnsureSuccessAsync(response,cancellationToken);
         var job=await response.Content.ReadFromJsonAsync<FiscalJob>(cancellationToken:cancellationToken);
         if (job is null || string.IsNullOrWhiteSpace(job.Id) || string.IsNullOrWhiteSpace(job.DeviceKey))

@@ -4,13 +4,18 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\OrderAutomationService;
 use App\Services\OrderNormalizer;
+use App\Services\OrderSyncError;
 use InvalidArgumentException;
 use RuntimeException;
 
 final class OrderRepository
 {
     private $db;
+    private $automation;
+    private $pendingAutomation = [];
+    private $suppressAutomation = false;
     public function __construct(Database $db) { $this->db = $db; }
     public function db(): Database { return $this->db; }
     public static function json(array $value): string { return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR); }
@@ -20,7 +25,7 @@ final class OrderRepository
         $id = $sqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
         $suffix = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin';
         $tables = [
-            'om_statuses' => "id $id, name VARCHAR(100) NOT NULL, color VARCHAR(7) NOT NULL, position INTEGER NOT NULL DEFAULT 0",
+            'om_statuses' => "id $id, name VARCHAR(100) NOT NULL, color VARCHAR(7) NOT NULL, position INTEGER NOT NULL DEFAULT 0, group_name VARCHAR(100) NOT NULL DEFAULT 'Pozostałe'",
             'om_accounts' => "id $id, platform VARCHAR(20) NOT NULL, source_id INTEGER NOT NULL, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, last_sync VARCHAR(30) NULL, last_error TEXT NULL, synced_until VARCHAR(30) NULL, next_attempt BIGINT NOT NULL DEFAULT 0, cursor_json TEXT NULL, UNIQUE(platform, source_id)",
             'om_orders' => "id $id, account_id BIGINT NOT NULL, external_id VARCHAR(190) NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, status_manual INTEGER NOT NULL DEFAULT 0, ordered_at VARCHAR(30) NOT NULL, buyer_name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL, phone VARCHAR(80) NOT NULL, total_cents BIGINT NOT NULL, currency VARCHAR(3) NOT NULL, paid INTEGER NOT NULL DEFAULT 0, details_json LONGTEXT NOT NULL, note TEXT NULL, tags VARCHAR(1000) NOT NULL DEFAULT '', imported_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL, UNIQUE(account_id, external_id)",
             'om_mappings' => "id $id, account_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(account_id, remote_status)",
@@ -36,6 +41,14 @@ final class OrderRepository
             'om_payment_mappings' => "id $id, platform VARCHAR(20) NOT NULL, source_method VARCHAR(190) NOT NULL, payment_method_id BIGINT NOT NULL, UNIQUE(platform, source_method)",
         ];
         foreach ($tables as $name => $columns) { $this->db->query("CREATE TABLE IF NOT EXISTS $name ($columns)$suffix"); }
+        $statusColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_statuses)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_statuses'),'Field');
+        if (!in_array('group_name',$statusColumns,true)) {
+            try { $this->db->query("ALTER TABLE om_statuses ADD COLUMN group_name VARCHAR(100) NOT NULL DEFAULT 'Pozostałe'"); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+            foreach ([1=>'Do realizacji',2=>'Do realizacji',3=>'Do realizacji',4=>'W drodze',5=>'Zamknięte',6=>'Zamknięte'] as $statusId=>$groupName) {
+                $this->db->update('om_statuses',['group_name'=>$groupName],'id=:id',['id'=>$statusId]);
+            }
+        }
         // Upgrade installations created before incremental-sync columns were introduced.
         $accountColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_accounts)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_accounts'),'Field');
         foreach (['synced_until'=>'VARCHAR(30) NULL','next_attempt'=>'BIGINT NOT NULL DEFAULT 0','cursor_json'=>'TEXT NULL','auto_accept'=>'INTEGER NOT NULL DEFAULT 0'] as $column=>$definition) {
@@ -55,6 +68,18 @@ final class OrderRepository
                 catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
             }
         }
+        foreach ([
+            'om_orders'=>['status_changed_at'=>'VARCHAR(30) NULL'],
+            'om_rules'=>['triggers_json'=>'TEXT NULL','options_json'=>'TEXT NULL','position'=>'INTEGER NOT NULL DEFAULT 0','updated_at'=>'VARCHAR(30) NULL'],
+            'om_rule_runs'=>['trigger_name'=>'VARCHAR(30) NULL','result'=>'VARCHAR(20) NULL','message'=>'TEXT NULL'],
+        ] as $table=>$columns) {
+            $existing=$sqlite ? array_column($this->db->fetchAll("PRAGMA table_info($table)"),'name') : array_column($this->db->fetchAll("SHOW COLUMNS FROM $table"),'Field');
+            foreach ($columns as $column=>$definition) {
+                if (in_array($column,$existing,true)) { continue; }
+                try { $this->db->query("ALTER TABLE $table ADD COLUMN $column $definition"); }
+                catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+            }
+        }
         $shipmentColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_shipments)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_shipments'),'Field');
         foreach (['carrier_account_id'=>'BIGINT NULL','external_id'=>'VARCHAR(190) NULL','command_id'=>'VARCHAR(190) NULL','payload_json'=>'LONGTEXT NULL','cod_amount_cents'=>'BIGINT NULL','shipment_currency'=>'VARCHAR(3) NULL'] as $column=>$definition) {
             if (!in_array($column,$shipmentColumns,true)) {
@@ -67,6 +92,7 @@ final class OrderRepository
             'om_events' => ['om_event_order'=>'order_id,id'],
             'om_documents' => ['om_document_order'=>'order_id,id','om_document_parent'=>'parent_id,id'],
             'om_shipments' => ['om_shipment_order'=>'order_id,id'],
+            'om_rule_runs' => ['om_rule_run_order'=>'order_id,id','om_rule_run_date'=>'created_at'],
         ] as $table=>$indexes) {
             foreach ($indexes as $name=>$columns) {
                 if ($sqlite) { $this->db->query("CREATE INDEX IF NOT EXISTS $name ON $table ($columns)"); }
@@ -79,7 +105,8 @@ final class OrderRepository
         if (!(int) $this->db->fetchColumn('SELECT COUNT(*) FROM om_statuses')) {
             // Fixed IDs and ignore make concurrent first requests safe.
             foreach ([1=>['Nowe','#6366f1'],2=>['Do spakowania','#f59e0b'],3=>['Gotowe do wysyłki','#06b6d4'],4=>['Wysłane','#10b981'],5=>['Zakończone','#64748b'],6=>['Anulowane','#ef4444']] as $key=>$status) {
-                $this->insertIgnore('om_statuses', ['id'=>$key,'name'=>$status[0],'color'=>$status[1],'position'=>$key]);
+                $groupName=$key<=3?'Do realizacji':($key===4?'W drodze':'Zamknięte');
+                $this->insertIgnore('om_statuses', ['id'=>$key,'name'=>$status[0],'color'=>$status[1],'position'=>$key,'group_name'=>$groupName]);
             }
         }
         foreach ([1=>['Przelew',0],2=>['Płatność przy odbiorze',1]] as $key=>$method) {
@@ -136,7 +163,7 @@ final class OrderRepository
     {
         $platform=mb_substr(trim($platform),0,20);
         $sourceMethod=mb_substr(trim($sourceMethod),0,190);
-        if (!in_array($platform,['allegro','erli','empik','mediamarkt','morele'],true)) { throw new InvalidArgumentException('Nieznany marketplace.'); }
+        if (!in_array($platform,['allegro','erli','empik','mediamarkt','morele','altreo'],true)) { throw new InvalidArgumentException('Nieznane źródło zamówień.'); }
         if (!$this->db->fetchColumn('SELECT id FROM om_payment_methods WHERE id=:id AND enabled=1',['id'=>$paymentMethodId])) { throw new InvalidArgumentException('Wybierz aktywną własną metodę płatności.'); }
         $this->db->transaction(function () use ($platform,$sourceMethod,$paymentMethodId) {
             $this->db->delete('om_payment_mappings','platform=:platform AND source_method=:source',['platform'=>$platform,'source'=>$sourceMethod]);
@@ -238,15 +265,19 @@ final class OrderRepository
         $externalId='WLASNE-'.gmdate('Ymd-His').'-'.strtoupper(bin2hex(random_bytes(3)));
         $now=gmdate('Y-m-d H:i:s');
         $details=['items'=>[['name'=>'Pozycja','sku'=>'','quantity'=>1,'unit_cents'=>0,'vat'=>'23']],'address'=>[],'invoice_address'=>[],'delivery'=>'','pickup'=>'','shipping_cents'=>0,'payment_method'=>'','cash_on_delivery'=>0,'amount_paid_cents'=>0,'buyer_note'=>'','source'=>'manual'];
-        $id=(int)$this->db->insert('om_orders',['account_id'=>$accountId,'external_id'=>$externalId,'remote_status'=>'Własne','status_id'=>(int)$input['status_id'],'status_manual'=>1,'ordered_at'=>gmdate('Y-m-d H:i:s',$timestamp),'buyer_name'=>'Nowy klient','email'=>'','phone'=>'','total_cents'=>0,'currency'=>'PLN','paid'=>0,'details_json'=>self::json($details),'note'=>'','tags'=>'własne','imported_at'=>$now,'updated_at'=>$now]);
+        $id=(int)$this->db->insert('om_orders',['account_id'=>$accountId,'external_id'=>$externalId,'remote_status'=>'Własne','status_id'=>(int)$input['status_id'],'status_manual'=>1,'ordered_at'=>gmdate('Y-m-d H:i:s',$timestamp),'buyer_name'=>'Nowy klient','email'=>'','phone'=>'','total_cents'=>0,'currency'=>'PLN','paid'=>0,'details_json'=>self::json($details),'note'=>'','tags'=>'własne','imported_at'=>$now,'updated_at'=>$now,'status_changed_at'=>$now]);
         try {
-            $this->updateOrderDetails($id,$input,$actor);
+            $this->suppressAutomation=true;
+            try { $this->updateOrderDetails($id,$input,$actor); }
+            finally { $this->suppressAutomation=false; }
             $this->event($id,'Utworzono ręcznie nowe zamówienie.',$actor);
-            return $id;
         } catch (\Throwable $error) {
             $this->db->delete('om_orders','id=:id',['id'=>$id]);
             throw $error;
         }
+        $this->automationEvent($id,'order_created');
+        if ((int)$this->db->fetchColumn('SELECT paid FROM om_orders WHERE id=:id',['id'=>$id])) { $this->automationEvent($id,'paid',['payment_source'=>'user']); }
+        return $id;
     }
     private function rowLock(): string
     {
@@ -313,7 +344,7 @@ final class OrderRepository
 
     public function updateOrderDetails(int $id,array $input,string $actor): void
     {
-        $this->db->transaction(function () use ($id,$input,$actor) {
+        $this->transactional(function () use ($id,$input,$actor) {
             $stored=$this->db->fetch('SELECT * FROM om_orders WHERE id=:id'.$this->rowLock(),['id'=>$id]);
             if (!$stored) { throw new InvalidArgumentException('Nie znaleziono zamówienia.'); }
             $details=json_decode((string)$stored['details_json'],true,512,JSON_THROW_ON_ERROR);
@@ -368,7 +399,72 @@ final class OrderRepository
             $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
             $this->db->update('om_orders',$orderOverride+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
             $this->event($id,'Zmieniono dane klienta, płatności, dostawy, faktury lub pozycji zamówienia.',$actor);
+            $this->automationEvent($id,'details_changed');
+            if ((int)$stored['paid']!==$orderOverride['paid']) { $this->automationEvent($id,$orderOverride['paid']?'paid':'unpaid',['payment_source'=>'user']); }
         });
+    }
+    /**
+     * Automation edits use the same field-level manual lock as the order form, so a later
+     * marketplace sync does not silently revert a status of payment or delivery set by a rule.
+     */
+    public function patchOrder(int $id,array $orderFields,array $detailFields,string $actor,string $message): bool
+    {
+        return (bool)$this->transactional(function () use ($id,$orderFields,$detailFields,$actor,$message) {
+            $stored=$this->db->fetch('SELECT * FROM om_orders WHERE id=:id'.$this->rowLock(),['id'=>$id]);
+            if (!$stored) { throw new InvalidArgumentException('Nie znaleziono zamówienia.'); }
+            $details=json_decode((string)$stored['details_json'],true,512,JSON_THROW_ON_ERROR);
+            $manual=is_array($details['_manual']??null)?$details['_manual']:[];
+            $manualOrder=is_array($manual['order']??null)?$manual['order']:[];
+            $manualDetails=is_array($manual['details']??null)?$manual['details']:[];
+            $changedOrder=[]; $changed=false;
+            foreach ($orderFields as $field=>$value) {
+                if (!in_array($field,['paid','buyer_name','email','phone','total_cents','currency'],true) || (string)$stored[$field]===(string)$value) { continue; }
+                $changedOrder[$field]=$value; $manualOrder[$field]=$value; $changed=true;
+            }
+            foreach ($detailFields as $field=>$value) {
+                if (json_encode($value,JSON_UNESCAPED_UNICODE)===json_encode($details[$field]??null,JSON_UNESCAPED_UNICODE)) { continue; }
+                $details[$field]=$value; $manualDetails[$field]=$value; $changed=true;
+            }
+            if (!$changed) { return false; }
+            $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
+            $this->db->update('om_orders',$changedOrder+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
+            $this->event($id,$message,$actor);
+            if (isset($changedOrder['paid'])) { $this->automationEvent($id,$changedOrder['paid']?'paid':'unpaid',['payment_source'=>'automation']); }
+            return true;
+        });
+    }
+    public function automation(): OrderAutomationService
+    {
+        if ($this->automation===null) { $this->automation=new OrderAutomationService($this); }
+        return $this->automation;
+    }
+    /** Events raised inside a transaction wait for commit, so automations never hold row locks. */
+    public function automationEvent(int $orderId,string $trigger,array $context=[]): void
+    {
+        if ($this->suppressAutomation) { return; }
+        $this->pendingAutomation[$orderId.'|'.$trigger.'|'.md5(self::json($context))]=[$orderId,$trigger,$context];
+        $this->flushAutomations();
+    }
+    public function flushAutomations(): void
+    {
+        if (!$this->pendingAutomation || $this->db->pdo()->inTransaction()) { return; }
+        $pending=$this->pendingAutomation; $this->pendingAutomation=[];
+        foreach ($pending as [$orderId,$trigger,$context]) {
+            try { $this->automation()->dispatch((int)$orderId,(string)$trigger,$context); }
+            catch (\Throwable $error) { OrderSyncError::log($error,['stage'=>'automation','order_id'=>$orderId,'trigger'=>$trigger]); }
+        }
+    }
+    /** Events of a rolled-back transaction must never run. */
+    public function discardAutomations(): void
+    {
+        if (!$this->db->pdo()->inTransaction()) { $this->pendingAutomation=[]; }
+    }
+    private function transactional(callable $callback)
+    {
+        try { $result=$this->db->transaction($callback); }
+        catch (\Throwable $error) { $this->discardAutomations(); throw $error; }
+        $this->flushAutomations();
+        return $result;
     }
     private static function addressLines(array $address): array
     {
@@ -427,16 +523,48 @@ final class OrderRepository
         if (preg_match('#^(?:uploads|img_components|dist)/[a-zA-Z0-9_./ -]+$#D',$candidate) && strpos($candidate,'..')===false) { return $candidate; }
         return '';
     }
+    private static function shortDate(string $value): string
+    {
+        return preg_match('/^\d{2}(\d{2})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/',$value,$m) ? "$m[3].$m[2].$m[1] $m[4]" : $value;
+    }
+
+    private function tableExists(string $table): bool
+    {
+        try { $this->db->fetch("SELECT 1 FROM $table LIMIT 1"); return true; }
+        catch (\Throwable $e) { return false; }
+    }
+
     public function listing(array $filters): array
     {
         $where = ['1=1']; $params = [];
         foreach (['status_id','account_id','paid'] as $field) {
             if (isset($filters[$field]) && $filters[$field] !== '') { $where[] = "o.$field=:$field"; $params[$field] = (int) $filters[$field]; }
         }
-        if (!empty($filters['q'])) {
-            $parts = [];
-            foreach (['external_id','buyer_name','email','phone','tags','note'] as $i=>$field) { $parts[] = "o.$field LIKE :q$i"; $params['q'.$i] = '%'.substr((string)$filters['q'],0,200).'%'; }
-            $where[] = '('.implode(' OR ',$parts).')';
+        if (empty($filters['status_id']) && !empty($filters['group']) && mb_strlen((string)$filters['group'])<=100) {
+            $where[]='o.status_id IN (SELECT id FROM om_statuses WHERE group_name=:status_group)';
+            $params['status_group']=(string)$filters['group'];
+        }
+        if (trim((string)($filters['q']??''))!=='') {
+            $words=array_slice(preg_split('/\s+/u',mb_strtolower(mb_substr(trim((string)$filters['q']),0,200,'UTF-8'),'UTF-8'),-1,PREG_SPLIT_NO_EMPTY),0,8);
+            $fiscalJobs=$this->tableExists('print_fiscal_jobs');
+            foreach ($words as $w=>$word) {
+                $like='%'.str_replace(['!','%','_'],['!!','!%','!_'],$word).'%';
+                $parts=[];
+                foreach (['external_id','buyer_name','email','phone','tags','note','remote_status','details_json'] as $i=>$field) {
+                    $parts[]="LOWER(o.$field) LIKE :q{$w}_$i ESCAPE '!'"; $params["q{$w}_$i"]=$like;
+                }
+                $parts[]="LOWER(a.name) LIKE :q{$w}_acc ESCAPE '!'"; $params["q{$w}_acc"]=$like;
+                $parts[]="EXISTS (SELECT 1 FROM om_shipments sh WHERE sh.order_id=o.id AND (LOWER(sh.tracking) LIKE :q{$w}_st ESCAPE '!' OR LOWER(COALESCE(sh.external_id,'')) LIKE :q{$w}_se ESCAPE '!'))";
+                $params["q{$w}_st"]=$like; $params["q{$w}_se"]=$like;
+                $parts[]="EXISTS (SELECT 1 FROM om_documents d WHERE d.order_id=o.id AND LOWER(d.number) LIKE :q{$w}_dn ESCAPE '!')";
+                $params["q{$w}_dn"]=$like;
+                if ($fiscalJobs) {
+                    $parts[]="EXISTS (SELECT 1 FROM print_fiscal_jobs fj WHERE fj.order_id=o.id AND (LOWER(fj.local_number) LIKE :q{$w}_fl ESCAPE '!' OR LOWER(COALESCE(fj.fiscal_number,'')) LIKE :q{$w}_ff ESCAPE '!'))";
+                    $params["q{$w}_fl"]=$like; $params["q{$w}_ff"]=$like;
+                }
+                if (ctype_digit($word) && strlen($word)<=18) { $parts[]="o.id=:q{$w}_id"; $params["q{$w}_id"]=(int)$word; }
+                $where[]='('.implode(' OR ',$parts).')';
+            }
         }
         if (!empty($filters['platform']) && in_array($filters['platform'],['manual','allegro','erli','empik','mediamarkt','morele'],true)) {
             $where[]='a.platform=:platform';
@@ -470,7 +598,7 @@ final class OrderRepository
             'buyer'=>'o.buyer_name ASC,o.id DESC',
         ];
         $orderBy=$orders[(string)($filters['sort']??'newest')]??$orders['newest'];
-        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT 50 OFFSET $offset",$params);
+        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.status_changed_at,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT 50 OFFSET $offset",$params);
         $skus=[];$allegroOfferIds=[];$erliExternalIds=[];$empikShopSkus=[];$empikProductSkus=[];$empikProductIds=[];$sourceAccounts=[];
         foreach ($rows as &$row) {
             try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
@@ -509,6 +637,8 @@ final class OrderRepository
             $row['shipping_cents']=(int)($details['shipping_cents']??0);
             $paymentText=strtolower((string)($details['payment_method']??''));
             $row['cash_on_delivery']=(int)(!empty($details['cash_on_delivery']) || strpos($paymentText,'pobran')!==false);
+            $row['ordered_short']=self::shortDate((string)$row['ordered_at']);
+            $row['status_changed_short']=self::shortDate((string)($row['status_changed_at']??''));
             $row['external_short']=(function (string $id): string { return mb_strlen($id,'UTF-8')>10?mb_substr($id,0,10,'UTF-8').'…':$id; })((string)$row['external_id']);
             unset($row['details_json']);
         }
@@ -619,7 +749,7 @@ final class OrderRepository
     }
     public function import(int $accountId,array $order): bool
     {
-        return $this->db->transaction(function () use ($accountId,$order) {
+        return $this->transactional(function () use ($accountId,$order) {
             $old = $this->db->fetch('SELECT * FROM om_orders WHERE account_id=:a AND external_id=:e'.$this->rowLock(),['a'=>$accountId,'e'=>$order['external_id']]);
             $details = $order['details']; unset($order['details']);
             $this->applyPaymentMapping($accountId,$order,$details);
@@ -640,18 +770,27 @@ final class OrderRepository
             $order['updated_at'] = gmdate('Y-m-d H:i:s');
             $mapping = $this->db->fetchColumn('SELECT status_id FROM om_mappings WHERE account_id=:a AND remote_status=:s',['a'=>$accountId,'s'=>$order['remote_status']]);
             if ($old) {
+                $oldId=(int)$old['id'];
                 if (!(int)$old['status_manual'] && $mapping) { $order['status_id'] = (int)$mapping; }
-                $this->db->update('om_orders',$order,'id=:id',['id'=>$old['id']]);
-                if ($old['remote_status'] !== $order['remote_status']) { $this->event((int)$old['id'],'Status źródłowy: '.$order['remote_status'],'synchronizacja'); }
-                if (isset($order['status_id']) && (int)$old['status_id'] !== $order['status_id']) { $this->event((int)$old['id'],'Mapowanie statusu na #'.$order['status_id'],'synchronizacja'); }
+                $statusChanged=isset($order['status_id']) && (int)$old['status_id'] !== $order['status_id'];
+                if ($statusChanged) { $order['status_changed_at']=gmdate('Y-m-d H:i:s'); }
+                $this->db->update('om_orders',$order,'id=:id',['id'=>$oldId]);
+                if ($old['remote_status'] !== $order['remote_status']) { $this->event($oldId,'Status źródłowy: '.$order['remote_status'],'synchronizacja'); }
+                if ((int)$old['paid'] !== (int)$order['paid']) { $this->event($oldId,(int)$order['paid'] ? 'Płatność potwierdzona w źródle.' : 'Źródło nie potwierdza już płatności.','synchronizacja'); }
+                if ($statusChanged) { $this->event($oldId,'Mapowanie statusu na #'.$order['status_id'],'synchronizacja'); }
                 // Import automations can also become eligible after payment/data arrives.
-                $this->runRules((int)$old['id'],'import','import');
+                $this->automationEvent($oldId,'import');
+                if ($old['remote_status'] !== $order['remote_status']) { $this->automationEvent($oldId,'remote_status',['previous_remote_status'=>(string)$old['remote_status']]); }
+                if ($statusChanged) { $this->automationEvent($oldId,'status',['previous_status_id'=>(int)$old['status_id'],'status_source'=>'sync']); }
+                if ((int)$old['paid'] !== (int)$order['paid']) { $this->automationEvent($oldId,(int)$order['paid']?'paid':'unpaid',['payment_source'=>'sync']); }
                 return false;
             }
-            $order += ['account_id'=>$accountId,'status_id'=>$mapping ? (int)$mapping : 1,'imported_at'=>gmdate('Y-m-d H:i:s')];
+            $order += ['account_id'=>$accountId,'status_id'=>$mapping ? (int)$mapping : 1,'imported_at'=>gmdate('Y-m-d H:i:s'),'status_changed_at'=>gmdate('Y-m-d H:i:s')];
             $id = (int)$this->db->insert('om_orders',$order);
             $this->event($id,'Pobrano zamówienie. Marketplace pozostaje bez zmian.','synchronizacja');
-            $this->runRules($id,'import','import');
+            $this->automationEvent($id,'order_created');
+            $this->automationEvent($id,'import');
+            if ((int)$order['paid']) { $this->automationEvent($id,'paid',['payment_source'=>'sync']); }
             return true;
         });
     }
@@ -678,57 +817,24 @@ final class OrderRepository
         $this->requireStatus($status);
         $old = $this->order($id);
         if ((int)$old['status_id'] === $status) { return; }
-        $this->db->update('om_orders',['status_id'=>$status,'status_manual'=>1],'id=:id',['id'=>$id]);
+        $this->db->update('om_orders',['status_id'=>$status,'status_manual'=>1,'status_changed_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
         $this->event($id,'Status wewnętrzny: '.$old['status_name'].' → #'.$status,$actor);
-        if ($rules) { $this->runRules($id,'status',bin2hex(random_bytes(16))); }
+        if ($rules) { $this->automationEvent($id,'status',['previous_status_id'=>(int)$old['status_id'],'status_source'=>strpos($actor,'automat')===0?'automation':'user']); }
     }
+    /** Kept for callers of the former rule engine; preview only reports matching rule names. */
     public function runRules(int $id,string $trigger,string $eventKey,bool $preview=false): array
     {
-        $order = $this->order($id); $matched = [];
-        foreach ($this->db->fetchAll('SELECT * FROM om_rules WHERE enabled=1 AND trigger_name=:t ORDER BY id',['t'=>$trigger]) as $rule) {
-            $conditions = json_decode($rule['conditions_json'],true);
-            $matches = true;
-            foreach ($conditions as $field=>$expected) { if ((string)($order[$field]??'') !== (string)$expected) { $matches=false; break; } }
-            if (!$matches) { continue; }
-            $matched[] = $rule['name'];
-            if ($preview) { continue; }
-            if ($this->db->fetchColumn('SELECT id FROM om_rule_runs WHERE rule_id=:r AND order_id=:o AND event_key=:e',['r'=>$rule['id'],'o'=>$id,'e'=>$eventKey])) { continue; }
-            $this->db->insert('om_rule_runs',['rule_id'=>$rule['id'],'order_id'=>$id,'event_key'=>$eventKey,'created_at'=>gmdate('Y-m-d H:i:s')]);
-            $actions = json_decode($rule['actions_json'],true);
-            if (isset($actions['status_id'])) { $this->changeStatus($id,(int)$actions['status_id'],'automat: '.$rule['name'],false); }
-            if (!empty($actions['tag'])) {
-                $current = $this->order($id);
-                $tags = array_filter(array_map('trim',explode(',',$current['tags'])));
-                $tags[] = $actions['tag'];
-                $this->db->update('om_orders',['tags'=>substr(implode(', ',array_unique($tags)),0,1000)],'id=:id',['id'=>$id]);
-            }
-            if (!empty($actions['note'])) { $this->event($id,$actions['note'],'automat: '.$rule['name']); }
-            $this->event($id,'Wykonano regułę: '.$rule['name'],'automat');
-        }
-        return $matched;
+        if ($preview) { return $this->automation()->matchingRuleNames($id,$trigger); }
+        $this->automationEvent($id,$trigger);
+        return [];
     }
     public function rules(): array
     {
-        $statuses=array_column($this->statuses(),'name','id');
-        $accounts=array_column($this->accounts(),'name','id');
-        $rules=$this->db->fetchAll('SELECT * FROM om_rules ORDER BY id');
-        foreach ($rules as &$rule) {
-            $c=json_decode($rule['conditions_json'],true); $a=json_decode($rule['actions_json'],true);
-            $conditions=[]; $actions=[];
-            if (isset($c['account_id'])) { $conditions[]='Konto: '.($accounts[$c['account_id']]??'usunięte'); }
-            if (isset($c['status_id'])) { $conditions[]='Status: '.($statuses[$c['status_id']]??'usunięty'); }
-            if (isset($c['paid'])) { $conditions[]=$c['paid']?'Płatność potwierdzona':'Płatność niepotwierdzona'; }
-            if (isset($a['status_id'])) { $actions[]='Przenieś do: '.($statuses[$a['status_id']]??'usunięty'); }
-            if (!empty($a['tag'])) { $actions[]='Dodaj tag: '.$a['tag']; }
-            if (!empty($a['note'])) { $actions[]='Wpis do historii: '.$a['note']; }
-            $rule['conditions_label']=$conditions?implode(' · ',$conditions):'Każde zamówienie';
-            $rule['actions_label']=implode(' · ',$actions);
-        }
-        return $rules;
+        return $this->automation()->rulesForDisplay();
     }
     public function dashboard(): array
     {
-        return ['statuses'=>$this->db->fetchAll('SELECT s.*,COUNT(o.id) total FROM om_statuses s LEFT JOIN om_orders o ON o.status_id=s.id GROUP BY s.id,s.name,s.color,s.position ORDER BY s.position,s.id'),
+        return ['statuses'=>$this->db->fetchAll('SELECT s.*,COUNT(o.id) total FROM om_statuses s LEFT JOIN om_orders o ON o.status_id=s.id GROUP BY s.id,s.name,s.color,s.position,s.group_name ORDER BY s.group_name,s.position,s.id'),
             'today'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders WHERE ordered_at>=:d',['d'=>gmdate('Y-m-d')]),
             'unpaid'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders WHERE paid=0'),
             'total'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders')];

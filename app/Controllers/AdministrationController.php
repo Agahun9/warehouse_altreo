@@ -14,6 +14,7 @@ use App\Services\MediaMarktService;
 use App\Services\ErliService;
 use App\Services\MoreleService;
 use App\Services\TemuService;
+use App\Services\MarketplaceAccountDeletionService;
 use RuntimeException;
 use Throwable;
 
@@ -149,6 +150,9 @@ class AdministrationController extends Controller
         $currentUser = $this->requireRole('admin');
         $flashSuccess = $this->getFlash('success');
         $flashError = $this->getFlash('error');
+        $this->ensureSessionStarted();
+        if (empty($_SESSION['marketplace_account_delete_csrf'])) { $_SESSION['marketplace_account_delete_csrf']=bin2hex(random_bytes(32)); }
+        $deleteCsrf=$_SESSION['marketplace_account_delete_csrf'];
         $this->releaseSessionLock();
 
         $baseUrl = $this->absoluteBaseUrl();
@@ -156,6 +160,13 @@ class AdministrationController extends Controller
         $empikAccounts = $this->empik->listAccounts();
         $mediamarktAccounts = $this->mediamarkt->listAccounts();
         $erliAccounts = $this->erli->listAccounts();
+        $deletion=new MarketplaceAccountDeletionService($this->db());
+        foreach (['allegro'=>&$accounts,'empik'=>&$empikAccounts,'mediamarkt'=>&$mediamarktAccounts,'erli'=>&$erliAccounts] as $platform=>&$platformAccounts) {
+            $counts=$deletion->offerCounts($platform);
+            foreach ($platformAccounts as &$platformAccount) { $platformAccount['linked_offers_count']=$counts[(int)$platformAccount['id']]??0; }
+            unset($platformAccount);
+        }
+        unset($platformAccounts);
         $temuSettings = $this->temu->connectionSettings();
 
         foreach ($accounts as &$account) {
@@ -175,6 +186,7 @@ class AdministrationController extends Controller
             'currentUser' => $currentUser,
             'flashSuccess' => $flashSuccess,
             'flashError' => $flashError,
+            'deleteCsrf' => $deleteCsrf,
             'automation' => $this->allegro->automationLinks($baseUrl),
             'queueStats' => $this->allegro->queueCounts(),
             'empikAutomation' => $this->empik->automationLinks($baseUrl),
@@ -191,6 +203,7 @@ class AdministrationController extends Controller
             'erliAccounts' => $erliAccounts,
             'temuApiUrl' => (string) ($temuSettings['api_url'] ?? ''),
             'temuAppKey' => (string) ($temuSettings['app_key'] ?? ''),
+            'temuConfigured' => trim((string)($temuSettings['app_key'] ?? '')) !== '',
             // Never render the stored secret back into the HTML response.
             'temuAppSecret' => '',
             'temuAccessToken' => '',
@@ -199,6 +212,8 @@ class AdministrationController extends Controller
             'temuRegion' => (string) ($temuSettings['region'] ?? 'PL'),
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
+            'altreoShopUrl' => $this->settings->get('altreo_shop_url', ''),
+            'altreoShopConfigured' => $this->settings->get('altreo_shop_token', '') !== '',
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
             'sellasistPickingStatusId' => (int) $this->settings->get('sellasist_picking_status_id', '23'),
             'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
@@ -206,6 +221,8 @@ class AdministrationController extends Controller
             'apiBaseUrl' => $this->apiBaseUrl(),
             'moreleApiUrl' => $this->settings->get('morele_api_url', ''),
             'moreleAccount' => $this->settings->get('morele_account', ''),
+            'moreleOfferCount' => $deletion->offerCounts('morele')[1] ?? 0,
+            'moreleConfigured' => $this->settings->get('morele_client_id', '') !== '' || $this->settings->get('morele_client_secret', '') !== '',
             'moreleClientId' => $this->settings->get('morele_client_id', ''),
             'moreleClientSecret' => $this->settings->get('morele_client_secret', ''),
             'computersMoreleCategoryId' => $this->settings->get('computers_morele_category_id', '672'),
@@ -213,6 +230,26 @@ class AdministrationController extends Controller
             'computersMediaMarktCategoryId' => $this->settings->get('computers_mediamarkt_category_id', ''),
             'computersMediaMarktSetPcCategoryId' => $this->settings->get('computers_mediamarkt_set_pc_category_id', ''),
         ));
+    }
+
+    public function deleteaccount(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+        if (!$this->isPost()) { http_response_code(405); exit('Wymagany POST.'); }
+        $this->ensureSessionStarted();
+        $expected=(string)($_SESSION['marketplace_account_delete_csrf']??'');
+        if ($expected==='' || !hash_equals($expected,(string)($_POST['csrf']??''))) { http_response_code(403); exit('Sesja formularza wygasła. Odśwież stronę.'); }
+        try {
+            if ((string)($_POST['confirm_delete']??'')!=='1') { throw new RuntimeException('Potwierdź usunięcie konta i powiązanych ofert.'); }
+            $platform=(string)($_POST['platform']??'');
+            $accountId=(int)($_POST['account_id']??0);
+            $result=(new MarketplaceAccountDeletionService($this->db()))->delete($platform,$accountId);
+            $this->setFlash('success','Usunięto konto '.$result['name'].' oraz '.(int)$result['offers'].' powiązanych ofert/produktów i kolejki zmian.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error',$exception->getMessage());
+        }
+        $this->redirect('./index.php?controller=administration&action=automation');
     }
 
     public function allegroaccounts(): void
@@ -284,6 +321,23 @@ class AdministrationController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function savealtreoshop(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+        if (!$this->isPost()) { $this->redirect('./index.php?controller=administration&action=automation'); }
+        try {
+            $url=rtrim(trim((string)$this->input('altreo_shop_url','')),'/');
+            if (!preg_match('#^https://[^/?#]+(?:/[^?#]*)?$#i',$url)) { throw new RuntimeException('Podaj poprawny adres HTTPS sklepu.'); }
+            $token=trim((string)$this->input('altreo_shop_token',''));
+            if ($token!=='' && strlen($token)<32) { throw new RuntimeException('Token musi mieć co najmniej 32 znaki.'); }
+            $this->settings->set('altreo_shop_url',$url);
+            if ($token!=='') { $this->settings->set('altreo_shop_token',$token); }
+            $this->setFlash('success','Ustawienia sklepu ALTREO zapisano. Odkryj konto w centrum zamówień i włącz synchronizację.');
+        } catch (Throwable $exception) { $this->setFlash('error',$exception->getMessage()); }
         $this->redirect('./index.php?controller=administration&action=automation');
     }
 
