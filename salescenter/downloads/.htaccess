@@ -1,0 +1,5 @@
+<IfModule mod_headers.c>
+  <FilesMatch "\.zip$">
+    Header set Content-Disposition attachment
+  </FilesMatch>
+</IfModule>

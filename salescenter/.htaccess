@@ -1,0 +1,9 @@
+Options -Indexes
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(app|bin|tests|database|docs|print-agent|smarty-5\.8\.0)(/|$) - [F,L]
+  RewriteRule (^|/)\.(?!well-known) - [F,L]
+</IfModule>
+<FilesMatch "\.(md|sql|lock|log)$">
+  Require all denied
+</FilesMatch>

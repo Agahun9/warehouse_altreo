@@ -1,0 +1,12 @@
+# Dane dostępowe – tylko pliki *.example.php są w repozytorium.
+/app/Config/database.php
+/app/Config/app.php
+/app/Views/templates_c/*
+/app/Views/cache/*
+/app/Storage/*
+!/app/Storage/.gitkeep
+!/app/Views/templates_c/.gitkeep
+!/app/Views/cache/.gitkeep
+
+# Duże paczki agenta druku – wgrywane na serwer, nie do gita.
+/downloads/*.zip
