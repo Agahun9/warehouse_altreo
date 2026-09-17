@@ -568,6 +568,53 @@ class EmpikStorageRepository
         return $this->listOffers($filters, $page, $batchSize, 'id', 'desc');
     }
 
+    /**
+     * Lean, unlimited target list (id, account, shop_sku) for bulk CSV imports. Unlike
+     * offerTargetsForFilters() it does not load full offer rows, so 20k+ offers stay cheap.
+     */
+    public function offerSkuTargets(array $filters, array $offerRowIds = array()): array
+    {
+        $offerRowIds = array_values(array_unique(array_filter(array_map('intval', $offerRowIds))));
+        $select = 'SELECT offers.id, offers.account_id, offers.shop_sku FROM empik_offers offers'
+            . ' INNER JOIN empik_accounts accounts ON accounts.id = offers.account_id';
+
+        if ($offerRowIds !== array()) {
+            $rows = array();
+            foreach (array_chunk($offerRowIds, 1000) as $chunk) {
+                $params = array();
+                $placeholders = $this->buildIntegerPlaceholders('sku_target', $chunk, $params);
+                $rows = array_merge($rows, $this->database->fetchAll(
+                    $select . ' WHERE offers.id IN (' . implode(', ', $placeholders) . ')',
+                    $params
+                ));
+            }
+            return $rows;
+        }
+
+        $params = array();
+        $analysis = $this->analyzeOfferFilters($filters);
+        if ($analysis['needs_warehouse']) {
+            $select .= $this->liveWarehouseJoinSql();
+        }
+        if ($analysis['needs_shared_stock']) {
+            $select .= ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id';
+        }
+
+        return $this->database->fetchAll($select . $this->buildOfferWhere($filters, $params) . ' ORDER BY offers.id DESC', $params);
+    }
+
+    public function updateLeadtimeToShip(array $offerRowIds, int $days): void
+    {
+        foreach (array_chunk(array_values(array_map('intval', $offerRowIds)), 1000) as $chunk) {
+            $params = array('leadtime_days' => $days);
+            $placeholders = $this->buildIntegerPlaceholders('leadtime_offer', $chunk, $params);
+            $this->database->execute(
+                'UPDATE empik_offers SET leadtime_to_ship = :leadtime_days WHERE id IN (' . implode(', ', $placeholders) . ')',
+                $params
+            );
+        }
+    }
+
     public function queueCounts(): array
     {
         $rows = $this->database->fetchAll(

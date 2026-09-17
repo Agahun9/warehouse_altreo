@@ -174,24 +174,41 @@ class EmpikController extends Controller
                 $selectedIds = array_values(array_filter(array_map('intval', $selectedOfferIds)));
             }
 
-            $result = $this->empik->enqueueOfferChanges(
-                $this->offerFilters(),
-                trim((string) $this->input('operation', '')),
-                array(
-                    'value' => $this->input('value', ''),
-                    'search' => $this->input('search', ''),
-                    'replace' => $this->input('replace', ''),
-                    'selection_limit' => (int) $this->input('selection_limit', 1000),
-                ),
-                $selectedIds
-            );
-
-            if ((string) ($result['operation'] ?? '') === 'clear_queue') {
-                $this->setFlash('success', 'Usunieto z kolejki: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
-            } elseif ((string) ($result['operation'] ?? '') === 'remove_from_system') {
-                $this->setFlash('success', 'Usunieto lokalnie z systemu: ' . (int) ($result['removed'] ?? 0) . ' ofert.');
+            $operation = trim((string) $this->input('operation', ''));
+            if ($operation === 'set_leadtime') {
+                if ($selectionScope === 'selected' && $selectedIds === array()) {
+                    throw new \RuntimeException('Zaznacz oferty na liscie albo wybierz zakres z filtrowania.');
+                }
+                if (function_exists('set_time_limit')) {
+                    @set_time_limit(120);
+                }
+                $result = $this->empik->submitLeadtimeBatch($this->offerFilters(), $selectedIds, $this->input('leadtime_days', ''));
+                $importIds = array_map(static function (array $import): string {
+                    return $import['account_name'] . ': ' . $import['import_id'];
+                }, $result['imports']);
+                $this->setFlash('success', 'Wyslano czas wysylki do Empik dla ' . (int) $result['offers'] . ' ofert w '
+                    . (int) $result['requests'] . ' imporcie CSV (' . implode(', ', $importIds) . ').'
+                    . ((int) $result['skipped'] > 0 ? ' Pominieto bez shop_sku: ' . (int) $result['skipped'] . '.' : ''));
             } else {
-                $this->setFlash('success', 'Dodano do kolejki Empik: ' . (int) ($result['queued'] ?? 0) . ' ofert.');
+                $result = $this->empik->enqueueOfferChanges(
+                    $this->offerFilters(),
+                    $operation,
+                    array(
+                        'value' => $this->input('value', ''),
+                        'search' => $this->input('search', ''),
+                        'replace' => $this->input('replace', ''),
+                        'selection_limit' => (int) $this->input('selection_limit', 1000),
+                    ),
+                    $selectedIds
+                );
+
+                if ((string) ($result['operation'] ?? '') === 'clear_queue') {
+                    $this->setFlash('success', 'Usunieto z kolejki: ' . (int) ($result['removed'] ?? 0) . ' wpisow.');
+                } elseif ((string) ($result['operation'] ?? '') === 'remove_from_system') {
+                    $this->setFlash('success', 'Usunieto lokalnie z systemu: ' . (int) ($result['removed'] ?? 0) . ' ofert.');
+                } else {
+                    $this->setFlash('success', 'Dodano do kolejki Empik: ' . (int) ($result['queued'] ?? 0) . ' ofert.');
+                }
             }
         } catch (Throwable $exception) {
             $this->setFlash('error', $exception->getMessage());
