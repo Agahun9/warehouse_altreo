@@ -1,6 +1,0 @@
-bin/
-obj/
-dist/
-src/AltreoPrintAgent/Assets/SumatraPDF.exe
-*.user
-.DS_Store
