@@ -849,43 +849,6 @@ class AllegroStorageRepository
         return $this->normalizeOfferViewData($row);
     }
 
-    public function findOfferByAccountAndOfferId(int $accountId, string $offerId)
-    {
-        $offerId = trim($offerId);
-        if ($accountId <= 0 || $offerId === '') {
-            return null;
-        }
-
-        $row = $this->database->fetch(
-            'SELECT offers.*, warehouse.id AS warehouse_product_live_id,'
-            . ' warehouse.sku AS warehouse_sku, warehouse.product_name AS warehouse_product_name, warehouse.price_gross AS warehouse_price_gross,'
-            . ' warehouse.category_id AS warehouse_category_id, warehouse_categories.name AS warehouse_category_name, warehouse_categories.allegro_category_id AS warehouse_category_allegro_id,'
-            . ' COALESCE(shared_stock_groups.quantity, warehouse.quantity) AS warehouse_quantity,'
-            . ' COALESCE(shared_stock_groups.localization, warehouse.localization) AS warehouse_localization'
-            . ' FROM allegro_offers offers'
-            . $this->liveWarehouseJoinSql()
-            . ' LEFT JOIN categories warehouse_categories ON warehouse_categories.id = warehouse.category_id'
-            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = warehouse.shared_stock_group_id'
-            . ' WHERE offers.account_id = :account_id AND offers.offer_id = :offer_id LIMIT 1',
-            array(
-                'account_id' => $accountId,
-                'offer_id' => $offerId,
-            )
-        );
-
-        if (!$row) {
-            return null;
-        }
-
-        $row['images'] = $this->decodeJsonList($row['images_json'] ?? null);
-        $row['parameters'] = $this->decodeJsonList($row['parameters_json'] ?? null);
-        $row['marketplaces'] = $this->decodeJsonList($row['marketplaces_json'] ?? null);
-        $row['product_set'] = $this->decodeJsonList($row['product_set_json'] ?? null);
-        $row['offer_payload'] = $this->decodeJsonAny($row['offer_json'] ?? null);
-
-        return $this->normalizeOfferViewData($row);
-    }
-
     public function findOfferChecksums(int $accountId, array $offerIds): array
     {
         $cleanIds = array();

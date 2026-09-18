@@ -36,15 +36,14 @@ Autoload klas `App\...` jest realizowany ręcznie w `app/bootstrap.php` zgodnie 
 - `app/Views/templates/layout` -> wspólny nagłówek, menu, globalne style/skrypty i stopka.
 - `app/Views/templates/computers/partials` -> fragmenty pól parametrów marketplace dla modułu komputerów.
 - `app/Views/templates_c`, `app/Views/cache` -> wygenerowane pliki Smarty; nigdy nie edytuj i nie analizuj ich jako źródła.
-- `dist/css` -> AdminLTE, wspólny motyw `liquid-glass.css` i style centrum zamówień.
-- `dist/js` -> gotowe skrypty; dedykowana logika zamówień jest w `dist/js/orders.js`.
+- `dist/css` -> AdminLTE i wspólny motyw `liquid-glass.css`.
+- `dist/js` -> gotowe skrypty.
 - `dist/assets/img` -> statyczne zasoby interfejsu.
 - `app/Storage/imports`, `app/Storage/logs`, `app/Storage/mail` -> dane robocze i logi; pomijaj w wyszukiwaniu.
 - `uploads`, `img_components`, `img_computers_products` -> pliki użytkowników i duże zbiory obrazów; nie skanuj bez bezpośredniej potrzeby.
-- `bin/orders-sync.php` -> CLI/cron synchronizacji zamówień.
-- `tests/orders_test.php` -> samodzielny zestaw testów centrum zamówień; nie jest pełnym zestawem testów całej aplikacji.
-- `docs/orders.md`, `docs/allegro-user-agent.md` -> dokumentacja odpowiednich integracji.
-- `orders.php` -> osobny punkt wejścia do widoku centrum zamówień.
+- `tests/marketplace_account_deletion_test.php` -> samodzielny test usuwania kont marketplace; nie jest pełnym zestawem testów całej aplikacji.
+- `docs/allegro-user-agent.md` -> dokumentacja User-Agent Allegro.
+- `salescenter/` -> osobna aplikacja centrum sprzedaży (zamówienia) z własną bazą, konfiguracją i testami; nie współdzieli kodu z `app/`.
 - `allegro_api_access.php` -> przekierowanie callbacku OAuth Allegro do głównego routera.
 - `allegro-app-info.php` -> publiczna strona identyfikacyjna integracji Allegro.
 - `fix_marketplace_sku_collation.php` -> jednorazowy, kosztowny skrypt CLI zmieniający collation; nie uruchamiaj podczas zwykłych testów.
@@ -58,7 +57,7 @@ Autoload klas `App\...` jest realizowany ręcznie w `app/bootstrap.php` zgodnie 
 - Ogólne szablony/import/eksport CSV: `CsvTemplateController.php`, `CsvExportService.php`, repozytoria `Csv*`, `templates/csv_templates/`.
 - Kategorie produktów i mapowania marketplace: `CategoryController.php`, `CategoryRepository.php`, `templates/categories/`.
 - Marketplace: odpowiednia para `app/Controllers/<Marketplace>Controller.php` + `app/Services/<Marketplace>Service.php`; zapis/cache/kolejki są zwykle w `app/Models/<Marketplace>StorageRepository.php`, a UI w katalogu szablonów o tej samej nazwie.
-- Zamówienia: `OrdersController.php` -> `OrderSyncService.php` / `OrderNormalizer.php` / `OrderDocumentService.php` / `OrderShipmentService.php` -> `OrderRepository.php`; UI w `templates/orders/`, `dist/css/orders*.css` i `dist/js/orders.js`.
+- Zamówienia: wyłącznie w osobnej aplikacji `salescenter/` (patrz `salescenter/README.md`); główna aplikacja nie ma już centrum zamówień.
 - Sellasist i synchronizacja stanów: `SellasistController.php`, `SellasistService.php`, repozytoria `Sellasist*` oraz `templates/sellasist/`.
 - Magazyn księgowy, XML/XLSX, dokumenty i rozliczenia: `AccountingWarehouseController.php`, `AccountingWarehouseRepository.php`, usługi `AccountingWarehouse*`, `templates/accounting_warehouse/`.
 - Użytkownicy, logowanie, JWT, role i uprawnienia: `AuthController.php`, `AdministrationController.php`, `UserRepository.php`, `JwtService.php`, `TokenService.php`, `templates/auth/` i `templates/administration/`.
@@ -103,8 +102,7 @@ Nie przeszukuj ani nie czytaj rekurencyjnie: `.git`, `.vs`, `.vscode`, `vendor`,
 ## Weryfikacja zmian
 
 - Dla każdego zmienionego pliku PHP uruchom co najmniej `php -l <plik>`.
-- Testy zamówień uruchamiaj tylko dla zmian w stosie zamówień lub współdzielonych klasach, których ten test dotyka: `php tests/orders_test.php`.
-- Dla zmiany w `.tpl` sprawdź składnię/pełne renderowanie tylko danego widoku, jeśli istnieje odpowiedni test; centrum zamówień jest renderowane w `tests/orders_test.php`. W innych modułach wykonaj ukierunkowaną kontrolę użytych zmiennych i powiązanych akcji zamiast uruchamiać nieistniejący globalny build.
+- Dla zmiany w `.tpl` sprawdź składnię/pełne renderowanie tylko danego widoku, jeśli istnieje odpowiedni test. Wykonaj ukierunkowaną kontrolę użytych zmiennych i powiązanych akcji zamiast uruchamiać nieistniejący globalny build.
 - Dla CSS/JS sprawdź tylko zmieniony ekran i jego konsolę/przepływ. Nie ma potrzeby przebudowy całego `dist`, ponieważ pliki są serwowane bezpośrednio.
 - Nie uruchamiaj testów wymagających prawdziwych kont marketplace, produkcyjnej bazy, crona lub zapisu zewnętrznego, o ile zadanie nie wymaga testu live i nie daje do niego upoważnienia.
 - W podsumowaniu rozróżnij: lint/statyczny test, test na danych syntetycznych oraz faktyczną weryfikację w przeglądarce, bazie lub zewnętrznym API.

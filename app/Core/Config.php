@@ -22,10 +22,6 @@ class Config
             throw new RuntimeException('Plik konfiguracji musi zwracac tablice: ' . $name);
         }
 
-        if ($name === 'app' && !in_array('orders', array_column($config['modules'] ?? [], 'code'), true)) {
-            $config['modules'][] = ['code' => 'orders', 'name' => 'Centrum zamówień'];
-        }
-
         return $config;
     }
 }

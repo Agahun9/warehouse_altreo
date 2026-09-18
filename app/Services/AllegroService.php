@@ -18,157 +18,22 @@ class AllegroService
     /** @var array<string, string> */
     private $imageHashCache = array();
 
-    /** @var array<string, string> */
-    private $orderImageUrlCache = array();
-
     /** @var array */
     private $config;
 
     /** @var AllegroStorageRepository */
     private $storage;
 
-    public function __construct(bool $ordersOnly = false)
+    public function __construct()
     {
         $app = Config::get('app');
         $this->config = isset($app['allegro']) && is_array($app['allegro']) ? $app['allegro'] : array();
         $this->storage = new AllegroStorageRepository(Database::instance());
         $this->storage->ensureSchema();
-        if ($ordersOnly) { return; }
         $customFields = new ProductCustomFieldRepository(Database::instance());
         $customFields->ensureSchema();
         $this->storage->cleanupExpiredCache();
         $this->disableStoredWarehouseLinks();
-    }
-
-
-    /** Read-only order import; no order mutations are exposed to the order manager. */
-    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
-    {
-        return $this->requestApiWithAccount($account, 'GET', '/order/checkout-forms', [
-            'lineItems.boughtAt.gte' => $from, 'lineItems.boughtAt.lte' => $to,
-            'updatedAt.gte' => $updatedFrom !== '' ? $updatedFrom : $from,
-            'updatedAt.lte' => $to,
-            'limit' => 100, 'offset' => (int) $cursor, 'sort' => 'updatedAt',
-        ]);
-    }
-
-    public function enrichOrderImages(array $account, array $order): array
-    {
-        foreach ($order['lineItems']??[] as $index=>$line) {
-            if (self::firstOrderImage($line)!=='') { continue; }
-            $offerId=trim((string)($line['offer']['id']??''));
-            if ($offerId==='') { continue; }
-            $cacheKey=(int)($account['id']??0).'|'.$offerId;
-            if (!array_key_exists($cacheKey,$this->orderImageUrlCache)) {
-                $url='';
-                try {
-                    $stored=$this->storage->findOfferByAccountAndOfferId((int)$account['id'],$offerId);
-                    $url=self::firstOrderImage($stored??[]);
-                    if ($url==='') {
-                        $offer=$this->requestApiWithAccount($account,'GET','/sale/product-offers/'.rawurlencode($offerId));
-                        $url=self::firstOrderImage($offer);
-                    }
-                } catch (\Throwable $error) { $url=''; }
-                $this->orderImageUrlCache[$cacheKey]=$url;
-            }
-            if ($this->orderImageUrlCache[$cacheKey]!=='') { $order['lineItems'][$index]['imageUrl']=$this->orderImageUrlCache[$cacheKey]; }
-        }
-        return $order;
-    }
-
-    private static function firstOrderImage($value): string
-    {
-        if (is_scalar($value)) {
-            $url=trim((string)$value);
-            if (strpos($url,'//')===0) { $url='https:'.$url; }
-            return preg_match('#^https://[^\s]+$#i',$url)?$url:'';
-        }
-        if (!is_array($value)) { return ''; }
-        foreach (['primary_image_url','imageUrl','url','images','primaryImage'] as $key) {
-            if (!array_key_exists($key,$value)) { continue; }
-            $url=self::firstOrderImage($value[$key]);
-            if ($url!=='') { return $url; }
-        }
-        foreach (['offer','product','productSet'] as $key) {
-            if (!array_key_exists($key,$value)) { continue; }
-            $url=self::firstOrderImage($value[$key]);
-            if ($url!=='') { return $url; }
-        }
-        foreach ($value as $child) {
-            if (is_array($child)) {
-                $url=self::firstOrderImage($child);
-                if ($url!=='') { return $url; }
-            }
-        }
-        return '';
-    }
-
-    public function shipmentProposal(array $account,string $orderId): array
-    {
-        return $this->requestApiWithAccount($account,'GET','/shipment-management/delivery-proposals/'.rawurlencode($orderId));
-    }
-
-    public function sellerIdForAccount(int $accountId): string
-    {
-        $account=$this->storage->findAccountById($accountId);
-        if (!$account) { return ''; }
-        $me=$this->requestApiWithAccount($account,'GET','/me');
-        $sellerId=trim((string)($me['id']??''));
-        return preg_match('/^\d{1,30}$/D',$sellerId)?$sellerId:'';
-    }
-
-    public function shipmentServices(array $account): array
-    {
-        return $this->requestApiWithAccount($account,'GET','/shipment-management/delivery-services');
-    }
-
-    public function createShipmentCommand(array $account,string $commandId,array $input): array
-    {
-        $body=json_encode(['commandId'=>$commandId,'input'=>$input],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-        return $this->requestApiWithAccount($account,'POST','/shipment-management/shipments/create-commands',[],$body,['Content-Type: application/vnd.allegro.public.v1+json']);
-    }
-
-    public function shipmentCommandStatus(array $account,string $commandId): array
-    {
-        return $this->requestApiWithAccount($account,'GET','/shipment-management/shipments/create-commands/'.rawurlencode($commandId));
-    }
-
-    public function shipmentDetails(array $account,string $shipmentId): array
-    {
-        return $this->requestApiWithAccount($account,'GET','/shipment-management/shipments/'.rawurlencode($shipmentId));
-    }
-
-    public function shipmentTracking(array $account,string $carrierId,string $waybill): array
-    {
-        return $this->requestApiWithAccount($account,'GET','/order/carriers/'.rawurlencode($carrierId).'/tracking',['waybill'=>$waybill]);
-    }
-
-    public function publishOrderShipment(array $account,string $orderId,string $tracking,string $carrierCode,string $carrierName): void
-    {
-        $known=['inpost'=>'INPOST','dpd'=>'DPD','dhl'=>'DHL','ups'=>'UPS','gls'=>'GLS','fedex'=>'FEDEX','orlen'=>'ORLEN','pocztex'=>'POCZTA_POLSKA'];
-        $carrierId=$known[$carrierCode]??'OTHER';
-        $existing=$this->requestApiWithAccount($account,'GET','/order/checkout-forms/'.rawurlencode($orderId).'/shipments');
-        foreach ((array)($existing['shipments']??[]) as $shipment) { if ((string)($shipment['waybill']??'')===$tracking) { return; } }
-        $payload=['carrierId'=>$carrierId,'waybill'=>$tracking];
-        if ($carrierId==='OTHER') { $payload['carrierName']=mb_substr(trim($carrierName),0,30,'UTF-8'); }
-        $this->requestApiWithAccount($account,'POST','/order/checkout-forms/'.rawurlencode($orderId).'/shipments',[],json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),['Content-Type: application/vnd.allegro.public.v1+json']);
-    }
-
-    public function shipmentLabel(array $account,string $shipmentId,string $pageSize='A6'): string
-    {
-        $token=$this->accessTokenForAccount($account);
-        $url=rtrim((string)$this->configValue('api_base','https://api.allegro.pl'),'/').'/shipment-management/label';
-        return $this->requestBinary('POST',$url,['Accept: application/octet-stream','Authorization: Bearer '.$token,'Content-Type: application/vnd.allegro.public.v1+json'],json_encode(['shipmentIds'=>[$shipmentId],'pageSize'=>$pageSize,'cutLine'=>$pageSize==='A4'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$account);
-    }
-
-    private function requestBinary(string $method,string $url,array $headers,$body=null,?array $account=null): string
-    {
-        $ch=curl_init($url); if ($ch===false) throw new RuntimeException('Nie można uruchomić pobierania pliku Allegro.');
-        curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$this->headersWithUserAgent($headers,$account),CURLOPT_TIMEOUT=>60,CURLOPT_CONNECTTIMEOUT=>10]);
-        if ($body!==null) curl_setopt($ch,CURLOPT_POSTFIELDS,$body);
-        $raw=curl_exec($ch); $status=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
-        if (!is_string($raw)||$status<200||$status>=300) throw new RuntimeException('Allegro nie zwróciło etykiety (HTTP '.$status.').');
-        return $raw;
     }
 
     public function listAccounts(): array

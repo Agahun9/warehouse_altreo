@@ -21,9 +21,6 @@ class ErliService
     /** @var ProductRepository */
     private $products;
 
-    /** @var array<string, string> */
-    private $orderImageUrlCache = array();
-
     public function __construct()
     {
         $app = Config::get('app');
@@ -35,84 +32,6 @@ class ErliService
         $this->products->ensureSchema();
     }
 
-
-    /** Read-only order import; no order mutations are exposed to the order manager. */
-    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
-    {
-        // ERLI search uses POST but is strictly read-only (never PATCH orders/status).
-        $pagination = ['sortField'=>'updated', 'order'=>'ASC', 'limit'=>100];
-        if ($cursor !== '') { $pagination['after'] = $cursor; }
-        return $this->requestApi($account, 'POST', '/orders/_search', [], [
-            'pagination' => $pagination,
-            'filter' => ['operator'=>'and', 'value'=>[
-                ['field'=>'created','operator'=>'>=','value'=>$from],
-                ['field'=>'created','operator'=>'<=','value'=>$to],
-                ['field'=>'updated','operator'=>'>=','value'=>$updatedFrom !== '' ? $updatedFrom : $from],
-                ['field'=>'updated','operator'=>'<=','value'=>$to],
-            ]],
-        ]);
-    }
-
-    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
-    {
-        $vendors=['inpost'=>'inpost','pocztex'=>'pocztex24','dhl'=>'dhl','dpd'=>'dpd','fedex'=>'fedex','gls'=>'gls','ups'=>'ups','orlen'=>'orlen'];
-        $vendor=$vendors[$carrierCode]??'';
-        if ($vendor==='') { throw new RuntimeException('ERLI nie obsługuje wybranego przewoźnika „'.$carrierName.'”.'); }
-        $response=$this->requestApi($account,'POST','/shipping/external',array(),array([ 'vendor'=>$vendor,'status'=>'readyToSend','trackingNumber'=>trim($tracking),'orderId'=>$orderId ]));
-        if (!empty($response[0]['error'])) { throw new RuntimeException('ERLI odrzuciło numer przesyłki.'); }
-    }
-
-    public function enrichOrderImages(array $account, array $order): array
-    {
-        foreach ($order['items']??[] as $index=>$line) {
-            if (self::firstOrderImage($line)!=='') { continue; }
-            $externalId=trim((string)($line['productExternalId']??$line['externalId']??$line['product']['externalId']??$line['product']['id']??''));
-            $sku=trim((string)($line['sku']??$line['product']['sku']??''));
-            if ($externalId==='' && $sku==='') { continue; }
-            $cacheKey=(int)($account['id']??0).'|'.$externalId.'|'.$sku;
-            if (!array_key_exists($cacheKey,$this->orderImageUrlCache)) {
-                $url='';
-                try {
-                    $stored=$this->storage->findProductForOrder((int)$account['id'],$externalId,$sku);
-                    $url=self::firstOrderImage($stored??[]);
-                    if ($url==='' && $externalId!=='') {
-                        $product=$this->requestApi($account,'GET','/products/'.rawurlencode($externalId));
-                        $url=self::firstOrderImage($product);
-                    }
-                } catch (\Throwable $error) { $url=''; }
-                $this->orderImageUrlCache[$cacheKey]=$url;
-            }
-            if ($this->orderImageUrlCache[$cacheKey]!=='') { $order['items'][$index]['imageUrl']=$this->orderImageUrlCache[$cacheKey]; }
-        }
-        return $order;
-    }
-
-    private static function firstOrderImage($value): string
-    {
-        if (is_scalar($value)) {
-            $url=trim((string)$value);
-            if (strpos($url,'//')===0) { $url='https:'.$url; }
-            return preg_match('#^https://[^\s]+$#i',$url)?$url:'';
-        }
-        if (!is_array($value)) { return ''; }
-        foreach (['primary_image_url','imageUrl','url','images','image','thumbnail'] as $key) {
-            if (!array_key_exists($key,$value)) { continue; }
-            $url=self::firstOrderImage($value[$key]);
-            if ($url!=='') { return $url; }
-        }
-        foreach (['product'] as $key) {
-            if (!array_key_exists($key,$value)) { continue; }
-            $url=self::firstOrderImage($value[$key]);
-            if ($url!=='') { return $url; }
-        }
-        foreach ($value as $child) {
-            if (is_array($child)) {
-                $url=self::firstOrderImage($child);
-                if ($url!=='') { return $url; }
-            }
-        }
-        return '';
-    }
 
     public function listAccounts(): array
     {

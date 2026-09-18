@@ -212,8 +212,6 @@ class AdministrationController extends Controller
             'temuRegion' => (string) ($temuSettings['region'] ?? 'PL'),
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
-            'altreoShopUrl' => $this->settings->get('altreo_shop_url', ''),
-            'altreoShopConfigured' => $this->settings->get('altreo_shop_token', '') !== '',
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
             'sellasistPickingStatusId' => (int) $this->settings->get('sellasist_picking_status_id', '23'),
             'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
@@ -321,23 +319,6 @@ class AdministrationController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
-        $this->redirect('./index.php?controller=administration&action=automation');
-    }
-
-    public function savealtreoshop(): void
-    {
-        $this->requireRole('admin');
-        $this->requireWriteAccess();
-        if (!$this->isPost()) { $this->redirect('./index.php?controller=administration&action=automation'); }
-        try {
-            $url=rtrim(trim((string)$this->input('altreo_shop_url','')),'/');
-            if (!preg_match('#^https://[^/?#]+(?:/[^?#]*)?$#i',$url)) { throw new RuntimeException('Podaj poprawny adres HTTPS sklepu.'); }
-            $token=trim((string)$this->input('altreo_shop_token',''));
-            if ($token!=='' && strlen($token)<32) { throw new RuntimeException('Token musi mieć co najmniej 32 znaki.'); }
-            $this->settings->set('altreo_shop_url',$url);
-            if ($token!=='') { $this->settings->set('altreo_shop_token',$token); }
-            $this->setFlash('success','Ustawienia sklepu ALTREO zapisano. Odkryj konto w centrum zamówień i włącz synchronizację.');
-        } catch (Throwable $exception) { $this->setFlash('error',$exception->getMessage()); }
         $this->redirect('./index.php?controller=administration&action=automation');
     }
 

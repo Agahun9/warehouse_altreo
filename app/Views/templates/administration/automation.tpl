@@ -255,19 +255,6 @@
 
       <div class="accordion administration-accordion" id="administrationAccordion">
         <div class="accordion-item mb-4">
-          <h2 class="accordion-header" id="headingAltreoShop"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAltreoShop" aria-expanded="false" aria-controls="collapseAltreoShop">Sklep ALTREO</button></h2>
-          <div id="collapseAltreoShop" class="accordion-collapse collapse" aria-labelledby="headingAltreoShop" data-bs-parent="#administrationAccordion">
-            <div class="accordion-body">
-              <p>Bezpośredni import zamówień, płatności i statusów do centrum zamówień. Ustaw w sklepie zmienną <code>WAREHOUSE_ORDERS_TOKEN</code> z tym samym tokenem.</p>
-              <form method="post" action="{$baseUrl}?controller=administration&amp;action=savealtreoshop" class="row g-3" autocomplete="off">
-                <div class="col-md-6"><label class="form-label" for="altreo-shop-url">Adres sklepu</label><input class="form-control" id="altreo-shop-url" type="url" name="altreo_shop_url" value="{$altreoShopUrl|escape}" placeholder="https://altreo.pl" required></div>
-                <div class="col-md-6"><label class="form-label" for="altreo-shop-token">Token API {if $altreoShopConfigured}(zapisany){/if}</label><input class="form-control" id="altreo-shop-token" type="password" name="altreo_shop_token" minlength="32" placeholder="{if $altreoShopConfigured}Pozostaw puste, aby zachować{else}Minimum 32 znaki{/if}" autocomplete="new-password"></div>
-                <div class="col-12"><button class="btn btn-primary" type="submit">Zapisz integrację</button> <a class="btn btn-outline-secondary" href="{$baseUrl}?controller=orders&amp;tab=accounts">Konta i mapowanie statusów</a></div>
-              </form>
-            </div>
-          </div>
-        </div>
-        <div class="accordion-item mb-4">
           <h2 class="accordion-header" id="headingMarketplaces">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMarketplaces" aria-expanded="true" aria-controls="collapseMarketplaces">
               Marketplace i konta

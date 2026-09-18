@@ -15,7 +15,6 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);
 foreach (['pdo'=>$pdo,'config'=>['driver'=>'sqlite']] as $name=>$value) { $reflection->getProperty($name)->setValue($db,$value); }
 $service=new MarketplaceAccountDeletionService($db);
-$db->query('CREATE TABLE om_accounts (platform TEXT,source_id INTEGER,enabled INTEGER)');
 foreach (['allegro','empik','mediamarkt','erli'] as $platform) {
     $account=$platform.'_accounts';
     $offers=$platform==='erli'?'erli_products':$platform.'_offers';
@@ -23,7 +22,6 @@ foreach (['allegro','empik','mediamarkt','erli'] as $platform) {
     $db->query("CREATE TABLE $offers (id INTEGER PRIMARY KEY,account_id INTEGER)");
     $db->query("INSERT INTO $account (id,name) VALUES (1,'Usuwane'),(2,'Zachowane')");
     $db->query("INSERT INTO $offers (id,account_id) VALUES (1,1),(2,1),(3,2)");
-    $db->query('INSERT INTO om_accounts (platform,source_id,enabled) VALUES (:platform,1,1),(:other,2,1)',['platform'=>$platform,'other'=>$platform]);
 }
 foreach (['allegro_offer_change_queue','allegro_offer_exclusions','allegro_account_tokens','allegro_sync_states','empik_offer_change_queue','mediamarkt_offer_change_queue','erli_product_change_queue'] as $table) {
     $db->query("CREATE TABLE $table (account_id INTEGER,is_running INTEGER DEFAULT 0)");
@@ -37,8 +35,6 @@ foreach (['allegro','empik','mediamarkt','erli'] as $platform) {
     $check($result['offers']===2 && $result['name']==='Usuwane',$platform.' deletion summary');
     $check((int)$db->fetchColumn("SELECT COUNT(*) FROM $offers WHERE account_id=1")===0,$platform.' offers removed');
     $check((int)$db->fetchColumn("SELECT COUNT(*) FROM $offers WHERE account_id=2")===1,$platform.' other offers kept');
-    $check((int)$db->fetchColumn('SELECT enabled FROM om_accounts WHERE platform=:platform AND source_id=1',['platform'=>$platform])===0,$platform.' order import disabled');
-    $check((int)$db->fetchColumn('SELECT enabled FROM om_accounts WHERE platform=:platform AND source_id=2',['platform'=>$platform])===1,$platform.' other import kept');
 }
 foreach (['allegro_offer_change_queue','allegro_offer_exclusions','allegro_account_tokens','allegro_sync_states','empik_offer_change_queue','mediamarkt_offer_change_queue','erli_product_change_queue'] as $table) {
     $check((int)$db->fetchColumn("SELECT COUNT(*) FROM $table WHERE account_id=1")===0,$table.' related rows removed');

@@ -36,52 +36,6 @@ class MediaMarktService
     }
 
 
-    /**
-     * Read-only order import; no order mutations are exposed to the order manager.
-     * OR11 filters by update date only: a creation-date filter would hide later changes
-     * (e.g. payment days after purchase) of orders older than the admission window.
-     */
-    public function readOrderPage(array $account, string $from, string $to, string $cursor = '', string $updatedFrom = ''): array
-    {
-        return $this->requestApi($account, 'GET', '/api/orders', [
-            'max'=>100, 'offset'=>(int)$cursor,
-            'start_update_date'=>$updatedFrom !== '' ? $updatedFrom : $from, 'end_update_date'=>$to,
-            'sort'=>'dateCreated', 'order'=>'asc',
-        ]);
-    }
-
-    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
-    {
-        $response=$this->requestApi($account,'GET','/api/shipping/carriers');
-        $payload=OrderMarketplaceShipmentService::miraklCarrierPayload(is_array($response['carriers']??null)?$response['carriers']:$response,$carrierCode,$carrierName);
-        $payload['tracking_number']=trim($tracking);
-        $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/tracking', array(), $payload, array('Content-Type: application/json'));
-    }
-
-    /** Mirakl OR21: accepts every line of an order still in WAITING_ACCEPTANCE. */
-    public function acceptOrder(array $account, array $rawOrder): void
-    {
-        $orderId = trim((string) ($rawOrder['order_id'] ?? ''));
-        if ($orderId === '') {
-            throw new RuntimeException('Brak identyfikatora zamowienia MediaMarkt do akceptacji.');
-        }
-
-        $lines = array();
-        foreach ($rawOrder['order_lines'] ?? array() as $line) {
-            // OR11 names the line identifier order_line_id; OR21 expects it as "id".
-            $lineId = trim((string) ($line['order_line_id'] ?? $line['id'] ?? ''));
-            if ($lineId === '') {
-                continue;
-            }
-            $lines[] = array('id' => $lineId, 'accepted' => true);
-        }
-        if ($lines === array()) {
-            throw new RuntimeException('Zamowienie MediaMarkt nie zawiera pozycji do akceptacji.');
-        }
-
-        $this->requestApi($account, 'PUT', '/api/orders/' . rawurlencode($orderId) . '/accept', array(), array('order_lines' => $lines), array('Content-Type: application/json'));
-    }
-
     public function listAccounts(): array
     {
         return $this->storage->allAccounts();

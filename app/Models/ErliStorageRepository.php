@@ -380,18 +380,6 @@ class ErliStorageRepository
         return isset($rows[0]) ? $rows[0] : null;
     }
 
-    public function findProductForOrder(int $accountId, string $externalId, string $sku = '')
-    {
-        if ($accountId <= 0 || ($externalId === '' && $sku === '')) { return null; }
-        $row=$this->database->fetch(
-            'SELECT external_id,sku,primary_image_url,images_json FROM erli_products'
-            . ' WHERE account_id=:account_id AND ((:external_id<>\'\' AND external_id=:external_id) OR (:sku<>\'\' AND sku=:sku))'
-            . ' ORDER BY CASE WHEN external_id=:external_id THEN 0 ELSE 1 END,id DESC LIMIT 1',
-            ['account_id'=>$accountId,'external_id'=>$externalId,'sku'=>$sku]
-        );
-        return $row ?: null;
-    }
-
     public function listProductsByIds(array $productRowIds): array
     {
         $productRowIds = array_values(array_unique(array_filter(array_map('intval', $productRowIds))));

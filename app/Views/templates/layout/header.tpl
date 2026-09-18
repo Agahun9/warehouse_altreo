@@ -12,9 +12,6 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
-  {if $currentController eq 'orders'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260917-5">
-  {/if}
   <style>
     /*
      * Kompaktowy interfejs bez CSS zoom. Zmniejszenie bazowego rem skaluje
@@ -287,7 +284,7 @@
     }
   </style>
 </head>
-<body class="layout-fixed sidebar-expand-lg bg-body-tertiary{if $currentController eq 'orders'} sidebar-mini sidebar-collapse{/if}">
+<body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
   <div class="app-page-loader" id="appPageLoader" aria-hidden="true" aria-live="polite">
     <div class="app-page-loader-card" role="status">
       <div class="spinner-border text-primary app-page-loader-spinner" aria-hidden="true"></div>
@@ -428,25 +425,6 @@
                     <i class="nav-icon bi bi-tv"></i>
                     <p>MediaMarkt</p>
                   </a>
-                </li>
-              {/if}
-              {if $currentUser.role eq 'admin' or in_array('orders', $currentUser.modules)}
-                <li class="nav-item{if $currentController eq 'orders'} menu-open{/if}">
-                  <a href="orders.php" class="nav-link{if $currentController eq 'orders'} active{/if}">
-                    <i class="nav-icon bi bi-inboxes"></i>
-                    <p>Centrum zamówień <i class="nav-arrow bi bi-chevron-right"></i></p>
-                  </a>
-                  <ul class="nav nav-treeview taskboard-submenu">
-                    <li class="nav-item"><a href="orders.php" class="nav-link{if $currentController eq 'orders' and ($tab|default:'list') eq 'list'} active{/if}"><i class="nav-icon bi bi-inbox"></i><p>Zamówienia</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=accounts" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'accounts'} active{/if}"><i class="nav-icon bi bi-plug"></i><p>Konta i import</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=statuses" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'statuses'} active{/if}"><i class="nav-icon bi bi-diagram-3"></i><p>Statusy</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=rules" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'rules'} active{/if}"><i class="nav-icon bi bi-lightning-charge"></i><p>Automatyzacje</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=shipments" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'shipments'} active{/if}"><i class="nav-icon bi bi-box-seam"></i><p>Przesyłki</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=printing" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'printing'} active{/if}"><i class="nav-icon bi bi-printer"></i><p>Drukarki</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=payments" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'payments'} active{/if}"><i class="nav-icon bi bi-credit-card"></i><p>Ustaw płatności</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'documents'} active{/if}"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
-                    <li class="nav-item"><a href="orders.php?tab=general" class="nav-link{if $currentController eq 'orders' and ($tab|default:'') eq 'general'} active{/if}"><i class="nav-icon bi bi-sliders"></i><p>Ustawienia ogólne</p></a></li>
-                  </ul>
                 </li>
               {/if}
               {if $currentUser.role eq 'admin' or in_array('erli', $currentUser.modules)}

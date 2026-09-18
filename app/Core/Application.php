@@ -19,7 +19,6 @@ use App\Controllers\MediaController;
 use App\Controllers\MediaMarktController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
-use App\Controllers\PrintAgentController;
 use App\Controllers\SellasistController;
 use App\Controllers\TaskboardController;
 use App\Controllers\TemuController;
@@ -52,9 +51,6 @@ class Application
                 break;
             case 'categories':
                 $controller = new CategoryController();
-                break;
-            case 'orders':
-                $controller = new \App\Controllers\OrdersController();
                 break;
             case 'allegro':
                 $controller = new AllegroController();
@@ -121,44 +117,6 @@ class Application
 
         if ($path === '') {
             return false;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/health$#',$path)===1) {
-            (new PrintAgentController())->health();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/stations/heartbeat$#',$path)===1) {
-            (new PrintAgentController())->heartbeat();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/jobs/next$#',$path)===1) {
-            (new PrintAgentController())->next();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/jobs/([0-9a-f-]{36})/status$#i',$path,$printMatches)===1) {
-            $_GET['job_id']=$printMatches[1];
-            (new PrintAgentController())->status();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/jobs/([0-9a-f-]{36})/pdf$#i',$path,$printMatches)===1) {
-            $_GET['job_id']=$printMatches[1];
-            (new PrintAgentController())->pdf();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/fiscal/next$#',$path)===1) {
-            (new PrintAgentController())->fiscalnext();
-            return true;
-        }
-
-        if (preg_match('#(?:^|/)api/print-agent/fiscal/([0-9a-f-]{36})/status$#i',$path,$printMatches)===1) {
-            $_GET['job_id']=$printMatches[1];
-            (new PrintAgentController())->fiscalstatus();
-            return true;
         }
 
         if (preg_match('#^api/export/csv/(\d+)$#', $path, $matches) !== 1) {
