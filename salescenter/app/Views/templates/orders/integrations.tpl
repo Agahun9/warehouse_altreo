@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="dist/css/integrations.css?v=20260917-2">
+<link rel="stylesheet" href="dist/css/integrations.css?v=20260918-ship">
 {assign var=ig value=$integrations}
 <section class="sc-int" data-integrations data-open-add="{$ig.add|escape}" data-manual="{if $ig.manual}1{else}0{/if}">
   <div class="sc-int-head">
@@ -157,23 +157,12 @@
               </form>
             {else}
               <div class="sc-allegro-setup">
-                <div class="sc-setup-badge"><i class="bi bi-1-circle-fill"></i> Jednorazowe włączenie logowania Allegro</div>
-                <p>Allegro pozwala łączyć konta tylko przez zarejestrowaną aplikację. {if $ig.platformOperator}Zrobisz to raz – potem <strong>każda firma</strong> w SalesCenter łączy konto samym logowaniem.{else}Zrób to raz dla swojej firmy – potem kolejne konta łączysz samym logowaniem.{/if} Zajmie to ok. 3 minuty.</p>
-                <ol class="sc-steps">
-                  <li>Otwórz <a href="https://apps.developer.allegro.pl/new" target="_blank" rel="noopener noreferrer">apps.developer.allegro.pl</a> i zaloguj się kontem Allegro.</li>
-                  <li>Kliknij „Zarejestruj nową aplikację”, wpisz nazwę (np. SalesCenter) i wybierz <strong>„Aplikacja będzie miała dostęp do przeglądarki”</strong>.</li>
-                  <li>W polu <strong>Adres URI do przekierowania</strong> wklej:
-                    <div class="sc-copy sc-copy-block"><code data-copy-source>{$ig.allegroRedirectUri|escape}</code><button type="button" class="sc-btn" data-copy><i class="bi bi-clipboard"></i> Kopiuj</button></div></li>
-                  <li>Zaznacz uprawnienia do zamówień, przesyłek i ofert, zapisz i skopiuj <strong>Client ID</strong> oraz <strong>Client Secret</strong>.</li>
-                </ol>
-                <form method="post" action="index.php?controller=integrations&action=allegroapp" class="sc-fields" data-connect-form>
-                  <input type="hidden" name="csrf" value="{$csrf|escape}">
-                  <label>Client ID<input name="client_id" autocomplete="off" required></label>
-                  <label>Client Secret<input name="client_secret" type="password" autocomplete="off" required></label>
-                  {if $ig.platformOperator}<label class="sc-check"><input type="checkbox" name="all_companies" value="1" checked> Udostępnij logowanie Allegro wszystkim firmom w SalesCenter</label>{/if}
-                  <button class="sc-btn sc-btn-primary" data-connect-submit><i class="bi bi-shield-check"></i> Sprawdź i włącz logowanie Allegro</button>
-                  <p class="sc-note"><i class="bi bi-shield-lock"></i> Client Secret jest szyfrowany. Po zapisaniu pojawi się przycisk „Zaloguj przez Allegro”.</p>
-                </form>
+                <div class="sc-setup-badge"><i class="bi bi-hourglass-split"></i> Logowanie Allegro nie jest jeszcze włączone</div>
+                {if $currentUser.is_headmaster}
+                  <p>Włącz je raz dla wszystkich firm w <a href="index.php?controller=administration#allegro-app">Administracja SalesCenter → Aplikacja Allegro</a>. Potem wrócisz tu i klikniesz „Zaloguj przez Allegro”.</p>
+                {else}
+                  <p>Administrator SalesCenter jeszcze nie włączył połączeń z Allegro. Spróbuj ponownie później.</p>
+                {/if}
               </div>
             {/if}
           {elseif $p.auth eq 'api'}
@@ -222,4 +211,4 @@
   </dialog>
   {/if}
 </section>
-<script src="dist/js/integrations.js?v=20260917-cron" defer></script>
+<script src="dist/js/integrations.js?v=20260918-ship" defer></script>

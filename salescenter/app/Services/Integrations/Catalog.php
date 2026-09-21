@@ -150,6 +150,26 @@ final class Catalog
                     ['name' => 'consumer_secret', 'label' => 'Consumer secret', 'type' => 'password', 'secret' => true, 'manual' => true, 'placeholder' => 'cs_…'],
                 ],
             ],
+            'altreo' => [
+                'label' => 'Altreo.pl', 'group' => 'Sklep internetowy', 'color' => '#2954e8', 'logo' => 'AL', 'auth' => 'fields',
+                'tagline' => 'Adres sklepu altreo.pl i token API z panelu sklepu.',
+                'features' => ['Import zamówień', 'Numer przesyłki do sklepu + e-mail do klienta', 'Pobieranie od daty'],
+                'steps' => [
+                    'Zaloguj się do panelu administracyjnego sklepu altreo.pl.',
+                    'Wejdź w „Ustawienia” → zakładka „SalesCenter” i kliknij „Wygeneruj token”.',
+                    'Skopiuj token i wklej go poniżej razem z adresem sklepu.',
+                ],
+                'tips' => [
+                    'Status źródłowy to kod statusu sklepu: nowe, w_realizacji, wyslane, zrealizowane, anulowane – zmapuj je w „Statusy” na statusy wewnętrzne.',
+                    'Przekazanie numeru przesyłki zmienia status zamówienia w sklepie na „Wysłane” i wysyła klientowi e-mail z numerem.',
+                    'Wygenerowanie nowego tokenu w sklepie unieważnia stary – wklej wtedy nowy w ustawieniach połączenia.',
+                ],
+                'links' => [['https://altreo.pl/admin/ustawienia#salescenter', 'Panel altreo.pl: SalesCenter']],
+                'fields' => [
+                    ['name' => 'shop_url', 'label' => 'Adres sklepu', 'type' => 'url', 'required' => true, 'placeholder' => 'https://altreo.pl'],
+                    ['name' => 'api_key', 'label' => 'Token API', 'type' => 'password', 'secret' => true, 'required' => true],
+                ],
+            ],
             'api' => [
                 'label' => 'Własny sklep (API)', 'group' => 'Sklep internetowy', 'color' => '#0f172a', 'logo' => '{ }', 'auth' => 'api',
                 'tagline' => 'Twój sklep wysyła zamówienia do SalesCenter przez proste REST API.',

@@ -6,7 +6,8 @@ return array(
     'app_name' => 'SalesCenter',
     'base_url' => './index.php',
     // Pełny publiczny adres index.php, np. https://panel.twojadomena.pl/index.php
-    // (używany w linkach resetu hasła i w adresach dla agenta druku).
+    // (używany w linkach resetu hasła, adresach dla agenta druku i do wyznaczenia
+    // publicznej strony allegro-app-info.php wskazywanej w User-Agent Allegro).
     'public_base_url' => '',
     // Klucz szyfrowania danych przewoźników i tokenów KSeF (64 znaki hex).
     // Wygeneruj: php -r "echo bin2hex(random_bytes(32));"  NIE ZMIENIAJ po uruchomieniu – zaszyfrowane dane przestaną działać.

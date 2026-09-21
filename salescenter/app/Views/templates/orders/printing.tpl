@@ -26,7 +26,9 @@
     </div>
     <p><strong>2.</strong> Utwórz stanowisko, skopiuj jednorazowo pokazany token i wpisz go w aplikacji agenta druku razem z adresem API poniżej.</p>
     {if $canWrite}<form class="om-form" method="post" action="?controller=orders&action=save"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="print_station_create"><input type="hidden" name="tab" value="printing"><label>Nazwa stanowiska<input name="station_name" maxlength="150" required placeholder="Np. Pakowanie 1"></label><button class="om-btn om-primary"><i class="bi bi-plus-lg"></i> Utwórz i pokaż token</button></form>{/if}
-    <div class="om-alert om-top"><strong>Adres API do wpisania w agencie:</strong><br><code>{$printAgentApiUrl|escape}</code></div>
+    {if $printAgentToken}<div class="om-alert om-top"><strong>Token stanowiska (pokazywany tylko raz):</strong><div class="om-actions"><input type="text" readonly value="{$printAgentToken|escape}" onfocus="this.select()" spellcheck="false" style="flex:1;min-width:0;font-family:monospace"><button type="button" class="om-btn om-small" data-copy-order="{$printAgentToken|escape}"><i class="bi bi-clipboard"></i> <span>Kopiuj</span></button></div></div>{/if}
+    <div class="om-alert om-top"><strong>Adres API do wpisania w agencie:</strong><div class="om-actions"><code>{$printAgentApiUrl|escape}</code><button type="button" class="om-btn om-small" data-copy-order="{$printAgentApiUrl|escape}"><i class="bi bi-clipboard"></i> <span>Kopiuj</span></button></div></div>
+    <p class="om-muted">W polu „Nazwa stanowiska” w aplikacji agenta używaj tylko liter bez polskich znaków (np. Pakowanie-1, nie Pakowanie główne) – inaczej agent zgłosi błąd „Request headers must contain only ASCII characters”.</p>
     <p class="om-muted">Stanowisko jest online, gdy kontaktowało się z serwerem w ciągu ostatnich 3 minut. Token jest przechowywany wyłącznie jako skrót SHA-256.</p>
   </section>
 </div>

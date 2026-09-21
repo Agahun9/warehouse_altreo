@@ -70,6 +70,8 @@ $db->update('om_orders',['details_json'=>OrderRepository::json($legacyDetails)],
 check($repo->order(1)['details']['payment_method']==='Płatność przy odbiorze','Legacy unresolved payment name corrected for COD display');
 $db->update('om_orders',['details_json'=>$legacyDetailsJson],'id=:id',['id'=>1]);
 check($edited['details']['document_preference']==='invoice','Manual document preference preserved after sync');
+$listed=array_column($repo->listing(['q'=>'test@example','account_id'=>1])['rows']??[],'document_choice','id');
+check(($listed[1]??'')==='invoice','List shows invoice without NIP');
 check($repo->listing(['q'=>'test@example','account_id'=>1])['total']===1,'Search with account filter');
 check($repo->listing(['q'=>"' OR 1=1 --"])['total']===0,'SQL injection search');
 check($repo->listing(['q'=>'TEST@EXAMPLE'])['total']>=1,'Search is case-insensitive');
@@ -128,6 +130,12 @@ $db->insert('om_series',['name'=>'Korekty','kind'=>'invoice_correction','pattern
 $docService=new OrderDocumentService($repo);
 $input=['series_id'=>1,'request_key'=>str_repeat('a',40),'buyer'=>'Anna Testowa','items'=>[['name'=>'Test','quantity'=>2,'price'=>'12.30','vat'=>'23']]];
 $docId=$docService->issue(1,$input,'test');check($docId===1,'Issue invoice');
+$split=['buyer_name'=>'Anna Testowa','shipping_address'=>['name'=>'Jan Odbiorca','street'=>'Dostawcza','building'=>'5','postal_code'=>'00-100','city'=>'Kraków','country'=>'PL'],'details'=>['pickup'=>'KRA01M','delivery'=>'Paczkomaty InPost','invoice_form'=>['name'=>'Anna Testowa','company'=>'Firma Test sp. z o.o.','nip'=>'5252674798','street'=>'Firmowa','building'=>'8','postal_code'=>'00-002','city'=>'Warszawa','country'=>'PL']]];
+check(OrderDocumentService::buyerText($split)==="Firma Test sp. z o.o.\nNIP: 5252674798\nFirmowa 8\n00-002 Warszawa",'Buyer block uses billing data');
+check(OrderDocumentService::recipientText($split)==="Jan Odbiorca\nDostawcza 5\n00-100 Kraków\nPunkt odbioru: KRA01M\nDostawa: Paczkomaty InPost",'Recipient block uses delivery data');
+$noBilling=$split; $noBilling['details']['invoice_form']=['name'=>'','company'=>'','nip'=>'','street'=>'','country'=>'PL'];
+check(OrderDocumentService::buyerText($noBilling)==="Jan Odbiorca\nDostawcza 5\n00-100 Kraków",'Empty billing data falls back to delivery');
+check(json_decode($db->fetchColumn('SELECT snapshot_json FROM om_documents WHERE id=1'),true)['recipient']!==null,'Snapshot stores delivery data');
 check($docService->issue(1,$input,'test')===$docId,'Document idempotency');
 check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=1')===2,'No skipped sequence on retry');
 $cor=$input; $cor['series_id']=2;$cor['parent_id']=1;$cor['reason']='Zwrot jednej sztuki';$cor['request_key']=str_repeat('b',40);$cor['items'][0]['quantity']=1;
@@ -307,6 +315,9 @@ foreach ([$docId=>'Faktura ',$receiptId=>'Paragon ',$reCorrectionId=>'Faktura ko
     $smarty->assign('document',$printRow);$html=$smarty->fetch('orders/print.tpl');
     check(strpos($html,$expectedTitle)!==false && strpos($html,'m-document')===false && strpos($html,'Wartość brutto')!==false,'A4 layout for '.$expectedTitle);
 }
+$printRow['ksef']=['state'=>'accepted','environment'=>'production','ksef_number'=>'5252674798-20260917-ABC','qr_url'=>'https://qr.ksef.mf.gov.pl/invoice/5252674798/17-09-2026/abc'];
+$smarty->assign('document',$printRow);$html=$smarty->fetch('orders/print.tpl');
+check(strpos($html,'data-ksef-qr="https://qr.ksef.mf.gov.pl/invoice/5252674798/17-09-2026/abc"')!==false && strpos($html,'qrcode-generator.js')!==false && strpos($html,'Dokument lokalny')===false,'A4 print shows KSeF QR code after acceptance');
 
 // Automations: triggers → conditions → ordered actions, chains, loop protection, buttons, schedule.
 $db->query('DELETE FROM om_rule_runs'); $db->query('DELETE FROM om_rules');
@@ -394,6 +405,10 @@ check(KsefService::parseBuyer("Jan Kowalski\nDługa 1\n00-001 Kraków")['nip']==
 $ksefSnapshot=['seller'=>['name'=>'Firma testowa','address'=>"Testowa 1\n00-001 Warszawa",'nip'=>'5252674798','bank'=>'61 1090 1014 0000 0712 1981 2874'],'buyer'=>"Firma Test sp. z o.o.\nNIP 5252674798\nFirmowa 8, 00-002 Warszawa",'currency'=>'PLN','issue_date'=>'2026-09-17','sale_date'=>'2026-09-16','items'=>[['name'=>'Produkt','quantity'=>2,'unit_cents'=>1230,'vat'=>'23','net_cents'=>2000,'tax_cents'=>460,'gross_cents'=>2460],['name'=>'Książka','quantity'=>1,'unit_cents'=>1080,'vat'=>'8','net_cents'=>1000,'tax_cents'=>80,'gross_cents'=>1080]],'net_cents'=>3000,'tax_cents'=>540,'gross_cents'=>3540,'amount_paid_cents'=>3540,'payment_method'=>'Przelew','order_number'=>'ORD-1','split_payment'=>false,'series_notes'=>''];
 $ksefXml=KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/KSEF/1'],$ksefSnapshot,['generated_at'=>new DateTimeImmutable('2026-09-17T10:00:00Z')]);
 check(strpos($ksefXml,'<P_13_1>20.00</P_13_1>')!==false && strpos($ksefXml,'<P_14_2>0.80</P_14_2>')!==false && strpos($ksefXml,'<P_15>35.40</P_15>')!==false && strpos($ksefXml,'<Zaplacono>1</Zaplacono>')!==false,'KSeF FA(3) invoice totals, payment and XSD validation');
+$ksefFull=$ksefSnapshot; $ksefFull['seller']+=['swift'=>'BREXPLPWMBK','bank_name'=>'Mbank','email'=>'kontakt@example.pl','regon'=>'388377942','bdo'=>'000559182']; $ksefFull['items'][0]['sku']='ALTREO_1'; $ksefFull['recipient']="Jan Odbiorca\nDługa 1\n00-001 Kraków\nDostawa: KURIER"; $ksefFull['order_number']='ZAM-1'; $ksefFull['order_date']='2026-09-15';
+$ksefFullXml=KsefService::buildInvoiceXml(['kind'=>'invoice','number'=>'FV/KSEF/2'],$ksefFull);
+check(strpos($ksefFullXml,'<Rola>2</Rola>')!==false && strpos($ksefFullXml,'<Nazwa>Jan Odbiorca</Nazwa>')!==false && strpos($ksefFullXml,'<Indeks>ALTREO_1</Indeks>')!==false && strpos($ksefFullXml,'<P_9A>10.00</P_9A>')!==false && strpos($ksefFullXml,'<P_11>20.00</P_11>')!==false && strpos($ksefFullXml,'<SWIFT>BREXPLPWMBK</SWIFT>')!==false && strpos($ksefFullXml,'<NrZamowienia>ZAM-1</NrZamowienia>')!==false && strpos($ksefFullXml,'<BDO>000559182</BDO>')!==false && strpos($ksefFullXml,'<Email>kontakt@example.pl</Email>')!==false,'KSeF FA(3) recipient, SKU, net prices, bank, order and registers');
+check(KsefService::qrUrl('sandbox','525-267-47-98','2026-09-17','ab+/cd==')==='https://qr-test.ksef.mf.gov.pl/invoice/5252674798/17-09-2026/ab-_cd','KSeF QR verification link');
 $ksefCorrection=$ksefSnapshot; $ksefCorrection['items']=[$ksefSnapshot['items'][1]]; $ksefCorrection['before']=['items'=>$ksefSnapshot['items']]; $ksefCorrection['difference_cents']=-2460; $ksefCorrection['reason']='Zwrot towaru';
 $ksefCorrectionXml=KsefService::buildInvoiceXml(['kind'=>'invoice_correction','number'=>'KOR/KSEF/1'],$ksefCorrection,['corrected'=>['number'=>'FV/KSEF/1','issue_date'=>'2026-09-17','ksef_number'=>'']]);
 check(strpos($ksefCorrectionXml,'<RodzajFaktury>KOR</RodzajFaktury>')!==false && strpos($ksefCorrectionXml,'<P_13_1>-20.00</P_13_1>')!==false && substr_count($ksefCorrectionXml,'<StanPrzed>1</StanPrzed>')===2 && strpos($ksefCorrectionXml,'<NrKSeFN>1</NrKSeFN>')!==false,'KSeF FA(3) correction with state before');
@@ -479,7 +494,7 @@ $db->update('om_ksef_submissions',['environment'=>'production'],'document_id=:d'
 check(strpos((string)$ksefService->lockReason($ksefDocId),'5252674798-20260917')!==false,'Production KSeF invoice is locked against edits');
 $smarty->assign(['tab'=>'documents','detail'=>null,'series'=>$db->fetchAll('SELECT * FROM om_series'),'documents'=>$db->fetchAll('SELECT * FROM om_documents WHERE id=:id',['id'=>$ksefDocId]),'ksefAccounts'=>$ksefService->accounts(),'ksefTargets'=>$ksefService->targets([$ksefDocId]),'ksefSubmissions'=>$ksefService->latest([$ksefDocId])]);
 $ksefHtml=$smarty->fetch('orders/index.tpl');
-check(strpos($ksefHtml,'KSeF 5252674798-20260917-0123456789AB-CD')!==false && strpos($ksefHtml,'name="ksef_account_id"')!==false && strpos($ksefHtml,'id="om-ksef"')===false,'KSeF document status and series account select render on documents tab');
+check(strpos($ksefHtml,'przyjęto w KSeF · 5252674798-20260917-0123456789AB-CD')!==false && strpos($ksefHtml,'name="ksef_account_id"')!==false && strpos($ksefHtml,'id="om-ksef"')===false,'KSeF document status and series account select render on documents tab');
 $smarty->assign('tab','general');
 $ksefGeneralHtml=$smarty->fetch('orders/index.tpl');
 check(strpos($ksefGeneralHtml,'id="om-ksef-'.$ksefAccountB.'"')!==false && strpos($ksefGeneralHtml,'Faktury firma B')!==false && strpos($ksefGeneralHtml,'sandbox-token')===false && strpos($ksefGeneralHtml,'company-b-token')===false,'KSeF accounts render in general settings without secrets');

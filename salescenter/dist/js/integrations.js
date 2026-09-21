@@ -11,17 +11,17 @@
     if (!dialog) return;
     dialog.querySelectorAll('[data-setup]').forEach(el => { el.hidden = true; });
     picker.hidden = false;
-    title.textContent = 'Dodaj kanał sprzedaży';
-    sub.textContent = 'Wybierz, skąd chcesz pobierać zamówienia.';
+    title.textContent = root.dataset.pickerTitle || 'Dodaj kanał sprzedaży';
+    sub.textContent = root.dataset.pickerSub || 'Wybierz, skąd chcesz pobierać zamówienia.';
   };
   const showSetup = code => {
     const setup = dialog?.querySelector(`[data-setup="${CSS.escape(code)}"]`);
     if (!setup) return showPicker();
     picker.hidden = true;
     dialog.querySelectorAll('[data-setup]').forEach(el => { el.hidden = el !== setup; });
-    title.textContent = `Połącz: ${setup.dataset.title}`;
+    title.textContent = `${root.dataset.setupPrefix || 'Połącz: '}${setup.dataset.title}`;
     sub.textContent = setup.dataset.sub;
-    setTimeout(() => setup.querySelector('input:not([type=hidden])')?.focus(), 30);
+    setTimeout(() => setup.querySelector('input:not([type=hidden]),select')?.focus(), 30);
   };
   const open = code => {
     if (!dialog) return;

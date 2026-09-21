@@ -105,6 +105,23 @@ final class PrestaShopService extends MarketplaceIntegration
         return $this->cache[$cacheKey];
     }
 
+    /** Odczyt zasobu webservice (JSON) – używany też przez wiadomości (customer_threads, customer_messages). */
+    public function webserviceGet(array $account, string $path, array $query = []): array
+    {
+        return $this->get($account, $path, $query);
+    }
+
+    /** Utworzenie zasobu webservice z treścią XML (zapis przez API PrestaShop wymaga XML). */
+    public function webserviceCreate(array $account, string $path, string $xml): array
+    {
+        $response = Http::request('PrestaShop', 'POST', $this->url($account, $path, ['output_format' => 'JSON']), $this->headers($account, 'Content-Type: application/xml'), $xml, 30, true);
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            $hint = $response['status'] === 401 ? 'nieprawidłowy klucz webservice' : ($response['status'] === 403 || $response['status'] === 405 ? 'klucz nie ma uprawnienia POST do „'.$path.'”' : Http::reason(json_decode($response['body'], true), strip_tags($response['body'])));
+            throw new RuntimeException('PrestaShop API error ['.$response['status'].']: '.$hint);
+        }
+        return json_decode($response['body'], true) ?: [];
+    }
+
     private function get(array $account, string $path, array $query): array
     {
         $response = Http::request('PrestaShop', 'GET', $this->url($account, $path, $query + ['output_format' => 'JSON']), $this->headers($account), null, 30, true);

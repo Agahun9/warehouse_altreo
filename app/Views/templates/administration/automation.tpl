@@ -230,7 +230,7 @@
             <div class="card-body">
               <div class="administration-summary-label">Szybki plan</div>
               <div class="administration-summary-value text-primary">Crony</div>
-              <div class="administration-summary-meta">Allegro i Erli: kolejki co minute, sync/maintenance co 5-15 minut</div>
+              <div class="administration-summary-meta">Wszystkie marketplace: kolejki co minute, synchronizacja co 5 minut</div>
             </div>
           </div>
         </div>
@@ -1306,12 +1306,9 @@
                   <div class="card administration-panel h-100">
                     <div class="card-body">
                       <div class="fw-semibold mb-2">Jak to ustawic</div>
-                      <div class="small text-secondary mb-2">Ustaw osobno szybkie workery kolejek i wolniejsze maintenance. Workery przepychaja juz dodane zadania, a maintenance robi sync i dorzuca nowe aktualizacje.</div>
-                      <div class="small text-secondary">Kolejki Allegro, Empik, MediaMarkt, Erli: co 1 minute.</div>
-                      <div class="small text-secondary">Allegro: co 5 minut.</div>
-                      <div class="small text-secondary">Empik: co 10 minut.</div>
-                      <div class="small text-secondary">Erli: co 10 minut.</div>
-                      <div class="small text-secondary mt-2">Automatyczne konczenie ofert Allegro ustaw osobno tylko wtedy, gdy ma dzialac prog konczenia ofert po stanie magazynowym.</div>
+                      <div class="small text-secondary mb-2">Wystarcza dwa stale wpisy cron: kolejki co minute i synchronizacja co 5 minut. Kazda integracja ma ograniczony batch i zapisuje wlasny offset, wiec nastepne wywolanie kontynuuje od ostatniego miejsca.</div>
+                      <div class="small text-secondary">Polecenia maja wspolna blokade <code>flock</code>, dlatego kolejne uruchomienie nie wejdzie na poprzednie, jesli jeszcze trwa.</div>
+                      <div class="small text-secondary mt-2">Trzeci wpis jest opcjonalny i sluzy tylko do automatycznego konczenia ofert Allegro.</div>
                     </div>
                   </div>
                 </div>
@@ -1322,45 +1319,13 @@
                     </div>
                     <div class="card-body">
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Allegro kolejka - co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$automation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                        <label class="form-label">1. Wszystkie kolejki - co 1 minute</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/flock -n /tmp/altreo-queues.lock /bin/sh -c '/usr/bin/curl --silent --max-time 20 &quot;{$automation.queue_worker|replace:'queue_limit=200':'queue_limit=30'|escape}&quot;; /usr/bin/curl --silent --max-time 20 &quot;{$empikAutomation.queue_worker|replace:'limit=50':'limit=20'|escape}&amp;max_runtime=10&quot;; /usr/bin/curl --silent --max-time 20 &quot;{$mediamarktAutomation.queue_worker|replace:'limit=50':'limit=20'|escape}&amp;max_runtime=10&quot;; /usr/bin/curl --silent --max-time 20 &quot;{$erliAutomation.queue_worker|replace:'limit=50':'limit=20'|escape}&quot;; /usr/bin/curl --silent --max-time 20 &quot;{$moreleAutomation.queue_worker|replace:'limit=50':'limit=20'|escape}&quot;' &gt;/dev/null 2&gt;&amp;1">
                       </div>
                       <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Empik kolejka - co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">MediaMarkt kolejka - co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$mediamarktAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Erli kolejka - co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Morele kolejka cen - co 1 minute</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$moreleAutomation.queue_worker|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <hr>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Allegro maintenance - co 5 minut</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$automation.full_maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1" id="globalMaintenanceUrl">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Empik maintenance - co 10 minut</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$empikAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">MediaMarkt maintenance - co 10 minut</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$mediamarktAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Erli maintenance - co 10 minut</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$erliAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
-                      </div>
-                      <div class="mb-3 administration-inline-code">
-                        <label class="form-label">Morele pobieranie aukcji - co 10 minut</label>
-                        <input type="text" class="form-control" readonly value="/usr/bin/curl --silent &quot;{$moreleAutomation.maintenance|escape}&quot; &gt;/dev/null 2&gt;&amp;1">
+                        <label class="form-label">2. Wszystkie synchronizacje - co 5 minut</label>
+                        <input type="text" class="form-control" readonly value="/usr/bin/flock -n /tmp/altreo-sync.lock /bin/sh -c '/usr/bin/curl --silent --max-time 45 &quot;{$automation.full_maintenance|escape}&quot;; /usr/bin/curl --silent --max-time 45 &quot;{$empikAutomation.maintenance|escape}&amp;sync_budget=25&amp;sync_account_runtime=10&quot;; /usr/bin/curl --silent --max-time 45 &quot;{$mediamarktAutomation.maintenance|escape}&amp;sync_budget=25&amp;sync_account_runtime=10&quot;; /usr/bin/curl --silent --max-time 45 &quot;{$erliAutomation.maintenance|escape}&quot;; /usr/bin/curl --silent --max-time 45 &quot;{$moreleAutomation.maintenance|escape}&quot;; /usr/bin/curl --silent --max-time 20 &quot;{$cronHealthUrl|escape}&quot;' &gt;/dev/null 2&gt;&amp;1" id="globalMaintenanceUrl">
+                        <div class="form-text">Offsety sa zapisywane po kazdym batchu. Zbiorczy raport kontrolny trafia na kontakt@altreo.pl najwyzej raz na 30 minut.</div>
                       </div>
                       <div class="administration-inline-code">
                         <label class="form-label">Opcjonalnie: konczenie ofert Allegro - co 30 minut</label>

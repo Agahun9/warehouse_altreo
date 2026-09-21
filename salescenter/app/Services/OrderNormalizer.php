@@ -9,7 +9,7 @@ use InvalidArgumentException;
 
 final class OrderNormalizer
 {
-    public const CANONICAL_PLATFORMS = ['prestashop', 'woocommerce', 'temu', 'morele', 'api'];
+    public const CANONICAL_PLATFORMS = ['prestashop', 'woocommerce', 'temu', 'morele', 'altreo', 'api'];
 
     /** Kwota z liczby lub tekstu (przecinek/kropka) do formatu z 2 miejscami. */
     public static function decimal($value): string
@@ -30,7 +30,7 @@ final class OrderNormalizer
         return [
             'firstName'=>(string)($address['firstName']??$address['firstname']??$address['first_name']??''),
             'lastName'=>(string)($address['lastName']??$address['lastname']??$address['last_name']??''),
-            'company_name'=>(string)($address['company_name']??''),
+            'company_name'=>(string)($address['company_name']??$address['company']??''),
             'tax_id'=>(string)($address['tax_id']??$address['taxId']??$address['nip']??''),
             'email'=>(string)($address['email']??$fallbackEmail),
             'phoneNumber'=>(string)($address['phone']??$address['phone_number']??$address['phoneNumber']??''),
@@ -109,30 +109,7 @@ final class OrderNormalizer
 
     public static function normalize(string $platform, array $raw, int $cutoff, int $now): ?array
     {
-        if ($platform === 'altreo') {
-            $created=(string)($raw['created_at']??'');
-            $id=(string)($raw['order_number']??'');
-            $status=(string)($raw['status']??'nowe');
-            $total=self::money($raw['total']??'0');
-            $currency='PLN';
-            $paid=($raw['payment_status']??'')==='oplacone';
-            $delivery=(string)($raw['shipping_method']??'');
-            $cashOnDelivery=self::cashOnDelivery($raw,$delivery);
-            $shipping=self::money($raw['shipping_cost']??'0');
-            $pickup='';
-            $buyer=['email'=>(string)($raw['email']??'')];
-            $email=(string)($raw['email']??'');
-            $phone=(string)($raw['phone']??'');
-            $name=trim((string)($raw['full_name']??''));
-            $address=['firstName'=>$name,'lastName'=>'','street'=>(string)($raw['street']??''),'city'=>(string)($raw['city']??''),'zip'=>(string)($raw['postcode']??''),'country'=>(string)($raw['country']??'Polska'),'phoneNumber'=>$phone,'email'=>$email];
-            $invoiceRequired=!empty($raw['invoice_requested']);
-            $invoice=$invoiceRequired?['company_name'=>(string)($raw['invoice_company_name']??''),'tax_id'=>(string)($raw['invoice_nip']??''),'street'=>(string)($raw['invoice_street']??''),'city'=>(string)($raw['invoice_city']??''),'zip'=>(string)($raw['invoice_postcode']??'')]:[];
-            $documentPreference=$invoiceRequired?'invoice':'receipt';
-            $items=[];
-            foreach ((array)($raw['items']??[]) as $item) {
-                $items[]=['name'=>(string)($item['product_name']??''),'sku'=>(string)($item['product_sku']??''),'quantity'=>(int)($item['qty']??1),'unit_cents'=>self::money($item['price']??'0'),'vat'=>null,'image_url'=>self::imageUrl($item),'options'=>(array)($item['options']??[])];
-            }
-        } elseif ($platform === 'allegro') {
+        if ($platform === 'allegro') {
             $dates = array_column($raw['lineItems'] ?? [], 'boughtAt');
             sort($dates);
             $created = $dates[0] ?? '';
@@ -192,6 +169,30 @@ final class OrderNormalizer
             if ($email==='') { $email=(string)($raw['customer_notification_email']??$buyer['email']??''); }
             $address = self::miraklAddress((array)($buyer['shipping_address'] ?? $buyer),$email);
             $invoice = self::miraklAddress((array)($buyer['billing_address'] ?? $address),$email);
+            // Empik: NIP przychodzi jako pole dodatkowe "nip", a w adresach bywa wpisany w lastname;
+            // nazwa firmy jest powielana w polach imienia/nazwiska.
+            $nip='';
+            foreach ((array)($raw['order_additional_fields']??[]) as $field) {
+                if (is_array($field) && in_array(strtolower((string)($field['code']??'')),['nip','tax-id','vat-number'],true)) { $nip=trim((string)($field['value']??'')); break; }
+            }
+            $nipDigits=preg_replace('/\D/','',$nip)??'';
+            $cleanNames=static function (array $a,bool $dropCompany) use ($nipDigits): array {
+                $company=mb_strtolower(trim($a['company_name']),'UTF-8');
+                foreach (['firstName','lastName'] as $nameField) {
+                    $value=trim($a[$nameField]);
+                    $digits=preg_replace('/[\s-]/','',$value)??'';
+                    if (($nipDigits!=='' && $digits===$nipDigits) || preg_match('/^(PL)?\d{10}$/iD',$digits)) { $a[$nameField]=''; }
+                    elseif ($dropCompany && $company!=='' && mb_strtolower($value,'UTF-8')===$company) { $a[$nameField]=''; }
+                }
+                return $a;
+            };
+            $address=$cleanNames($address,false);
+            $invoice=$cleanNames($invoice,true);
+            if ($invoice['tax_id']==='' && $nip!=='') { $invoice['tax_id']=$nip; }
+            if (trim($invoice['firstName'].$invoice['lastName'])==='') {
+                $invoice['firstName']=(string)($buyer['firstname']??$buyer['first_name']??'');
+                $invoice['lastName']=(string)($buyer['lastname']??$buyer['last_name']??'');
+            }
             $id = $raw['order_id'] ?? '';
             $status = $raw['order_state'] ?? 'UNKNOWN';
             $total = self::money($raw['total_price'] ?? '0');
@@ -236,7 +237,7 @@ final class OrderNormalizer
             $invoiceRequired = !empty($raw['invoice_required']) || !empty($raw['invoiceRequired']) || !empty($invoice['company_name']) || !empty($invoice['tax_id']);
             $documentPreference = $invoiceRequired ? 'invoice' : 'receipt';
         } elseif (in_array($platform, self::CANONICAL_PLATFORMS, true)) {
-            // Wspólny format SalesCenter: PrestaShop, WooCommerce, Temu, Morele i API własnego sklepu.
+            // Wspólny format SalesCenter: PrestaShop, WooCommerce, Temu, Morele, Altreo.pl i API własnego sklepu.
             $created = (string) ($raw['created_at'] ?? '');
             $id = (string) ($raw['id'] ?? '');
             $status = mb_substr(trim((string) ($raw['status'] ?? 'new')), 0, 100, 'UTF-8') ?: 'new';

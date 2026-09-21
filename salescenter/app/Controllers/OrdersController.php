@@ -6,12 +6,14 @@ use App\Core\Controller;
 use App\Core\Config;
 use App\Core\SmartyFactory;
 use App\Models\OrderRepository;
+use App\Models\SaasRepository;
 use App\Models\PrintAgentRepository;
 use App\Services\OrderSyncService;
 use App\Services\OrderDocumentService;
 use App\Services\KsefService;
 use App\Services\OrderMarketplaceShipmentService;
 use App\Services\OrderShipmentService;
+use App\Services\Shipping\ShippingProviders;
 use InvalidArgumentException;
 
 final class OrdersController extends Controller
@@ -79,6 +81,7 @@ final class OrdersController extends Controller
                 catch (\Throwable $e) { $sourceConnection=[]; }
                 $sellerId=(string)($detail['platform']==='erli'?($sourceConnection['shop_id']??''):rtrim((string)($sourceConnection['shop_url']??''),'/'));
             }
+            if ($detail['platform']==='altreo') { $sellerId=(string)($detail['details']['raw']['admin_url']??''); }
             $detail['source_order_url']=$this->sourceOrderUrl((string)$detail['platform'],(string)$detail['external_id'],$sellerId);
             $detail['raw_debug']=json_encode($detail['details']['raw']??[],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
@@ -99,7 +102,18 @@ final class OrdersController extends Controller
         $shippingDefaults=$this->shippingDefaults($repo);
         $shipmentSuggestion=$detail?$this->shipmentSuggestion($detail,$carrierAccounts,$shippingDefaults):[];
         $documentDefaults=$repo->setting('document_defaults')+['vat'=>'23'];
-        $orderGeneralSettings=$repo->setting('order_general')+['default_currency'=>'PLN'];
+        $shipmentRegister=[];
+        if ($tab==='shipments') {
+            $shipmentRegister=$this->db()->fetchAll('SELECT s.*,ca.provider AS carrier_provider FROM om_shipments s LEFT JOIN om_carrier_accounts ca ON ca.id=s.carrier_account_id ORDER BY s.id DESC LIMIT 100');
+            foreach ($shipmentRegister as &$registered) { $registered['presentation']=OrderShipmentService::presentation($registered,['details'=>[]]); }
+            unset($registered);
+        }
+        $canManageTenant=in_array((string)($user['role']??''),['owner','admin'],true);
+        $accountData=['tenant'=>[],'teamUsers'=>[],'teamRoles'=>SaasRepository::ROLES,'canManageTenant'=>$canManageTenant];
+        if ($tab==='general') {
+            $accountData['tenant']=$this->saas()->tenant((int)$user['tenant_id'])??[];
+            if ($canManageTenant) { $accountData['teamUsers']=$this->saas()->users((int)$user['tenant_id']); }
+        }
         $receiptPrinterSettings=$repo->setting('receipt_printer')+['printer_id'=>0];
         $series=$this->db()->fetchAll('SELECT * FROM om_series ORDER BY id');
         $seriesUsage=array_column($this->db()->fetchAll('SELECT series_id,COUNT(*) c FROM om_documents GROUP BY series_id'),'c','series_id');
@@ -120,11 +134,13 @@ final class OrdersController extends Controller
         foreach ($this->db()->fetchAll($documentsSql,$documentsParams) as $docRow) {
             $snap=json_decode($docRow['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
             $docRow['buyer']=(string)($snap['buyer']??'');
+            $docRow['recipient']=(string)($snap['recipient']??'');
+            $docRow['additional_info']=(string)($snap['additional_info']??'');
             $docRow['gross_cents']=(int)($snap['gross_cents']??0);
             $docRow['currency']=(string)($snap['currency']??'PLN');
             $docRow['has_correction']=isset($correctionParents[$docRow['id']]);
             $docRow['items']=array_map(static function ($it) {
-                return ['name'=>(string)($it['name']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
+                return ['name'=>(string)($it['name']??''),'sku'=>(string)($it['sku']??''),'ean'=>(string)($it['ean']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
             },(array)($snap['items']??[]));
             $documents[]=$docRow;
         }
@@ -172,7 +188,7 @@ final class OrdersController extends Controller
                 'selected'=>(int)$this->input('connection',0),'add'=>preg_replace('/[^a-z]/','',(string)$this->input('add','')),'backfill'=>(int)$this->input('backfill',0),'manual'=>(string)$this->input('manual','')==='1','today'=>(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format('Y-m-d'),
                 'callbackHttps'=>stripos(\App\Controllers\IntegrationsController::appUrl('x'),'https://')===0];
         }
-        $this->renderOrders([
+        $this->renderOrders($accountData+[
             'integrations'=>$integrationsView,
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
             'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$dashboard,'statusGroups'=>$statusGroups,
@@ -182,10 +198,11 @@ final class OrdersController extends Controller
             'rules'=>$tab==='rules'?$repo->rules():[],'automation'=>$automationView,'manualRules'=>$automation->manualRules(),
             'orderAutomation'=>$detail?['rules'=>$automation->explain((int)$detail['id']),'runs'=>$automation->log(12,(int)$detail['id'])]:['rules'=>[],'runs'=>[]],
             'series'=>$series,
-            'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>''],
+            'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>'','bank_name'=>'','swift'=>'','email'=>'','phone'=>'','regon'=>'','krs'=>'','bdo'=>''],
             'documents'=>$documents,'documentSeriesFilter'=>$documentSeriesFilter,'ksefAccounts'=>$ksef->accounts(),'ksefTargets'=>$ksef->targets($ksefDocumentIds),'ksefSubmissions'=>$ksefSubmissions,
-            'shipments'=>$this->db()->fetchAll('SELECT * FROM om_shipments ORDER BY id DESC LIMIT 100'),
-            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'orderGeneralSettings'=>$orderGeneralSettings,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
+            'shipments'=>$shipmentRegister,'shippingProviders'=>$tab==='shipments'?ShippingProviders::catalog($this->carrierAccountStats($carrierAccounts),$repo->accounts()):[],
+            'shippingView'=>['selected'=>(int)$this->input('carrier',0),'add'=>preg_replace('/[^a-z_]/','',(string)$this->input('add',''))],
+            'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
             'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
@@ -194,6 +211,7 @@ final class OrdersController extends Controller
     {
         $data['flashSuccess']=$this->getFlash('success');
         $data['flashError']=$this->getFlash('error');
+        $data['printAgentToken']=$this->getFlash('print_token');
         header('Cache-Control: no-store, private');
         $this->render('orders/index',$data);
     }
@@ -425,7 +443,8 @@ final class OrdersController extends Controller
                     $this->redirect('./index.php?controller=orders&id='.$id.'#om-automation');
                     break;
                 case 'seller':
-                    $repo->saveSetting('seller',['name'=>$this->required('name',200),'address'=>$this->required('address',1000),'nip'=>$this->required('nip',30),'bank'=>substr((string)($_POST['bank']??''),0,100)]);
+                    $optional=static function (string $key,int $max): string { return mb_substr(trim((string)($_POST[$key]??'')),0,$max,'UTF-8'); };
+                    $repo->saveSetting('seller',['name'=>$this->required('name',200),'address'=>$this->required('address',1000),'nip'=>$this->required('nip',30),'bank'=>substr((string)($_POST['bank']??''),0,100),'bank_name'=>$optional('bank_name',100),'swift'=>$optional('swift',11),'email'=>$optional('email',255),'phone'=>$optional('phone',16),'regon'=>$optional('regon',14),'krs'=>$optional('krs',10),'bdo'=>$optional('bdo',9)]);
                     break;
                 case 'receipt_printer':
                     (new PrintAgentRepository($db))->ensureSchema();
@@ -475,11 +494,15 @@ final class OrdersController extends Controller
                     if ($buyer==='') { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
                     $calculated=OrderDocumentService::calculate($_POST['items']??[]);
                     $old=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
-                    $snapshot=array_replace($old,$calculated,['buyer'=>$buyer]);
+                    $recipient=trim((string)($_POST['recipient']??''));
+                    $additionalInfo=trim((string)($_POST['additional_info']??''));
+                    if (mb_strlen($buyer)>2000 || mb_strlen($recipient)>2000) { throw new InvalidArgumentException('Dane nabywcy lub dostawy są za długie.'); }
+                    if (mb_strlen($additionalInfo)>2000) { throw new InvalidArgumentException('Dodatkowa informacja jest za długa (maks. 2000 znaków).'); }
+                    $snapshot=array_replace($old,$calculated,['buyer'=>$buyer,'recipient'=>$recipient,'additional_info'=>$additionalInfo]);
                     if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['difference_net_cents']=$snapshot['net_cents']-(int)$old['before']['net_cents']; $snapshot['difference_tax_cents']=$snapshot['tax_cents']-(int)$old['before']['tax_cents']; $snapshot['parent_number']=$old['parent_number']; }
                     $snapshot['edited_at']=gmdate('Y-m-d H:i:s');
                     $db->update('om_documents',['snapshot_json'=>OrderRepository::json($snapshot)],'id=:id',['id'=>$documentId]);
-                    $repo->event((int)$document['order_id'],'Zaktualizowano dokument '.$document['number'].' (edycja nabywcy/pozycji).',$actor);
+                    $repo->event((int)$document['order_id'],'Zaktualizowano dokument '.$document['number'].' (edycja nabywcy, dostawy lub pozycji).',$actor);
                     $successMessage='Zaktualizowano dokument '.$document['number'].'.';
                     break;
                 case 'document_delete':
@@ -622,7 +645,8 @@ final class OrdersController extends Controller
                 case 'print_station_create':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                     $plainToken=$printAgents->createStation($this->required('station_name',150));
-                    $successMessage='Stanowisko utworzone. Token (skopiuj teraz): '.$plainToken;
+                    $this->setFlash('print_token',$plainToken);
+                    $successMessage='Stanowisko utworzone. Skopiuj token z pola w sekcji „Podłącz agent”.';
                     $tab='printing';
                     break;
                 case 'print_station_toggle':
@@ -634,7 +658,8 @@ final class OrdersController extends Controller
                 case 'print_station_token':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                     $plainToken=$printAgents->regenerateToken((int)($_POST['station_id']??0));
-                    $successMessage='Wygenerowano nowy token; poprzedni przestał działać. Skopiuj teraz: '.$plainToken;
+                    $this->setFlash('print_token',$plainToken);
+                    $successMessage='Wygenerowano nowy token; poprzedni przestał działać. Skopiuj go z pola w sekcji „Podłącz agent”.';
                     $tab='printing';
                     break;
                 case 'print_station_delete':
@@ -660,33 +685,53 @@ final class OrdersController extends Controller
                     break;
                 case 'carrier_account':
                     $provider=(string)($_POST['provider']??'');
-                    if (!in_array($provider,['allegro_wza','inpost_shipx','apaczka'],true)) { throw new InvalidArgumentException('Nieznany operator przesyłek.'); }
+                    if (!ShippingProviders::exists($provider)) { throw new InvalidArgumentException('Nieznany operator przesyłek.'); }
+                    $carrierId=(int)($_POST['carrier_account_id']??0);
+                    $redirectQuery=$carrierId?'&carrier='.$carrierId:'&add='.rawurlencode($provider);
                     $name=$this->required('name',150);
-                    $public=[]; $secret=[];
-                    if ($provider==='allegro_wza') {
-                        $accountId=(int)($_POST['allegro_account_id']??0);
-                        $account=$db->fetch('SELECT * FROM om_accounts WHERE id=:id AND platform=:platform',['id'=>$accountId,'platform'=>'allegro']);
-                        if (!$account) { throw new InvalidArgumentException('Wybierz konto Allegro.'); }
-                        $public=['order_account_id'=>$accountId];
-                    } elseif ($provider==='inpost_shipx') {
-                        $public=['organization_id'=>$this->required('organization_id',40),'environment'=>($_POST['environment']??'production')==='sandbox'?'sandbox':'production'];
-                        $secret=['token'=>$this->required('token',1000)];
-                    } else {
-                        $public=['app_id'=>$this->required('app_id',200)];
-                        $secret=['app_secret'=>$this->required('app_secret',1000)];
+                    $existingSecret=[];
+                    if ($carrierId) {
+                        $current=$db->fetch('SELECT * FROM om_carrier_accounts WHERE id=:id AND provider=:p',['id'=>$carrierId,'p'=>$provider]);
+                        if (!$current) { throw new InvalidArgumentException('Nie znaleziono konta nadawczego.'); }
+                        $existingSecret=\App\Services\OrderSecretBox::decrypt($current['secret_config_json']);
                     }
-                    $cipher=\App\Services\OrderSecretBox::encrypt($secret);
-                    $db->transaction(function () use ($db,$provider,$name,$public,$cipher) {
+                    $config=ShippingProviders::get($repo,$provider)->configure($_POST,$existingSecret);
+                    $cipher=\App\Services\OrderSecretBox::encrypt($config['secret']);
+                    $public=$config['public'];
+                    $carrierId=$db->transaction(function () use ($db,$provider,$name,$public,$cipher,$carrierId) {
                         $existing=$db->fetch('SELECT id FROM om_carrier_accounts WHERE provider=:p AND name=:n',['p'=>$provider,'n'=>$name]);
-                        $data=['enabled'=>1,'public_config_json'=>OrderRepository::json($public),'secret_config_json'=>$cipher,'updated_at'=>gmdate('Y-m-d H:i:s')];
-                        if ($existing) { $db->update('om_carrier_accounts',$data,'id=:id',['id'=>$existing['id']]); }
-                        else { $db->insert('om_carrier_accounts',$data+['provider'=>$provider,'name'=>$name]); }
+                        if ($carrierId && $existing && (int)$existing['id']!==$carrierId) { throw new InvalidArgumentException('Konto nadawcze o tej nazwie już istnieje.'); }
+                        $data=['public_config_json'=>OrderRepository::json($public),'secret_config_json'=>$cipher,'updated_at'=>gmdate('Y-m-d H:i:s')];
+                        if ($carrierId) { $db->update('om_carrier_accounts',$data+['name'=>$name],'id=:id',['id'=>$carrierId]); return $carrierId; }
+                        if ($existing) { $db->update('om_carrier_accounts',$data+['enabled'=>1],'id=:id',['id'=>$existing['id']]); return (int)$existing['id']; }
+                        return (int)$db->insert('om_carrier_accounts',$data+['enabled'=>1,'provider'=>$provider,'name'=>$name]);
                     });
+                    $db->delete('om_settings','setting_key=:k',['k'=>'carrier_services_'.(int)$carrierId]);
+                    $redirectQuery='&carrier='.(int)$carrierId;
+                    $successMessage='Zapisano konto '.ShippingProviders::definition($provider)['label'].' „'.$name.'”.';
+                    break;
+                case 'carrier_account_delete':
+                    $carrierId=(int)($_POST['carrier_account_id']??0);
+                    $redirectQuery='&carrier='.$carrierId;
+                    if (!$db->fetchColumn('SELECT id FROM om_carrier_accounts WHERE id=:id',['id'=>$carrierId])) { throw new InvalidArgumentException('Nie znaleziono konta nadawczego.'); }
+                    if ((int)$db->fetchColumn('SELECT COUNT(*) FROM om_shipments WHERE carrier_account_id=:id',['id'=>$carrierId])>0) { throw new InvalidArgumentException('To konto ma już przesyłki – wyłącz je zamiast odłączać, aby zachować statusy i etykiety.'); }
+                    $db->delete('om_carrier_accounts','id=:id',['id'=>$carrierId]);
+                    $db->delete('om_settings','setting_key=:k',['k'=>'carrier_services_'.$carrierId]);
+                    $redirectQuery='';
+                    $successMessage='Odłączono konto nadawcze.';
+                    break;
+                case 'carrier_account_toggle':
+                    $carrierId=(int)($_POST['carrier_account_id']??0);
+                    $enabled=!empty($_POST['enabled'])?1:0;
+                    if (!$db->fetchColumn('SELECT id FROM om_carrier_accounts WHERE id=:id',['id'=>$carrierId])) { throw new InvalidArgumentException('Nie znaleziono konta nadawczego.'); }
+                    $db->update('om_carrier_accounts',['enabled'=>$enabled,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$carrierId]);
+                    $redirectQuery='&carrier='.$carrierId;
+                    $successMessage=$enabled?'Włączono konto nadawcze.':'Wyłączono konto nadawcze. Istniejące przesyłki nadal możesz odświeżać i drukować.';
                     break;
                 case 'shipping_defaults':
                     $accountId=(int)($_POST['default_carrier_account_id']??0);
                     if ($accountId && !$db->fetchColumn('SELECT id FROM om_carrier_accounts WHERE id=:id AND enabled=1',['id'=>$accountId])) { throw new InvalidArgumentException('Wybierz aktywne konto nadawcze.'); }
-                    $number=static function (array $source,string $key,float $min,float $max): float { $value=filter_var($source[$key]??null,FILTER_VALIDATE_FLOAT); if ($value===false||$value<$min||$value>$max) { throw new InvalidArgumentException('Sprawdź wartość '.$key.'.'); } return (float)$value; };
+                    $number=static function (array $source,string $key,float $min,float $max): float { $value=filter_var($source[$key]??null,FILTER_VALIDATE_FLOAT); if ($value===false||$value<$min||$value>$max) { [$size,$field]=array_pad(explode('_',$key,2),2,''); throw new InvalidArgumentException('Sprawdź '.(['length'=>'długość','width'=>'szerokość','height'=>'wysokość','weight'=>'wagę'][$field]??$key).' w presecie „'.(['small'=>'Mała','medium'=>'Średnia','large'=>'Duża'][$size]??$size).'” (dozwolone '.$min.'–'.$max.').'); } return (float)$value; };
                     $presets=[];
                     foreach (['small','medium','large'] as $size) { $presets[$size]=['length'=>$number($_POST,$size.'_length',1,400),'width'=>$number($_POST,$size.'_width',1,400),'height'=>$number($_POST,$size.'_height',1,400),'weight'=>$number($_POST,$size.'_weight',0.01,1000)]; }
                     $defaultPackage=(string)($_POST['default_package']??'auto'); if (!in_array($defaultPackage,['auto','small','medium','large'],true)) { $defaultPackage='auto'; }
@@ -696,12 +741,6 @@ final class OrdersController extends Controller
                     if ($bankAccount!=='' && !preg_match('/^\d{26}$/D',$bankAccount)) { throw new InvalidArgumentException('Numer konta pobrania musi zawierać 26 cyfr (prefiks PL możesz pominąć).'); }
                     $repo->saveSetting('shipping_defaults',['default_carrier_account_id'=>$accountId,'default_package'=>$defaultPackage,'service'=>$service,'apaczka_service_id'=>(int)($_POST['apaczka_service_id']??0),'pickup_type'=>($_POST['pickup_type']??'SELF')==='COURIER'?'COURIER':'SELF','default_point'=>substr(trim((string)($_POST['default_point']??'')),0,100),'content'=>mb_substr(trim((string)($_POST['shipment_content']??'')),0,180,'UTF-8'),'cod_bank_account'=>$bankAccount,'presets'=>$presets,'sender'=>['name'=>substr(trim((string)($_POST['sender_name']??'')),0,150),'email'=>substr(trim((string)($_POST['sender_email']??'')),0,200),'phone'=>substr(trim((string)($_POST['sender_phone']??'')),0,30),'street'=>substr(trim((string)($_POST['sender_street']??'')),0,150),'building'=>substr(trim((string)($_POST['sender_building']??'')),0,30),'postal_code'=>substr(trim((string)($_POST['sender_postal_code']??'')),0,20),'city'=>substr(trim((string)($_POST['sender_city']??'')),0,100)]]);
                     $repo->saveSetting('document_defaults',['vat'=>in_array((string)($_POST['default_vat']??'23'),['23','8','5','0','zw','np'],true)?(string)$_POST['default_vat']:'23']);
-                    break;
-                case 'order_general_settings':
-                    $currency=strtoupper(trim((string)($_POST['default_currency']??'PLN')));
-                    if (!preg_match('/^[A-Z]{3}$/D',$currency)) { throw new InvalidArgumentException('Waluta musi być trzyliterowym kodem, np. PLN.'); }
-                    $repo->saveSetting('order_general',['default_currency'=>$currency]);
-                    $successMessage='Zapisano ustawienia ogólne.'; $tab='general';
                     break;
                 default: throw new InvalidArgumentException('Nieznana operacja.');
             }
@@ -717,6 +756,9 @@ final class OrdersController extends Controller
             } elseif (in_array($op,['ksef_test','ksef_send','ksef_refresh'],true) && !$e instanceof InvalidArgumentException) {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'ksef','order_id'=>$id]);
                 $safeMessage='Operacja KSeF nie powiodła się: '.mb_substr(trim($e->getMessage()),0,300,'UTF-8').' [ID: '.$diagnostic['reference'].']';
+            } elseif ($op==='carrier_account' && !$e instanceof InvalidArgumentException) {
+                $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'shipment']);
+                $safeMessage='Nie udało się sprawdzić konta u operatora. '.$diagnostic['message'].' [ID: '.$diagnostic['reference'].']';
             } elseif (in_array($op,['create_shipment','refresh_shipment','cancel_shipment'],true)) {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'shipment','order_id'=>$id]);
                 $reason=$e instanceof InvalidArgumentException ? $e->getMessage() : $diagnostic['message'];
@@ -763,7 +805,7 @@ final class OrdersController extends Controller
             if (!in_array($value,$allowed,true)) { throw new InvalidArgumentException('Nieprawidłowe ustawienie serii: '.$key); }
             $settings[$key]=$value;
         }
-        foreach (['shipment_name'=>100,'seller_name'=>200,'seller_address'=>1000,'seller_nip'=>30,'seller_bank'=>200] as $key=>$max) {
+        foreach (['shipment_name'=>100,'seller_name'=>200,'seller_address'=>1000,'seller_nip'=>30,'seller_bank'=>200,'seller_bank_name'=>100,'seller_swift'=>11,'seller_email'=>255,'seller_phone'=>16,'seller_regon'=>14,'seller_krs'=>10,'seller_bdo'=>9] as $key=>$max) {
             $value=trim((string)($_POST[$key]??''));
             if (mb_strlen($value)>$max) { throw new InvalidArgumentException('Za długa wartość pola: '.$key); }
             $settings[$key]=$value;
@@ -832,13 +874,23 @@ final class OrdersController extends Controller
         if ($platform==='allegro' && preg_match('/^[a-f0-9-]{20,60}$/iD',$externalId)) { return 'https://salescenter.allegro.com/orders/'.$encoded.(preg_match('/^\d{1,30}$/D',$sellerId)?'?sellerId='.rawurlencode($sellerId):''); }
         if ($platform==='erli' && preg_match('/^[A-Za-z0-9._-]{1,190}$/D',$externalId) && preg_match('/^\d+$/D',$sellerId)) { return 'https://erli.pl/manager-sklepu/'.$sellerId.'/zamowienia/'.$encoded; }
         if ($platform==='woocommerce' && preg_match('#^https://#',$sellerId) && ctype_digit($externalId)) { return $sellerId.'/wp-admin/post.php?post='.$encoded.'&action=edit'; }
+        if ($platform==='altreo' && preg_match('#^https://[^\s"\'<>]+/admin/zamowienia/\d+$#D',$sellerId)) { return $sellerId; }
         if ($platform==='morele' && preg_match('/^[A-Za-z0-9._-]{1,190}$/D',$externalId)) { return 'https://marketplace.morele.net/order/'.$encoded; }
         if ($platform==='empik' && preg_match('/^[A-Za-z0-9._-]{1,190}$/D',$externalId)) { return 'https://marketplace.empik.com/mmp/shop/order/'.$encoded; }
         return '';
     }
+    /** Liczba przesyłek i ostatnie nadanie per konto nadawcze (karty w zakładce Przesyłki). */
+    private function carrierAccountStats(array $accounts): array
+    {
+        $stats=[];
+        foreach ($this->db()->fetchAll('SELECT carrier_account_id,COUNT(*) total,MAX(created_at) last_at FROM om_shipments GROUP BY carrier_account_id') as $row) { $stats[(int)$row['carrier_account_id']]=$row; }
+        foreach ($accounts as &$account) { $account['shipment_count']=(int)($stats[(int)$account['id']]['total']??0); $account['last_shipment_at']=(string)($stats[(int)$account['id']]['last_at']??''); }
+        unset($account);
+        return $accounts;
+    }
     private function shipmentSuggestion(array $order,array $accounts,array $defaults): array
     {
-        return OrderShipmentService::suggestion($order,$accounts,$defaults);
+        return OrderShipmentService::suggestion($this->repository(),$order,$accounts,$defaults);
     }
     public function printdocument(): void
     {
@@ -854,6 +906,9 @@ final class OrdersController extends Controller
         }
         $ksef=new KsefService(new OrderRepository($this->db())); $ksef->ensureSchema();
         $document['ksef']=$ksef->latest([(int)$document['id']])[(int)$document['id']]??null;
+        if ($document['ksef'] && $document['ksef']['state']==='accepted' && !empty($document['ksef']['invoice_hash'])) {
+            $document['ksef']['qr_url']=KsefService::qrUrl((string)$document['ksef']['environment'],(string)($document['snapshot']['seller']['nip']??''),(string)($document['snapshot']['issue_date']??''),(string)$document['ksef']['invoice_hash']);
+        }
         header('Cache-Control: no-store');
         $smarty=SmartyFactory::create(); $smarty->assign(['document'=>$document,'canWrite'=>$this->moduleAccessLevel($user,'orders')==='edit']); $smarty->display('orders/print.tpl');
     }
@@ -898,6 +953,16 @@ final class OrdersController extends Controller
             $label=(new OrderShipmentService($repo))->label((int)$this->input('id',0),(string)$this->input('page_size','A6'));
             header('Content-Type: '.$label['mime']); header('Content-Disposition: inline; filename="'.$label['name'].'"'); header('Cache-Control: no-store, private');
             echo $label['bytes'];
+        } catch (\Throwable $e) { http_response_code(409); echo htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8'); }
+    }
+    /** Dokument operatora inny niż etykieta, np. protokół odbioru ERLI. */
+    public function shipmentdocument(): void
+    {
+        $this->requireModule('orders'); $repo=$this->repository();
+        try {
+            $document=(new OrderShipmentService($repo))->document((int)$this->input('id',0),(string)$this->input('kind',''));
+            header('Content-Type: '.$document['mime']); header('Content-Disposition: inline; filename="'.$document['name'].'"'); header('Cache-Control: no-store, private');
+            echo $document['bytes'];
         } catch (\Throwable $e) { http_response_code(409); echo htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8'); }
     }
 }

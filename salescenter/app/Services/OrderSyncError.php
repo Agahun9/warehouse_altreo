@@ -47,7 +47,8 @@ final class OrderSyncError
     {
         $text=$error->getMessage(); $status=0;
         if (preg_match('/(?:HTTP\s+|API error\s*\[)(\d{3})/i',$text,$match)) { $status=(int)$match[1]; }
-        $reason=self::allegroReason($text);
+        $reason=self::allegroReason($text); $platform='Allegro';
+        if ($reason==='' && preg_match('/^([A-Za-z]+) API error \[\d{3}\]:\s*(.+)$/u',$text,$match)) { $platform=$match[1]; $reason=mb_substr(preg_replace('/[\x00-\x1F\x7F]+/u',' ',trim($match[2])) ?: '',0,220,'UTF-8'); }
         $code='SHIPMENT_INTERNAL';
         $message='Operator nie utworzył przesyłki. Ponów próbę lub sprawdź identyfikator diagnostyczny w logu serwera.';
         if ($status===401) {
@@ -55,10 +56,10 @@ final class OrderSyncError
             $message='Autoryzacja konta nadawczego wygasła. Połącz konto ponownie.';
         } elseif ($status===403) {
             $code='SHIPMENT_PERMISSION';
-            $message='Operator odmówił dostępu do obsługi przesyłek (HTTP 403).'.($reason!==''?' Powód Allegro: '.$reason:' Sprawdź uprawnienia konta nadawczego.');
+            $message='Operator odmówił dostępu do obsługi przesyłek (HTTP 403).'.($reason!==''?' Powód '.$platform.': '.$reason:' Sprawdź uprawnienia konta nadawczego.');
         } elseif ($status===400 || $status===422) {
             $code='SHIPMENT_REQUEST';
-            $message='Operator odrzucił parametry przesyłki (HTTP '.$status.').'.($reason!==''?' Powód Allegro: '.$reason:' Sprawdź usługę, wymiary, wagę i dane odbiorcy.');
+            $message='Operator odrzucił parametry przesyłki (HTTP '.$status.').'.($reason!==''?' Powód '.$platform.': '.$reason:' Sprawdź usługę, wymiary, wagę i dane odbiorcy.');
         } elseif ($status===429) {
             $code='SHIPMENT_RATE_LIMIT';
             $message='Operator ograniczył liczbę zapytań (HTTP 429). Odczekaj chwilę i ponów nadanie.';

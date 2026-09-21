@@ -11,8 +11,11 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
-  {if $currentController eq 'orders' or $currentController eq 'index'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260917-6">
+  {if $currentController eq 'orders' or $currentController eq 'index' or $currentController eq 'messages'}
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260918-6">
+  {/if}
+  {if $currentController eq 'messages'}
+    <link rel="stylesheet" href="{$assetBase}/css/messages.css?v=20260918-1">
   {/if}
   <style>
     /*
@@ -308,6 +311,9 @@
     .sc-nav-header { padding: .95rem .7rem .3rem !important; font-size: .64rem !important; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: rgba(191,219,254,.55) !important; white-space: nowrap; }
     .sc-sidebar .sidebar-menu .nav-link { display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
     .sc-sidebar .sidebar-menu .nav-link p { margin: 0 0 0 .15rem; overflow: hidden; text-overflow: ellipsis; }
+    .sc-nav-badge { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: #f59e0b; color: #1f2937; font-size: .7rem; font-weight: 800; text-align: center; line-height: 1.5; }
+    body.sc-app.sidebar-collapse .sc-sidebar .nav-link { position: relative; }
+    @media (min-width: 992px) { body.sc-app.sidebar-collapse .sc-nav-badge { position: absolute; top: 3px; right: 6px; min-width: 16px; padding: 0 4px; font-size: .6rem; } }
     .sc-sidebar-footer { padding: .6rem .65rem .9rem; border-top: 1px solid rgba(255,255,255,.12); }
     .sc-logout { width: 100%; display: flex; align-items: center; min-height: 40px; padding: .56rem .68rem; border: 1px solid transparent; border-radius: 11px; background: transparent; color: rgba(239,246,255,.78); font-weight: 570; white-space: nowrap; overflow: hidden; }
     .sc-logout p { margin: 0 0 0 .15rem; font-size: .9rem; }
@@ -337,8 +343,8 @@
   </style>
 </head>
 {if $currentUser}
-<body class="layout-fixed sidebar-expand-lg sidebar-mini bg-body-tertiary sc-app">
-  {literal}<script>try{if(localStorage.getItem('sc-sidebar')==='collapsed'||(localStorage.getItem('sc-sidebar')===null&&window.innerWidth<1400)){document.body.classList.add('sidebar-collapse');}}catch(e){}</script>{/literal}
+<body class="layout-fixed sidebar-expand-lg sidebar-mini bg-body-tertiary sc-app{if !empty($detail)} sidebar-collapse sc-order-detail{/if}">
+  {literal}<script>try{if(document.body.classList.contains('sc-order-detail')){throw 0;}if(localStorage.getItem('sc-sidebar')==='collapsed'||(localStorage.getItem('sc-sidebar')===null&&window.innerWidth<1400)){document.body.classList.add('sidebar-collapse');}}catch(e){}</script>{/literal}
   <div class="app-page-loader" id="appPageLoader" aria-hidden="true" aria-live="polite">
     <div class="app-page-loader-card" role="status">
       <div class="spinner-border text-primary app-page-loader-spinner" aria-hidden="true"></div>
@@ -383,24 +389,19 @@
             <li class="nav-header sc-nav-header">Sprzedaż</li>
             <li class="nav-item"><a href="orders.php" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'list') eq 'list'} active{/if}" title="Zamówienia"><i class="nav-icon bi bi-inbox"></i><p>Zamówienia</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=new" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'new'} active{/if}" title="Nowe zamówienie"><i class="nav-icon bi bi-plus-circle"></i><p>Nowe zamówienie</p></a></li>
-            <li class="nav-item"><a href="orders.php?tab=rules" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'rules'} active{/if}" title="Automatyzacje"><i class="nav-icon bi bi-lightning-charge"></i><p>Automatyzacje</p></a></li>
-            <li class="nav-item"><a href="orders.php?tab=shipments" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'shipments'} active{/if}" title="Przesyłki"><i class="nav-icon bi bi-box-seam"></i><p>Przesyłki</p></a></li>
+            <li class="nav-item"><a href="{$baseUrl}?controller=messages" class="nav-link{if $currentController eq 'messages'} active{/if}" title="Wiadomości{if $messagesOpenCount|default:0 > 0} ({$messagesOpenCount} do obsługi){/if}"><i class="nav-icon bi bi-chat-left-text"></i><p>Wiadomości</p>{if $messagesOpenCount|default:0 > 0}<span class="sc-nav-badge">{if $messagesOpenCount > 99}99+{else}{$messagesOpenCount}{/if}</span>{/if}</a></li>
             <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'documents'} active{/if}" title="Dokumenty"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
             <li class="nav-header sc-nav-header">Konfiguracja</li>
             <li class="nav-item"><a href="orders.php?tab=accounts" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'accounts'} active{/if}" title="Konta i import"><i class="nav-icon bi bi-plug"></i><p>Konta i import</p></a></li>
+            <li class="nav-item"><a href="orders.php?tab=shipments" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'shipments'} active{/if}" title="Przesyłki"><i class="nav-icon bi bi-box-seam"></i><p>Przesyłki</p></a></li>
+            <li class="nav-item"><a href="orders.php?tab=rules" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'rules'} active{/if}" title="Automatyzacje"><i class="nav-icon bi bi-lightning-charge"></i><p>Automatyzacje</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=statuses" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'statuses'} active{/if}" title="Statusy"><i class="nav-icon bi bi-diagram-3"></i><p>Statusy</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=payments" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'payments'} active{/if}" title="Płatności"><i class="nav-icon bi bi-credit-card"></i><p>Płatności</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=printing" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'printing'} active{/if}" title="Drukarki"><i class="nav-icon bi bi-printer"></i><p>Drukarki</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=general" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'general'} active{/if}" title="Ustawienia ogólne"><i class="nav-icon bi bi-sliders"></i><p>Ustawienia ogólne</p></a></li>
-            <li class="nav-header sc-nav-header">Konto</li>
-            <li class="nav-item"><a href="{$baseUrl}?controller=account&action=company" class="nav-link{if $currentController eq 'account' and $currentAction eq 'company'} active{/if}" title="Firma"><i class="nav-icon bi bi-building"></i><p>Firma</p></a></li>
-            {if $currentUser.role eq 'owner' or $currentUser.role eq 'admin'}
-            <li class="nav-item"><a href="{$baseUrl}?controller=account&action=team" class="nav-link{if $currentController eq 'account' and $currentAction eq 'team'} active{/if}" title="Zespół"><i class="nav-icon bi bi-people"></i><p>Zespół</p></a></li>
-            {/if}
-            <li class="nav-item"><a href="{$baseUrl}?controller=account&action=password" class="nav-link{if $currentController eq 'account' and $currentAction eq 'password'} active{/if}" title="Moje hasło"><i class="nav-icon bi bi-key"></i><p>Moje hasło</p></a></li>
             {if $currentUser.is_headmaster}
-            <li class="nav-header sc-nav-header">Zarządzanie platformą</li>
-            <li class="nav-item"><a href="{$baseUrl}?controller=cron&action=index" class="nav-link{if $currentController eq 'cron'} active{/if}" title="Globalne zadania cron"><i class="nav-icon bi bi-clock-history"></i><p>Globalne zadania cron</p></a></li>
+            <li class="nav-header sc-nav-header">Administracja SalesCenter</li>
+            <li class="nav-item"><a href="{$baseUrl}?controller=administration&action=index" class="nav-link{if $currentController eq 'administration' or $currentController eq 'cron'} active{/if}" title="Administracja SalesCenter"><i class="nav-icon bi bi-shield-lock"></i><p>Administracja</p></a></li>
             {/if}
           </ul>
         </nav>

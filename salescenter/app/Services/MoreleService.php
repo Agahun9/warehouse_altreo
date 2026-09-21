@@ -119,14 +119,44 @@ final class MoreleService extends MarketplaceIntegration
         return $order;
     }
 
-    private function api(array $account, string $method, string $path, array $query = []): array
+    /**
+     * $multipart: części multipart (Http::multipart); $json: treść wysyłana jako application/json –
+     * tego oczekuje centrum wiadomości (POST /communication-center/message).
+     * Po 401 token jest odświeżany i żądanie ponawiane raz.
+     */
+    public function api(array $account, string $method, string $path, array $query = [], ?array $multipart = null, ?array $json = null): array
     {
         $url = self::BASE.$path.($query ? '?'.http_build_query($query) : '');
+        $call = function (bool $force) use (&$account, $method, $url, $multipart, $json): array {
+            $headers = ['Accept: application/json', 'Authorization: Bearer '.$this->token($account, $force)];
+            $body = null;
+            if ($multipart !== null) { [$contentType, $body] = Http::multipart($multipart); $headers[] = $contentType; }
+            if ($json !== null) { $headers[] = 'Content-Type: application/json'; $body = $json; }
+            return Http::json('Morele', $method, $url, $headers, $body);
+        };
         try {
-            return Http::json('Morele', $method, $url, ['Accept: application/json', 'Authorization: Bearer '.$this->token($account, false)]);
+            return $call(false);
         } catch (RuntimeException $e) {
             if (strpos($e->getMessage(), '[401]') === false || strpos($e->getMessage(), 'Wygeneruj') !== false) { throw $e; }
-            return Http::json('Morele', $method, $url, ['Accept: application/json', 'Authorization: Bearer '.$this->token($account, true)]);
+            return $call(true);
+        }
+    }
+
+    /**
+     * Diagnostyka centrum komunikacji: surowy kod HTTP i początek odpowiedzi, bez zgłaszania wyjątku.
+     * Morele nie publikuje specyfikacji tych zasobów – to jedyny sposób, żeby zobaczyć, co naprawdę zwraca API.
+     */
+    public function probe(array $account, string $method, string $path, array $query = [], array $extraHeaders = [], int $limit = 300, ?array $multipart = null, ?array $json = null): array
+    {
+        try {
+            $headers = array_merge(['Accept: application/json', 'Authorization: Bearer '.$this->token($account, false)], $extraHeaders);
+            $body = null;
+            if ($multipart !== null) { [$contentType, $body] = Http::multipart($multipart); $headers[] = $contentType; }
+            if ($json !== null) { $headers[] = 'Content-Type: application/json'; $body = json_encode($json, JSON_UNESCAPED_UNICODE); }
+            $response = Http::request('Morele', $method, self::BASE.$path.($query ? '?'.http_build_query($query) : ''), $headers, $body);
+            return ['status' => (int) $response['status'], 'body' => mb_substr(trim((string) $response['body']), 0, $limit, 'UTF-8')];
+        } catch (\Throwable $e) {
+            return ['status' => 0, 'body' => $e->getMessage()];
         }
     }
 

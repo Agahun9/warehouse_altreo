@@ -23,8 +23,8 @@ header('Referrer-Policy: no-referrer');
 <body>
 <main>
     <h1>accra_shop magazyn nowy</h1>
-    <p>Wewnętrzny system integracji magazynu i sprzedaży firmy ALTREO z Allegro REST API.</p>
-    <p>Aplikacja służy do synchronizacji ofert, cen i stanów magazynowych, pobierania oraz obsługi zamówień, a także przygotowywania przesyłek przez Wysyłam z Allegro.</p>
+    <p>Wewnętrzny system magazynowy firmy ALTREO zintegrowany z Allegro REST API.</p>
+    <p>Aplikacja służy do pobierania i zarządzania ofertami sprzedażowymi, łączenia ofert z produktami magazynowymi, aktualizacji cen i stanów, a także kończenia oraz wznawiania ofert.</p>
     <p>Aktualna wersja integracji: <code>2026.09.08</code>.</p>
     <p>Właściciel integracji: <a href="https://altreo.pl/">ALTREO</a>.</p>
 </main>

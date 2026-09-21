@@ -853,6 +853,20 @@ class AllegroService
                 }
             }
 
+            // Oferty nieobecne w ostatnim pelnym cyklu sprawdzamy w API;
+            // 404 oznacza, ze oferty juz nie ma na Allegro, wiec usuwamy ja lokalnie.
+            $lastFinishedCycle = $summary['finished_cycle'] ? $cycle : (string) ($state['last_finished_cycle'] ?? '');
+            if ($lastFinishedCycle !== '') {
+                $missingCheckDeadline = time() + max(10, $maxRuntime - (time() - $startTime));
+                $summary['missing_check'] = $this->verifyMissingOffers(
+                    $account,
+                    array($lastFinishedCycle, $summary['finished_cycle'] ? '' : $cycle),
+                    $summary['finished_cycle'] ? $lastFinishedCycle : $cycle,
+                    max(1, min(500, (int) ($options['missing_check_limit'] ?? 100))),
+                    $missingCheckDeadline
+                );
+            }
+
             $this->storage->markSyncSuccess($accountId);
             $summary['auto_linked'] = $this->autoLinkOffersToWarehouse($accountId, 1000);
             // Dane magazynowe sa zrodlem prawdy, wiec synchronizacja Allegro
@@ -883,6 +897,60 @@ class AllegroService
             'created_at' => (string) ($account['created_at'] ?? ''),
             'updated_at' => (string) ($account['updated_at'] ?? ''),
         );
+    }
+
+    public function checkOffersExistence(array $options = array()): array
+    {
+        $accountId = (int) ($options['account_id'] ?? 0);
+        $afterId = max(0, (int) ($options['after_id'] ?? 0));
+        $limit = max(1, min(200, (int) ($options['limit'] ?? 50)));
+        $maxRuntime = max(5, min(120, (int) ($options['max_runtime'] ?? 20)));
+        $startTime = time();
+
+        $accounts = array();
+        foreach ($this->listAccounts() as $account) {
+            $accounts[(int) $account['id']] = $account;
+        }
+
+        $result = array(
+            'checked' => 0,
+            'removed' => 0,
+            'kept' => 0,
+            'skipped' => 0,
+            'errors' => array(),
+            'next_after_id' => $afterId,
+            'remaining' => 0,
+            'done' => false,
+        );
+
+        $rows = $this->storage->fetchOffersForExistenceCheck($accountId > 0 ? $accountId : null, $afterId, $limit);
+        foreach ($rows as $row) {
+            if ((time() - $startTime) >= $maxRuntime) {
+                break;
+            }
+
+            $result['next_after_id'] = (int) $row['id'];
+            $account = $accounts[(int) ($row['account_id'] ?? 0)] ?? null;
+            if (!$account || (int) ($account['is_active'] ?? 0) !== 1) {
+                $result['skipped']++;
+                continue;
+            }
+
+            $status = $this->verifyOfferExists($account, $row);
+            $result['checked']++;
+            if ($status === 'removed') {
+                $result['removed']++;
+            } elseif ($status === 'kept') {
+                $result['kept']++;
+            } else {
+                $result['errors'][] = array('offer_id' => (string) $row['offer_id'], 'error' => $status);
+            }
+        }
+
+        $result['remaining'] = $this->storage->countOffersForExistenceCheck($accountId > 0 ? $accountId : null, $result['next_after_id']);
+        $result['done'] = $result['remaining'] === 0;
+
+        return $result;
     }
 
     public function searchCategories($search, $forceRefresh = false): array
@@ -2122,7 +2190,11 @@ class AllegroService
                 $summary = $this->normalizeOfferSummary($details);
                 $this->storage->upsertOffer($this->buildOfferPayload((int) $account['id'], $cycle, $summary, $details, $eventId, $occurredAt));
             } catch (RuntimeException $exception) {
-                $this->storage->touchOffer((int) $account['id'], $offerId, $cycle, $eventId, $occurredAt);
+                if ($this->isAllegroApiNotFound($exception)) {
+                    $this->storage->deleteOfferByOfferId((int) $account['id'], $offerId);
+                } else {
+                    $this->storage->touchOffer((int) $account['id'], $offerId, $cycle, $eventId, $occurredAt);
+                }
             }
 
             $lastEventId = $eventId;
@@ -2141,6 +2213,66 @@ class AllegroService
         return $processed;
     }
 
+    private function verifyMissingOffers(array $account, array $knownCycles, string $touchCycle, int $limit, int $deadline): array
+    {
+        $result = array('checked' => 0, 'removed' => 0, 'kept' => 0, 'errors' => 0);
+        $rows = $this->storage->fetchOffersMissingFromCycles((int) $account['id'], $knownCycles, $limit);
+
+        foreach ($rows as $row) {
+            if (time() >= $deadline) {
+                break;
+            }
+
+            $status = $this->verifyOfferExists($account, $row, $touchCycle);
+            $result['checked']++;
+            $result[$status === 'removed' ? 'removed' : ($status === 'kept' ? 'kept' : 'errors')]++;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Zwraca "removed" (404 - usunieto lokalnie), "kept" (oferta istnieje, odswiezono dane)
+     * albo tresc bledu API.
+     */
+    private function verifyOfferExists(array $account, array $row, ?string $cycle = null): string
+    {
+        $offerId = trim((string) ($row['offer_id'] ?? ''));
+        $offerRowId = (int) ($row['id'] ?? 0);
+        if ($offerId === '' || $offerRowId <= 0) {
+            return 'Brak offer_id.';
+        }
+
+        try {
+            $details = $this->requestApiWithAccount(
+                $account,
+                'GET',
+                '/sale/product-offers/' . rawurlencode($offerId)
+            );
+        } catch (RuntimeException $exception) {
+            if ($this->isAllegroApiNotFound($exception)) {
+                $this->storage->deleteOffersByTargets(array(array('id' => $offerRowId)));
+                return 'removed';
+            }
+
+            $this->storage->markOfferChecked($offerRowId);
+            return $exception->getMessage();
+        }
+
+        $summary = $this->normalizeOfferSummary($details);
+        if ($summary['offer_id'] === '') {
+            $this->storage->markOfferChecked($offerRowId);
+            return 'kept';
+        }
+
+        $payloadCycle = $cycle !== null && $cycle !== ''
+            ? $cycle
+            : ((string) ($row['last_seen_cycle'] ?? '') !== '' ? (string) $row['last_seen_cycle'] : $this->uuidV4());
+        $this->storage->upsertOffer($this->buildOfferPayload((int) $account['id'], $payloadCycle, $summary, $details, null, null));
+
+        return 'kept';
+    }
+
     private function finalizeFullCycle(int $accountId, string $cycle): void
     {
         $now = date('Y-m-d H:i:s');
@@ -2148,6 +2280,7 @@ class AllegroService
         $this->storage->updateSyncState($accountId, array(
             'offer_offset' => 0,
             'current_cycle' => null,
+            'last_finished_cycle' => $cycle,
             'last_full_sync_at' => $now,
             'last_incremental_sync_at' => $now,
             'heartbeat_at' => $now,

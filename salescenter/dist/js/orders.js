@@ -51,6 +51,11 @@
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     section.querySelector('input,select,textarea')?.focus({ preventScroll: true });
   }));
+  // Pole z błędem w zwiniętej sekcji <details> – rozwiń ją, inaczej przeglądarka po cichu blokuje zapis.
+  document.addEventListener('invalid', event => {
+    let details = event.target.closest?.('details');
+    while (details) { details.open = true; details = details.parentElement?.closest('details'); }
+  }, true);
   document.querySelectorAll('[data-confirm-shipment]').forEach(form => form.addEventListener('submit', event => {
     if (!window.confirm('Utworzyć przesyłkę u wybranego operatora? Ta operacja może naliczyć opłatę.')) event.preventDefault();
   }));
@@ -373,8 +378,31 @@
       }
     };
     documentPreference?.addEventListener('change', updateDocumentPreference);
+    form.querySelector('[data-copy-delivery]')?.addEventListener('click', () => {
+      const pairs = { invoice_name: 'shipping_name', invoice_street: 'shipping_street', invoice_building: 'shipping_building', invoice_postal_code: 'shipping_postal_code', invoice_city: 'shipping_city', invoice_country: 'shipping_country' };
+      Object.entries(pairs).forEach(([target, source]) => {
+        const field = form.querySelector(`[name="${target}"]`);
+        const value = form.querySelector(`[name="${source}"]`)?.value ?? '';
+        if (!field || field.value === value) return;
+        field.value = value;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
 
     const productsTable = form.querySelector('[data-products-table]');
+    // Nazwa produktu zawija się i rośnie w dół, żeby zawsze była widoczna w całości (bez nowych linii).
+    const fitProductName = field => { if (!field.offsetParent) return; field.style.height = 'auto'; field.style.height = `${field.scrollHeight + 2}px`; };
+    const fitProductNames = () => form.querySelectorAll('[data-product-name]').forEach(fitProductName);
+    form.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.matches('[data-product-name]')) event.preventDefault(); });
+    form.addEventListener('input', event => {
+      const field = event.target.closest('[data-product-name]');
+      if (!field) return;
+      if (/[\r\n]/.test(field.value)) field.value = field.value.replace(/\s*[\r\n]+\s*/g, ' ');
+      fitProductName(field);
+    });
+    window.addEventListener('resize', fitProductNames);
+    requestAnimationFrame(fitProductNames);
     const rowTemplate = productsTable?.querySelector('[data-product-row-template]');
     const reindexProductRows = () => {
       productsTable?.querySelectorAll('.om-inline-product-row').forEach((row, index) => {
@@ -388,7 +416,8 @@
       if (shippingRow) shippingRow.before(row); else productsTable.append(row);
       reindexProductRows();
       updateTotals();
-      row.querySelector('input')?.focus();
+      row.querySelector('[data-product-name]')?.focus();
+      fitProductNames();
     });
     productsTable?.addEventListener('click', event => {
       const remove = event.target.closest('[data-remove-product-row]');
@@ -428,7 +457,7 @@
     const orderId = form.querySelector('input[name="order_id"]')?.value || '';
     const serviceCache = new Map();
     let serviceRequest = 0;
-    let valuationRequest = 0, valuationTimer = 0;
+    let valuationRequest = 0, valuationTimer = 0, lastPrices = null;
     const serviceMessage = (message, icon = 'bi-info-circle') => {
       if (!serviceStatus) return;
       const symbol = document.createElement('i'); symbol.className = `bi ${icon}`;
@@ -437,15 +466,16 @@
     const renderServices = (data, prices = null, selectedValue = '') => {
       if (!service) return;
       service.replaceChildren();
-      const provider = data.provider || '';
-      if (provider === 'allegro_wza') {
+      const valuation = !!data.valuation;
+      form.dataset.valuation = valuation ? '1' : '';
+      if (data.automatic) {
         const automatic = document.createElement('option');
         automatic.value = '';
-        automatic.textContent = 'Automatycznie z zamówienia Allegro';
+        automatic.textContent = data.automatic;
         service.append(automatic);
       }
       const groups = new Map();
-      const options = (data.options || []).filter(item => provider !== 'apaczka' || prices === null || prices[String(item.value)]);
+      const options = (data.options || []).filter(item => !valuation || prices === null || prices[String(item.value)]);
       options.forEach(item => {
         const carrierName = item.carrier || 'Pozostałe';
         let group = groups.get(carrierName);
@@ -455,20 +485,21 @@
         option.textContent = `${item.name}${price ? ` — ${price} brutto` : ''}`; group.append(option);
       });
       const delivery = (service.dataset.delivery || '').toLowerCase();
-      const preferred = provider === 'inpost_shipx' ? service.dataset.defaultInpost : provider === 'apaczka' ? service.dataset.defaultApaczka : '';
+      const preferred = data.preferred || '';
       if (selectedValue && [...service.options].some(option => option.value === selectedValue)) service.value = selectedValue;
       else if (preferred && [...service.options].some(option => option.value === preferred)) service.value = preferred;
-      else if (provider !== 'allegro_wza') {
+      else if (!data.automatic) {
         const keyword = ['inpost','dpd','gls','dhl','ups','poczta'].find(word => delivery.includes(word));
         const match = keyword ? [...service.options].find(option => option.textContent.toLowerCase().includes(keyword)) : null;
         if (match) service.value = match.value;
       }
-      service.required = provider !== 'allegro_wza';
+      service.required = !data.automatic;
       service.disabled = false;
-      const codNote = provider === 'apaczka' && codToggle?.checked ? ' · z pobraniem' : '';
+      const codNote = data.cod === 'form' && codToggle?.checked ? ' · z pobraniem' : data.cod === 'order' ? ' · pobranie wg zamówienia' : '';
       const postcode = form.querySelector('[name="receiver_postal_code"]')?.value || '';
-      serviceMessage((provider === 'allegro_wza' ? `${options.length} metod konta · automatyczna metoda zamówienia jest zalecana` : prices !== null ? `${options.length} usług dostępnych dla kodu ${postcode}` : `${options.length} usług — sprawdzam dostępność i ceny`) + codNote, prices !== null || provider === 'allegro_wza' ? 'bi-check2-circle' : 'bi-arrow-repeat');
-      if (provider === 'apaczka' && prices === null) scheduleValuation();
+      serviceMessage((data.automatic ? `${options.length} metod konta · automatyczna metoda zamówienia jest zalecana` : !valuation ? `${options.length} dostępnych usług` : prices !== null ? `${options.length} usług dostępnych dla kodu ${postcode}` : `${options.length} usług — sprawdzam dostępność i ceny`) + codNote, prices !== null || !valuation ? 'bi-check2-circle' : 'bi-arrow-repeat');
+      if (valuation && prices === null) scheduleValuation();
+      if (!valuation && shippingPrice) shippingPrice.textContent = 'Ten operator nie udostępnia wyceny na żywo';
     };
     const loadServices = async () => {
       if (!service) return;
@@ -490,7 +521,8 @@
     const updateProvider = () => {
       const provider = carrier?.selectedOptions[0]?.dataset.provider || '';
       form.dataset.provider = provider;
-      if (shippingPrice && provider !== 'apaczka') shippingPrice.textContent = 'Wycena na żywo jest dostępna dla Apaczki';
+      form.dataset.valuation = '';
+      if (shippingPrice) shippingPrice.textContent = provider ? 'Pobieram usługi operatora…' : 'Wybierz konto i usługę';
     };
     const updateCod = () => {
       if (codAmount) { codAmount.disabled = !codToggle?.checked; codAmount.required = !!codToggle?.checked; }
@@ -501,7 +533,7 @@
       valuationTimer = setTimeout(loadValuation, 350);
     };
     const loadValuation = async () => {
-      if (!shippingPrice || form.dataset.provider !== 'apaczka') return;
+      if (!shippingPrice || !form.dataset.valuation) return;
       const requestId = ++valuationRequest;
       shippingPrice.textContent = 'Sprawdzam dostępne usługi i ceny…';
       const body = Object.fromEntries(new FormData(form).entries());
@@ -513,14 +545,20 @@
         const definitions = serviceCache.get(accountId);
         const selectedValue = service?.value || '';
         if (definitions) renderServices(definitions, data.prices || {}, selectedValue);
-        const selectedPrice = data.prices?.[String(service?.value || '')]?.price_gross;
-        shippingPrice.textContent = selectedPrice ? `Cena nadania: ${selectedPrice} brutto` : 'Brak dostępnej usługi dla podanych danych';
+        lastPrices = data.prices || {};
+        showSelectedPrice();
       } catch (error) {
         if (requestId === valuationRequest) shippingPrice.textContent = `Brak wyceny: ${error.message}`;
       }
     };
-    carrier?.addEventListener('change', () => { updateProvider(); loadServices(); });
-    service?.addEventListener('change', () => { updateProvider(); scheduleValuation(); });
+    const showSelectedPrice = () => {
+      if (!shippingPrice || !form.dataset.valuation || lastPrices === null) return;
+      const selectedPrice = lastPrices[String(service?.value || '')]?.price_gross;
+      shippingPrice.textContent = selectedPrice ? `Cena nadania: ${selectedPrice} brutto` : 'Brak dostępnej usługi dla podanych danych';
+    };
+    carrier?.addEventListener('change', () => { lastPrices = null; valuationRequest++; clearTimeout(valuationTimer); updateProvider(); loadServices(); });
+    // Wycena nie zależy od wybranej usługi (zwraca ceny wszystkich), więc przy zmianie usługi tylko pokazujemy cenę.
+    service?.addEventListener('change', showSelectedPrice);
     codToggle?.addEventListener('change', updateCod);
     codAmount?.addEventListener('input', scheduleValuation);
     Object.values(fields).forEach(field => field.addEventListener('input', scheduleValuation));

@@ -23,7 +23,7 @@ final class OrderAutomationService
     private const DELAY_UNITS=['minutes'=>60,'hours'=>3600,'days'=>86400];
     private const DELAY_FROM=['status'=>'zmiany statusu','ordered'=>'złożenia zamówienia','imported'=>'pobrania zamówienia'];
     private const CANCELLED=['CANCELLED','CANCELED','ANULOWANO'];
-    private const PLATFORMS=['manual'=>'Własne','allegro'=>'Allegro','erli'=>'ERLI','empik'=>'Empik','mediamarkt'=>'MediaMarkt','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','api'=>'Własny sklep (API)'];
+    private const PLATFORMS=['manual'=>'Własne','allegro'=>'Allegro','erli'=>'ERLI','empik'=>'Empik','mediamarkt'=>'MediaMarkt','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','altreo'=>'Altreo.pl','api'=>'Własny sklep (API)'];
     private const OPERATORS=[
         'select'=>['in'=>'jest jednym z','not_in'=>'nie jest żadnym z'],
         'bool'=>['is'=>'jest'],
@@ -1180,7 +1180,7 @@ final class OrderAutomationService
         if (empty($params['allow_multiple']) && $this->activeShipments($ctx)) { return ['state'=>'skipped','message'=>'Zamówienie ma już aktywną przesyłkę']; }
         $defaults=OrderShipmentService::defaults($this->repo);
         $accounts=$this->repo->carrierAccounts();
-        $suggestion=OrderShipmentService::suggestion($order,$accounts,$defaults);
+        $suggestion=OrderShipmentService::suggestion($this->repo,$order,$accounts,$defaults);
         $carrierId=(int)$params['carrier_account_id'] ?: (int)$suggestion['carrier_account_id'];
         $account=null;
         foreach ($accounts as $candidate) { if ((int)$candidate['id']===$carrierId && (int)$candidate['enabled']) { $account=$candidate; break; } }
@@ -1188,7 +1188,7 @@ final class OrderAutomationService
         $size=$params['package']==='auto'?$suggestion['preset']:$params['package'];
         $package=$defaults['presets'][$size]??$suggestion['package'];
         $service=trim((string)$params['service']);
-        if ($service==='') { $service=$account['provider']==='inpost_shipx'?(string)$suggestion['service']:($account['provider']==='apaczka'?(string)$defaults['apaczka_service_id']:''); }
+        if ($service==='') { $service=\App\Services\Shipping\ShippingProviders::get($this->repo,(string)$account['provider'])->preferredService(['id'=>(int)$account['id'],'public'=>json_decode((string)$account['public_config_json'],true)?:[]],$order,$defaults); }
         $address=$order['shipping_address'];
         $cod=!empty($order['details']['cash_on_delivery']);
         $input=['length'=>$package['length'],'width'=>$package['width'],'height'=>$package['height'],'weight'=>$package['weight'],'cash_on_delivery'=>$cod?'1':'','cod_amount'=>number_format(((int)$order['details']['amount_due_cents'] ?: (int)$order['total_cents'])/100,2,'.',''),'request_key'=>$this->requestKey($rule,$orderId,'shipment',$eventKey),'shipping_service'=>$service,'shipment_content'=>(string)$defaults['content'],

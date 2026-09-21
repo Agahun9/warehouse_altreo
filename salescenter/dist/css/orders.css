@@ -245,3 +245,60 @@
 .om-fulfillment-cell .om-payment{display:inline-flex;margin-top:4px;font-size:10px}
 .sc-agent-download{padding:14px;margin:0 0 14px;border:1px solid #dce3fd;border-radius:10px;background:#f6f8ff}.sc-agent-download p{margin:0 0 10px}.sc-agent-download .om-actions{margin-bottom:10px}
 .app-main.om>.om-shell{margin:0 auto auto}
+.oc-card-link{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;border:1px solid #d8e0e9;border-radius:7px;background:#fff;color:#475467;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
+.oc-card-link:hover{border-color:#98a2b3;color:#1d2939}
+.oc-card-note{margin:0;padding:0 15px 13px;color:#8490a0;font-size:11px;line-height:1.4}
+.om-doc-pill{display:inline-flex;align-items:center;gap:4px;width:max-content;margin-top:4px;padding:2px 7px;border:1px solid;border-radius:999px;font-size:10px;font-weight:650;line-height:1.5;white-space:nowrap}
+td[data-col="payment"] .om-doc-pill,.om-fulfillment-cell .om-doc-pill{display:flex}
+.om-doc-pill.is-receipt{color:#8a5a00;background:#fff7e6;border-color:#f5d9a3}
+.om-doc-pill.is-invoice{color:#1f6f8b;background:#eef8fb;border-color:#b9dde8}
+.om-doc-pill.is-invoice-nip{color:#4338ca;background:#eef0ff;border-color:#c7cdfb}
+/* Widok zamówienia: 4 karty danych (Kupujący, Nabywca, Dostawa, Płatność) w jednym rzędzie, kompaktowo. */
+.om-order-console .oc-data-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:start}
+.om-order-console .oc-data-grid>.oc-card{grid-column:auto;display:block}
+.om-order-console .oc-data-grid .oc-card-head{min-height:44px;padding:8px 10px;gap:7px}
+.om-order-console .oc-data-grid .oc-card-head .oc-icon{width:26px;height:26px;flex-basis:26px;font-size:12px}
+.om-order-console .oc-data-grid .oc-card-head small{font-size:8px}
+.om-order-console .oc-data-grid .oc-card-head h2{font-size:13px}
+.om-order-console .oc-data-grid .oc-card-link{height:24px;padding:0 7px;font-size:10px}
+.om-order-console .oc-data-grid .oc-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 7px;padding:9px 10px 10px}
+.om-order-console .oc-data-grid .oc-fields>label{grid-column:auto;font-size:9.5px;gap:3px}
+.om-order-console .oc-data-grid .oc-fields>label.oc-wide{grid-column:1/-1}
+.om-order-console .oc-data-grid .oc-fields input,.om-order-console .oc-data-grid .oc-fields select{height:30px;min-height:30px;padding:5px 8px;font-size:12px}
+.om-order-console .oc-data-grid .oc-fields textarea{height:44px;min-height:44px;padding:5px 8px;font-size:12px}
+.om-order-console .oc-data-grid .oc-fields .oc-check{min-height:30px;padding:0 8px;font-size:11px}
+.om-order-console .oc-data-grid .oc-payment-card>.oc-fields>label:nth-child(6){grid-column:1/-1}
+.om-order-console .oc-data-grid .oc-delivery-method,.om-order-console .oc-data-grid .oc-payment-hero{margin:8px 10px 0}
+.om-order-console .oc-data-grid .oc-delivery-method>span,.om-order-console .oc-data-grid .oc-payment-hero>div{padding:5px 7px}
+.om-order-console .oc-data-grid .oc-delivery-method strong,.om-order-console .oc-data-grid .oc-payment-hero strong{font-size:12px}
+.om-order-console .oc-data-grid .oc-doc-actions{padding:0 10px 10px;gap:6px}
+.om-order-console .oc-data-grid .oc-card-note{padding:0 10px 9px;font-size:10px}
+.om-order-console .oc-data-grid .oc-payment-card .oc-card-head{border-right:0;border-bottom:1px solid #e7ebf0}
+@media(max-width:1200px){.om-order-console .oc-data-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.om-order-console .oc-data-grid{grid-template-columns:1fr}.om-order-console .oc-data-grid .oc-fields{grid-template-columns:1fr}}
+/* Nazwa produktu w zamówieniu: pełny tekst, zawijany w kolejne linie. */
+.oc-product-row{grid-template-columns:minmax(240px,3fr) minmax(80px,.8fr) 58px 64px 86px 96px}
+.oc-product-row.om-inline-product-row{align-items:start}
+.oc-product-row.om-inline-product-row>strong{align-self:center}
+.oc-product-name{align-items:flex-start}
+.oc-product-name>textarea{flex:1;min-width:0;width:100%;height:38px;min-height:38px;padding:8px 8px;border:1px solid #dbe2e9;border-radius:5px;outline:0;background:#f8fafc;color:#29384a;font:inherit;font-size:12px;font-weight:600;line-height:1.35;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+.oc-product-name>textarea:focus{border-color:#16a4c6;background:#fff;box-shadow:0 0 0 3px rgba(22,164,198,.1)}
+.oc-product-name .om-product-thumb,.oc-product-name .om-row-remove{margin-top:4px}
+/* Ustawienia ogólne: firma, hasło i zespół. */
+.sc-general-grid{margin-bottom:22px}
+.sc-general-grid .om-form{max-width:520px}
+.sc-team-table td{vertical-align:middle}
+.sc-team-table td>small{display:block;margin-top:4px;color:#7b879d}
+.sc-team-table input:not([type=checkbox]),.sc-team-table select{width:100%;min-width:120px;height:34px;padding:6px 9px;border:1px solid #dbe2e9;border-radius:6px;background:#fff;font:inherit;font-size:12px}
+.sc-team-actions{white-space:nowrap}
+.sc-team-actions form{display:inline}
+.sc-team-new{margin-top:18px;padding-top:16px;border-top:1px solid #eef1f6}
+.sc-team-new h4{margin:0;font-size:14px}
+.sc-team-new-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+.om-shipment-register td small{display:block;color:#8c95a8;font-size:11px;margin-top:3px}.om-ship-status{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:#f1f3f7;color:#5f6a81}.om-ship-status.is-pending,.om-ship-status.is-created{background:#eef0ff;color:#4d48c9}.om-ship-status.is-transit,.om-ship-status.is-delivery{background:#e8f3ff;color:#1c6bb8}.om-ship-status.is-pickup{background:#fff6df;color:#99660a}.om-ship-status.is-delivered{background:#e7f6ee;color:#23805f}.om-ship-status.is-issue,.om-ship-status.is-returned,.om-ship-status.is-cancelled{background:#fdecec;color:#c23b3b}.om-muted{color:#9aa2b3}
+.om-preset-hint{font-size:11px;color:#8c95a8;margin:8px 0 0}
+.om-flow-icons{display:flex;gap:4px;margin-top:5px}
+.om-flow-icon{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 4px;border:1px solid #dfe4ea;border-radius:5px;background:#f3f5f8;color:#a3adba;font-size:11px;line-height:1;cursor:default}
+.om-flow-icon.om-flow-text{font-size:9px;font-weight:800;letter-spacing:.02em}
+.om-flow-icon.is-done{color:#0f7a4f;background:#e3f6ec;border-color:#a9dfc3}
+.om-flow-icon.is-pending{color:#a16d16;background:#fff8e5;border-color:#f5e1a8}

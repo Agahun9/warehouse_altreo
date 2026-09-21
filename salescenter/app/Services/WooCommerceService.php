@@ -87,6 +87,13 @@ final class WooCommerceService extends MarketplaceIntegration
         ];
     }
 
+    /** Notatka zamówienia; customer_note=true – WooCommerce wysyła ją klientowi e-mailem (wiadomości SalesCenter). */
+    public function addOrderNote(array $account, string $orderId, string $note, bool $forCustomer): array
+    {
+        if (!ctype_digit($orderId)) { throw new RuntimeException('WooCommerce: nieprawidłowy numer zamówienia.'); }
+        return $this->api($account, 'POST', 'orders/'.$orderId.'/notes', [], ['note' => $note, 'customer_note' => $forCustomer]);
+    }
+
     private function api(array $account, string $method, string $path, array $query = [], ?array $body = null, ?array &$responseHeaders = null): array
     {
         $key = trim((string) ($account['consumer_key'] ?? '')); $secret = trim((string) ($account['consumer_secret'] ?? ''));

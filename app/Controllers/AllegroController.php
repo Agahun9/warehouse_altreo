@@ -455,6 +455,29 @@ class AllegroController extends Controller
         }
     }
 
+    public function checkoffers(): void
+    {
+        $this->requireModuleWrite('allegro');
+
+        if (!$this->isPost()) {
+            $this->jsonResponse(array('error' => 'Wymagane zadanie POST.'), 405);
+            return;
+        }
+
+        $this->releaseSessionLock();
+
+        try {
+            $this->jsonResponse($this->allegro->checkOffersExistence(array(
+                'account_id' => (int) $this->input('account_id', 0),
+                'after_id' => (int) $this->input('after_id', 0),
+                'limit' => (int) $this->input('limit', 50),
+                'max_runtime' => (int) $this->input('max_runtime', 20),
+            )));
+        } catch (Throwable $exception) {
+            $this->jsonResponse(array('error' => $exception->getMessage()), 500);
+        }
+    }
+
     public function clearqueue(): void
     {
         $this->requireModuleWrite('allegro');

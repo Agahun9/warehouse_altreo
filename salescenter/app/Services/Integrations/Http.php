@@ -65,6 +65,9 @@ final class Http
                 if (is_array($value)) { $value = $value['message'] ?? json_encode($value, JSON_UNESCAPED_UNICODE); }
                 if (is_scalar($value) && trim((string) $value) !== '') { return mb_substr(trim((string) $value), 0, 220, 'UTF-8'); }
             }
+            if (isset($decoded[0]['errorMessage'])) {
+                return mb_substr(trim((string) $decoded[0]['errorMessage']).(isset($decoded[0]['errorCode']) ? ' ('.$decoded[0]['errorCode'].')' : ''), 0, 220, 'UTF-8');
+            }
             if (isset($decoded['errors'][0])) {
                 $first = $decoded['errors'][0];
                 return mb_substr(is_array($first) ? (string) ($first['userMessage'] ?? $first['message'] ?? json_encode($first, JSON_UNESCAPED_UNICODE)) : (string) $first, 0, 220, 'UTF-8');
@@ -100,6 +103,39 @@ final class Http
             }
         }
         return $host.':'.$port.':'.$addresses[0];
+    }
+
+    /** Query string, w którym wartości listowe są powtarzane: ['s'=>['A','B']] → s=A&s=B. */
+    public static function query(array $query): string
+    {
+        $parts = [];
+        foreach ($query as $key => $value) {
+            if (is_array($value) && array_keys($value) === range(0, count($value) - 1)) {
+                foreach ($value as $item) { $parts[] = rawurlencode((string) $key).'='.rawurlencode((string) $item); }
+                continue;
+            }
+            $parts[] = http_build_query([$key => $value], '', '&', PHP_QUERY_RFC3986);
+        }
+        return implode('&', $parts);
+    }
+
+    /**
+     * Treść multipart/form-data. Część: ['name'=>…, 'content'=>…, opcjonalnie 'type' i 'filename'].
+     * Zwraca [nagłówek Content-Type, treść].
+     */
+    public static function multipart(array $parts): array
+    {
+        $boundary = 'sc'.bin2hex(random_bytes(12));
+        $body = '';
+        foreach ($parts as $part) {
+            $name = str_replace(['"', "\r", "\n"], '', (string) $part['name']);
+            $body .= '--'.$boundary."\r\n".'Content-Disposition: form-data; name="'.$name.'"';
+            if (isset($part['filename'])) { $body .= '; filename="'.str_replace(['"', "\r", "\n"], '', (string) $part['filename']).'"'; }
+            $body .= "\r\n";
+            if (!empty($part['type'])) { $body .= 'Content-Type: '.$part['type']."\r\n"; }
+            $body .= "\r\n".(string) $part['content']."\r\n";
+        }
+        return ['Content-Type: multipart/form-data; boundary='.$boundary, $body.'--'.$boundary."--\r\n"];
     }
 
     public static function iso(int $timestamp): string

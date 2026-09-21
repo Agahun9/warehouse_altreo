@@ -182,6 +182,8 @@
     (function () {
       document.querySelectorAll('[data-lte-toggle="sidebar"]').forEach(function (button) {
         button.addEventListener('click', function () {
+          // Widok zamówienia zawsze startuje zwinięty – nie nadpisuje zapamiętanego wyboru listy.
+          if (document.body.classList.contains('sc-order-detail')) { return; }
           window.setTimeout(function () {
             try { localStorage.setItem('sc-sidebar', document.body.classList.contains('sidebar-collapse') ? 'collapsed' : 'expanded'); } catch (e) {}
           }, 50);

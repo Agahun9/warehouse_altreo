@@ -188,15 +188,22 @@ final class AllegroService extends MarketplaceIntegration
         $name = preg_replace('/[^A-Za-z0-9._-]+/', '-', trim((string) $config['application_name'])) ?: 'SalesCenter';
         $app = Config::get('app');
         $url = trim((string) ($app['public_base_url'] ?? ''));
+        if (stripos($url, 'https://') === 0) {
+            $url = preg_replace('#/[^/]*$#', '/allegro-app-info.php', $url) ?: $url;
+        }
         return $name.'/1.0'.(stripos($url, 'https://') === 0 ? ' (+'.$url.')' : '');
     }
 
-    private function api(array $account, string $method, string $path, array $query = [], ?array $body = null): array
+    /**
+     * Wywołanie REST Allegro. $media: public.v1 albo beta.v1 (np. dyskusje i reklamacje /sale/issues).
+     * Wartości listowe w $query są powtarzane (status=A&status=B), jak wymaga Allegro.
+     */
+    public function api(array $account, string $method, string $path, array $query = [], ?array $body = null, string $media = 'public.v1'): array
     {
         $config = self::config();
-        $url = rtrim((string) $config['api_base'], '/').$path.($query ? '?'.http_build_query($query) : '');
-        $headers = ['Accept: application/vnd.allegro.public.v1+json', 'Authorization: Bearer '.$this->accessToken($account), 'User-Agent: '.$this->userAgent()];
-        if ($body !== null) { $headers[] = 'Content-Type: application/vnd.allegro.public.v1+json'; }
+        $url = rtrim((string) $config['api_base'], '/').$path.($query ? '?'.Http::query($query) : '');
+        $headers = ['Accept: application/vnd.allegro.'.$media.'+json', 'Authorization: Bearer '.$this->accessToken($account), 'User-Agent: '.$this->userAgent(), 'Accept-Language: pl-PL'];
+        if ($body !== null) { $headers[] = 'Content-Type: application/vnd.allegro.'.$media.'+json'; }
         return Http::json('Allegro', $method, $url, $headers, $body);
     }
 

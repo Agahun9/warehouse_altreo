@@ -11,9 +11,12 @@ use InvalidArgumentException;
 /** Dane firmy, zespół i własne hasło. Każda operacja działa wyłącznie w firmie zalogowanego użytkownika. */
 final class AccountController extends Controller
 {
+    /** Firma, zespół i hasło są w Centrum zamówień → Ustawienia ogólne; tu zostały tylko akcje zapisu. */
+    private const GENERAL = './orders.php?tab=general';
+
     public function index(): void
     {
-        $this->redirect('./index.php?controller=account&action=team');
+        $this->redirect(self::GENERAL.'#sc-team');
     }
 
     public function company(): void
@@ -28,26 +31,16 @@ final class AccountController extends Controller
             } catch (InvalidArgumentException $e) {
                 $this->setFlash('error', $e->getMessage());
             }
-            $this->redirect('./index.php?controller=account&action=company');
+            $this->redirect(self::GENERAL.'#sc-company');
         }
 
-        $this->render('account/company', array(
-            'pageTitle' => 'Firma',
-            'tenant' => $this->saas()->tenant((int) $user['tenant_id']),
-            'canManage' => in_array($user['role'], array('owner', 'admin'), true),
-            'csrf' => $this->csrfToken(),
-        ));
+        $this->redirect(self::GENERAL.'#sc-company');
     }
 
     public function team(): void
     {
-        $user = $this->requireTenantAdmin();
-        $this->render('account/team', array(
-            'pageTitle' => 'Zespół',
-            'users' => $this->saas()->users((int) $user['tenant_id']),
-            'roles' => SaasRepository::ROLES,
-            'csrf' => $this->csrfToken(),
-        ));
+        $this->requireTenantAdmin();
+        $this->redirect(self::GENERAL.'#sc-team');
     }
 
     public function saveuser(): void
@@ -95,7 +88,7 @@ final class AccountController extends Controller
         } catch (InvalidArgumentException $e) {
             $this->setFlash('error', $e->getMessage());
         }
-        $this->redirect('./index.php?controller=account&action=team');
+        $this->redirect(self::GENERAL.'#sc-team');
     }
 
     public function password(): void
@@ -119,9 +112,9 @@ final class AccountController extends Controller
             } catch (InvalidArgumentException $e) {
                 $this->setFlash('error', $e->getMessage());
             }
-            $this->redirect('./index.php?controller=account&action=password');
+            $this->redirect(self::GENERAL.'#sc-password');
         }
 
-        $this->render('account/password', array('pageTitle' => 'Moje hasło', 'csrf' => $this->csrfToken()));
+        $this->redirect(self::GENERAL.'#sc-password');
     }
 }

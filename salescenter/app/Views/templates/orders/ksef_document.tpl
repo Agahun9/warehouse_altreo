@@ -1,7 +1,7 @@
 {if $doc.kind eq 'invoice' or $doc.kind eq 'invoice_correction'}{assign var=ksefSub value=$ksefSubmissions[$doc.id]|default:null}{assign var=ksefTarget value=$ksefTargets[$doc.id]|default:null}
 <div class="om-ksef-doc">
   {if !$ksefSub}<span class="om-ksef-state is-none"><i class="bi bi-cloud"></i> Nie wysłano do KSeF</span>
-  {elseif $ksefSub.state eq 'accepted'}<span class="om-ksef-state is-accepted" title="{$ksefSub.message|escape}"><i class="bi bi-patch-check-fill"></i> KSeF {$ksefSub.ksef_number|escape}</span>
+  {elseif $ksefSub.state eq 'accepted'}<span class="om-ksef-state is-accepted" title="{$ksefSub.message|escape}"><i class="bi bi-patch-check-fill"></i> Wysłano i przyjęto w KSeF · {$ksefSub.ksef_number|escape}</span>{if $ksefSub.has_upo}<span class="om-ksef-state is-accepted"><i class="bi bi-envelope-check-fill"></i> UPO odebrane</span>{else}<span class="om-ksef-state is-processing"><i class="bi bi-hourglass-split"></i> Oczekiwanie na UPO</span>{/if}
   {elseif $ksefSub.state eq 'processing'}<span class="om-ksef-state is-processing" title="{$ksefSub.message|escape}"><i class="bi bi-hourglass-split"></i> KSeF: przetwarzanie</span>
   {elseif $ksefSub.state eq 'rejected'}<span class="om-ksef-state is-rejected" title="{$ksefSub.message|escape}"><i class="bi bi-x-octagon-fill"></i> KSeF: odrzucona</span>
   {else}<span class="om-ksef-state is-rejected" title="{$ksefSub.message|escape}"><i class="bi bi-exclamation-triangle-fill"></i> KSeF: błąd wysyłki</span>{/if}

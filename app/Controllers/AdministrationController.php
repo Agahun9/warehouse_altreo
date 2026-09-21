@@ -15,6 +15,7 @@ use App\Services\ErliService;
 use App\Services\MoreleService;
 use App\Services\TemuService;
 use App\Services\MarketplaceAccountDeletionService;
+use App\Services\MailService;
 use RuntimeException;
 use Throwable;
 
@@ -44,6 +45,9 @@ class AdministrationController extends Controller
     /** @var TemuService */
     private $temu;
 
+    /** @var MailService */
+    private $mail;
+
     public function __construct()
     {
         $this->users = new UserRepository($this->db());
@@ -54,6 +58,7 @@ class AdministrationController extends Controller
         $this->erli = new ErliService();
         $this->morele = new MoreleService();
         $this->temu = new TemuService();
+        $this->mail = new MailService();
         $this->settings = new SettingRepository($this->db());
         $this->settings->ensureSchema();
     }
@@ -196,6 +201,7 @@ class AdministrationController extends Controller
             'erliAutomation' => $this->erli->automationLinks($baseUrl),
             'erliQueueStats' => $this->erli->queueCounts(),
             'moreleAutomation' => $this->morele->automationLinks($baseUrl),
+            'cronHealthUrl' => rtrim($baseUrl, '?&') . '?controller=administration&action=cronhealthcheck&format=json&interval_minutes=30',
             'moreleQueueStats' => $this->morele->queueCounts(),
             'accounts' => $accounts,
             'empikAccounts' => $empikAccounts,
@@ -228,6 +234,117 @@ class AdministrationController extends Controller
             'computersMediaMarktCategoryId' => $this->settings->get('computers_mediamarkt_category_id', ''),
             'computersMediaMarktSetPcCategoryId' => $this->settings->get('computers_mediamarkt_set_pc_category_id', ''),
         ));
+    }
+
+    public function cronhealthcheck(): void
+    {
+        $this->releaseSessionLock();
+        $intervalMinutes = max(5, min(1440, (int) $this->input('interval_minutes', 30)));
+        $now = time();
+        $lastSentAt = (int) $this->settings->get('cron_health_last_mail_at', '0');
+
+        if ($lastSentAt > 0 && ($now - $lastSentAt) < ($intervalMinutes * 60)) {
+            $this->jsonResponse(array(
+                'ok' => true,
+                'skipped' => true,
+                'reason' => 'Raport kontrolny byl juz wyslany w ustawionym przedziale czasu.',
+                'next_mail_at' => date(DATE_ATOM, $lastSentAt + ($intervalMinutes * 60)),
+            ));
+            return;
+        }
+
+        $database = $this->db();
+        if (!$database->acquireAdvisoryLock('altreo_cron_health_mail')) {
+            $this->jsonResponse(array(
+                'ok' => true,
+                'skipped' => true,
+                'reason' => 'Inny raport kontrolny jest teraz przygotowywany.',
+            ));
+            return;
+        }
+
+        try {
+            $services = array(
+                'Allegro' => $this->allegro,
+                'Empik' => $this->empik,
+                'MediaMarkt' => $this->mediamarkt,
+                'Erli' => $this->erli,
+                'Morele' => $this->morele,
+            );
+            $checks = array();
+            $hasWarning = false;
+
+            foreach ($services as $name => $service) {
+                try {
+                    $accounts = $service->listAccounts();
+                    $queue = $service->queueCounts();
+                    $activeAccounts = 0;
+                    $queueErrors = 0;
+
+                    foreach ($accounts as $account) {
+                        if ((int) ($account['is_active'] ?? 0) === 1) {
+                            $activeAccounts++;
+                        }
+                    }
+                    foreach ($queue as $key => $value) {
+                        if (strpos(strtolower((string) $key), 'error') !== false) {
+                            $queueErrors += (int) $value;
+                        }
+                    }
+
+                    $status = ($activeAccounts > 0 && $queueErrors === 0) ? 'OK' : 'UWAGA';
+                    if ($status !== 'OK') {
+                        $hasWarning = true;
+                    }
+                    $checks[] = array(
+                        'name' => $name,
+                        'status' => $status,
+                        'active_accounts' => $activeAccounts,
+                        'queue_errors' => $queueErrors,
+                        'queue' => $queue,
+                    );
+                } catch (Throwable $exception) {
+                    $hasWarning = true;
+                    $checks[] = array(
+                        'name' => $name,
+                        'status' => 'BLAD',
+                        'message' => $exception->getMessage(),
+                    );
+                }
+            }
+
+            $rows = '';
+            $text = 'Kontrola cronow ALTREO ' . date('Y-m-d H:i:s') . "\n";
+            foreach ($checks as $check) {
+                $details = isset($check['message'])
+                    ? (string) $check['message']
+                    : 'aktywne konta: ' . (int) ($check['active_accounts'] ?? 0)
+                        . ', bledy kolejki: ' . (int) ($check['queue_errors'] ?? 0)
+                        . ', kolejka: ' . json_encode($check['queue'] ?? array(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $rows .= '<tr><td>' . htmlspecialchars((string) $check['name'], ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td><strong>' . htmlspecialchars((string) $check['status'], ENT_QUOTES, 'UTF-8') . '</strong></td>'
+                    . '<td>' . htmlspecialchars($details, ENT_QUOTES, 'UTF-8') . '</td></tr>';
+                $text .= $check['name'] . ': ' . $check['status'] . ' - ' . $details . "\n";
+            }
+
+            $subject = ($hasWarning ? '[UWAGA]' : '[OK]') . ' Crony marketplace ALTREO';
+            $html = '<p>Automatyczna kontrola dostepnosci uslug cron i ich kolejek.</p>'
+                . '<p><strong>Data:</strong> ' . htmlspecialchars(date('Y-m-d H:i:s'), ENT_QUOTES, 'UTF-8') . '</p>'
+                . '<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Integracja</th><th>Status</th><th>Szczegoly</th></tr></thead><tbody>'
+                . $rows . '</tbody></table>';
+            $mailSent = $this->mail->send('kontakt@altreo.pl', $subject, $html, $text);
+            $this->settings->set('cron_health_last_mail_at', (string) $now);
+
+            $this->jsonResponse(array(
+                'ok' => !$hasWarning,
+                'mail_sent' => $mailSent,
+                'recipient' => 'kontakt@altreo.pl',
+                'checks' => $checks,
+                'checked_at' => date(DATE_ATOM, $now),
+            ));
+        } finally {
+            $database->releaseAdvisoryLock('altreo_cron_health_mail');
+        }
     }
 
     public function deleteaccount(): void
@@ -693,5 +810,12 @@ class AdministrationController extends Controller
         }
 
         return rtrim(str_replace('\\', '/', dirname($this->absoluteBaseUrl())), '/');
+    }
+
+    private function jsonResponse(array $payload, int $status = 200): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }

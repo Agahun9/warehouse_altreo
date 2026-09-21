@@ -210,6 +210,44 @@ $apiOrder=OrderNormalizer::normalize('api',['id'=>'SHOP-1','created_at'=>'2024-0
 check($apiOrder['total_cents']===3650 && $apiOrder['details']['items'][0]['vat']==='8' && $apiOrder['currency']==='PLN','API order total computed from items and shipping');
 rejects(fn()=>OrderNormalizer::normalize('api',['id'=>'X','created_at'=>'','items'=>[]],0,time()),'API order requires creation date');
 
+// Altreo.pl: ping, strona zamówień w formacie sklepu, pełny przebieg synchronizacji i numer przesyłki.
+$altreoToken=str_repeat('a1',32);
+$responses=[['#GET https://altreo\.example\.invalid/api/salescenter/ping#',200,['ok'=>true,'shop_name'=>'ALTREO','api_version'=>1]]];
+$altreoTest=(new App\Services\AltreoService())->testConnection(['shop_url'=>'https://altreo.example.invalid','api_key'=>$altreoToken]);
+check($altreoTest['name']==='Altreo.pl · ALTREO' && $altreoTest['remote_id']==='https://altreo.example.invalid','Altreo ping reads shop name');
+check(in_array('X-Api-Key: '.$altreoToken,end($calls)['headers'],true) && in_array('Authorization: Bearer '.$altreoToken,end($calls)['headers'],true),'Altreo sends token in both headers');
+rejects(fn()=>(new App\Services\AltreoService())->testConnection(['shop_url'=>'https://altreo.example.invalid','api_key'=>'short']),'Altreo rejects a short token before calling the shop');
+$responses=[['#/api/salescenter/ping#',401,['error'=>'Nieprawidłowy token API SalesCenter.']]];
+rejects(fn()=>(new App\Services\AltreoService())->testConnection(['shop_url'=>'https://altreo.example.invalid','api_key'=>$altreoToken]),'Altreo invalid token is rejected');
+$altreoOrder=['order_number'=>'ALT20260918-ABC123','created_at'=>gmdate('c',time()-1800),'updated_at'=>gmdate('c',time()-60),'status'=>'w_realizacji','payment_status'=>'oplacone','payment_method'=>'Tpay','shipping_method'=>'Kurier InPost',
+    'currency'=>'PLN','subtotal'=>'2999.00','shipping_cost'=>'19.99','payment_fee'=>'1.50','discount_amount'=>'100.00','coupon_code'=>'LATO','total'=>'2920.49',
+    'email'=>'adam@example.invalid','phone'=>'600100200','full_name'=>'Adam Nowak Kowalski','street'=>'Polna 5/2','city'=>'Poznań','postcode'=>'60-001','country'=>'Polska','notes'=>'Proszę o telefon',
+    'invoice'=>['requested'=>true,'company_name'=>'Nowak IT','nip'=>'5252674798','street'=>'Biurowa 1','city'=>'Poznań','postcode'=>'60-002'],'tracking_number'=>'',
+    'admin_url'=>'https://altreo.example.invalid/admin/zamowienia/41',
+    'items'=>[['product_id'=>7,'name'=>'Komputer Gamer','sku'=>'PC-7','ean'=>'','image_url'=>'https://altreo.example.invalid/assets/img/products/pc.webp','price'=>'2999.00','qty'=>1,'options'=>[['group'=>'RAM','value'=>'32 GB']]]]];
+$responses=[['#GET https://altreo\.example\.invalid/api/salescenter/orders\?#',200,['orders'=>[$altreoOrder],'total_count'=>1,'offset'=>0,'limit'=>50]]];
+$altreoPage=(new App\Services\AltreoService())->readOrderPage(['shop_url'=>'https://altreo.example.invalid','api_key'=>$altreoToken],gmdate('Y-m-d\TH:i:s\Z',time()-86400),gmdate('Y-m-d\TH:i:s\Z'),'0',gmdate('Y-m-d\TH:i:s\Z',time()-3600));
+check(strpos(end($calls)['url'],'updated_from=')!==false && strpos(end($calls)['url'],'offset=0')!==false && $altreoPage['total_count']===1 && $altreoPage['page_size']===1,'Altreo pages changed orders by offset');
+$altreoNormalized=OrderNormalizer::normalize('altreo',$altreoPage['orders'][0],time()-86400,time());
+check($altreoNormalized['external_id']==='ALT20260918-ABC123' && $altreoNormalized['remote_status']==='w_realizacji' && $altreoNormalized['paid']===1 && $altreoNormalized['total_cents']===292049,'Altreo order id, status, payment and total');
+check($altreoNormalized['details']['items'][0]['name']==='Komputer Gamer (RAM: 32 GB)' && $altreoNormalized['details']['items'][0]['unit_cents']===299900 && $altreoNormalized['details']['items'][0]['image_url']!=='','Altreo item options, price and image');
+check($altreoNormalized['details']['items'][1]['unit_cents']===150 && $altreoNormalized['details']['shipping_cents']===1999 && $altreoNormalized['details']['delivery']==='Kurier InPost','Altreo payment fee line and shipping');
+check($altreoNormalized['buyer_name']==='Adam Nowak Kowalski' && $altreoNormalized['details']['address']['country']==='PL' && $altreoNormalized['details']['address']['street']==='Polna 5/2','Altreo buyer and Polish address');
+check($altreoNormalized['details']['invoice_required']===1 && $altreoNormalized['details']['invoice_address']['tax_id']==='5252674798' && $altreoNormalized['details']['invoice_address']['company_name']==='Nowak IT','Altreo invoice data');
+check(strpos((string)$altreoNormalized['details']['buyer_note'],'Kod rabatowy: LATO')!==false,'Altreo buyer note carries coupon code');
+$altreoId=$connections->create('altreo','Altreo.pl · ALTREO',['shop_url'=>'https://altreo.example.invalid','remote_id'=>'https://altreo.example.invalid'],['api_key'=>$altreoToken]);
+$altreoAccount=$connections->account($altreoId);
+$altreoSync=(new OrderSyncService($repo))->sync(true,(int)$altreoAccount['id'])[0];
+check(empty($altreoSync['error']) && $altreoSync['added']===1 && $altreoSync['more']===false,'Altreo sync imports the page and finishes');
+$altreoLocal=$repo->order((int)$db->fetchColumn('SELECT id FROM om_orders WHERE external_id=:e',['e'=>'ALT20260918-ABC123']));
+check($altreoLocal['platform']==='altreo' && (int)$altreoLocal['account_source_id']===$altreoId,'Altreo order belongs to its connection');
+$responses=[['#POST https://altreo\.example\.invalid/api/salescenter/orders/ALT20260918-ABC123/shipment#',200,['ok'=>true,'status'=>'wyslane','changed'=>true]]];
+$altreoPublish=(new App\Services\OrderMarketplaceShipmentService($repo))->publish($altreoLocal,'620111222333','inpost','InPost');
+$altreoBody=json_decode((string)end($calls)['body'],true);
+check($altreoBody['tracking_number']==='620111222333' && $altreoBody['carrier_name']==='InPost' && strpos($altreoPublish,'Altreo.pl')!==false,'Altreo receives tracking number and carrier');
+$responses=[['#/shipment#',409,['error'=>'Zamówienie ALT20260918-ABC123 jest anulowane.']]];
+rejects(fn()=>(new App\Services\OrderMarketplaceShipmentService($repo))->publish($altreoLocal,'620111222333','inpost','InPost'),'Altreo refusal surfaces as an error');
+
 // Bezpieczeństwo adresów sklepów.
 rejects(fn()=>Http::normalizeShopUrl('http://sklep.example.invalid'),'Shop URL must use https');
 rejects(fn()=>Http::normalizeShopUrl('https://127.0.0.1'),'Shop URL cannot target loopback');

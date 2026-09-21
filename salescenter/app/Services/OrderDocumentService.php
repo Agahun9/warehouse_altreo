@@ -20,6 +20,8 @@ final class OrderDocumentService
         $id=(int)$db->insert('om_series',['name'=>$labels[$kind][0],'kind'=>$kind,'pattern'=>$labels[$kind][1].'/{YYYY}/{N}','next_number'=>1,'fiscal_printer_id'=>null]);
         return $db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$id]);
     }
+    /** Seller snapshot field => series document setting. */
+    public const SELLER_FIELDS=['name'=>'seller_name','address'=>'seller_address','nip'=>'seller_nip','bank'=>'seller_bank','bank_name'=>'seller_bank_name','swift'=>'seller_swift','email'=>'seller_email','phone'=>'seller_phone','regon'=>'seller_regon','krs'=>'seller_krs','bdo'=>'seller_bdo'];
     /** Document lines built from the order: items, delivery and a balancing line for discounts. */
     public static function orderPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey,array $series=[]): array
     {
@@ -30,7 +32,7 @@ final class OrderDocumentService
         foreach ((array)($order['details']['items']??[]) as $item) {
             $vat=($settings['vat_source']??'order')==='static'?(string)($settings['vat_rate']??$defaultVat):(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { $vat=$defaultVat; }
             $quantity=max(0,(int)($item['quantity']??0)); $unit=(int)($item['unit_cents']??0); $sum+=$quantity*$unit;
-            $items[]=['name'=>(string)($item['name']??'Produkt'),'quantity'=>$quantity,'price'=>number_format($unit/100,2,'.',''),'vat'=>$vat];
+            $items[]=['name'=>(string)($item['name']??'Produkt'),'quantity'=>$quantity,'price'=>number_format($unit/100,2,'.',''),'vat'=>$vat,'sku'=>(string)($item['sku']??''),'ean'=>(string)($item['ean']??$item['gtin']??'')];
         }
         $shipping=(int)($order['details']['shipping_cents']??0);
         if ($shipping>0) {
@@ -41,9 +43,42 @@ final class OrderDocumentService
         }
         $difference=(int)$order['total_cents']-$sum;
         if ($difference!==0) { $items[]=['name'=>$difference<0?'Rabat / korekta wartości':'Pozostałe opłaty','quantity'=>1,'price'=>number_format($difference/100,2,'.',''),'vat'=>$defaultVat]; }
-        $buyerLines=$buyerKind==='invoice'?(array)($order['details']['invoice_lines']??[]):(array)($order['details']['address_lines']??[]);
-        array_unshift($buyerLines,(string)$order['buyer_name']);
-        return ['request_key'=>$requestKey,'buyer'=>implode("\n",array_filter($buyerLines)),'items'=>$items];
+        return ['request_key'=>$requestKey,'buyer'=>self::buyerText($order),'recipient'=>self::recipientText($order),'items'=>$items];
+    }
+    /**
+     * Buyer block for invoices and receipts: billing data from the order, or the delivery address
+     * when the order has no separate billing data. Format matches KsefService::parseBuyer().
+     */
+    public static function buyerText(array $order): string
+    {
+        $billing=(array)($order['details']['invoice_form']??[]);
+        $shipping=(array)($order['shipping_address']??[]);
+        $hasBilling=trim((string)($billing['name']??'').(string)($billing['company']??'').(string)($billing['street']??''))!=='';
+        $source=$hasBilling?$billing:$shipping;
+        $company=$hasBilling?trim((string)($billing['company']??'')):'';
+        $name=trim((string)($source['name']??''));
+        $lines=[$company!==''?$company:($name!==''?$name:(string)($order['buyer_name']??''))];
+        if ($company!=='' && $name!=='' && trim((string)($billing['nip']??''))==='') { $lines[]=$name; }
+        if ($hasBilling && trim((string)($billing['nip']??''))!=='') { $lines[]='NIP: '.trim((string)$billing['nip']); }
+        return implode("\n",array_filter(array_merge($lines,self::addressBlock($source)),'strlen'));
+    }
+    /** Delivery block printed next to the buyer: recipient, address and pickup point. */
+    public static function recipientText(array $order): string
+    {
+        $shipping=(array)($order['shipping_address']??[]);
+        $lines=array_merge([trim((string)($shipping['name']??''))],self::addressBlock($shipping));
+        $pickup=trim((string)($order['details']['pickup']??''));
+        if ($pickup!=='') { $lines[]='Punkt odbioru: '.$pickup; }
+        $method=trim((string)($order['details']['delivery']??''));
+        if ($method!=='') { $lines[]='Dostawa: '.$method; }
+        return implode("\n",array_filter($lines,'strlen'));
+    }
+    private static function addressBlock(array $address): array
+    {
+        $street=trim(trim((string)($address['street']??'')).' '.trim((string)($address['building']??'')));
+        $city=trim(trim((string)($address['postal_code']??'')).' '.trim((string)($address['city']??'')));
+        $country=strtoupper(trim((string)($address['country']??'')));
+        return [$street,$city,$country!=='' && $country!=='PL'?$country:''];
     }
     public static function calculate(array $items): array
     {
@@ -59,7 +94,9 @@ final class OrderDocumentService
             $g=$quantity*$unit;
             $n=(int)round($g*100/(100+(int)$vat),0,PHP_ROUND_HALF_UP);
             $t=$g-$n;
-            $result[]=['name'=>substr($name,0,300),'quantity'=>$quantity,'unit_cents'=>$unit,'vat'=>$vat,'net_cents'=>$n,'tax_cents'=>$t,'gross_cents'=>$g];
+            $row=['name'=>substr($name,0,300),'quantity'=>$quantity,'unit_cents'=>$unit,'vat'=>$vat,'net_cents'=>$n,'tax_cents'=>$t,'gross_cents'=>$g];
+            foreach (['sku'=>50,'ean'=>20] as $code=>$max) { $value=trim((string)($item[$code]??'')); if ($value!=='') { $row[$code]=mb_substr($value,0,$max,'UTF-8'); } }
+            $result[]=$row;
             $net+=$n; $tax+=$t; $gross+=$g;
         }
         return ['items'=>$result,'net_cents'=>$net,'tax_cents'=>$tax,'gross_cents'=>$gross];
@@ -81,13 +118,16 @@ final class OrderDocumentService
             $settings=json_decode((string)($series['document_settings_json']??''),true)?:[];
             $order=$this->repo->order($orderId);
             $seller=$this->repo->setting('seller');
-            foreach (['name'=>'seller_name','address'=>'seller_address','nip'=>'seller_nip','bank'=>'seller_bank'] as $sellerField=>$settingKey) {
+            // Dane sprzedawcy pochodzą z ustawień serii; stare globalne dane sprzedawcy są tylko awaryjnym uzupełnieniem.
+            foreach (self::SELLER_FIELDS as $sellerField=>$settingKey) {
                 if (trim((string)($settings[$settingKey]??''))!=='') { $seller[$sellerField]=$settings[$settingKey]; }
             }
-            if (empty($input['parent_id']) && (empty($seller['name']) || empty($seller['address']) || empty($seller['nip']))) { throw new InvalidArgumentException('Najpierw uzupełnij dane sprzedawcy w ustawieniach dokumentów.'); }
+            if (empty($input['parent_id']) && (empty($seller['name']) || empty($seller['address']) || empty($seller['nip']))) { throw new InvalidArgumentException('Najpierw uzupełnij dane sprzedawcy (nazwa, NIP, adres) w ustawieniach serii „'.$series['name'].'”.'); }
             $buyer=trim((string)($input['buyer']??''));
             if ($buyer==='' && empty($settings['buyer_validation_disabled'])) { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
             if (mb_strlen($buyer)>2000) { throw new InvalidArgumentException('Dane nabywcy są za długie.'); }
+            $recipient=array_key_exists('recipient',$input)?trim((string)$input['recipient']):null;
+            if ($recipient!==null && mb_strlen($recipient)>2000) { throw new InvalidArgumentException('Dane dostawy są za długie.'); }
             $documentItems=$input['items']??[];
             if (empty($input['parent_id']) && ($settings['vat_source']??'order')==='static' && in_array((string)($settings['vat_rate']??''),['23','8','5','0','zw','np'],true)) {
                 foreach ($documentItems as &$documentItem) { $documentItem['vat']=$settings['vat_rate']; }
@@ -108,7 +148,7 @@ final class OrderDocumentService
                 $sourceRevision=(int)($latest['id']??$parentId);
                 if (($input['operation']??'')==='document_correction' && (int)($input['source_revision_id']??0)!==$sourceRevision) { throw new InvalidArgumentException('Wystawiono nowszą korektę. Odśwież formularz i sprawdź aktualne dane.'); }
                 $before=json_decode($latest['snapshot_json']??$parent['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
-                $snapshot['before']=array_intersect_key($before,array_flip(['items','net_cents','tax_cents','gross_cents','buyer','seller','sale_date','issue_date','payment_due_date','currency','order_number','series_notes']));
+                $snapshot['before']=array_intersect_key($before,array_flip(['items','net_cents','tax_cents','gross_cents','buyer','recipient','seller','sale_date','issue_date','payment_due_date','currency','order_number','series_notes']));
                 $snapshot['difference_cents']=$snapshot['gross_cents']-$before['gross_cents'];
                 $snapshot['difference_net_cents']=$snapshot['net_cents']-(int)$before['net_cents'];
                 $snapshot['difference_tax_cents']=$snapshot['tax_cents']-(int)$before['tax_cents'];
@@ -173,7 +213,8 @@ final class OrderDocumentService
             if ($amountPaid<0 || $amountPaid>100000000000) { throw new InvalidArgumentException('Nieprawidłowa kwota zapłacona.'); }
             $splitPayment=$correction && ($input['operation']??'')==='document_correction'?!empty($input['split_payment']):($correction?(bool)($parentSnapshot['split_payment']??false):(($settings['split_payment']??'0')==='1'));
             if ($correction && mb_strlen((string)($input['series_notes']??''))>2000) { throw new InvalidArgumentException('Uwagi na dokumencie są za długie.'); }
-            $snapshot+=['seller'=>$seller,'buyer'=>$buyer,'currency'=>$currency,'sale_date'=>$saleDate,'issue_date'=>$issueDate,'payment_due_date'=>$dueDate,'split_payment'=>$splitPayment,'reason'=>trim((string)($input['reason']??'')),'order_number'=>$orderNumber,'payment_method'=>$paymentMethod,'amount_paid_cents'=>$amountPaid,'settlement_state'=>'local','fiscalized'=>false,'series_notes'=>$correction?(string)($input['series_notes']??$parentSnapshot['series_notes']??''):(string)($numbering['notes']??'')];
+            if ($recipient===null) { $recipient=$correction?(string)($parentSnapshot['recipient']??''):self::recipientText($order); }
+            $snapshot+=['seller'=>$seller,'buyer'=>$buyer,'recipient'=>$recipient,'currency'=>$currency,'sale_date'=>$saleDate,'issue_date'=>$issueDate,'payment_due_date'=>$dueDate,'split_payment'=>$splitPayment,'reason'=>trim((string)($input['reason']??'')),'order_number'=>$orderNumber,'order_date'=>substr((string)($order['ordered_at']??''),0,10),'payment_method'=>$paymentMethod,'amount_paid_cents'=>$amountPaid,'settlement_state'=>'local','fiscalized'=>false,'series_notes'=>$correction?(string)($input['series_notes']??$parentSnapshot['series_notes']??''):(string)($numbering['notes']??'')];
             $id=(int)$db->insert('om_documents',['order_id'=>$orderId,'series_id'=>$series['id'],'kind'=>$series['kind'],'number'=>$number,'parent_id'=>$parentId,'request_key'=>$key,'snapshot_json'=>OrderRepository::json($snapshot),'created_at'=>gmdate('Y-m-d H:i:s')]);
             $db->update('om_series',['next_number'=>$counter+1,'numbering_period'=>$numbering?$period:null],'id=:id',['id'=>$series['id']]);
             $this->repo->event($orderId,'Zapisano dokument lokalny '.$number,$actor);

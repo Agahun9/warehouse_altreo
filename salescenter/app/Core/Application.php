@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Core;
 
 use App\Controllers\AccountController;
-use App\Controllers\CronController;
+use App\Controllers\AdministrationController;
 use App\Controllers\AuthController;
 use App\Controllers\IntegrationsController;
+use App\Controllers\MessagesController;
 use App\Controllers\OrdersController;
 use App\Controllers\PrintAgentController;
 
@@ -40,8 +41,12 @@ class Application
             case 'integrations':
                 $controller = new IntegrationsController();
                 break;
-            case 'cron':
-                $controller = new CronController();
+            case 'administration':
+            case 'cron': // stare linki cron wklejone na serwerze
+                $controller = new AdministrationController();
+                break;
+            case 'messages':
+                $controller = new MessagesController();
                 break;
             default:
                 http_response_code(404);

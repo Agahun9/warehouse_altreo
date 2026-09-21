@@ -21,6 +21,7 @@ final class TenantProvisioner
             (new KsefService($orders))->ensureSchema();
             (new PrintAgentRepository($db))->ensureSchema();
             (new \App\Models\ConnectionRepository($db))->ensureSchema();
+            (new \App\Models\MessageRepository($db))->ensureSchema();
         } finally {
             if ($previous === null) { Tenant::clear(); } else { Tenant::activate($previous); }
         }

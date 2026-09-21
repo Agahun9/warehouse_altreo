@@ -84,14 +84,30 @@ abstract class MiraklIntegration extends MarketplaceIntegration
         $this->api($account, 'PUT', '/api/orders/'.rawurlencode($orderId).'/tracking', [], $payload);
     }
 
-    protected function api(array $account, string $method, string $path, array $query = [], ?array $body = null): array
+    public function api(array $account, string $method, string $path, array $query = [], ?array $body = null): array
+    {
+        [$url, $headers] = $this->endpoint($account, $path, $query);
+        if ($body !== null) { $headers[] = 'Content-Type: application/json'; }
+        return Http::json($this->label(), $method, $url, $headers, $body);
+    }
+
+    /** POST multipart/form-data (wiadomości M12, OR43): część JSON przekazywana jako pole formularza. */
+    public function apiMultipart(array $account, string $path, array $parts, array $query = []): array
+    {
+        [$url, $headers] = $this->endpoint($account, $path, $query);
+        [$contentType, $body] = Http::multipart($parts);
+        $headers[] = $contentType;
+        return Http::json($this->label(), 'POST', $url, $headers, $body);
+    }
+
+    public function displayName(): string { return $this->label(); }
+
+    private function endpoint(array $account, string $path, array $query): array
     {
         $key = trim((string) ($account['api_key'] ?? ''));
         if ($key === '') { throw new RuntimeException($this->label().' API error [401]: brak klucza API.'); }
         if (trim((string) ($account['shop_id'] ?? '')) !== '') { $query['shop_id'] = (int) $account['shop_id']; }
         $base = rtrim(trim((string) ($account['api_url'] ?? '')) ?: $this->defaultApiUrl(), '/');
-        $headers = ['Accept: application/json', 'Authorization: '.$key];
-        if ($body !== null) { $headers[] = 'Content-Type: application/json'; }
-        return Http::json($this->label(), $method, $base.$path.($query ? '?'.http_build_query($query) : ''), $headers, $body);
+        return [$base.$path.($query ? '?'.http_build_query($query) : ''), ['Accept: application/json', 'Authorization: '.$key]];
     }
 }

@@ -110,6 +110,7 @@ class MoreleController extends Controller
                 $result['sync'] = $this->morele->syncOffers(array(
                     'max_pages' => (int) $this->input('max_pages', 0),
                     'page_limit' => (int) $this->input('page_limit', 100),
+                    'resume' => $this->input('resume', '0') === '1',
                     'debug' => $this->input('debug', '0') === '1',
                 ));
             }

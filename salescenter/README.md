@@ -64,6 +64,7 @@ Zmiana hasła wylogowuje pozostałe sesje użytkownika.
 | ERLI | klucz API („Własna integracja po API”) | tak | tak |
 | PrestaShop | adres sklepu + klucz webservice | tak | tak (order_carriers) |
 | WooCommerce | logowanie do WordPressa (wc-auth) albo klucze REST | tak | notatka dla klienta |
+| Altreo.pl | adres sklepu + token z panelu sklepu (Ustawienia → SalesCenter) | tak | tak (status „Wysłane” + e-mail do klienta) |
 | Temu | App Key + App Secret + Access Token | beta | nie (API wymaga ręcznego nadania) |
 | Morele | Client ID + Client Secret | beta – brak publicznej specyfikacji zamówień | nie |
 | Własny sklep | token API, sklep wysyła zamówienia (`api.php/v1`) | w czasie rzeczywistym | odczyt statusu i numeru przez API |
@@ -73,23 +74,67 @@ Każda karta w module ma instrukcję krok po kroku i linki do paneli. Dane dost�
 z 7 dni; **„Pobierz starsze zamówienia”** w ustawieniach połączenia importuje wszystko od wybranej daty
 (maks. 3 lata) – postęp widać na stronie, a resztę dokończy cron.
 
-### Jednorazowo: aplikacja Allegro (w panelu, bez edycji plików)
+### Jednorazowo: aplikacja Allegro (Administracja SalesCenter)
 
-Allegro łączy konta wyłącznie przez zarejestrowaną aplikację. W karcie **Allegro** (Konta i import → Dodaj kanał → Allegro)
-jest instrukcja i gotowy adres przekierowania do skopiowania. Wklejasz Client ID i Client Secret, SalesCenter sprawdza je
-w Allegro i zapisuje zaszyfrowane. Właściciel/administrator pierwszej firmy (operator) może udostępnić aplikację wszystkim
-firmom; inne firmy mogą też użyć własnej aplikacji. Potem każda firma klika „Zaloguj przez Allegro”.
+Allegro łączy konta wyłącznie przez zarejestrowaną aplikację. Rejestruje ją raz główny administrator w
+**Administracja SalesCenter → Aplikacja Allegro** (menu widoczne tylko dla niego): instrukcja, adres przekierowania,
+Client ID i Client Secret – SalesCenter sprawdza je w Allegro i zapisuje zaszyfrowane dla wszystkich firm.
+Firmy nie widzą tych ustawień: w karcie **Allegro** mają tylko „Zaloguj przez Allegro”.
+
+## Administracja SalesCenter
+
+`index.php?controller=administration` – tylko główny administrator (pierwsze konto). Aplikacja Allegro i globalne
+zadania cron. Stare linki cron `?controller=cron&action=run…` nadal działają.
 
 ### WooCommerce – logowanie bez kluczy
 
 Wymaga `public_base_url` z `https://` (sklep wysyła klucze na `woocommerce-callback.php`). Jeśli firewall sklepu
 zablokuje ten krok, moduł podpowie połączenie ręcznymi kluczami REST.
 
+### Altreo.pl
+
+Sklep altreo.pl ma wbudowane API dla SalesCenter (`/api/salescenter/ping`, `GET /api/salescenter/orders`,
+`POST /api/salescenter/orders/{numer}/shipment`), autoryzowane tokenem z panelu sklepu (Ustawienia → SalesCenter).
+Status źródłowy zamówienia to kod statusu sklepu (`nowe`, `w_realizacji`, `wyslane`, `zrealizowane`, `anulowane`) –
+zmapuj go w zakładce „Statusy”. Przekazanie numeru przesyłki ustawia w sklepie status „Wysłane” i wysyła klientowi e-mail.
+
 ### API własnego sklepu
 
 `POST api.php/v1/orders`, `GET api.php/v1/orders/{id}`, `GET api.php/v1/orders?updated_since=…`, `GET api.php/v1/statuses`,
 `GET api.php/v1/ping`; nagłówek `Authorization: Bearer <token>`. Gdy serwer nie obsługuje ścieżek po `api.php`,
 użyj `api.php?route=v1/orders`. Pełny opis z przykładem JSON jest w karcie „Własny sklep (API)”.
+
+## Wiadomości (menu **Sprzedaż → Wiadomości**)
+
+Skrzynka dla wszystkich podłączonych kont z podziałem na marketplace i rodzaj sprawy. Licznik w menu pokazuje wątki
+„Nowa” i „Do odpowiedzi”. Synchronizacja działa w tym samym cronie co import zamówień, a każde konto ma własny
+interwał (domyślnie 5 min). Przycisk **Synchronizuj teraz** pobiera wszystko od razu.
+
+| Marketplace | Sekcje | Działania | API |
+|---|---|---|---|
+| Allegro | Wiadomości, Dyskusje, Reklamacje | odpowiedź, prośba o zakończenie dyskusji, decyzja o zwrocie produktu, **decyzja w reklamacji** (uznanie: zwrot / częściowy zwrot / wymiana / naprawa; odrzucenie z powodem), oznaczanie jako przeczytane | `/messaging/*` (public.v1), `/sale/issues/*` (beta.v1) – uprawnienia `allegro:api:messaging` i `allegro:api:disputes` |
+| Empik, MediaMarkt | Wiadomości, Incydenty | odpowiedź do klienta i/lub operatora, odpowiedź na incydent (wątek zamówienia albo nowy wątek), **oznaczenie incydentu jako rozwiązanego** z powodem | Mirakl M10/M11/M12, OR43, OR11 `has_incident`, OR64, RE01 |
+| Morele (beta) | Wiadomości (pytania, reklamacje, zwroty 14-dniowe), Uwagi do zamówień | odpowiedź | `/communication-center/*` – specyfikacja OpenAPI pod `GET /v1/docs` (Bearer); wysyłka `POST /communication-center/message` z `typeId`, `resourceIdentifier`, `identifier`, `messageBody` |
+| ERLI | Uwagi do zamówień, Zwroty (powód, pozycje, komentarz, konto do zwrotu) | tylko odczyt i statusy – API ERLI nie ma rozmów ani odpowiedzi na zwroty | `comment` i `returns[]` z zamówień (`/orders/_search`) |
+| PrestaShop | Wiadomości (formularz kontaktowy i wiadomości do zamówień) | odpowiedź (zapis w wątku klienta; PrestaShop nie wysyła wtedy e-maila) | webservice `customer_threads`, `customer_messages` (GET) i `customer_messages` (POST, XML) |
+| WooCommerce | Uwagi do zamówień | odpowiedź jako „notatka dla klienta” – sklep wysyła ją e-mailem | `POST /orders/{id}/notes` (`customer_note: true`) |
+| Temu, Własny sklep (API) | Uwagi do zamówień | tylko odczyt i statusy – brak publicznego API wiadomości | dane zamówień z importu |
+
+Uwagi kupujących do zamówień (pole uwagi/wiadomości przy zakupie) mają też Allegro, Empik, MediaMarkt i Morele;
+odpowiedź na nie trafia do Centrum wiadomości Allegro (nowa wiadomość do kupującego o zamówieniu) albo do wątku zamówienia
+Mirakl (OR43). Uwagi i zwroty pochodzą z już zaimportowanych zamówień, więc nie zużywają limitów API.
+
+Statusy wątku: **Nowa** → **Do odpowiedzi** (po otwarciu) → **Odpowiedziano** / **Autoodpowiedź** / **Zamknięta**.
+Nowa wiadomość klienta przywraca status „Do odpowiedzi”. Sprawa zamknięta w marketplace zamyka wątek, a odpowiedź
+wysłana w panelu marketplace oznacza wątek jako „Odpowiedziano”.
+
+**Autoodpowiedzi** (zakładka w Wiadomościach) to reguły ze zdarzeniem: pierwsza wiadomość, każda wiadomość, wiadomość
+poza godzinami pracy, brak odpowiedzi po czasie albo nowa dyskusja/reklamacja/incydent. Można je zawęzić do marketplace,
+konta, rodzaju wątku i słów kluczowych. Treść obsługuje znaczniki `{klient}`, `{zamowienie}`, `{temat}`, `{numer}`,
+`{platforma}`, `{konto}`, `{godziny}` i `{podpis}`. Zabezpieczenia: najwyżej jedna odpowiedź na wiadomość, przerwa
+między autoodpowiedziami w wątku, tylko wiadomości nowsze niż włączenie reguły (maks. 72 h), a autoodpowiedzi trzeba
+dodatkowo włączyć dla każdego marketplace w **Ustawieniach marketplace** (tam też godziny pracy, podpis, interwał i zakres
+synchronizacji). Dziennik wysłanych autoodpowiedzi jest pod listą reguł.
 
 ## Agent druku
 
@@ -99,6 +144,9 @@ użyj `api.php?route=v1/orders`. Pełny opis z przykładem JSON jest w karcie �
 
 ## Zakres na tym etapie
 
+- Wiadomości Morele działają w trybie beta: API centrum komunikacji nie ma publicznej dokumentacji, a autora wiadomości
+  (klient / sprzedawca) rozpoznajemy po nadawcy pierwszej wiadomości w wątku. Załączników z marketplace'ów nie pobieramy
+  (widoczne są nazwy plików), a odpowiedzi z SalesCenter nie mają załączników.
 - Temu i Morele działają w trybie beta (Morele nie publikuje specyfikacji zamówień; Temu różni pola między regionami).
   Po pierwszym imporcie sprawdź zamówienie – surowe dane są w szczegółach zamówienia.
 - Aplikacja agenta druku ma jeszcze nazwę „Altreo Print Agent” – zmiana wymaga przebudowania.
@@ -111,6 +159,8 @@ php tests/orders_test.php
 php tests/print_agent_test.php
 php tests/tenant_test.php
 php tests/integrations_test.php
+php tests/shipping_test.php
+php tests/messages_test.php
 ```
 
 Szczegóły funkcji centrum zamówień: `docs/orders.md` (dokumentacja z aplikacji magazynowej).

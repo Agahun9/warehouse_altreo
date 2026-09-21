@@ -278,6 +278,77 @@
                   <button type="submit" class="btn btn-sm btn-outline-danger">Usuń całą kolejkę</button>
                 </form>
               </div>
+              <div class="mt-3">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="allegro-check-offers-btn" data-account-id="{$filters.account_id|escape}">Sprawdź czy oferty istnieją (usuń not found)</button>
+                <div class="small text-secondary mt-1" id="allegro-check-offers-status"></div>
+              </div>
+              <script>
+                (function () {
+                  var button = document.getElementById('allegro-check-offers-btn');
+                  var statusBox = document.getElementById('allegro-check-offers-status');
+                  if (!button || !statusBox) {
+                    return;
+                  }
+
+                  button.addEventListener('click', function () {
+                    var accountId = button.getAttribute('data-account-id') || '';
+                    var scope = accountId !== '' ? 'wybranego konta' : 'wszystkich kont';
+                    if (!confirm('Sprawdzić w Allegro wszystkie oferty ' + scope + '? Oferty zwracające 404 (not found) zostaną usunięte z listy.')) {
+                      return;
+                    }
+
+                    var totals = { checked: 0, removed: 0, kept: 0, skipped: 0, errors: 0 };
+                    button.disabled = true;
+
+                    var step = function (afterId) {
+                      var body = new URLSearchParams();
+                      body.append('after_id', String(afterId));
+                      body.append('account_id', accountId);
+                      body.append('limit', '50');
+
+                      fetch('{$baseUrl|escape:"javascript"}?controller=allegro&action=checkoffers', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: body
+                      })
+                        .then(function (response) { return response.json(); })
+                        .then(function (data) {
+                          if (!data || data.error) {
+                            throw new Error(data && data.error ? data.error : 'Nieznany błąd');
+                          }
+
+                          totals.checked += data.checked || 0;
+                          totals.removed += data.removed || 0;
+                          totals.kept += data.kept || 0;
+                          totals.skipped += data.skipped || 0;
+                          totals.errors += (data.errors || []).length;
+                          statusBox.textContent = 'Sprawdzono: ' + totals.checked
+                            + ', istnieje: ' + totals.kept
+                            + ', usunięto (not found): ' + totals.removed
+                            + ', pominięto: ' + totals.skipped
+                            + ', błędy: ' + totals.errors
+                            + ', zostało: ' + (data.remaining || 0);
+
+                          if (!data.done && data.next_after_id > afterId) {
+                            step(data.next_after_id);
+                            return;
+                          }
+
+                          statusBox.textContent += ' — zakończono.';
+                          button.disabled = false;
+                        })
+                        .catch(function (error) {
+                          statusBox.textContent += ' Przerwano: ' + error.message;
+                          button.disabled = false;
+                        });
+                    };
+
+                    statusBox.textContent = 'Sprawdzanie...';
+                    step(0);
+                  });
+                })();
+              </script>
             </div>
           </div>
         </div>

@@ -104,7 +104,7 @@ final class OrderMarketplaceShipmentService
         $platform=(string)($order['platform']??'');
         if ($platform==='manual') { throw new InvalidArgumentException('Zamówienie własne nie ma marketplace’u źródłowego.'); }
         if (in_array($platform,['morele','temu','api'],true)) { throw new RuntimeException($this->platformLabel($platform).': przekazywanie numeru przesyłki nie jest obsługiwane – wpisz go w panelu platformy.'); }
-        if (!in_array($platform,['allegro','empik','mediamarkt','erli','prestashop','woocommerce'],true)) { throw new RuntimeException('Brak obsługi przekazania przesyłki do źródła '.$platform.'.'); }
+        if (!in_array($platform,['allegro','empik','mediamarkt','erli','prestashop','woocommerce','altreo'],true)) { throw new RuntimeException('Brak obsługi przekazania przesyłki do źródła '.$platform.'.'); }
         $service=$this->service($platform);
         $account=$this->sourceAccount($service,(int)($order['account_source_id']??0),$platform);
         return ['platform'=>$platform,'service'=>$service,'account'=>$account];
@@ -143,6 +143,6 @@ final class OrderMarketplaceShipmentService
 
     private function platformLabel(string $platform): string
     {
-        return ['allegro'=>'Allegro','empik'=>'Empik','mediamarkt'=>'MediaMarkt','erli'=>'ERLI','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','api'=>'Własny sklep'][$platform]??ucfirst($platform);
+        return ['allegro'=>'Allegro','empik'=>'Empik','mediamarkt'=>'MediaMarkt','erli'=>'ERLI','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','altreo'=>'Altreo.pl','api'=>'Własny sklep'][$platform]??ucfirst($platform);
     }
 }

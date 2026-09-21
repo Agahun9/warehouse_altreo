@@ -1684,6 +1684,79 @@ class AllegroStorageRepository
         )->rowCount();
     }
 
+    public function fetchOffersForExistenceCheck(?int $accountId, int $afterId, int $limit = 50): array
+    {
+        $limit = max(1, min(500, $limit));
+        $sql = 'SELECT id, account_id, offer_id, last_seen_cycle FROM allegro_offers WHERE id > :after_id';
+        $params = array('after_id' => max(0, $afterId));
+
+        if ($accountId !== null && $accountId > 0) {
+            $sql .= ' AND account_id = :account_id';
+            $params['account_id'] = $accountId;
+        }
+
+        $sql .= ' ORDER BY id ASC LIMIT ' . $limit;
+        return $this->database->fetchAll($sql, $params);
+    }
+
+    public function countOffersForExistenceCheck(?int $accountId, int $afterId): int
+    {
+        $sql = 'SELECT COUNT(*) FROM allegro_offers WHERE id > :after_id';
+        $params = array('after_id' => max(0, $afterId));
+
+        if ($accountId !== null && $accountId > 0) {
+            $sql .= ' AND account_id = :account_id';
+            $params['account_id'] = $accountId;
+        }
+
+        return (int) $this->database->fetchColumn($sql, $params);
+    }
+
+    public function fetchOffersMissingFromCycles(int $accountId, array $cycles, int $limit = 50): array
+    {
+        $limit = max(1, min(500, $limit));
+        $params = array('account_id' => $accountId);
+        $placeholders = array();
+        foreach (array_values(array_unique(array_filter($cycles))) as $index => $cycle) {
+            $key = 'cycle_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = (string) $cycle;
+        }
+
+        if ($placeholders === array()) {
+            return array();
+        }
+
+        return $this->database->fetchAll(
+            'SELECT id, account_id, offer_id, last_seen_cycle FROM allegro_offers'
+            . ' WHERE account_id = :account_id AND (last_seen_cycle IS NULL OR last_seen_cycle NOT IN (' . implode(', ', $placeholders) . '))'
+            . ' ORDER BY last_synced_at ASC, id ASC LIMIT ' . $limit,
+            $params
+        );
+    }
+
+    public function markOfferChecked(int $offerRowId): void
+    {
+        $this->database->update(
+            'allegro_offers',
+            array('last_synced_at' => date('Y-m-d H:i:s')),
+            'id = :id',
+            array('id' => $offerRowId)
+        );
+    }
+
+    public function deleteOfferByOfferId(int $accountId, string $offerId): int
+    {
+        return $this->database->delete(
+            'allegro_offers',
+            'account_id = :account_id AND offer_id = :offer_id',
+            array(
+                'account_id' => $accountId,
+                'offer_id' => $offerId,
+            )
+        );
+    }
+
     public function syncState(int $accountId): array
     {
         $row = $this->database->fetch(
@@ -2756,6 +2829,7 @@ class AllegroStorageRepository
         $this->ensureColumn('allegro_offers', 'allegro_product_id', 'VARCHAR(64) DEFAULT NULL');
         $this->ensureColumn('allegro_offers', 'marketplaces_json', 'LONGTEXT DEFAULT NULL');
         $this->ensureColumn('allegro_offers', 'product_set_json', 'LONGTEXT DEFAULT NULL');
+        $this->ensureColumn('allegro_sync_states', 'last_finished_cycle', 'CHAR(36) DEFAULT NULL');
     }
 
     private function ensureOfferIndexes(): void

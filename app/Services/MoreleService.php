@@ -187,8 +187,8 @@ class MoreleService
         $base = rtrim($baseUrl, '?&');
         return array(
             'queue_worker' => $base . '?controller=morele&action=processqueue&format=json&limit=50',
-            'sync_worker' => $base . '?controller=morele&action=maintenance&format=json&sync=1&max_pages=0&page_limit=500',
-            'maintenance' => $base . '?controller=morele&action=maintenance&format=json&sync=1&max_pages=0&page_limit=500',
+            'sync_worker' => $base . '?controller=morele&action=maintenance&format=json&sync=1&resume=1&max_pages=2&page_limit=200',
+            'maintenance' => $base . '?controller=morele&action=maintenance&format=json&sync=1&resume=1&max_pages=2&page_limit=200',
         );
     }
 
@@ -197,19 +197,24 @@ class MoreleService
         $pageLimit = max(1, min(500, (int) ($options['page_limit'] ?? 100)));
         $requestedMaxPages = (int) ($options['max_pages'] ?? 0);
         $maxPages = $requestedMaxPages > 0 ? max(1, min(1000, $requestedMaxPages)) : 1000;
+        $resume = !empty($options['resume']);
         $synced = 0;
         $skipped = 0;
         $pages = 0;
-        $offset = 0;
+        $offset = $resume ? max(0, (int) $this->settings->get('morele_sync_offset', '0')) : 0;
+        $page = $resume ? max(1, (int) $this->settings->get('morele_sync_page', '1')) : 1;
+        $startOffset = $offset;
         $seenPageFingerprints = array();
         $debug = !empty($options['debug']);
         $pageDebug = array();
         $stopReason = '';
+        $finishedCycle = false;
 
-        for ($page = 1; $page <= $maxPages; $page++) {
+        for ($batch = 1; $batch <= $maxPages; $batch++, $page++) {
             $items = $this->fetchRemoteOfferPage($page, $offset, $pageLimit);
             if ($items === array()) {
                 $stopReason = 'empty_page_' . $page;
+                $finishedCycle = true;
                 if ($debug) {
                     $pageDebug[] = array('page' => $page, 'offset' => $offset, 'items' => 0, 'status' => 'empty');
                 }
@@ -219,6 +224,7 @@ class MoreleService
             $pageFingerprint = sha1(json_encode($items, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             if (isset($seenPageFingerprints[$pageFingerprint])) {
                 $stopReason = 'duplicate_page_' . $page;
+                $finishedCycle = true;
                 if ($debug) {
                     $pageDebug[] = array('page' => $page, 'offset' => $offset, 'items' => count($items), 'status' => 'duplicate');
                 }
@@ -245,16 +251,32 @@ class MoreleService
             // API returns an empty or repeated page. Comparing the response size with the
             // requested limit caused imports using page_limit=500 to stop after page one.
             $offset += count($items);
+            if ($resume) {
+                // Zapis po kazdej stronie sprawia, ze ubity request nie cofa kolejnego
+                // uruchomienia crona do poczatku calego katalogu.
+                $this->settings->set('morele_sync_offset', (string) $offset);
+                $this->settings->set('morele_sync_page', (string) ($page + 1));
+            }
         }
 
         if ($stopReason === '' && $pages >= $maxPages) {
             $stopReason = 'max_pages_reached';
         }
 
+        if ($resume && $finishedCycle) {
+            $offset = 0;
+            $page = 1;
+            $this->settings->set('morele_sync_offset', '0');
+            $this->settings->set('morele_sync_page', '1');
+        }
+
         $result = array(
             'synced_offers' => $synced,
             'skipped_offers' => $skipped,
             'pages_processed' => $pages,
+            'start_offset' => $startOffset,
+            'resume_offset' => $offset,
+            'finished_cycle' => $finishedCycle,
             'stats' => $this->storage->offerStats(),
         );
 

@@ -6,6 +6,7 @@ namespace App\Models;
 use App\Core\Database;
 use App\Services\OrderAutomationService;
 use App\Services\OrderNormalizer;
+use App\Services\OrderShipmentService;
 use App\Services\OrderSyncError;
 use InvalidArgumentException;
 use RuntimeException;
@@ -328,9 +329,14 @@ final class OrderRepository
         $company=is_array($invoice['company']??null)?$invoice['company']:[];
         $taxId=self::pick($invoice,['nip','taxId','tax_id']);
         if ($taxId==='') { $taxId=self::pick($company,['taxId','tax_id','nip']); }
+        // Mirakl (Empik/MediaMarkt): NIP w polach dodatkowych zamówienia, firma w billing_address.company.
+        foreach ((array)($row['details']['raw']['order_additional_fields']??[]) as $field) {
+            if ($taxId==='' && is_array($field) && strtolower((string)($field['code']??''))==='nip') { $taxId=trim((string)($field['value']??'')); }
+        }
+        $rawBilling=(array)($row['details']['raw']['customer']['billing_address']??[]);
         $row['details']['invoice_form']=[
             'name'=>self::personName($invoice),
-            'company'=>self::pick($invoice,['company_name','companyName'],self::pick($company,['name'])),
+            'company'=>self::pick($invoice,['company_name','companyName'],self::pick($company,['name'],self::pick($rawBilling,['company']))),
             'nip'=>$taxId,
             'street'=>$invoiceStreet,
             'building'=>$invoiceBuilding,
@@ -396,6 +402,8 @@ final class OrderRepository
                 if (json_encode($value,JSON_UNESCAPED_UNICODE)!==json_encode($details[$field]??null,JSON_UNESCAPED_UNICODE)) { $manualDetails[$field]=$value; }
             }
             $details=array_replace_recursive($details,$detailOverride);
+            // Addresses are replaced whole: a recursive merge would keep marketplace keys such as company.taxId after the operator cleared them.
+            $details['address']=$address; $details['invoice_address']=$invoice;
             $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
             $this->db->update('om_orders',$orderOverride+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
             $this->event($id,'Zmieniono dane klienta, płatności, dostawy, faktury lub pozycji zamówienia.',$actor);
@@ -637,10 +645,39 @@ final class OrderRepository
             $row['shipping_cents']=(int)($details['shipping_cents']??0);
             $paymentText=strtolower((string)($details['payment_method']??''));
             $row['cash_on_delivery']=(int)(!empty($details['cash_on_delivery']) || strpos($paymentText,'pobran')!==false);
+            $preference=(string)($details['document_preference']??'');
+            if (!in_array($preference,['invoice','receipt'],true)) { $preference=!empty($raw['invoice']['required'])?'invoice':'receipt'; }
+            $invoiceAddress=is_array($details['invoice_address']??null)?$details['invoice_address']:[];
+            $invoiceCompany=is_array($invoiceAddress['company']??null)?$invoiceAddress['company']:[];
+            $invoiceNip=self::pick($invoiceAddress,['nip','taxId','tax_id']); if ($invoiceNip==='') { $invoiceNip=self::pick($invoiceCompany,['taxId','tax_id','nip']); }
+            $row['document_choice']=$preference==='invoice'?($invoiceNip!==''?'invoice_nip':'invoice'):'receipt';
+            $row['document_nip']=$preference==='invoice'?$invoiceNip:'';
             $row['ordered_short']=self::shortDate((string)$row['ordered_at']);
             $row['status_changed_short']=self::shortDate((string)($row['status_changed_at']??''));
             $row['external_short']=(function (string $id): string { return mb_strlen($id,'UTF-8')>10?mb_substr($id,0,10,'UTF-8').'…':$id; })((string)$row['external_id']);
             unset($row['details_json']);
+        }
+        unset($row);
+        // Wskaźniki na liście: numer nadania, paragon i faktura (bez korekt i anulowanych przesyłek).
+        $orderIds=array_map('intval',array_column($rows,'id')); $shipmentFlags=[]; $documentFlags=[];
+        if ($orderIds) {
+            $in=implode(',',$orderIds);
+            foreach ($this->db->fetchAll("SELECT order_id,tracking,state FROM om_shipments WHERE order_id IN ($in) ORDER BY id") as $shipment) {
+                if (OrderShipmentService::isCancelled((string)$shipment['state'])) { continue; }
+                $tracking=(string)$shipment['tracking']; $orderId=(int)$shipment['order_id'];
+                if ($tracking!=='' && strpos($tracking,'PENDING:')!==0) { $shipmentFlags[$orderId]['numbers'][]=$tracking; }
+                else { $shipmentFlags[$orderId]['pending']=true; }
+            }
+            foreach ($this->db->fetchAll("SELECT order_id,kind,number FROM om_documents WHERE order_id IN ($in) AND kind IN ('receipt','invoice') ORDER BY id") as $document) {
+                $documentFlags[(int)$document['order_id']][$document['kind']][]=(string)$document['number'];
+            }
+        }
+        foreach ($rows as &$row) {
+            $id=(int)$row['id'];
+            $row['tracking_numbers']=implode(', ',$shipmentFlags[$id]['numbers']??[]);
+            $row['tracking_pending']=(int)(!empty($shipmentFlags[$id]['pending']) && $row['tracking_numbers']==='');
+            $row['receipt_numbers']=implode(', ',$documentFlags[$id]['receipt']??[]);
+            $row['invoice_numbers']=implode(', ',$documentFlags[$id]['invoice']??[]);
         }
         unset($row);
         // SalesCenter nie ma tabel produktów/ofert magazynu (products, allegro_offers, erli_products,
@@ -709,7 +746,9 @@ final class OrderRepository
                     $details=self::preserveItemImages($details,$previous);
                     $manual=is_array($previous['_manual']??null)?$previous['_manual']:[];
                     if ($manual) {
-                        $details=array_replace_recursive($details,is_array($manual['details']??null)?$manual['details']:[]);
+                        $manualDetails=is_array($manual['details']??null)?$manual['details']:[];
+                        $details=array_replace_recursive($details,$manualDetails);
+                        foreach (['address','invoice_address'] as $addressField) { if (is_array($manualDetails[$addressField]??null)) { $details[$addressField]=$manualDetails[$addressField]; } }
                         $details['_manual']=$manual;
                         foreach ((array)($manual['order']??[]) as $field=>$value) { if (in_array($field,['buyer_name','email','phone','total_cents','currency','paid'],true)) { $order[$field]=$value; } }
                     }

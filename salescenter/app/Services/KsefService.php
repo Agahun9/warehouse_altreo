@@ -200,7 +200,12 @@ final class KsefService
             $this->repo->event((int)$document['order_id'],'Błąd wysyłki '.$document['number'].' do KSeF ('.$label.'): '.$message,$actor);
             throw new InvalidArgumentException('Nie wysłano '.$document['number'].' do KSeF: '.$message,0,$e);
         }
-        return $this->applyStatus($submissionId,$status,$document,$actor,true);
+        $submission=$this->applyStatus($submissionId,$status,$document,$actor,true);
+        if ($submission['state']==='accepted' && $submission['upo']===null) {
+            try { $this->fetchUpo($submission); $submission=$this->submission((int)$submission['id']); }
+            catch (\Throwable $e) { $submission['upo_error']=$e->getMessage(); }
+        }
+        return $submission;
     }
 
     /** Re-reads status of the latest submission (with the account used to send it) and downloads UPO once accepted. */
@@ -243,7 +248,7 @@ final class KsefService
         $ids=array_values(array_unique(array_filter(array_map('intval',$documentIds))));
         if (!$ids) { return []; }
         $result=[];
-        foreach ($this->db->fetchAll('SELECT id,document_id,environment,state,ksef_number,status_code,message,updated_at,CASE WHEN upo IS NULL THEN 0 ELSE 1 END AS has_upo FROM om_ksef_submissions WHERE document_id IN ('.implode(',',$ids).') ORDER BY id') as $row) {
+        foreach ($this->db->fetchAll('SELECT id,document_id,environment,state,ksef_number,invoice_hash,status_code,message,updated_at,CASE WHEN upo IS NULL THEN 0 ELSE 1 END AS has_upo FROM om_ksef_submissions WHERE document_id IN ('.implode(',',$ids).') ORDER BY id') as $row) {
             $row['environment_label']=self::LABELS[$row['environment']]??$row['environment'];
             $result[(int)$row['document_id']]=$row;
         }
@@ -314,7 +319,7 @@ final class KsefService
     {
         $label=self::LABELS[$submission['environment']]??$submission['environment'];
         switch ($submission['state']) {
-            case 'accepted': return 'KSeF ('.$label.'): przyjęto, numer '.$submission['ksef_number'].'.';
+            case 'accepted': return 'KSeF ('.$label.'): faktura poprawnie wysłana i przyjęta, numer KSeF '.$submission['ksef_number'].'.'.(!empty($submission['upo'])||!empty($submission['has_upo'])?' UPO odebrane.':'');
             case 'processing': return 'KSeF ('.$label.'): faktura w przetwarzaniu — odśwież status za chwilę.';
             case 'rejected': return 'KSeF ('.$label.'): odrzucono — '.$submission['message'];
             default: return 'KSeF ('.$label.'): '.$submission['message'];
@@ -349,6 +354,31 @@ final class KsefService
             else { $address[]=$rest[$i]; }
         }
         return ['name'=>$name,'nip'=>$nip,'country'=>$country,'address'=>$address];
+    }
+
+    /** Delivery block of a document: name, address; "Dostawa:" / "Punkt odbioru:" lines are skipped. */
+    public static function parseRecipient(string $recipient): array
+    {
+        $lines=[];
+        foreach (preg_split('/\R/u',$recipient)?:[] as $line) {
+            $line=trim(preg_replace('/\s+/u',' ',$line)??'');
+            if ($line==='' || preg_match('/^(Dostawa|Punkt odbioru|Tel(efon)?|E-?mail)\s*:/iu',$line)) { continue; }
+            $lines[]=$line;
+        }
+        $parsed=self::parseBuyer(implode("\n",$lines));
+        return ['name'=>$parsed['name'],'country'=>$parsed['country'],'address'=>$parsed['address']];
+    }
+
+    /**
+     * Public verification link encoded in the KSeF QR code (KOD I): environment host, seller NIP,
+     * issue date (DD-MM-YYYY) and SHA-256 of the invoice XML in Base64URL.
+     */
+    public static function qrUrl(string $environment,string $sellerNip,string $issueDate,string $hashBase64): string
+    {
+        $host=$environment==='production'?'https://qr.ksef.mf.gov.pl':'https://qr-test.ksef.mf.gov.pl';
+        $date=preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D',$issueDate,$m)?$m[3].'-'.$m[2].'-'.$m[1]:$issueDate;
+        $hash=rtrim(strtr($hashBase64,'+/','-_'),'=');
+        return $host.'/invoice/'.rawurlencode(self::normalizeNip($sellerNip)).'/'.$date.'/'.$hash;
     }
 
     /**
@@ -402,6 +432,10 @@ final class KsefService
         [$sellerL1,$sellerL2]=$addressLines(preg_split('/\R/u',(string)($seller['address']??''))?:[]);
         if ($sellerL1==='') { throw new InvalidArgumentException('Uzupełnij adres sprzedawcy.'); }
         $address=$add($podmiot1,'Adres'); $add($address,'KodKraju','PL'); $add($address,'AdresL1',mb_substr($sellerL1,0,512)); if ($sellerL2!=='') { $add($address,'AdresL2',mb_substr($sellerL2,0,512)); }
+        $sellerEmail=$text($seller['email']??'',255);
+        $sellerPhone=$text($seller['phone']??'',16);
+        if ($sellerEmail!=='' && !filter_var($sellerEmail,FILTER_VALIDATE_EMAIL)) { $sellerEmail=''; }
+        if ($sellerEmail!=='' || $sellerPhone!=='') { $contact=$add($podmiot1,'DaneKontaktowe'); if ($sellerEmail!=='') { $add($contact,'Email',$sellerEmail); } if ($sellerPhone!=='') { $add($contact,'Telefon',$sellerPhone); } }
 
         $podmiot2=$add($root,'Podmiot2');
         $ids=$add($podmiot2,'DaneIdentyfikacyjne');
@@ -410,6 +444,16 @@ final class KsefService
         [$buyerL1,$buyerL2]=$addressLines($buyer['address']);
         if ($buyerL1!=='') { $address=$add($podmiot2,'Adres'); $add($address,'KodKraju',$buyer['country']); $add($address,'AdresL1',mb_substr($buyerL1,0,512)); if ($buyerL2!=='') { $add($address,'AdresL2',mb_substr($buyerL2,0,512)); } }
         $add($podmiot2,'JST','2'); $add($podmiot2,'GV','2');
+
+        // Odbiorca (Rola 2), gdy dane dostawy różnią się od nabywcy — jak w fakturach z innych systemów.
+        $recipient=self::parseRecipient((string)($snapshot['recipient']??''));
+        if ($recipient['name']!=='' && $recipient['address'] && ($recipient['name']!==$buyer['name'] || $recipient['address']!==$buyer['address'])) {
+            $podmiot3=$add($root,'Podmiot3');
+            $ids=$add($podmiot3,'DaneIdentyfikacyjne'); $add($ids,'BrakID','1'); $add($ids,'Nazwa',$text($recipient['name'],512));
+            [$recipientL1,$recipientL2]=$addressLines($recipient['address']);
+            $address=$add($podmiot3,'Adres'); $add($address,'KodKraju',$recipient['country']); $add($address,'AdresL1',mb_substr($recipientL1,0,512)); if ($recipientL2!=='') { $add($address,'AdresL2',mb_substr($recipientL2,0,512)); }
+            $add($podmiot3,'Rola','2');
+        }
 
         $fa=$add($root,'Fa');
         $add($fa,'KodWaluty',$currency);
@@ -457,17 +501,25 @@ final class KsefService
             else { $add($data,'NrKSeFN','1'); }
         }
         $orderNumber=$text($snapshot['order_number']??'');
-        if ($orderNumber!=='') { $description=$add($fa,'DodatkowyOpis'); $add($description,'Klucz','Numer zamówienia'); $add($description,'Wartosc',$orderNumber); }
+        $orderDate=(string)($snapshot['order_date']??$options['order_date']??'');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$orderDate)) { $orderDate=''; }
+        if ($orderNumber!=='' && $orderDate==='') { $description=$add($fa,'DodatkowyOpis'); $add($description,'Klucz','Numer zamówienia'); $add($description,'Wartosc',$orderNumber); }
         $line=0;
         foreach ([[$before,true],[$items,false]] as [$rows,$stateBefore]) {
             foreach ($rows as $row) {
                 $faRow=$add($fa,'FaWiersz');
                 $add($faRow,'NrWierszaFa',(string)++$line);
                 $add($faRow,'P_7',$text($row['name']??'',512));
+                $sku=$text($row['sku']??'',50);
+                if ($sku!=='') { $add($faRow,'Indeks',$sku); }
+                $gtin=preg_replace('/\D/','',(string)($row['ean']??''))??'';
+                if (in_array(strlen($gtin),[8,12,13,14],true)) { $add($faRow,'GTIN',$gtin); }
+                $quantity=(int)($row['quantity']??0);
+                $net=(int)($row['net_cents']??0);
                 $add($faRow,'P_8A','szt.');
-                $add($faRow,'P_8B',(string)(int)($row['quantity']??0));
-                $add($faRow,'P_9B',$amount((int)($row['unit_cents']??0)));
-                $add($faRow,'P_11A',$amount((int)($row['gross_cents']??0)));
+                $add($faRow,'P_8B',$quantity.'.00');
+                $add($faRow,'P_9A',$amount($quantity>0?(int)round($net/$quantity):$net));
+                $add($faRow,'P_11',$amount($net));
                 $add($faRow,'P_12',self::RATE_CODES[(string)$row['vat']]);
                 if ($stateBefore) { $add($faRow,'StanPrzed','1'); }
             }
@@ -487,11 +539,30 @@ final class KsefService
                 else { $add($payment,'PlatnoscInna','1'); $add($payment,'OpisPlatnosci',$method); }
             }
             $bank=strtoupper(preg_replace('/\s+/','',(string)($seller['bank']??''))??'');
-            if (preg_match('/^(?:[A-Z]{2})?\d{10,32}$/D',$bank)) { $add($add($payment,'RachunekBankowy'),'NrRB',$bank); }
+            if (preg_match('/^(?:[A-Z]{2})?\d{10,32}$/D',$bank)) {
+                $account=$add($payment,'RachunekBankowy'); $add($account,'NrRB',$bank);
+                $swift=strtoupper(preg_replace('/\s+/','',(string)($seller['swift']??''))??'');
+                if (preg_match('/^[A-Z0-9]{8}(?:[A-Z0-9]{3})?$/D',$swift)) { $add($account,'SWIFT',$swift); }
+                $bankName=$text($seller['bank_name']??'');
+                if ($bankName!=='') { $add($account,'NazwaBanku',$bankName); }
+            }
             if ($payment->hasChildNodes()) { $fa->appendChild($payment); }
         }
-        $footer=$text($snapshot['series_notes']??'',3500);
-        if ($footer!=='') { $add($add($add($root,'Stopka'),'Informacje'),'StopkaFaktury',$footer); }
+        if ($orderNumber!=='' && $orderDate!=='') {
+            $orders=$add($add($fa,'WarunkiTransakcji'),'Zamowienia');
+            $add($orders,'DataZamowienia',$orderDate); $add($orders,'NrZamowienia',$text($orderNumber));
+        }
+        $footer=$text(trim(implode("\n",array_filter([trim((string)($snapshot['series_notes']??'')),trim((string)($snapshot['additional_info']??''))],'strlen'))),3500);
+        $registers=[];
+        foreach (['KRS'=>'/^\d{10}$/D','REGON'=>'/^\d{9}(?:\d{5})?$/D','BDO'=>'/^\d{1,9}$/D'] as $field=>$pattern) {
+            $value=preg_replace('/\s+/','',(string)($seller[strtolower($field)]??''))??'';
+            if ($value!=='' && preg_match($pattern,$value)) { $registers[$field]=$value; }
+        }
+        if ($footer!=='' || $registers) {
+            $stopka=$add($root,'Stopka');
+            if ($footer!=='') { $add($add($stopka,'Informacje'),'StopkaFaktury',$footer); }
+            if ($registers) { $reg=$add($stopka,'Rejestry'); foreach ($registers as $field=>$value) { $add($reg,$field,$value); } }
+        }
         $xml=(string)$dom->saveXML();
         self::validateXml($xml);
         return $xml;
@@ -531,6 +602,8 @@ final class KsefService
     private function xml(array $document,string $env,?array $account): string
     {
         $options=['exemption_basis'=>(string)($account['exemption_basis']??'')];
+        $orderedAt=(string)($this->db->fetchColumn('SELECT ordered_at FROM om_orders WHERE id=:id',['id'=>(int)$document['order_id']])?:'');
+        if ($orderedAt!=='') { $options['order_date']=substr($orderedAt,0,10); }
         if ($document['kind']==='invoice_correction') {
             $root=$document; $guard=0;
             while (!empty($root['parent_id']) && $guard++<100) {

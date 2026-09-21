@@ -3,14 +3,13 @@
 declare(strict_types=1);
 namespace App\Services;
 use App\Models\OrderRepository;
-use App\Models\SettingRepository;
 use RuntimeException;
 
 final class OrderSyncService
 {
     private $repo;
     private $services = [];
-    public const CLASSES = ['allegro'=>AllegroService::class,'empik'=>EmpikService::class,'mediamarkt'=>MediaMarktService::class,'erli'=>ErliService::class,'morele'=>MoreleService::class,'temu'=>TemuService::class,'prestashop'=>PrestaShopService::class,'woocommerce'=>WooCommerceService::class];
+    public const CLASSES = ['allegro'=>AllegroService::class,'empik'=>EmpikService::class,'mediamarkt'=>MediaMarktService::class,'erli'=>ErliService::class,'morele'=>MoreleService::class,'temu'=>TemuService::class,'prestashop'=>PrestaShopService::class,'woocommerce'=>WooCommerceService::class,'altreo'=>AltreoService::class];
     public function __construct(OrderRepository $repo) { $this->repo=$repo; }
     private function service(string $platform)
     {
@@ -22,18 +21,6 @@ final class OrderSyncService
     public function discover(): array
     {
         $errors=[];
-        $shop=new AltreoShopOrdersService(new SettingRepository($this->repo->db()));
-        if ($shop->configured()) {
-            $this->repo->registerAccount('altreo',1,'Sklep internetowy (API)');
-            $shopAccount=$this->repo->db()->fetch('SELECT id FROM om_accounts WHERE platform=:p AND source_id=1',['p'=>'altreo']);
-            if ($shopAccount && !$this->repo->db()->fetchColumn('SELECT id FROM om_mappings WHERE account_id=:id LIMIT 1',['id'=>$shopAccount['id']])) {
-                $names=['nowe'=>'Nowe','w_realizacji'=>'Do spakowania','wyslane'=>'Wysłane','zrealizowane'=>'Zakończone','anulowane'=>'Anulowane'];
-                foreach ($names as $remote=>$local) {
-                    $status=$this->repo->db()->fetchColumn('SELECT id FROM om_statuses WHERE name=:name LIMIT 1',['name'=>$local]);
-                    if ($status) { $this->repo->db()->insert('om_mappings',['account_id'=>$shopAccount['id'],'remote_status'=>$remote,'status_id'=>$status]); }
-                }
-            }
-        }
         foreach (array_keys(self::CLASSES) as $platform) {
             try {
                 foreach ($this->service($platform)->listAccounts() as $account) {
@@ -55,10 +42,6 @@ final class OrderSyncService
             try {
                 // Reload cursor after obtaining the lock: another worker may have just advanced it.
                 $account=$db->fetch('SELECT * FROM om_accounts WHERE id=:id',['id'=>$account['id']]);
-                if ($account['platform']==='altreo') {
-                    $results[]=$this->syncShop($account);
-                    continue;
-                }
                 if (in_array($account['platform'],['api','manual'],true)) { $results[]=['account'=>$account['name'],'message'=>'Zamówienia przychodzą przez API własnego sklepu – nic do pobrania.']; continue; }
                 $source=null;
                 foreach ($this->service($account['platform'])->listAccounts() as $candidate) {
@@ -177,31 +160,6 @@ final class OrderSyncService
             $db->update('om_orders',['details_json'=>OrderRepository::json($details)],'id=:id',['id'=>(int)$row['id']]);
         }
         return $repaired;
-    }
-
-    private function syncShop(array $account): array
-    {
-        $db=$this->repo->db();
-        $service=new AltreoShopOrdersService(new SettingRepository($db));
-        $since=gmdate('Y-m-d H:i:s',time()-7*86400);
-        $afterId=0; $added=0; $updated=0; $skipped=0;
-        do {
-            $page=$service->readPage($since,$afterId);
-            foreach ($page['orders'] as $raw) {
-                if (!is_array($raw)) { throw new RuntimeException('Nieprawidłowe zamówienie w odpowiedzi sklepu.'); }
-                $order=OrderNormalizer::normalize('altreo',$raw,time()-7*86400,time());
-                if ($order===null) {
-                    $order=OrderNormalizer::normalize('altreo',$raw,0,time());
-                    if ($order===null || !$db->fetchColumn('SELECT id FROM om_orders WHERE account_id=:a AND external_id=:e',['a'=>(int)$account['id'],'e'=>$order['external_id']])) { $skipped++; continue; }
-                }
-                if ($this->repo->import((int)$account['id'],$order)) { $added++; } else { $updated++; }
-            }
-            $next=$page['next_after_id']??null;
-            if ($next!==null && (int)$next<=$afterId) { throw new RuntimeException('API sklepu zwróciło nieprawidłowy kursor.'); }
-            $afterId=$next===null?0:(int)$next;
-        } while ($afterId>0);
-        $db->update('om_accounts',['last_sync'=>gmdate('Y-m-d H:i:s'),'last_error'=>null,'next_attempt'=>0,'synced_until'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$account['id']]);
-        return ['account'=>$account['name'],'added'=>$added,'updated'=>$updated,'skipped'=>$skipped,'more'=>false,'message'=>"Nowe: $added · odświeżone: $updated · pominięte: $skipped"];
     }
 
     /**

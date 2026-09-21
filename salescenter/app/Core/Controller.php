@@ -269,6 +269,13 @@ abstract class Controller
         return (string) ($user['access'] ?? '') === 'edit' ? 'edit' : 'read';
     }
 
+    /** Licznik wątków do obsługi w menu; brak tabel (przed pierwszym wejściem w Wiadomości) = 0. */
+    private static function messagesOpenCount(): int
+    {
+        try { return Tenant::active() ? \App\Models\MessageRepository::openCount(Database::instance()) : 0; }
+        catch (\Throwable $e) { return 0; }
+    }
+
     protected function render(string $template, array $data = array()): void
     {
         $smarty = SmartyFactory::create();
@@ -294,6 +301,7 @@ abstract class Controller
             'currentUser' => $currentUser,
             'layoutCsrf' => $csrf,
             'registrationEnabled' => !empty($appConfig['registration_enabled']),
+            'messagesOpenCount' => $currentUser ? self::messagesOpenCount() : 0,
         );
 
         foreach (array_merge($defaultData, $data) as $key => $value) {

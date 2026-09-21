@@ -265,41 +265,11 @@ final class IntegrationsController extends Controller
         }
     }
 
-    /**
-     * Zapisuje dane aplikacji Allegro z panelu (bez edycji plików). Operator platformy
-     * udostępnia logowanie wszystkim firmom; inna firma może użyć własnej aplikacji.
-     */
-    public function allegroapp(): void
-    {
-        $user = $this->writeGuard();
-        try {
-            $clientId = trim((string) ($_POST['client_id'] ?? ''));
-            $clientSecret = trim((string) ($_POST['client_secret'] ?? ''));
-            if (!preg_match('/^[A-Za-z0-9_-]{8,100}$/D', $clientId) || strlen($clientSecret) < 8 || strlen($clientSecret) > 300) {
-                throw new InvalidArgumentException('Wklej Client ID i Client Secret skopiowane z apps.developer.allegro.pl.');
-            }
-            (new AllegroService(true))->verifyApp($clientId, $clientSecret);
-            $value = ['client_id' => $clientId, 'secret' => \App\Services\OrderSecretBox::encrypt(['client_secret' => $clientSecret]), 'saved_by' => (string) ($user['email'] ?? ''), 'saved_at' => gmdate('c')];
-            $saas = $this->saas();
-            if ($saas->isPlatformOperator($user) && !empty($_POST['all_companies'])) {
-                $saas->saveSetting('allegro_app', $value);
-                $this->setFlash('success', 'Aplikacja Allegro zweryfikowana. Logowanie Allegro działa teraz dla wszystkich firm – kliknij „Zaloguj przez Allegro”.');
-            } else {
-                (new OrderRepository($this->db()))->saveSetting('allegro_app', $value);
-                $this->setFlash('success', 'Aplikacja Allegro zweryfikowana i zapisana dla Twojej firmy. Kliknij „Zaloguj przez Allegro”.');
-            }
-        } catch (\Throwable $e) {
-            $message = $e instanceof InvalidArgumentException ? $e->getMessage() : (strpos($e->getMessage(), '[401]') !== false || strpos($e->getMessage(), '[400]') !== false ? 'Allegro odrzuciło Client ID lub Client Secret. Skopiuj je ponownie z apps.developer.allegro.pl (bez spacji).' : $this->safeError($e, 'allegro_app'));
-            $this->setFlash('error', $message);
-        }
-        $this->back('&add=allegro');
-    }
-
     public function allegroconnect(): void
     {
         $user = $this->writeGuard();
         if (!AllegroService::configured()) {
-            $this->setFlash('error', 'Najpierw uzupełnij dane aplikacji Allegro w karcie Allegro.');
+            $this->setFlash('error', 'Logowanie Allegro nie jest jeszcze włączone przez administratora SalesCenter.');
             $this->back('&add=allegro');
         }
         $state = bin2hex(random_bytes(24));
