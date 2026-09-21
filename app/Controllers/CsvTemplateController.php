@@ -937,6 +937,308 @@ class CsvTemplateController extends Controller
         }
     }
 
+    /**
+     * Przyjmuje zlecenie eksportu CSV, od razu odpowiada JSON-em z identyfikatorem zadania,
+     * a sam CSV generuje po zamknieciu polaczenia (fastcgi_finish_request). Eksporty sa
+     * wykonywane kolejno (blokada MySQL), zeby kilka dlugich eksportow nie obciazalo serwera naraz.
+     */
+    public function exportcsvasync(): void
+    {
+        $currentUser = $this->requireModule('products');
+
+        if (!$this->isPost()) {
+            $this->jsonExportJobResponse(array('ok' => false, 'error' => 'Dozwolona jest tylko metoda POST.'), 405);
+            return;
+        }
+
+        $this->releaseSessionLock();
+
+        $templateId = (int) $this->input('template_id', 0);
+        if ($templateId <= 0 || !$this->templates->findById($templateId)) {
+            $this->jsonExportJobResponse(array('ok' => false, 'error' => 'Wybierz szablon eksportu.'), 422);
+            return;
+        }
+
+        $mode = (string) $this->input('export_mode', 'selected');
+        if ($mode === 'selected' && $this->normalizeProductIds($this->input('product_ids', array())) === array()) {
+            $this->jsonExportJobResponse(array('ok' => false, 'error' => 'Zaznacz produkty albo wybierz eksport wyfiltrowanych lub wszystkich.'), 422);
+            return;
+        }
+
+        $this->cleanupExportJobs();
+
+        $jobId = bin2hex(random_bytes(16));
+        $userId = (int) ($currentUser['id'] ?? 0);
+        $this->writeExportJob($jobId, array(
+            'id' => $jobId,
+            'user_id' => $userId,
+            'template_id' => $templateId,
+            'status' => 'queued',
+            'message' => 'Eksport czeka w kolejce.',
+            'filename' => '',
+            'encoding' => '',
+            'rows' => 0,
+            'created_at' => time(),
+            'updated_at' => time(),
+        ));
+
+        // Rozwiazuje uzytkownika przed zamknieciem polaczenia, aby eksport w tle mial komplet danych.
+        $this->exportCurrentUser();
+
+        $payload = array(
+            'ok' => true,
+            'job_id' => $jobId,
+            'status' => 'queued',
+            'message' => 'Eksport czeka w kolejce.',
+        );
+
+        if (!$this->beginDetachedExportResponse($payload)) {
+            // Brak PHP-FPM: eksport wykona sie w tym zadaniu, a odpowiedz wroci po jego zakonczeniu.
+            $this->runExportJob($jobId, $currentUser);
+            $this->jsonExportJobResponse($this->exportJobPublicPayload($this->readExportJob($jobId) ?: array()), 200);
+            return;
+        }
+
+        $this->runExportJob($jobId, $currentUser);
+    }
+
+    public function exportcsvstatus(): void
+    {
+        $currentUser = $this->requireModule('products');
+        $this->releaseSessionLock();
+
+        $job = $this->exportJobForUser((string) $this->input('job', ''), $currentUser);
+        if ($job === null) {
+            $this->jsonExportJobResponse(array('ok' => false, 'status' => 'missing', 'error' => 'Nie znaleziono zadania eksportu albo wygaslo.'), 404);
+            return;
+        }
+
+        $this->jsonExportJobResponse($this->exportJobPublicPayload($job), 200);
+    }
+
+    public function exportcsvdownload(): void
+    {
+        $currentUser = $this->requireModule('products');
+        $this->releaseSessionLock();
+
+        $job = $this->exportJobForUser((string) $this->input('job', ''), $currentUser);
+        $path = $job !== null ? $this->exportJobCsvPath((string) $job['id']) : '';
+        if ($job === null || ($job['status'] ?? '') !== 'done' || $path === '' || !is_file($path)) {
+            $this->setFlash('error', 'Plik eksportu CSV nie jest gotowy albo wygasl.');
+            $this->redirect('./index.php?controller=products&action=index');
+        }
+
+        $filename = (string) ($job['filename'] ?? '');
+        if ($filename === '' || preg_match('/^[A-Za-z0-9\-_.]+$/', $filename) !== 1) {
+            $filename = 'produkty_' . date('Ymd-His') . '.csv';
+        }
+
+        $encoding = (string) ($job['encoding'] ?? '');
+        header('Content-Type: text/csv; charset=' . ($encoding !== '' ? $encoding : 'UTF-8'));
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . (string) filesize($path));
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        readfile($path);
+        exit;
+    }
+
+    private function runExportJob(string $jobId, array $currentUser): void
+    {
+        ignore_user_abort(true);
+        @set_time_limit(0);
+
+        $lockName = 'csv_export_worker';
+        $lockAcquired = false;
+        $waitStarted = time();
+
+        try {
+            // Jeden eksport naraz: kolejne czekaja w kolejce zamiast rownolegle obciazac baze i CPU.
+            while (!($lockAcquired = $this->db()->acquireAdvisoryLock($lockName))) {
+                if (time() - $waitStarted > 1800) {
+                    throw new RuntimeException('Przekroczono czas oczekiwania w kolejce eksportu. Sprobuj ponownie.');
+                }
+
+                $this->updateExportJob($jobId, array('status' => 'queued', 'message' => 'Eksport czeka w kolejce (trwa inny eksport).'));
+                sleep(2);
+            }
+
+            $this->updateExportJob($jobId, array('status' => 'running', 'message' => 'Trwa generowanie CSV...'));
+
+            $result = $this->prepareExportResponseData((int) $this->input('template_id', 0), false);
+            $this->storeExportPreset($currentUser, $result['template'], $result['export_options']);
+
+            $csvPath = $this->exportJobCsvPath($jobId);
+            if (file_put_contents($csvPath, $result['csv'], LOCK_EX) === false) {
+                throw new RuntimeException('Nie udalo sie zapisac pliku eksportu CSV.');
+            }
+
+            $this->updateExportJob($jobId, array(
+                'status' => 'done',
+                'message' => 'Eksport gotowy.',
+                'filename' => $this->buildExportFilename($result['template'], $result['rows'], $result['export_options']),
+                'encoding' => (string) ($result['template']['encoding'] ?? 'UTF-8'),
+                'rows' => count($result['rows']),
+            ));
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Eksport CSV w tle (' . $jobId . ') zakonczyl sie bledem: ' . $exception->getMessage(), 'ERROR');
+            }
+
+            $this->updateExportJob($jobId, array('status' => 'error', 'message' => $exception->getMessage()));
+        } finally {
+            if ($lockAcquired) {
+                try {
+                    $this->db()->releaseAdvisoryLock($lockName);
+                } catch (Throwable $exception) {
+                    // Blokada i tak zniknie wraz z polaczeniem MySQL.
+                }
+            }
+        }
+    }
+
+    private function beginDetachedExportResponse(array $payload): bool
+    {
+        if (!function_exists('fastcgi_finish_request')) {
+            return false;
+        }
+
+        ignore_user_abort(true);
+
+        if (!headers_sent()) {
+            http_response_code(202);
+            header('Content-Type: application/json; charset=utf-8');
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Connection: close');
+        }
+
+        echo json_encode($payload);
+        fastcgi_finish_request();
+        return true;
+    }
+
+    private function jsonExportJobResponse(array $payload, int $status): void
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        echo json_encode($payload);
+    }
+
+    private function exportJobPublicPayload(array $job): array
+    {
+        $status = (string) ($job['status'] ?? 'missing');
+        $message = (string) ($job['message'] ?? '');
+        $updatedAt = (int) ($job['updated_at'] ?? 0);
+
+        // Proces mogl zostac ubity przez serwer (limit czasu/pamieci) bez zapisania bledu.
+        // Zadanie w kolejce odswieza status co 2 s, wiec dluzszy brak zmian oznacza ubity proces.
+        if (($status === 'running' && $updatedAt > 0 && time() - $updatedAt > 3600)
+            || ($status === 'queued' && $updatedAt > 0 && time() - $updatedAt > 300)) {
+            $status = 'error';
+            $message = 'Eksport zostal przerwany przez serwer. Sprobuj ponownie albo zawez zakres produktow.';
+        }
+
+        $payload = array(
+            'ok' => $status !== 'error' && $status !== 'missing',
+            'job_id' => (string) ($job['id'] ?? ''),
+            'status' => $status,
+            'message' => $message,
+            'rows' => (int) ($job['rows'] ?? 0),
+        );
+
+        if ($status === 'done') {
+            $payload['filename'] = (string) ($job['filename'] ?? '');
+            $payload['download_url'] = './index.php?controller=csvtemplates&action=exportcsvdownload&job=' . rawurlencode((string) ($job['id'] ?? ''));
+        }
+
+        return $payload;
+    }
+
+    private function exportJobsDir(): string
+    {
+        $dir = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Storage' . DIRECTORY_SEPARATOR . 'exports';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new RuntimeException('Nie mozna utworzyc katalogu eksportow CSV.');
+        }
+
+        return $dir;
+    }
+
+    private function exportJobMetaPath(string $jobId): string
+    {
+        return $this->exportJobsDir() . DIRECTORY_SEPARATOR . $jobId . '.json';
+    }
+
+    private function exportJobCsvPath(string $jobId): string
+    {
+        return $this->exportJobsDir() . DIRECTORY_SEPARATOR . $jobId . '.csv';
+    }
+
+    private function readExportJob(string $jobId): ?array
+    {
+        if (preg_match('/^[a-f0-9]{32}$/', $jobId) !== 1) {
+            return null;
+        }
+
+        $path = $this->exportJobMetaPath($jobId);
+        if (!is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function writeExportJob(string $jobId, array $job): void
+    {
+        $path = $this->exportJobMetaPath($jobId);
+        $tmpPath = $path . '.tmp';
+        if (file_put_contents($tmpPath, json_encode($job), LOCK_EX) === false || !@rename($tmpPath, $path)) {
+            throw new RuntimeException('Nie udalo sie zapisac statusu eksportu CSV.');
+        }
+    }
+
+    private function updateExportJob(string $jobId, array $changes): void
+    {
+        $job = $this->readExportJob($jobId);
+        if ($job === null) {
+            return;
+        }
+
+        try {
+            $this->writeExportJob($jobId, array_merge($job, $changes, array('updated_at' => time())));
+        } catch (Throwable $exception) {
+            if (function_exists('app_log')) {
+                app_log('Nie udalo sie zaktualizowac statusu eksportu CSV ' . $jobId . ': ' . $exception->getMessage(), 'WARNING');
+            }
+        }
+    }
+
+    private function exportJobForUser(string $jobId, array $currentUser): ?array
+    {
+        $job = $this->readExportJob(trim($jobId));
+        if ($job === null || (int) ($job['user_id'] ?? 0) !== (int) ($currentUser['id'] ?? 0)) {
+            return null;
+        }
+
+        return $job;
+    }
+
+    private function cleanupExportJobs(): void
+    {
+        $files = glob($this->exportJobsDir() . DIRECTORY_SEPARATOR . '*');
+        if (!is_array($files)) {
+            return;
+        }
+
+        $expiresBefore = time() - 86400;
+        foreach ($files as $file) {
+            if (is_file($file) && (int) @filemtime($file) < $expiresBefore) {
+                @unlink($file);
+            }
+        }
+    }
+
     public function apiexport(): void
     {
         $currentUser = $this->requireModule('products');

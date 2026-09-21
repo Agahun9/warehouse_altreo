@@ -2583,15 +2583,182 @@ document.addEventListener('DOMContentLoaded', function() {
           input.value = ids[j];
           selectedContainer.appendChild(input);
         }
-      } else if (exportFiltered && exportFiltered.checked) {
+      }
+
+      if (!window.fetch || !window.FormData) {
         return;
       }
 
-      if (csvExportRecentPresetsStatus) {
-        csvExportRecentPresetsStatus.textContent = 'Zapisywanie ustawien eksportu...';
+      event.preventDefault();
+      startAsyncCsvExport();
+    });
+  }
+
+  // Asynchroniczny eksport CSV: serwer generuje plik w tle, a strona odpytuje o status.
+  var csvExportAsyncUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvasync';
+  var csvExportStatusUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvstatus&job=';
+  var csvExportJobStorageKey = 'productsCsvExportJob';
+  var csvExportPollTimer = null;
+  var csvExportStatusBox = null;
+
+  function csvExportStoredJob(value) {
+    try {
+      if (typeof value === 'undefined') {
+        return window.localStorage.getItem(csvExportJobStorageKey) || '';
+      }
+      if (value) {
+        window.localStorage.setItem(csvExportJobStorageKey, value);
+      } else {
+        window.localStorage.removeItem(csvExportJobStorageKey);
+      }
+    } catch (storageError) {
+      // localStorage bywa niedostepny (tryb prywatny) - eksport nadal dziala w biezacej karcie.
+    }
+    return '';
+  }
+
+  function showCsvExportStatus(type, message, downloadUrl) {
+    if (!csvExportStatusBox) {
+      csvExportStatusBox = document.createElement('div');
+      csvExportStatusBox.className = 'alert shadow position-fixed mb-0';
+      csvExportStatusBox.style.cssText = 'right:16px;bottom:16px;z-index:2000;max-width:380px;';
+      document.body.appendChild(csvExportStatusBox);
+    }
+
+    csvExportStatusBox.className = 'alert shadow position-fixed mb-0 alert-' + type;
+    csvExportStatusBox.innerHTML = '';
+
+    var text = document.createElement('div');
+    text.className = 'd-flex align-items-center gap-2';
+    if (type === 'info') {
+      var spinner = document.createElement('span');
+      spinner.className = 'spinner-border spinner-border-sm flex-shrink-0';
+      text.appendChild(spinner);
+    }
+    var label = document.createElement('span');
+    label.textContent = 'Eksport CSV: ' + message;
+    text.appendChild(label);
+    csvExportStatusBox.appendChild(text);
+
+    if (downloadUrl) {
+      var link = document.createElement('a');
+      link.href = downloadUrl;
+      link.className = 'btn btn-sm btn-success mt-2 me-2';
+      link.textContent = 'Pobierz ponownie';
+      csvExportStatusBox.appendChild(link);
+    }
+
+    if (type !== 'info') {
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+      closeBtn.textContent = 'Zamknij';
+      closeBtn.addEventListener('click', function () {
+        if (csvExportStatusBox && csvExportStatusBox.parentNode) {
+          csvExportStatusBox.parentNode.removeChild(csvExportStatusBox);
+        }
+        csvExportStatusBox = null;
+      });
+      csvExportStatusBox.appendChild(closeBtn);
+    }
+  }
+
+  function setCsvExportSubmitting(isBusy) {
+    var submitButton = exportForm ? exportForm.querySelector('button[type="submit"]') : null;
+    if (submitButton) {
+      submitButton.disabled = isBusy;
+    }
+  }
+
+  function startAsyncCsvExport() {
+    setCsvExportSubmitting(true);
+    showCsvExportStatus('info', 'wysylanie zlecenia...');
+
+    fetch(csvExportAsyncUrl, {
+      method: 'POST',
+      body: new FormData(exportForm),
+      credentials: 'same-origin'
+    })
+      .then(function (response) {
+        return response.json().catch(function () {
+          return { ok: false, error: 'Nieprawidlowa odpowiedz serwera (HTTP ' + response.status + ').' };
+        });
+      })
+      .then(function (data) {
+        setCsvExportSubmitting(false);
+        if (!data || !data.job_id) {
+          showCsvExportStatus('danger', (data && (data.error || data.message)) || 'nie udalo sie uruchomic eksportu.');
+          return;
+        }
+
+        csvExportStoredJob(data.job_id);
+        if (csvExportModalEl && window.bootstrap && bootstrap.Modal) {
+          bootstrap.Modal.getOrCreateInstance(csvExportModalEl).hide();
+        }
+        if (csvExportRecentPresetsStatus) {
+          csvExportRecentPresetsStatus.textContent = 'Zapisywanie ustawien eksportu...';
+        }
+        handleCsvExportStatus(data, true);
+      })
+      .catch(function () {
+        setCsvExportSubmitting(false);
+        showCsvExportStatus('danger', 'blad polaczenia z serwerem.');
+      });
+  }
+
+  function pollCsvExportStatus(jobId, autoDownload) {
+    if (csvExportPollTimer) {
+      window.clearTimeout(csvExportPollTimer);
+    }
+
+    csvExportPollTimer = window.setTimeout(function () {
+      fetch(csvExportStatusUrl + encodeURIComponent(jobId), { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+          handleCsvExportStatus(data, autoDownload);
+        })
+        .catch(function () {
+          // Chwilowy blad sieci - probujemy dalej.
+          pollCsvExportStatus(jobId, autoDownload);
+        });
+    }, 2500);
+  }
+
+  function handleCsvExportStatus(data, autoDownload) {
+    var status = data && data.status ? data.status : 'missing';
+    var jobId = data && data.job_id ? data.job_id : csvExportStoredJob();
+
+    if (status === 'queued' || status === 'running') {
+      showCsvExportStatus('info', data.message || 'trwa generowanie...');
+      pollCsvExportStatus(jobId, autoDownload);
+      return;
+    }
+
+    csvExportStoredJob('');
+
+    if (status === 'done' && data.download_url) {
+      showCsvExportStatus('success', 'gotowe (' + (data.rows || 0) + ' produktow). Pobieranie rozpoczete.', data.download_url);
+      if (autoDownload) {
+        var downloadLink = document.createElement('a');
+        downloadLink.href = data.download_url;
+        downloadLink.style.display = 'none';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
       }
       scheduleRecentExportPresetsReload();
-    });
+      return;
+    }
+
+    showCsvExportStatus('danger', (data && (data.error || data.message)) || 'eksport nie powiodl sie.');
+  }
+
+  // Po przeladowaniu strony wznawiamy sledzenie eksportu, ktory nadal trwa w tle.
+  if (csvExportStoredJob()) {
+    showCsvExportStatus('info', 'sprawdzanie statusu...');
+    handleCsvExportStatus({ status: 'queued', job_id: csvExportStoredJob(), message: 'sprawdzanie statusu...' }, true);
   }
 
   if (categoryFilterUi) {
