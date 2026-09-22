@@ -10,6 +10,24 @@ final class OrderDocumentService
 {
     private $repo;
     public function __construct(OrderRepository $repo) { $this->repo=$repo; }
+    /** Paragon z NIP nabywcy jest fakturą uproszczoną — art. 106e ust. 5 pkt 3 ustawy o VAT: do 450 zł (100 EUR) brutto. */
+    public const RECEIPT_NIP_LIMIT_CENTS=45000;
+    public const RECEIPT_NIP_LIMIT_EUR_CENTS=10000;
+
+    /** Prawidłowy NIP nabywcy odczytany z bloku danych nabywcy albo null. */
+    public static function receiptBuyerNip(string $buyer): ?string
+    {
+        return KsefService::parseBuyer($buyer)['nip']??null;
+    }
+
+    public static function assertReceiptNipLimit(?string $nip,int $grossCents,string $currency): void
+    {
+        if ($nip===null || $nip==='') { return; }
+        $eur=strtoupper($currency)==='EUR';
+        if ($grossCents>($eur?self::RECEIPT_NIP_LIMIT_EUR_CENTS:self::RECEIPT_NIP_LIMIT_CENTS)) {
+            throw new InvalidArgumentException('Paragonu z NIP nabywcy nie można wystawić na kwotę powyżej '.($eur?'100 EUR':'450 zł').' brutto (faktura uproszczona, art. 106e ust. 5 pkt 3 ustawy o VAT). Wystaw fakturę VAT albo usuń NIP z danych nabywcy.');
+        }
+    }
     /** First series of the kind; creates a sensible default when none exists yet. */
     public static function defaultSeries(Database $db,string $kind): array
     {
@@ -213,6 +231,11 @@ final class OrderDocumentService
             if ($amountPaid<0 || $amountPaid>100000000000) { throw new InvalidArgumentException('Nieprawidłowa kwota zapłacona.'); }
             $splitPayment=$correction && ($input['operation']??'')==='document_correction'?!empty($input['split_payment']):($correction?(bool)($parentSnapshot['split_payment']??false):(($settings['split_payment']??'0')==='1'));
             if ($correction && mb_strlen((string)($input['series_notes']??''))>2000) { throw new InvalidArgumentException('Uwagi na dokumencie są za długie.'); }
+            if ($series['kind']==='receipt') {
+                $buyerNip=self::receiptBuyerNip($buyer);
+                self::assertReceiptNipLimit($buyerNip,(int)$snapshot['gross_cents'],$currency);
+                if ($buyerNip!==null) { $snapshot['buyer_nip']=$buyerNip; }
+            }
             if ($recipient===null) { $recipient=$correction?(string)($parentSnapshot['recipient']??''):self::recipientText($order); }
             $snapshot+=['seller'=>$seller,'buyer'=>$buyer,'recipient'=>$recipient,'currency'=>$currency,'sale_date'=>$saleDate,'issue_date'=>$issueDate,'payment_due_date'=>$dueDate,'split_payment'=>$splitPayment,'reason'=>trim((string)($input['reason']??'')),'order_number'=>$orderNumber,'order_date'=>substr((string)($order['ordered_at']??''),0,10),'payment_method'=>$paymentMethod,'amount_paid_cents'=>$amountPaid,'settlement_state'=>'local','fiscalized'=>false,'series_notes'=>$correction?(string)($input['series_notes']??$parentSnapshot['series_notes']??''):(string)($numbering['notes']??'')];
             $id=(int)$db->insert('om_documents',['order_id'=>$orderId,'series_id'=>$series['id'],'kind'=>$series['kind'],'number'=>$number,'parent_id'=>$parentId,'request_key'=>$key,'snapshot_json'=>OrderRepository::json($snapshot),'created_at'=>gmdate('Y-m-d H:i:s')]);

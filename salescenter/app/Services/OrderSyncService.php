@@ -122,6 +122,39 @@ final class OrderSyncService
     }
 
     /**
+     * Zamówienia ERLI zapisane bez metody płatności (API zamówień jej nie zwraca) –
+     * dociąga ją z /payments/_search i ponownie importuje zamówienie ze źródła.
+     */
+    public function repairErliPayments(int $limit = 100): int
+    {
+        $db=$this->repo->db(); $repaired=0; $found=0; $byAccount=[];
+        $rows=$db->fetchAll("SELECT o.account_id,o.details_json,a.source_id FROM om_orders o JOIN om_accounts a ON a.id=o.account_id WHERE a.platform='erli' AND o.ordered_at>=:since ORDER BY o.id DESC LIMIT 500",['since'=>gmdate('Y-m-d H:i:s',time()-60*86400)]);
+        foreach ($rows as $row) {
+            try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); } catch (\Throwable $e) { continue; }
+            $raw=is_array($details['raw']??null)?$details['raw']:null;
+            if (!$raw || trim((string)($details['source_payment_method']??''))!=='' || !isset($raw['payment']['id']) || isset($raw['payment']['methodName'])) { continue; }
+            if (++$found>$limit) { break; }
+            $byAccount[(int)$row['account_id']]['source_id']=(int)$row['source_id'];
+            $byAccount[(int)$row['account_id']]['orders'][]=$raw;
+        }
+        if (!$byAccount) { return 0; }
+        $integration=$this->service('erli');
+        $sources=[];
+        foreach ($integration->listAccounts() as $candidate) { if (!empty($candidate['is_active'])) { $sources[(int)$candidate['id']]=$candidate; } }
+        foreach ($byAccount as $accountId=>$group) {
+            if (!isset($sources[$group['source_id']])) { continue; }
+            try { $orders=$integration->withPayments($sources[$group['source_id']],$group['orders']); }
+            catch (\Throwable $e) { continue; /* Ponowienie przy kolejnym przebiegu. */ }
+            foreach ($orders as $raw) {
+                if (!isset($raw['payment']['methodName']) && !isset($raw['payment']['methodCode'])) { continue; }
+                $order=OrderNormalizer::normalize('erli',$raw,0,time()+86400);
+                if ($order!==null) { $this->repo->import((int)$accountId,$order); $repaired++; }
+            }
+        }
+        return $repaired;
+    }
+
+    /**
      * Automatycznie uzupełnia brakujące zdjęcia pozycji w zamówieniach z ostatnich 60 dni
      * (także pobranych wcześniej). Każde zamówienie sprawdzane najwyżej raz na 12 godzin.
      */

@@ -59,6 +59,7 @@ final class OrdersController extends Controller
             'account_id'=>$this->input('account_id',''),
             'platform'=>(string)$this->input('platform',''),
             'paid'=>$this->input('paid',''),
+            'payment_source'=>mb_substr((string)$this->input('payment_source',''),0,190),
             'date_from'=>(string)$this->input('date_from',''),
             'date_to'=>(string)$this->input('date_to',''),
             'amount_from'=>(string)$this->input('amount_from',''),
@@ -98,6 +99,7 @@ final class OrdersController extends Controller
                 $shipment['presentation']=OrderShipmentService::presentation($shipment,$detail);
             }
             unset($shipment);
+            $detail['payment_info']=$this->paymentInfo($detail,$events);
         }
         $carrierAccounts=$repo->carrierAccounts();
         $shippingDefaults=$this->shippingDefaults($repo);
@@ -894,6 +896,81 @@ final class OrdersController extends Controller
         catch (\Throwable $error) { return ''; }
         if ($sellerId!=='') { $cache[(string)$sourceId]=$sellerId;$repo->saveSetting('allegro_seller_ids',$cache); }
         return $sellerId;
+    }
+    /**
+     * Karta „Płatność” w szczegółach zamówienia: kto przyjął pieniądze, kiedy płatność
+     * została zaksięgowana wg źródła i skąd system wie, że zamówienie jest opłacone.
+     */
+    private function paymentInfo(array $detail,array $events): array
+    {
+        $platform=(string)$detail['platform'];
+        $raw=is_array($detail['details']['raw']??null)?$detail['details']['raw']:[];
+        $payment=is_array($raw['payment']??null)?$raw['payment']:[];
+        $cod=!empty($detail['details']['cash_on_delivery']);
+        $date=static function ($value,bool $utc=true): string {
+            $value=trim((string)$value);
+            if ($value==='') { return ''; }
+            try { return (new \DateTimeImmutable($value,new \DateTimeZone($utc?'UTC':'Europe/Warsaw')))->setTimezone(new \DateTimeZone('Europe/Warsaw'))->format('Y-m-d H:i'); }
+            catch (\Exception $e) { return $value; }
+        };
+        $labels=['allegro'=>'Allegro','erli'=>'ERLI','empik'=>'Empik','mediamarkt'=>'MediaMarkt','temu'=>'Temu','morele'=>'Morele','woocommerce'=>'WooCommerce','prestashop'=>'PrestaShop','altreo'=>'Altreo.pl','manual'=>'Zamówienie własne'];
+        $platformLabel=$labels[$platform]??ucfirst($platform);
+        $info=['collector'=>'','operator'=>'','source_method'=>trim((string)($detail['details']['source_payment_method']??'')),'transaction_id'=>'','source_status'=>'','booked_at'=>'','booked_label'=>'Zaksięgowano w źródle','note'=>''];
+        if ($platform==='allegro') {
+            $providers=['P24'=>'Przelewy24','PAYU'=>'PayU','AF'=>'Allegro Finance','OFFLINE'=>'Poza Allegro (przy odbiorze)'];
+            $types=['ONLINE'=>'Płatność online','CASH_ON_DELIVERY'=>'Za pobraniem','SPLIT_PAYMENT'=>'Płatność dzielona','EXTENDED_TERM'=>'Allegro Pay (odroczona)'];
+            $provider=strtoupper((string)($payment['provider']??''));
+            $type=strtoupper((string)($payment['type']??''));
+            $info['collector']=$cod?'Kurier (pobranie)':'Allegro — Płatności Allegro';
+            $info['operator']=$providers[$provider]??(string)($payment['provider']??'');
+            $info['source_method']=$types[$type]??$info['source_method'];
+            $info['transaction_id']=(string)($payment['id']??'');
+            $info['source_status']=(string)($raw['status']??'');
+            $info['booked_at']=$date($payment['finishedAt']??'');
+            if (isset($payment['paidAmount']['amount'])) { $info['note']='Allegro potwierdza wpłatę '.$payment['paidAmount']['amount'].' '.($payment['paidAmount']['currency']??$detail['currency']).'.'; }
+        } elseif ($platform==='erli') {
+            $info['collector']=$cod?'Kurier (pobranie)':'ERLI — płatność przez marketplace';
+            $info['operator']=(string)($payment['operator']??'');
+            $info['source_method']=trim((string)($payment['methodName']??''))?:$info['source_method'];
+            $info['transaction_id']=(string)($payment['id']??'');
+            $info['source_status']=(string)($payment['status']??'');
+            $info['booked_at']=$date($payment['completedAt']??'');
+        } elseif (in_array($platform,['empik','mediamarkt'],true)) {
+            $info['collector']=$cod?'Kurier (pobranie)':$platformLabel.' — rozliczenie przez marketplace (Mirakl)';
+            $info['operator']=(string)($raw['payment_type']??$raw['paymentType']??'');
+            $info['transaction_id']=(string)($raw['transaction_number']??'');
+            $info['source_status']=trim((string)($raw['payment_workflow']??''));
+            $info['booked_at']=$date($raw['customer_debited_date']??'');
+            $info['booked_label']='Obciążono klienta';
+            if (!empty($raw['transaction_date'])) { $info['note']='Data transakcji w '.$platformLabel.': '.$date($raw['transaction_date']).'.'; }
+        } elseif ($platform==='temu') {
+            $info['collector']=$cod?'Kurier (pobranie)':'Temu — płatność przyjmuje marketplace';
+        } elseif ($platform==='manual') {
+            $info['collector']='Rozliczenie poza marketplace';
+        } else {
+            $info['collector']=$cod?'Kurier (pobranie)':'Sklep '.$platformLabel;
+        }
+        // Skąd system wie o opłaceniu: ręczna zmiana ma pierwszeństwo przed synchronizacją.
+        $manual=is_array($detail['details']['_manual']??null)?$detail['details']['_manual']:[];
+        $confirmedBy=''; $confirmedAt='';
+        if (array_key_exists('paid',(array)($manual['order']??[]))) {
+            $confirmedBy='Ręcznie — '.((string)($manual['actor']??'')?:'użytkownik');
+            $confirmedAt=$date($manual['updated_at']??'');
+        } else {
+            foreach ($events as $event) {
+                $message=(string)($event['message']??'');
+                if (strpos($message,'Płatność potwierdzona w źródle')===0 || strpos($message,'Źródło nie potwierdza już płatności')===0 || stripos($message,'opłacone')!==false) {
+                    $confirmedBy=$message; $confirmedAt=$date($event['created_at']??''); break;
+                }
+            }
+            if ($confirmedBy==='' && (int)$detail['paid']) {
+                $confirmedBy=$platform==='manual'?'Oznaczone przy tworzeniu zamówienia':'Opłacone już przy imporcie z '.$platformLabel;
+                $confirmedAt=$date($detail['imported_at']??'');
+            }
+        }
+        $state=$cod?'cod':((int)$detail['paid']?'paid':((int)($detail['details']['amount_paid_cents']??0)>0?'partial':'unpaid'));
+        $stateLabels=['cod'=>'Za pobraniem','paid'=>'Opłacone','partial'=>'Częściowo opłacone','unpaid'=>'Nieopłacone'];
+        return $info+['platform_label'=>$platformLabel,'state'=>$state,'state_label'=>$stateLabels[$state],'confirmed_by'=>$confirmedBy,'confirmed_at'=>$confirmedAt];
     }
     private function sourceOrderUrl(string $platform,string $externalId,string $sellerId=''): string
     {

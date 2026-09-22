@@ -40,7 +40,8 @@ public sealed record FiscalReceiptPayload(
     [property: JsonPropertyName("totalCents")] long TotalCents,
     [property: JsonPropertyName("items")] IReadOnlyList<FiscalReceiptItem> Items,
     [property: JsonPropertyName("paymentType")] int PaymentType = 6,
-    [property: JsonPropertyName("paymentName")] string PaymentName = "Płatność online");
+    [property: JsonPropertyName("paymentName")] string PaymentName = "Płatność online",
+    [property: JsonPropertyName("buyerNip")] string? BuyerNip = null);
 
 public sealed record FiscalJob(
     [property: JsonPropertyName("id")] string Id,

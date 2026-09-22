@@ -113,6 +113,26 @@
   </details>
 
   <details id="om-documents" class="oc-card oc-disclosure oc-documents"><summary><span class="oc-summary-icon"><i class="bi bi-receipt"></i></span><span><small>SPRZEDAŻ</small><strong>Dokumenty i korekty</strong></span><span class="oc-summary-meta">{$orderDocs|count} wystawionych</span><i class="bi bi-chevron-down oc-chevron"></i></summary><div class="oc-disclosure-body"><div class="om-document-workflow"><div class="om-document-actions"><h3>Dokumenty sprzedaży</h3><p>Paragon lub fakturę wystawisz w karcie „Płatność” powyżej. Po wystawieniu przycisk zostanie zastąpiony numerem dokumentu.</p></div><div class="om-document-list"><h3>Wystawione dokumenty</h3>{foreach $orderDocs as $d}<div class="om-document-row"><a target="_blank" rel="noopener" href="?controller=orders&action=printdocument&id={$d.id}"><i class="bi bi-file-earmark-pdf"></i><span><strong>{$d.number|escape}</strong><small>{$d.created_at|escape} UTC</small></span><i class="bi bi-box-arrow-up-right"></i></a>{if $canWrite}<a class="om-btn om-small" href="?controller=orders&action=correctdocument&id={$d.id}">Wystaw korektę</a>{/if}{include file='orders/ksef_document.tpl' doc=$d ksefTab='list' ksefOrderId=$detail.id}</div>{foreachelse}<div class="om-doc-empty"><i class="bi bi-file-earmark"></i> Brak dokumentów</div>{/foreach}</div></div></div></details>
+  {assign var=pi value=$detail.payment_info}
+  <details id="om-payment-info" class="oc-card oc-disclosure oc-payment-info" open>
+    <summary><span class="oc-summary-icon"><i class="bi bi-credit-card"></i></span><span><small>ROZLICZENIE</small><strong>Płatność</strong></span><span class="oc-summary-meta oc-pay-state is-{$pi.state|escape}">{$pi.state_label|escape}</span><i class="bi bi-chevron-down oc-chevron"></i></summary>
+    <div class="oc-disclosure-body">
+      <div class="oc-pay-facts">
+        <span><small>Skąd przyszła płatność</small><strong>{$pi.collector|default:'Brak danych'|escape}</strong>{if $pi.operator}<em>Operator: {$pi.operator|escape}</em>{/if}</span>
+        <span><small>Metoda w {$pi.platform_label|escape}</small><strong>{$pi.source_method|default:'Brak informacji z API'|escape}</strong><em>W systemie: {$detail.details.payment_method|escape}</em></span>
+        <span><small>{$pi.booked_label|escape}</small><strong>{if $pi.booked_at}<i class="bi bi-check-circle-fill"></i> {$pi.booked_at|escape}{else}—{/if}</strong><em>{if $pi.booked_at}dane z {$pi.platform_label|escape}{else}{$pi.platform_label|escape} nie podaje daty{/if}</em></span>
+        <span><small>Potwierdzenie w systemie</small><strong>{$pi.confirmed_by|default:'Brak potwierdzenia'|escape}</strong>{if $pi.confirmed_at}<em>{$pi.confirmed_at|escape}</em>{/if}</span>
+      </div>
+      <div class="oc-pay-facts oc-pay-amounts">
+        <span><small>Wartość</small><strong>{($detail.total_cents/100)|string_format:'%.2f'} {$detail.currency|escape}</strong></span>
+        <span><small>Zapłacono</small><strong class="is-paid">{($detail.details.amount_paid_cents/100)|string_format:'%.2f'} {$detail.currency|escape}</strong></span>
+        <span><small>{if $detail.details.cash_on_delivery}Do pobrania{else}Pozostało{/if}</small><strong class="{if $detail.details.amount_due_cents gt 0}is-due{/if}">{($detail.details.amount_due_cents/100)|string_format:'%.2f'} {$detail.currency|escape}</strong></span>
+        <span><small>ID transakcji / status w źródle</small><strong>{$pi.transaction_id|default:'—'|escape}</strong>{if $pi.source_status}<em>{$pi.source_status|escape}</em>{/if}</span>
+      </div>
+      {if $pi.note}<p class="om-muted oc-pay-note"><i class="bi bi-info-circle"></i> {$pi.note|escape}</p>{/if}
+      <p class="om-muted oc-pay-note">Godziny w czasie polskim.</p>
+    </div>
+  </details>
   {if $canWrite}<form id="oa-run-order" method="post" action="?controller=orders&action=save" hidden><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="run_rule"><input type="hidden" name="order_id" value="{$detail.id}"></form>{/if}
   {include file='orders/automation_order.tpl'}
   <details id="om-history" class="oc-card oc-disclosure oc-history"><summary><span class="oc-summary-icon"><i class="bi bi-clock-history"></i></span><span><small>AKTYWNOŚĆ</small><strong>Historia zamówienia</strong></span><span class="oc-summary-meta">{$events|count} wpisów</span><i class="bi bi-chevron-down oc-chevron"></i></summary><div class="oc-disclosure-body"><div class="om-timeline">{foreach $events as $event}<article><small>{$event.created_at|escape} UTC · {$event.actor|escape}</small><p>{$event.message|escape}</p></article>{/foreach}</div></div></details>

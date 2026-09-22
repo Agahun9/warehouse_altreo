@@ -309,6 +309,12 @@ $receiptCorrectionSeriesId=$db->insert('om_series',['name'=>'Korekty paragonów 
 $receiptInput=$input;$receiptInput['series_id']=$receiptSeriesId;$receiptInput['request_key']=str_repeat('9',48);$receiptId=$docService->issue(1,$receiptInput,'test');
 $receiptCorrection=$reCorrection;$receiptCorrection['series_id']=$receiptCorrectionSeriesId;$receiptCorrection['parent_id']=$receiptId;$receiptCorrection['source_revision_id']=$receiptId;$receiptCorrection['request_key']=str_repeat('0',48);$receiptCorrectionId=$docService->issue(1,$receiptCorrection,'test');
 check($db->fetchColumn('SELECT kind FROM om_documents WHERE id=:id',['id'=>$receiptCorrectionId])==='receipt_correction','Receipt can be corrected');
+$nipReceiptInput=$receiptInput;$nipReceiptInput['request_key']=str_repeat('8',48);$nipReceiptInput['buyer']="Firma Test sp. z o.o.\nNIP: 526-025-02-74";$nipReceiptId=$docService->issue(1,$nipReceiptInput,'test');
+check((json_decode((string)$db->fetchColumn('SELECT snapshot_json FROM om_documents WHERE id=:id',['id'=>$nipReceiptId]),true)['buyer_nip']??null)==='5260250274','Receipt stores buyer NIP for fiscal printer');
+rejects(fn()=>OrderDocumentService::assertReceiptNipLimit('5260250274',45001,'PLN'),'Receipt with buyer NIP above 450 PLN is rejected');
+rejects(fn()=>OrderDocumentService::assertReceiptNipLimit('5260250274',10001,'EUR'),'Receipt with buyer NIP above 100 EUR is rejected');
+OrderDocumentService::assertReceiptNipLimit('5260250274',45000,'PLN');OrderDocumentService::assertReceiptNipLimit(null,999999,'PLN');
+check(true,'Receipt NIP limit allows 450 PLN and receipts without NIP');
 foreach ([$docId=>'Faktura ',$receiptId=>'Paragon ',$reCorrectionId=>'Faktura korygująca',$receiptCorrectionId=>'Korekta paragonu'] as $printId=>$expectedTitle) {
     $printRow=$db->fetch('SELECT * FROM om_documents WHERE id=:id',['id'=>$printId]);$printRow['snapshot']=json_decode($printRow['snapshot_json'],true);$printRow['vat_summary']=[];
     foreach ($printRow['snapshot']['items'] as $item) { $vat=$item['vat'];if (!isset($printRow['vat_summary'][$vat])) $printRow['vat_summary'][$vat]=['vat'=>$vat,'net_cents'=>0,'tax_cents'=>0,'gross_cents'=>0];foreach (['net_cents','tax_cents','gross_cents'] as $field) $printRow['vat_summary'][$vat][$field]+=$item[$field]; }

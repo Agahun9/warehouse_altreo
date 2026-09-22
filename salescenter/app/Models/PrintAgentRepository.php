@@ -7,6 +7,8 @@ namespace App\Models;
 use App\Core\Config;
 use App\Core\Database;
 use App\Core\Tenant;
+use App\Services\KsefService;
+use App\Services\OrderDocumentService;
 use InvalidArgumentException;
 
 final class PrintAgentRepository
@@ -224,7 +226,12 @@ final class PrintAgentRepository
                 $snapshot=json_decode((string)$document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
                 $details['items']=$snapshot['items']??[];
                 $details['shipping_cents']=0;
+                $buyerNip=isset($snapshot['buyer_nip'])?(string)$snapshot['buyer_nip']:OrderDocumentService::receiptBuyerNip((string)($snapshot['buyer']??''));
+            } else {
+                $buyerNip=KsefService::normalizeNip((string)($details['invoice_form']['nip']??''));
+                if (!KsefService::validNip($buyerNip)) { $buyerNip=null; }
             }
+            OrderDocumentService::assertReceiptNipLimit($buyerNip,(int)$order['total_cents'],(string)$order['currency']);
             $items=[];
             foreach ((array)($details['items']??[]) as $item) {
                 $quantity=(int)($item['quantity']??1); $unitCents=(int)($item['unit_cents']??0);
@@ -244,6 +251,7 @@ final class PrintAgentRepository
             if ($itemsTotal!==(int)$order['total_cents']) { throw new InvalidArgumentException('Suma pozycji paragonu nie zgadza się z kwotą zamówienia.'); }
             [$paymentType,$paymentName]=$this->fiscalPayment($details);
             $payload=['orderId'=>$orderId,'orderNumber'=>(string)($document['number']??$order['external_id']),'currency'=>(string)$order['currency'],'totalCents'=>(int)$order['total_cents'],'items'=>$items,'paymentType'=>$paymentType,'paymentName'=>$paymentName];
+            if ($buyerNip!==null && $buyerNip!=='') { $payload['buyerNip']=$buyerNip; }
             $this->db->insert('print_fiscal_jobs',['id'=>$id,'printer_id'=>$printerId,'order_id'=>$orderId,'local_number'=>$localNumber,'payload_json'=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'status'=>'queued','status_message'=>'Oczekuje na agenta.','fiscal_number'=>null,'created_by'=>mb_substr($createdBy,0,150,'UTF-8'),'created_at'=>gmdate('Y-m-d H:i:s'),'claimed_at'=>null,'reported_at'=>null]);
             $this->db->update('print_fiscal_printers',['next_number'=>$number+1],'id=:id',['id'=>$printerId]);
             return $id;

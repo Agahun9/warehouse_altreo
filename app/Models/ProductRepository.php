@@ -158,7 +158,7 @@ class ProductRepository
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
             . ($needsOfferStats ? ' COALESCE(offer_stats.active_offer_count, 0)' : ' 0') . ' AS active_auction_count,'
             . ($needsSaleStats ? ' sale_stats.last_sale_date' : ' NULL') . ' AS last_sale_date,'
-            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id, categories.temu_category_id AS category_temu_id, categories.temu_category_parameters AS category_temu_parameters'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
@@ -1184,7 +1184,7 @@ class ProductRepository
             $rows[$index]['images'] = $this->parseImages(isset($row['img']) ? (string) $row['img'] : '');
         }
 
-        return $this->attachCustomFields($this->attachSharedStock($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows)))));
+        return $this->attachCustomFields($this->attachSharedStock($this->attachTemuParameters($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows))))));
     }
 
     public function exportRowsFiltered(array $filters = array()): array
@@ -1192,7 +1192,7 @@ class ProductRepository
         $sql = 'SELECT products.*,'
             . ' COALESCE(shared_stock_groups.quantity, products.quantity) AS quantity,'
             . ' COALESCE(shared_stock_groups.localization, products.localization) AS localization,'
-            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id'
+            . ' categories.name AS category_name, categories.slug AS category_slug, categories.allegro_category_id AS category_allegro_id, categories.empik_category_id AS category_empik_id, categories.mediamarkt_category_id AS category_mediamarkt_id, categories.temu_category_id AS category_temu_id, categories.temu_category_parameters AS category_temu_parameters'
             . ' FROM ' . self::TABLE
             . ' LEFT JOIN categories ON categories.id = products.category_id'
             . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id';
@@ -1267,7 +1267,7 @@ class ProductRepository
             $rows[$index]['images'] = $this->parseImages(isset($row['img']) ? (string) $row['img'] : '');
         }
 
-        return $this->attachCustomFields($this->attachSharedStock($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows)))));
+        return $this->attachCustomFields($this->attachSharedStock($this->attachTemuParameters($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows))))));
     }
 
     private function parseImages(string $value): array
@@ -1349,6 +1349,56 @@ class ProductRepository
             $productId = isset($row['id']) ? (int) $row['id'] : 0;
             $rows[$index]['allegro_parameters_raw'] = isset($parametersByProduct[$productId]) ? $parametersByProduct[$productId] : array();
             $rows[$index]['allegro_compatibility_list_raw'] = isset($compatibilityByProduct[$productId]) ? $compatibilityByProduct[$productId] : array();
+        }
+
+        return $rows;
+    }
+
+    private function attachTemuParameters(array $rows): array
+    {
+        if ($rows === array()) {
+            return $rows;
+        }
+
+        $productIds = array();
+        foreach ($rows as $row) {
+            if (isset($row['id'])) {
+                $productIds[] = (int) $row['id'];
+            }
+        }
+
+        $productIds = array_values(array_unique(array_filter($productIds)));
+        if ($productIds === array()) {
+            return $rows;
+        }
+
+        $placeholders = array();
+        $params = array();
+        foreach ($productIds as $index => $productId) {
+            $key = 'temu_product_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $productId;
+        }
+
+        $parameterRows = $this->database->fetchAll(
+            'SELECT product_id, parameter_id, value FROM product_temu_parameters WHERE product_id IN (' . implode(', ', $placeholders) . ') ORDER BY product_id ASC, parameter_id ASC',
+            $params
+        );
+
+        $parametersByProduct = array();
+        foreach ($parameterRows as $parameterRow) {
+            $productId = (int) $parameterRow['product_id'];
+            if (!isset($parametersByProduct[$productId])) {
+                $parametersByProduct[$productId] = array();
+            }
+
+            $decoded = json_decode((string) $parameterRow['value'], true);
+            $parametersByProduct[$productId][(string) $parameterRow['parameter_id']] = $decoded;
+        }
+
+        foreach ($rows as $index => $row) {
+            $productId = isset($row['id']) ? (int) $row['id'] : 0;
+            $rows[$index]['temu_parameters_raw'] = isset($parametersByProduct[$productId]) ? $parametersByProduct[$productId] : array();
         }
 
         return $rows;

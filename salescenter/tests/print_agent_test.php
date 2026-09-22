@@ -76,6 +76,16 @@ printCheck($repository->reportFiscal((int)$station['id'],$fiscalJobId,'printed',
 try { $repository->queueFiscalReceipt(1,(int)$fiscalPrinter['id'],'tester'); printCheck(false,'Duplicate fiscal receipt rejected'); }
 catch (InvalidArgumentException $e) { printCheck(true,'Duplicate fiscal receipt rejected'); }
 
+$db->insert('om_orders',['account_id'=>1,'external_id'=>'ORDER-NIP','remote_status'=>'new','status_id'=>1,'status_manual'=>0,'ordered_at'=>gmdate('Y-m-d H:i:s'),'buyer_name'=>'Firma','email'=>'','phone'=>'','total_cents'=>45000,'currency'=>'PLN','paid'=>1,'details_json'=>json_encode(['invoice_form'=>['company'=>'Firma','nip'=>'PL 526-025-02-74'],'items'=>[['name'=>'Produkt','quantity'=>1,'unit_cents'=>45000,'vat'=>'23']]]),'note'=>'','tags'=>'','imported_at'=>gmdate('Y-m-d H:i:s'),'updated_at'=>gmdate('Y-m-d H:i:s')]);
+$nipOrderId=(int)$db->fetchColumn("SELECT id FROM om_orders WHERE external_id='ORDER-NIP'");
+$repository->queueFiscalReceipt($nipOrderId,(int)$fiscalPrinter['id'],'tester');
+$nipJob=$repository->nextFiscalJob((int)$station['id'],'sandbox');
+printCheck(($nipJob['receipt']['buyerNip']??null)==='5260250274','Fiscal receipt carries buyer NIP from the order');
+printCheck(!array_key_exists('buyerNip',$fiscalJob['receipt']),'Fiscal receipt without NIP has no buyerNip');
+$db->insert('om_orders',['account_id'=>1,'external_id'=>'ORDER-NIP-BIG','remote_status'=>'new','status_id'=>1,'status_manual'=>0,'ordered_at'=>gmdate('Y-m-d H:i:s'),'buyer_name'=>'Firma','email'=>'','phone'=>'','total_cents'=>45001,'currency'=>'PLN','paid'=>1,'details_json'=>json_encode(['invoice_form'=>['company'=>'Firma','nip'=>'5260250274'],'items'=>[['name'=>'Produkt','quantity'=>1,'unit_cents'=>45001,'vat'=>'23']]]),'note'=>'','tags'=>'','imported_at'=>gmdate('Y-m-d H:i:s'),'updated_at'=>gmdate('Y-m-d H:i:s')]);
+try { $repository->queueFiscalReceipt((int)$db->fetchColumn("SELECT id FROM om_orders WHERE external_id='ORDER-NIP-BIG'"),(int)$fiscalPrinter['id'],'tester'); printCheck(false,'Fiscal receipt with NIP above 450 PLN rejected'); }
+catch (InvalidArgumentException $e) { printCheck(strpos($e->getMessage(),'450 zł')!==false,'Fiscal receipt with NIP above 450 PLN rejected'); }
+
 $newToken=$repository->regenerateToken((int)$station['id']);
 printCheck($repository->authenticate($token)===null && $repository->authenticate($newToken)!==null,'Token rotation invalidates the old token');
 

@@ -26,7 +26,7 @@ final class ErliService extends MarketplaceIntegration
     {
         $pagination = ['sortField' => 'updated', 'order' => 'ASC', 'limit' => 100];
         if ($cursor !== '') { $pagination['after'] = $cursor; }
-        return $this->api($account, 'POST', '/orders/_search', [
+        $orders = $this->api($account, 'POST', '/orders/_search', [
             'pagination' => $pagination,
             'filter' => ['operator' => 'and', 'value' => [
                 ['field' => 'created', 'operator' => '>=', 'value' => $from],
@@ -35,6 +35,34 @@ final class ErliService extends MarketplaceIntegration
                 ['field' => 'updated', 'operator' => '<=', 'value' => $to],
             ]],
         ]);
+        try { return $this->withPayments($account, $orders); }
+        catch (\Throwable $e) { return $orders; /* Brak metody płatności nigdy nie blokuje importu. */ }
+    }
+
+    /**
+     * Zamówienie ERLI zawiera tylko payment.id/status (pole przestarzałe) – metodę
+     * płatności (methodName/methodCode) zwraca wyłącznie POST /payments/_search.
+     */
+    public function withPayments(array $account, array $orders): array
+    {
+        $ids = [];
+        foreach ($orders as $order) {
+            if (is_array($order) && isset($order['payment']['id']) && is_numeric($order['payment']['id'])) { $ids[(int) $order['payment']['id']] = true; }
+        }
+        if (!$ids) { return $orders; }
+        $payments = [];
+        foreach (array_chunk(array_keys($ids), 200) as $chunk) {
+            $rows = $this->api($account, 'POST', '/payments/_search', ['pagination' => ['sortField' => 'id', 'order' => 'ASC', 'limit' => 200], 'filter' => ['field' => 'id', 'operator' => 'in', 'value' => $chunk]]);
+            foreach ($rows as $row) { if (is_array($row) && isset($row['id'])) { $payments[(int) $row['id']] = $row; } }
+        }
+        foreach ($orders as $index => $order) {
+            $payment = is_array($order) && isset($order['payment']['id']) ? ($payments[(int) $order['payment']['id']] ?? null) : null;
+            if (!$payment) { continue; }
+            foreach (['methodName', 'methodCode', 'operator', 'status', 'completedAt'] as $field) {
+                if (isset($payment[$field]) && $payment[$field] !== '') { $orders[$index]['payment'][$field] = $payment[$field]; }
+            }
+        }
+        return $orders;
     }
 
     /** @var array<string,string> */

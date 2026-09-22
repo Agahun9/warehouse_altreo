@@ -220,7 +220,7 @@ final class IntegrationsController extends Controller
             $results = $sync->sync(true, (int) $account['id']);
             $result = $results[0] ?? null;
             if (!$result) { throw new InvalidArgumentException('Nie uruchomiono importu tego konta.'); }
-            if (empty($result['error'])) { $sync->repairImages(40); }
+            if (empty($result['error'])) { $sync->repairImages(40); try { $sync->repairErliPayments(); } catch (\Throwable $ignored) {} }
             $this->setFlash(!empty($result['error']) ? 'error' : 'success', 'Import '.$row['name'].': '.$result['message']);
         } catch (\Throwable $e) {
             $this->setFlash('error', $this->safeError($e, 'fetch_now'));

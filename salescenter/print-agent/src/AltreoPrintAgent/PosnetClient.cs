@@ -137,6 +137,17 @@ public sealed class PosnetClient : IAsyncDisposable
             await SendAsync("trinit", cancellationToken, "bm0");
             transactionStarted = true;
 
+            var buyerNip = new string((job.Receipt.BuyerNip ?? "").Where(char.IsDigit).ToArray());
+            if (buyerNip.Length > 0)
+            {
+                if (buyerNip.Length != 10)
+                    throw new InvalidOperationException("NIP nabywcy musi mieć 10 cyfr.");
+                if (job.Receipt.TotalCents > 45000)
+                    throw new InvalidOperationException("Paragon z NIP nabywcy nie może przekraczać 450 zł brutto.");
+                // NIP nabywcy drukowany na paragonie (faktura uproszczona) — musi paść przed trend.
+                await SendAsync("trnipset", cancellationToken, "ni" + buyerNip);
+            }
+
             foreach (var item in job.Receipt.Items)
             {
                 var vat = NormalizeVat(item.Vat);

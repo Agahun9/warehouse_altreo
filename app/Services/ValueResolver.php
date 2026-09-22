@@ -100,6 +100,15 @@ class ValueResolver
             return $this->singleMediaMarktParameterValue($product, substr($normalized, 22));
         }
 
+        if (in_array($normalized, array('temu_parameters', 'temu_parameters_text'), true)) {
+            return $this->formatTemuParameters($product);
+        }
+
+        if (preg_match('/^temu_parameter\.([^\[]+)(?:\[(\d+)\])?$/', $normalized, $matches) === 1) {
+            $index = isset($matches[2]) ? (int) $matches[2] : null;
+            return $this->singleTemuParameterValue($product, (string) $matches[1], $index);
+        }
+
         if (in_array($normalized, array('collection_name', 'export_collection', 'csv_collection'), true)) {
             return isset($exportOptions['collection_name']) ? (string) $exportOptions['collection_name'] : '';
         }
@@ -267,6 +276,7 @@ class ValueResolver
             'allegro_parameters_eu' => 'allegro_parameters_eu',
             'empik_parameters' => 'empik_parameters',
             'mediamarkt_parameters' => 'mediamarkt_parameters',
+            'temu_parameters' => 'temu_parameters',
             'categories.name' => 'category_name',
             'categories.slug' => 'category_slug',
             'categories.allegro_id' => 'allegro_category_id',
@@ -509,6 +519,115 @@ class ValueResolver
 
         $this->allegroDefinitionCache[$categoryAllegroId] = $map;
         return $map;
+    }
+
+    private function formatTemuParameters(array $product): string
+    {
+        $raw = isset($product['temu_parameters_raw']) && is_array($product['temu_parameters_raw']) ? $product['temu_parameters_raw'] : array();
+        if ($raw === array()) {
+            return '';
+        }
+
+        $definitions = $this->temuParameterDefinitions($product);
+        $lines = array();
+        foreach ($raw as $parameterId => $value) {
+            $definition = isset($definitions[(string) $parameterId]) ? $definitions[(string) $parameterId] : array();
+            $name = trim((string) ($definition['name'] ?? $parameterId));
+            $formatted = $this->formatTemuParameterValue($value, $definition);
+            if ($formatted !== '') {
+                $lines[] = $name . ': ' . $formatted;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function singleTemuParameterValue(array $product, string $parameterId, ?int $index = null): string
+    {
+        $raw = isset($product['temu_parameters_raw']) && is_array($product['temu_parameters_raw']) ? $product['temu_parameters_raw'] : array();
+        if ($parameterId === '' || !array_key_exists($parameterId, $raw)) {
+            return '';
+        }
+
+        $value = $raw[$parameterId];
+        if ($index !== null) {
+            if (!is_array($value) || !array_key_exists($index, $value)) {
+                return '';
+            }
+            $value = $value[$index];
+        }
+
+        $definitions = $this->temuParameterDefinitions($product);
+        $definition = isset($definitions[$parameterId]) ? $definitions[$parameterId] : array();
+        return $this->formatTemuParameterValue($value, $definition);
+    }
+
+    private function formatTemuParameterValue($value, array $definition): string
+    {
+        if (is_array($value)) {
+            $parts = array();
+            foreach ($value as $item) {
+                $formatted = $this->formatTemuParameterValue($item, $definition);
+                if ($formatted !== '') {
+                    $parts[] = $formatted;
+                }
+            }
+            return implode('|', $parts);
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'Yes' : 'No';
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '';
+        }
+
+        $dictionary = isset($definition['dictionary']) && is_array($definition['dictionary']) ? $definition['dictionary'] : array();
+        foreach ($dictionary as $option) {
+            if (!is_array($option)) {
+                continue;
+            }
+            $optionId = trim((string) ($option['id'] ?? $option['value'] ?? ''));
+            if ($optionId !== $text) {
+                continue;
+            }
+            $label = trim((string) ($option['value'] ?? $option['label'] ?? $option['name'] ?? $optionId));
+            return $label !== '' ? $label : $optionId;
+        }
+
+        return $text;
+    }
+
+    private function temuParameterDefinitions(array $product): array
+    {
+        $raw = trim((string) ($product['category_temu_parameters'] ?? ''));
+        if ($raw === '') {
+            return array();
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return array();
+        }
+
+        $definitions = array();
+        foreach ($decoded as $definition) {
+            if (!is_array($definition)) {
+                continue;
+            }
+            $parameterId = trim((string) ($definition['id'] ?? $definition['code'] ?? ''));
+            if ($parameterId !== '') {
+                $definitions[$parameterId] = $definition;
+            }
+        }
+
+        return $definitions;
     }
 
     private function formatEmpikParameters(array $product): string

@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders' or $currentController eq 'index' or $currentController eq 'messages'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260922-2">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20260922-3">
   {/if}
   {if $currentController eq 'messages'}
     <link rel="stylesheet" href="{$assetBase}/css/messages.css?v=20260918-1">

@@ -94,4 +94,62 @@ class ProductTemuParameterRepository
             throw $exception;
         }
     }
+
+    public function availableParameterFieldOptions(): array
+    {
+        $rows = $this->database->fetchAll(
+            "SELECT name, temu_category_parameters FROM categories WHERE temu_category_parameters IS NOT NULL AND TRIM(temu_category_parameters) <> '' ORDER BY name ASC"
+        );
+
+        $definitionsById = array();
+        $categoriesById = array();
+        foreach ($rows as $row) {
+            $decoded = json_decode((string) ($row['temu_category_parameters'] ?? ''), true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            foreach ($decoded as $definition) {
+                if (!is_array($definition)) {
+                    continue;
+                }
+                $parameterId = trim((string) ($definition['id'] ?? $definition['code'] ?? ''));
+                if ($parameterId === '') {
+                    continue;
+                }
+
+                if (!isset($definitionsById[$parameterId])) {
+                    $definitionsById[$parameterId] = $definition;
+                    $categoriesById[$parameterId] = array();
+                }
+
+                $categoryName = trim((string) ($row['name'] ?? ''));
+                if ($categoryName !== '' && !in_array($categoryName, $categoriesById[$parameterId], true)) {
+                    $categoriesById[$parameterId][] = $categoryName;
+                }
+            }
+        }
+
+        $options = array();
+        foreach ($definitionsById as $parameterId => $definition) {
+            $name = trim((string) ($definition['name'] ?? $definition['label'] ?? $parameterId));
+            $label = 'Temu: ' . ($name !== '' ? $name : $parameterId) . ' [' . $parameterId . ']';
+            if (!empty($categoriesById[$parameterId])) {
+                $label .= ' | Kategorie: ' . implode(', ', $categoriesById[$parameterId]);
+            }
+
+            $fieldKey = 'product.temu_parameter.' . $parameterId;
+            $options[$fieldKey] = $label;
+
+            if (!empty($definition['multiple'])) {
+                $restrictions = isset($definition['restrictions']) && is_array($definition['restrictions']) ? $definition['restrictions'] : array();
+                $max = max(1, min(10, (int) ($restrictions['choose_max_num'] ?? 5)));
+                for ($index = 0; $index < $max; $index++) {
+                    $options[$fieldKey . '[' . $index . ']'] = $label . ' | wartość ' . ($index + 1);
+                }
+            }
+        }
+
+        return $options;
+    }
 }

@@ -168,6 +168,22 @@ check($repairer->repairImages(10)>=1 && $repo->order($orderId)['details']['items
 $callCount=count($calls); $repairer->repairImages(10);
 check(count($calls)===$callCount,'Orders are not re-checked more often than every 12 hours');
 
+// ERLI: metoda płatności tylko z /payments/_search – uzupełniana w już pobranych zamówieniach.
+$erliPaid=['id'=>'ER-10','created'=>gmdate('c',time()-3600),'status'=>'purchased','totalPrice'=>500,'payment'=>['id'=>77,'status'=>'COMPLETED'],'delivery'=>['name'=>'InPost Paczkomaty','typeId'=>'inpost','price'=>0,'cod'=>false],'items'=>[['name'=>'Kabel','quantity'=>1,'unitPrice'=>500,'image'=>'https://img.erli.invalid/k']],'user'=>['deliveryAddress'=>['firstName'=>'Ola','lastName'=>'K']]];
+$repo->import((int)$erliAccount['id'],OrderNormalizer::normalize('erli',$erliPaid,0,time()));
+check(in_array(['platform'=>'erli','source_method'=>''],array_map(fn($s)=>['platform'=>$s['platform'],'source_method'=>$s['source_method']],$repo->paymentSources()),true),'ERLI order without payment method shows empty source');
+$emptyList=array_column($repo->listing(['platform'=>'erli','payment_source'=>'__empty__'])['rows'],'external_id');
+check(in_array('ER-10',$emptyList,true),'Orders list filters ERLI orders without payment method');
+$responses=[['#POST https://erli\.pl/svc/shop-api/payments/_search#',200,[['id'=>77,'orderIds'=>[1],'amount'=>5,'status'=>'COMPLETED','operator'=>'PAYU','methodCode'=>'PAYU.blik','methodName'=>'BLIK']]]];
+check($repairer->repairErliPayments()===1,'ERLI payment method backfilled');
+$paidId=(int)$db->fetchColumn('SELECT id FROM om_orders WHERE external_id=:e',['e'=>'ER-10']);
+check($repo->order($paidId)['details']['source_payment_method']==='BLIK' && strpos((string)end($calls)['body'],'"in"')!==false,'ERLI payment method from /payments/_search');
+check(array_column($repo->listing(['platform'=>'erli','payment_source'=>'BLIK'])['rows'],'external_id')===['ER-10'],'Orders list filters by payment source');
+$callCount=count($calls); $repairer->repairErliPayments();
+check(count($calls)===$callCount,'ERLI payment backfill does not repeat for filled orders');
+$cod=OrderNormalizer::normalize('erli',['id'=>'ER-11','created'=>gmdate('c'),'status'=>'purchased','totalPrice'=>100,'delivery'=>['name'=>'Kurier DPD','typeId'=>'dpd','price'=>0,'cod'=>true],'items'=>[]],0,time()+60);
+check($cod['details']['cash_on_delivery']===1 && $cod['details']['source_payment_method']==='Kurier DPD','ERLI delivery.cod marks cash on delivery');
+
 // Morele: udokumentowane GET /orders, pola odpowiedzi i odświeżanie tokenów.
 $moreleId=$connections->create('morele','Morele · sklep',['client_id'=>'cid','remote_id'=>'cid'],['client_id'=>'cid','client_secret'=>'cs','access_token'=>'tok']);
 $responses=[

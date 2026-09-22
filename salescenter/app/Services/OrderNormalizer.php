@@ -49,7 +49,7 @@ final class OrderNormalizer
         $candidates=$platform==='allegro'
             ? [$payment['type']??'', $payment['provider']??'', $payment['method']??'']
             : ($platform==='erli'
-                ? [$payment['method']??'', $payment['type']??'', $raw['paymentMethod']??'', $raw['payment_method']??'']
+                ? [$payment['methodName']??'', $payment['methodCode']??'', $payment['method']??'', $payment['type']??'', $raw['paymentMethod']??'', $raw['payment_method']??'']
                 : [$raw['payment_type']??'', $raw['payment_method']??'', $raw['paymentMethod']??'', $payment['type']??'', $payment['method']??'']);
         foreach ($candidates as $candidate) {
             $candidate=mb_substr(trim((string)$candidate),0,190,'UTF-8');
@@ -70,6 +70,7 @@ final class OrderNormalizer
             (string)($payment['method']??''),
             (string)($payment['name']??''),
         ])));
+        if (($raw['delivery']['cod']??null)===true) { return true; }
         return strpos($text,'pobran')!==false || strpos($text,'cash_on_delivery')!==false || preg_match('/\bcod\b/',$text)===1;
     }
 

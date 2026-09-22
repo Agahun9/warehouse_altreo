@@ -47,6 +47,7 @@ final class GlobalCronService
                             $report['new_orders'] += (int) ($result['added'] ?? 0);
                         }
                         try { $sync->repairImages(40); } catch (\Throwable $ignored) {}
+                        try { $sync->repairErliPayments(); } catch (\Throwable $ignored) {}
                         try { $repo->automation()->runScheduled(); }
                         catch (\Throwable $error) { $report['errors']++; OrderSyncError::log($error, ['stage' => 'automation_schedule']); }
                         // Wiadomości marketplace – każde połączenie według własnego interwału z ustawień.

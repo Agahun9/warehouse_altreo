@@ -204,6 +204,21 @@ final class OrderRepository
         usort($sources,static function (array $a,array $b): int { return [$a['platform'],$a['source_method']]<=>[$b['platform'],$b['source_method']]; });
         return $sources;
     }
+    /** @return int[] zamówienia danej platformy z tą samą wartością źródłową płatności co w zakładce „Ustaw płatności”. */
+    private function paymentSourceOrderIds(string $platform,string $sourceMethod): array
+    {
+        $ids=[];
+        foreach ($this->db->fetchAll('SELECT o.id,o.details_json FROM om_orders o JOIN om_accounts a ON a.id=o.account_id WHERE a.platform=:platform',['platform'=>$platform]) as $row) {
+            try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
+            catch (\Throwable $error) { continue; }
+            $raw=is_array($details['raw']??null)?$details['raw']:[];
+            $source=array_key_exists('source_payment_method',$details)
+                ? mb_substr(trim((string)$details['source_payment_method']),0,190)
+                : OrderNormalizer::sourcePaymentMethod($platform,$raw,(string)($details['delivery']??''));
+            if ($source===$sourceMethod) { $ids[]=(int)$row['id']; }
+        }
+        return $ids;
+    }
     private function mappedPayment(string $platform,string $sourceMethod): ?array
     {
         $row=$this->db->fetch('SELECT m.name,m.is_cod FROM om_payment_mappings pm JOIN om_payment_methods m ON m.id=pm.payment_method_id AND m.enabled=1 WHERE pm.platform=:platform AND pm.source_method=:source',['platform'=>$platform,'source'=>$sourceMethod]);
@@ -579,6 +594,10 @@ final class OrderRepository
         if (!empty($filters['platform']) && in_array($filters['platform'],['manual','allegro','erli','empik','mediamarkt','morele'],true)) {
             $where[]='a.platform=:platform';
             $params['platform']=$filters['platform'];
+        }
+        if (($filters['payment_source']??'')!=='' && !empty($filters['platform'])) {
+            $ids=$this->paymentSourceOrderIds((string)$filters['platform'],$filters['payment_source']==='__empty__'?'':(string)$filters['payment_source']);
+            $where[]=$ids?'o.id IN ('.implode(',',$ids).')':'1=0';
         }
         foreach (['date_from'=>'>=','date_to'=>'<'] as $field=>$operator) {
             $value=(string)($filters[$field]??'');
