@@ -97,6 +97,26 @@ class TemuService
             return array();
         }
 
+        // A pasted category path (e.g. "Dom i kuchnia / Kuchnia i jadalnia / ... / Kubki")
+        // is resolved by walking the Seller OpenAPI tree by names. Sending the whole
+        // path to the recommendation API returns an unrelated category.
+        $pathSegments = $this->categoryPathSegments($search);
+        if ($pathSegments !== array()) {
+            try {
+                $pathMatch = $this->resolveCategoryPathByNames($pathSegments);
+            } catch (RuntimeException $exception) {
+                $pathMatch = null;
+            }
+            if ($pathMatch !== null && !empty($pathMatch['complete'])) {
+                unset($pathMatch['complete']);
+                $pathMatch['recommended'] = true;
+                $pathMatch['match_kind'] = 'path';
+                $this->cacheCategory($pathMatch);
+                return array($pathMatch);
+            }
+            $search = (string) end($pathSegments);
+        }
+
         $payload = $this->request('bg.local.goods.category.recommend', array('goodsName' => $search));
         $candidates = array();
         $this->collectCategoryCandidates($payload['result'] ?? array(), $candidates);
@@ -689,6 +709,114 @@ class TemuService
             $this->settings->set($cacheKey, $encoded);
         }
         return $items;
+    }
+
+    private function categoryPathSegments(string $search): array
+    {
+        if (preg_match('/\s\/\s|>/u', $search) !== 1) {
+            return array();
+        }
+        $parts = preg_split('/\s+\/\s+|\s*>\s*/u', $search) ?: array();
+        $parts = array_values(array_filter(array_map('trim', $parts), static function ($part): bool {
+            return $part !== '';
+        }));
+        return count($parts) >= 2 ? $parts : array();
+    }
+
+    private function resolveCategoryPathByNames(array $segments): ?array
+    {
+        $parentId = 0;
+        $path = array();
+        $selected = null;
+        $matched = 0;
+        $startIndex = 0;
+
+        // The pasted path may begin below the Temu root; allow the first segment
+        // to be found one level deeper when it is not a top-level category.
+        foreach ($segments as $index => $segment) {
+            $children = $this->categoryChildren($parentId);
+            $found = $this->findCategoryByName($children, $segment);
+            if ($found === null && $index === $startIndex && $parentId === 0) {
+                foreach ($children as $root) {
+                    if (!is_array($root) || !empty($root['leaf'])) {
+                        continue;
+                    }
+                    $deeper = $this->findCategoryByName($this->categoryChildren((int) ($root['catId'] ?? 0)), $segment, true);
+                    if ($deeper !== null) {
+                        $path[] = trim((string) ($root['catName'] ?? ''));
+                        $found = $deeper;
+                        break;
+                    }
+                }
+            }
+            if ($found === null) {
+                break;
+            }
+            $path[] = trim((string) ($found['catName'] ?? ''));
+            $matched++;
+            $selected = $found;
+            $parentId = (int) ($found['catId'] ?? 0);
+            if ($index === count($segments) - 1 || !empty($found['leaf']) || $parentId <= 0) {
+                break;
+            }
+        }
+
+        if ($selected === null) {
+            return null;
+        }
+        $normalized = $this->normalizeCategory($selected);
+        if ($normalized === null) {
+            return null;
+        }
+        $normalized['path'] = implode(' > ', array_filter($path));
+        $normalized['complete'] = $matched === count($segments) && !empty($normalized['leaf']);
+        return $normalized;
+    }
+
+    private function findCategoryByName(array $categories, string $name, bool $exactOnly = false): ?array
+    {
+        $target = $this->normalizeCategoryName($name);
+        if ($target === '') {
+            return null;
+        }
+        $best = null;
+        $bestScore = 0;
+        $targetTokens = $this->searchTokens($target);
+        foreach ($categories as $category) {
+            if (!is_array($category)) {
+                continue;
+            }
+            $candidate = $this->normalizeCategoryName((string) ($category['catName'] ?? ''));
+            if ($candidate === '') {
+                continue;
+            }
+            if ($candidate === $target) {
+                return $category;
+            }
+            if ($exactOnly || $targetTokens === array()) {
+                continue;
+            }
+            $candidateTokens = $this->searchTokens($candidate);
+            $common = count(array_intersect($targetTokens, $candidateTokens));
+            $total = count(array_unique(array_merge($targetTokens, $candidateTokens)));
+            $score = $total > 0 ? (int) round(100 * $common / $total) : 0;
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $category;
+            }
+        }
+        return $bestScore >= 60 ? $best : null;
+    }
+
+    private function normalizeCategoryName(string $name): string
+    {
+        $name = mb_strtolower(trim($name), 'UTF-8');
+        $name = strtr($name, array(
+            'ą' => 'a', 'ć' => 'c', 'ę' => 'e', 'ł' => 'l', 'ń' => 'n',
+            'ó' => 'o', 'ś' => 's', 'ź' => 'z', 'ż' => 'z', '&' => ' i ',
+        ));
+        $name = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $name) ?? $name;
+        return trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
     }
 
     private function searchTokens(string $search): array

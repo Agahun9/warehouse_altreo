@@ -380,7 +380,7 @@
           html += '<button type="button" class="list-group-item list-group-item-action" data-id="' + escapeHtml(item.id) + '">'
             + '<strong>' + escapeHtml(path) + '</strong>'
             + (item.recommended ? ' <span class="badge text-bg-warning ms-1">Najlepsza rekomendacja Temu</span>' : '')
-            + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + (item.match_kind === 'related' ? ' | kategoria powiazana' : '') + (item.match_kind === 'taxonomy' ? ' | zgodna z fraza' : '') + '</div>'
+            + '<div class="small text-secondary">ID: ' + escapeHtml(item.id) + (item.leaf ? ' | koncowa' : '') + (item.match_kind === 'related' ? ' | kategoria powiazana' : '') + (item.match_kind === 'taxonomy' ? ' | zgodna z fraza' : '') + (item.match_kind === 'path' ? ' | dopasowana po sciezce' : '') + '</div>'
             + '</button>';
         }
         results.innerHTML = html;
