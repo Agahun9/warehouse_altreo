@@ -31,6 +31,7 @@ final class OrderRepository
             'om_orders' => "id $id, account_id BIGINT NOT NULL, external_id VARCHAR(190) NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, status_manual INTEGER NOT NULL DEFAULT 0, ordered_at VARCHAR(30) NOT NULL, buyer_name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL, phone VARCHAR(80) NOT NULL, total_cents BIGINT NOT NULL, currency VARCHAR(3) NOT NULL, paid INTEGER NOT NULL DEFAULT 0, details_json LONGTEXT NOT NULL, note TEXT NULL, tags VARCHAR(1000) NOT NULL DEFAULT '', imported_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL, UNIQUE(account_id, external_id)",
             'om_mappings' => "id $id, account_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(account_id, remote_status)",
             'om_events' => "id $id, order_id BIGINT NOT NULL, actor VARCHAR(150) NOT NULL, message TEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
+            'om_order_notes' => "id $id, order_id BIGINT NOT NULL, body TEXT NOT NULL, author VARCHAR(150) NOT NULL DEFAULT '', source VARCHAR(40) NOT NULL DEFAULT 'user', created_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL",
             'om_rules' => "id $id, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, trigger_name VARCHAR(30) NOT NULL, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL",
             'om_rule_runs' => "id $id, rule_id BIGINT NOT NULL, order_id BIGINT NOT NULL, event_key VARCHAR(80) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(rule_id, order_id, event_key)",
             'om_settings' => "setting_key VARCHAR(100) PRIMARY KEY, value_json LONGTEXT NOT NULL",
@@ -91,6 +92,7 @@ final class OrderRepository
         foreach ([
             'om_orders' => ['om_order_date'=>'ordered_at,id','om_order_status'=>'status_id,ordered_at','om_order_account'=>'account_id,ordered_at'],
             'om_events' => ['om_event_order'=>'order_id,id'],
+            'om_order_notes' => ['om_order_note_order'=>'order_id,id'],
             'om_documents' => ['om_document_order'=>'order_id,id','om_document_parent'=>'parent_id,id'],
             'om_shipments' => ['om_shipment_order'=>'order_id,id'],
             'om_rule_runs' => ['om_rule_run_order'=>'order_id,id','om_rule_run_date'=>'created_at'],
@@ -734,6 +736,92 @@ final class OrderRepository
     {
         $this->db->insert('om_events',['order_id'=>$id,'message'=>$message,'actor'=>$actor,'created_at'=>gmdate('Y-m-d H:i:s')]);
     }
+    /**
+     * Internal order notes live in om_order_notes; om_orders.note keeps their joined text
+     * so search, the list column and the "note" automation condition work unchanged.
+     */
+    public function notes(int $orderId): array
+    {
+        $this->adoptLegacyNote($orderId);
+        return $this->db->fetchAll('SELECT id,order_id,body,author,source,created_at,updated_at FROM om_order_notes WHERE order_id=:id ORDER BY id',['id'=>$orderId]);
+    }
+    /** $source groups notes written by one producer (e.g. a webhook rule) so it can replace them on re-run. */
+    public function addNote(int $orderId,string $body,string $actor,string $source='user'): int
+    {
+        $body=self::noteBody($body);
+        return (int)$this->noteTransaction(function () use ($orderId,$body,$actor,$source) {
+            $this->lockOrderForNotes($orderId);
+            $now=gmdate('Y-m-d H:i:s');
+            $id=(int)$this->db->insert('om_order_notes',['order_id'=>$orderId,'body'=>$body,'author'=>mb_substr($actor,0,150,'UTF-8'),'source'=>mb_substr($source,0,40,'UTF-8'),'created_at'=>$now,'updated_at'=>$now]);
+            $this->syncNoteColumn($orderId);
+            return $id;
+        });
+    }
+    public function updateNote(int $orderId,int $noteId,string $body,string $actor): void
+    {
+        $body=self::noteBody($body);
+        $this->noteTransaction(function () use ($orderId,$noteId,$body,$actor) {
+            $this->lockOrderForNotes($orderId);
+            if (!$this->db->update('om_order_notes',['body'=>$body,'author'=>mb_substr($actor,0,150,'UTF-8'),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id AND order_id=:order',['id'=>$noteId,'order'=>$orderId])
+                && !$this->db->fetchColumn('SELECT id FROM om_order_notes WHERE id=:id AND order_id=:order',['id'=>$noteId,'order'=>$orderId])) {
+                throw new InvalidArgumentException('Nie znaleziono notatki.');
+            }
+            $this->syncNoteColumn($orderId);
+        });
+    }
+    public function deleteNote(int $orderId,int $noteId): void
+    {
+        $this->noteTransaction(function () use ($orderId,$noteId) {
+            $this->lockOrderForNotes($orderId);
+            if (!$this->db->delete('om_order_notes','id=:id AND order_id=:order',['id'=>$noteId,'order'=>$orderId])) { throw new InvalidArgumentException('Nie znaleziono notatki.'); }
+            $this->syncNoteColumn($orderId);
+        });
+    }
+    /** Replaces the notes a producer wrote earlier (re-running a webhook does not stack copies). */
+    public function replaceSourceNotes(int $orderId,string $source,array $bodies,string $actor): int
+    {
+        $bodies=array_values(array_filter(array_map(static function ($body): string { return is_scalar($body)?trim((string)$body):''; },$bodies),'strlen'));
+        return (int)$this->noteTransaction(function () use ($orderId,$source,$bodies,$actor) {
+            $this->lockOrderForNotes($orderId);
+            $this->db->delete('om_order_notes','order_id=:order AND source=:source',['order'=>$orderId,'source'=>$source]);
+            $now=gmdate('Y-m-d H:i:s');
+            foreach ($bodies as $body) {
+                $this->db->insert('om_order_notes',['order_id'=>$orderId,'body'=>self::noteBody($body),'author'=>mb_substr($actor,0,150,'UTF-8'),'source'=>mb_substr($source,0,40,'UTF-8'),'created_at'=>$now,'updated_at'=>$now]);
+            }
+            $this->syncNoteColumn($orderId);
+            return count($bodies);
+        });
+    }
+    private static function noteBody(string $body): string
+    {
+        $body=trim(str_replace("\r\n","\n",$body));
+        if ($body==='') { throw new InvalidArgumentException('Notatka nie może być pusta.'); }
+        return mb_substr($body,0,10000,'UTF-8');
+    }
+    private function noteTransaction(callable $callback)
+    {
+        return $this->db->pdo()->inTransaction() ? $callback($this->db) : $this->db->transaction($callback);
+    }
+    private function lockOrderForNotes(int $orderId): void
+    {
+        if (!$this->db->fetch('SELECT id FROM om_orders WHERE id=:id'.$this->rowLock(),['id'=>$orderId])) { throw new InvalidArgumentException('Nie znaleziono zamówienia.'); }
+        $this->adoptLegacyNote($orderId);
+    }
+    /** Orders from before multi-notes keep their single note as the first entry. */
+    private function adoptLegacyNote(int $orderId): void
+    {
+        if ($this->db->fetchColumn('SELECT id FROM om_order_notes WHERE order_id=:id LIMIT 1',['id'=>$orderId])) { return; }
+        $legacy=$this->db->fetch('SELECT note,updated_at FROM om_orders WHERE id=:id',['id'=>$orderId]);
+        $text=trim((string)($legacy['note']??''));
+        if ($text==='') { return; }
+        $at=(string)($legacy['updated_at']??'') ?: gmdate('Y-m-d H:i:s');
+        $this->db->insert('om_order_notes',['order_id'=>$orderId,'body'=>mb_substr($text,0,10000,'UTF-8'),'author'=>'','source'=>'legacy','created_at'=>$at,'updated_at'=>$at]);
+    }
+    private function syncNoteColumn(int $orderId): void
+    {
+        $bodies=array_column($this->db->fetchAll('SELECT body FROM om_order_notes WHERE order_id=:id ORDER BY id',['id'=>$orderId]),'body');
+        $this->db->update('om_orders',['note'=>mb_substr(implode("\n\n",$bodies),0,10000,'UTF-8'),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$orderId]);
+    }
     public function import(int $accountId,array $order): bool
     {
         return $this->transactional(function () use ($accountId,$order) {
@@ -798,6 +886,7 @@ final class OrderRepository
             $this->db->delete('om_shipments','order_id=:id',['id'=>$id]);
             $this->db->delete('om_rule_runs','order_id=:id',['id'=>$id]);
             $this->db->delete('om_events','order_id=:id',['id'=>$id]);
+            $this->db->delete('om_order_notes','order_id=:id',['id'=>$id]);
             $this->db->delete('om_orders','id=:id',['id'=>$id]);
         });
     }

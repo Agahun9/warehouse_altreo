@@ -302,3 +302,19 @@ td[data-col="payment"] .om-doc-pill,.om-fulfillment-cell .om-doc-pill{display:fl
 .om-flow-icon.om-flow-text{font-size:9px;font-weight:800;letter-spacing:.02em}
 .om-flow-icon.is-done{color:#0f7a4f;background:#e3f6ec;border-color:#a9dfc3}
 .om-flow-icon.is-pending{color:#a16d16;background:#fff8e5;border-color:#f5e1a8}
+/* Notatki wewnętrzne zamówienia (wiele notatek, kompaktowo) */
+@media(min-width:601px){.om-order-console .oc-commandbar{grid-template-columns:minmax(180px,1fr) minmax(150px,1fr)}}
+.oc-notes{grid-column:1/-1;margin-top:8px;background:#fff;border:1px solid #d8e0e9;border-radius:8px;overflow:hidden}
+.oc-notes-head{display:flex;align-items:center;gap:10px;padding:5px 8px 5px 10px;background:#f8faff}.oc-notes-title{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:#526174;font-size:12px;font-weight:600}.oc-notes-title b{min-width:18px;padding:0 5px;border-radius:9px;background:#e3ebf5;color:#1d5e9f;font-size:10px;text-align:center}
+.oc-note-add{display:flex;flex:1;gap:5px;min-width:0}.oc-note-add textarea{flex:1;min-width:0;height:28px;min-height:28px;margin:0;padding:5px 8px;border:1px solid #d3dbe5;border-radius:5px;font:inherit;font-size:12px;line-height:1.3;resize:none}.oc-note-add textarea:focus{height:64px}
+.oc-note-add button{flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid #1d5e9f;border-radius:5px;background:#1d5e9f;color:#fff;cursor:pointer}
+.oc-notes-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px;list-style:none;margin:0;padding:6px;max-height:260px;overflow:auto;border-top:1px solid #edf0f4}.oc-notes-list:has(.oc-notes-empty){display:none}.oc-notes-empty{display:none}
+.oc-note-item{position:relative;min-width:0;padding:5px 8px;border:1px solid #e5eaf0;border-left:3px solid #f2c94c;border-radius:5px;background:#fffdf5}.oc-note-item.is-auto{border-left-color:#5b9bd5;background:#f7fbff}
+.oc-note-meta{display:flex;align-items:center;gap:5px;min-height:18px;color:#8a94a3;font-size:10px;line-height:1.2}.oc-note-meta>span:not(.oc-note-tools){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.oc-note-source{flex:none;padding:0 4px;border-radius:3px;background:#e3ebf5;color:#1d5e9f;font-weight:600}
+.oc-note-tools{display:flex;gap:2px;margin-left:auto;opacity:0;transition:opacity .12s}.oc-note-item:hover .oc-note-tools,.oc-note-item:focus-within .oc-note-tools{opacity:1}@media(hover:none){.oc-note-tools{opacity:1}}
+.oc-note-btn{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:4px;background:transparent;color:#6b7684;font-size:11px;cursor:pointer}.oc-note-btn:hover{background:#eef2f7}.oc-note-btn.is-danger:hover{color:#c62828;background:#fdecec}
+.oc-note-body{margin:2px 0 0;font-size:12px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;color:#1f2937;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}.oc-note-body.is-open{display:block;-webkit-line-clamp:unset}
+.oc-note-editor{width:100%;box-sizing:border-box;margin-top:3px;padding:5px 7px;border:1px solid #cfd8e3;border-radius:5px;font:inherit;font-size:12px;line-height:1.35;resize:vertical}
+.oc-note-edit-actions{display:flex;gap:4px;margin-top:4px}.oc-note-edit-actions button{height:24px;padding:0 9px;border:1px solid #1d5e9f;border-radius:4px;background:#1d5e9f;color:#fff;font-size:11px;cursor:pointer}.oc-note-edit-actions .oc-note-cancel{background:#fff;color:#526174;border-color:#d8e0e9}
+.oc-notes-error{margin:0;padding:5px 10px;color:#b42318;background:#fff5f4;font-size:11px}
+@media(max-width:600px){.oc-notes-head{flex-wrap:wrap}.oc-notes-list{grid-template-columns:1fr}}

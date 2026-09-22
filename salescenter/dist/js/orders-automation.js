@@ -7,6 +7,29 @@
     document.addEventListener('keydown', event => { if (event.key === 'Escape') menu.open = false; });
     menu.querySelectorAll('a').forEach(link => link.addEventListener('click', () => { menu.open = false; }));
   });
+  /* Keyboard shortcut of an order button, e.g. "Alt+P". event.code keeps it independent of layout and Option/AltGr characters. */
+  const shortcutFromEvent = event => {
+    const code = event.code || '';
+    const key = /^Key[A-Z]$/.test(code) ? code.slice(3) : /^(Digit|Numpad)\d$/.test(code) ? code.slice(-1) : /^F([1-9]|1[0-2])$/.test(code) ? code : '';
+    return key ? [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', key].filter(Boolean).join('+') : '';
+  };
+  const shortcutButtons = [...document.querySelectorAll('[data-oa-shortcut]')];
+  if (shortcutButtons.length) {
+    let submitting = false;
+    new Set(shortcutButtons.map(button => button.form).filter(Boolean)).forEach(form => form.addEventListener('submit', () => { submitting = true; }));
+    document.addEventListener('keydown', event => {
+      if (event.repeat || event.metaKey || event.isComposing || submitting) return;
+      const combo = shortcutFromEvent(event);
+      const button = combo && shortcutButtons.find(candidate => candidate.dataset.oaShortcut === combo);
+      if (!button) return;
+      // Ctrl+Alt is AltGr on Polish Windows keyboards: never steal diacritics while typing.
+      if (event.ctrlKey && event.altKey && event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+      event.preventDefault();
+      button.closest('details')?.removeAttribute('open');
+      button.click();
+    });
+  }
+
   document.querySelectorAll('[data-oa-bulk-run]').forEach(button => button.addEventListener('click', event => {
     const select = button.form?.querySelector('[data-oa-bulk-rule]');
     const checked = button.form ? button.form.querySelectorAll('input[name="ids[]"]:checked').length : 0;
@@ -115,6 +138,7 @@
       match: 'all',
       run_limit: options.run_limit === 'once' ? 'once' : 'every',
       button_order: Boolean(options.button_order), button_list: Boolean(options.button_list), stop_on_error: Boolean(options.stop_on_error),
+      shortcut: typeof options.shortcut === 'string' ? options.shortcut : '',
       delay: { value: 24, unit: 'hours', from: 'status', ...(options.delay || {}) },
     };
     if (!state.actions.length) state.actions.push({ type: '', params: {} });
@@ -477,8 +501,25 @@
   const optionToggle = (key, title, hint, iconName) => {
     const input = el('input', { type: 'checkbox' });
     input.checked = Boolean(state.options[key]);
-    input.addEventListener('change', () => { state.options[key] = input.checked; changed(); });
+    input.addEventListener('change', () => { state.options[key] = input.checked; if (key === 'button_order') renderSettings(); changed(); });
     return el('label', { class: 'oa-toggle' }, [input, el('span', { class: 'oa-switch-ui', 'aria-hidden': 'true' }), el('span', { class: 'oa-toggle-text' }, [el('strong', {}, [icon(iconName), ` ${title}`]), el('small', { text: hint })])]);
+  };
+  const shortcutField = () => {
+    const input = el('input', { type: 'text', class: 'oa-shortcut-input', readonly: true, value: state.options.shortcut, placeholder: 'Kliknij i naciśnij, np. Alt+P', 'aria-label': 'Skrót klawiszowy przycisku w zamówieniu' });
+    const set = value => { state.options.shortcut = value; input.value = value; changed(); };
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Tab' && !event.ctrlKey && !event.altKey) return;
+      event.preventDefault();
+      if (['Backspace', 'Delete', 'Escape'].includes(event.key) && !event.ctrlKey && !event.altKey) { set(''); return; }
+      const combo = shortcutFromEvent(event);
+      if (combo) set(combo);
+    });
+    const clear = el('button', { type: 'button', class: 'oa-icon-btn', title: 'Usuń skrót', 'aria-label': 'Usuń skrót' }, [icon('bi-x-lg')]);
+    clear.addEventListener('click', () => { set(''); input.focus(); });
+    return el('div', { class: 'oa-shortcut', hidden: !state.options.button_order }, [
+      el('span', { class: 'oa-toggle-text' }, [el('strong', {}, [icon('bi-keyboard'), ' Skrót klawiszowy w zamówieniu']), el('small', { text: 'Ctrl lub Alt + litera/cyfra (np. Alt+P) albo F2, F4, F8–F10. Reguły o tej samej nazwie dzielą jeden skrót.' })]),
+      el('span', { class: 'oa-shortcut-field' }, [input, clear]),
+    ]);
   };
   const renderSettings = () => {
     settingsBox.replaceChildren(
@@ -487,7 +528,8 @@
         segment([['once', 'Raz na zamówienie'], ['every', 'Przy każdym zdarzeniu']], state.options.run_limit, value => { state.options.run_limit = value; renderSettings(); changed(); }, 'Limit wykonań'),
       ]),
       el('div', { class: 'oa-toggle-list' }, [
-        optionToggle('button_order', 'Przycisk w szczegółach zamówienia', 'Pojawi się w menu „Automaty” w nagłówku zamówienia.', 'bi-hand-index-thumb'),
+        optionToggle('button_order', 'Przycisk w szczegółach zamówienia', 'Pojawi się w menu „Automaty” w nagłówku zamówienia. Reguły o tej samej nazwie tworzą jeden przycisk — uruchomi się pierwsza, której warunki pasują.', 'bi-hand-index-thumb'),
+        shortcutField(),
         optionToggle('button_list', 'Akcja masowa na liście zamówień', 'Uruchomisz ją dla zaznaczonych zamówień (do 50 naraz).', 'bi-list-check'),
         optionToggle('stop_on_error', 'Zatrzymaj po błędzie kroku', 'Gdy krok się nie powiedzie, kolejne efekty nie zostaną wykonane.', 'bi-sign-stop'),
       ]),
@@ -540,6 +582,8 @@
           : ['text', 'list'].includes(definition.type) && !['empty', 'not_empty'].includes(condition.op) && !String(condition.value).trim();
       if (missing) errors.push(`Warunek „${definition.label}”: uzupełnij wartość.`);
     });
+    const shortcut = state.options.button_order ? state.options.shortcut : '';
+    if (shortcut && !/^F([2-9]|10)$/.test(shortcut) && !/(^|\+)(Ctrl|Alt)\+/.test(shortcut)) errors.push('Skrót klawiszowy: dodaj Ctrl lub Alt, np. Alt+P.');
     const actions = state.actions.filter(action => action.type);
     if (!actions.length) errors.push('Dodaj przynajmniej jeden efekt.');
     state.actions.forEach((action, index) => {
@@ -555,7 +599,7 @@
       errorsBox.hidden = false;
       return;
     }
-    form.querySelector('[data-oa-json]').value = JSON.stringify({ name, enabled: enabledInput.checked, triggers: state.triggers, conditions: state.conditions, actions, options: state.options });
+    form.querySelector('[data-oa-json]').value = JSON.stringify({ name, enabled: enabledInput.checked, triggers: state.triggers, conditions: state.conditions, actions, options: { ...state.options, shortcut } });
     dirty = false;
   });
 

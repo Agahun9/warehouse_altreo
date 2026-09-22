@@ -20,6 +20,8 @@ final class OrderAutomationService
     private const MAX_DEPTH=4;
     private const MAX_CONDITIONS=30;
     private const MAX_ACTIONS=20;
+    /** Browser/system shortcuts that cannot be reliably taken over on the order page. */
+    private const RESERVED_SHORTCUTS=['Ctrl+A','Ctrl+C','Ctrl+V','Ctrl+X','Ctrl+Z','Ctrl+Y','Ctrl+R','Ctrl+W','Ctrl+T','Ctrl+N','Ctrl+F','Ctrl+L','Ctrl+P','Ctrl+S','Ctrl+D','Ctrl+H','Ctrl+J','Ctrl+U','Ctrl+Shift+T','Ctrl+Shift+N','Ctrl+Shift+W','Ctrl+Shift+R','Ctrl+Shift+I','Ctrl+Shift+J','Ctrl+Shift+C','Ctrl+Shift+Delete','Alt+F4','F1','F3','F5','F6','F7','F11','F12','Ctrl+F4','Ctrl+F5'];
     private const DELAY_UNITS=['minutes'=>60,'hours'=>3600,'days'=>86400];
     private const DELAY_FROM=['status'=>'zmiany statusu','ordered'=>'złożenia zamówienia','imported'=>'pobrania zamówienia'];
     private const CANCELLED=['CANCELLED','CANCELED','ANULOWANO'];
@@ -149,7 +151,7 @@ final class OrderAutomationService
             'print_label'=>['label'=>'Drukuj etykietę','group'=>'Wysyłka','icon'=>'bi-printer-fill','params'=>[['key'=>'printer','label'=>'Drukarka etykiet','type'=>'select','options'=>'label_printers','required'=>true],['key'=>'scope','label'=>'Zakres','type'=>'select','options'=>[['newest','Najnowsza przesyłka'],['all','Wszystkie aktywne przesyłki']],'default'=>'newest'],['key'=>'width','label'=>'Szerokość (mm)','type'=>'number','default'=>'100','min'=>30,'max'=>500],['key'=>'height','label'=>'Wysokość (mm)','type'=>'number','default'=>'150','min'=>30,'max'=>500]]],
             'email_customer'=>['label'=>'Wyślij e-mail do klienta','group'=>'Komunikacja','icon'=>'bi-envelope','params'=>$mail],
             'email_address'=>['label'=>'Wyślij e-mail na adres','group'=>'Komunikacja','icon'=>'bi-envelope-at','params'=>array_merge([['key'=>'to','label'=>'Adres e-mail','type'=>'email','required'=>true,'max'=>200,'placeholder'=>'magazyn@firma.pl']],$mail)],
-            'webhook'=>['label'=>'Wywołaj webhook (POST JSON)','group'=>'Komunikacja','icon'=>'bi-broadcast-pin','hint'=>'Wysyła dane zamówienia bez surowej odpowiedzi marketplace. Tylko publiczne adresy HTTPS.','params'=>[['key'=>'url','label'=>'Adres HTTPS','type'=>'url','required'=>true,'max'=>500,'placeholder'=>'https://…']]],
+            'webhook'=>['label'=>'Wywołaj webhook (POST JSON)','group'=>'Komunikacja','icon'=>'bi-broadcast-pin','hint'=>'Wysyła dane zamówienia bez surowej odpowiedzi marketplace. Tylko publiczne adresy HTTPS. {id_order} w adresie zamienia się na ID zamówienia. Odpowiedź JSON {"notes":["…"]} zapisuje notatki w zamówieniu (ponowne wywołanie je zastępuje).','params'=>[['key'=>'url','label'=>'Adres HTTPS','type'=>'url','required'=>true,'max'=>500,'placeholder'=>'https://…']]],
             'accept_order'=>['label'=>'Zaakceptuj zamówienie (Empik / MediaMarkt)','group'=>'Marketplace','icon'=>'bi-check2-circle','hint'=>'Mirakl OR21 — tylko dla zamówień oczekujących na akceptację.','params'=>[]],
             'run_rule'=>['label'=>'Uruchom inną automatyzację','group'=>'Sterowanie','icon'=>'bi-diagram-3','hint'=>'Warunki tamtej automatyzacji są sprawdzane.','params'=>[['key'=>'rule_id','label'=>'Automatyzacja','type'=>'select','options'=>'rules','required'=>true]]],
             'stop'=>['label'=>'Zatrzymaj kolejne automatyzacje','group'=>'Sterowanie','icon'=>'bi-sign-stop','hint'=>'Pozostałe reguły tego zdarzenia nie zostaną sprawdzone.','params'=>[]],
@@ -278,7 +280,8 @@ final class OrderAutomationService
         }
         unset($condition);
         $options['match']=self::matchMode($conditions);
-        $options+=['run_limit'=>$legacyRule && (string)$row['trigger_name']==='import'?'once':'every','button_order'=>false,'button_list'=>false,'stop_on_error'=>false,'delay'=>null];
+        $options+=['run_limit'=>$legacyRule && (string)$row['trigger_name']==='import'?'once':'every','button_order'=>false,'button_list'=>false,'stop_on_error'=>false,'delay'=>null,'shortcut'=>''];
+        $options['shortcut']=(string)$options['shortcut'];
         return ['id'=>(int)$row['id'],'name'=>(string)$row['name'],'enabled'=>(bool)(int)$row['enabled'],'position'=>(int)($row['position']??0),'triggers'=>array_values(array_map('strval',$triggers)),'conditions'=>array_values($conditions),'actions'=>array_values($actions),'options'=>$options];
     }
 
@@ -286,6 +289,7 @@ final class OrderAutomationService
     {
         if ($id>0 && !$this->db->fetchColumn('SELECT id FROM om_rules WHERE id=:id',['id'=>$id])) { throw new InvalidArgumentException('Nie znaleziono automatyzacji.'); }
         $rule=$this->normalizeRule($input,$id);
+        $this->assertDistinctRule($rule,$id);
         $data=['name'=>$rule['name'],'enabled'=>$rule['enabled']?1:0,'trigger_name'=>$rule['triggers'][0],'triggers_json'=>OrderRepository::json($rule['triggers']),'conditions_json'=>OrderRepository::json($rule['conditions']),'actions_json'=>OrderRepository::json($rule['actions']),'options_json'=>OrderRepository::json($rule['options']),'updated_at'=>gmdate('Y-m-d H:i:s')];
         if ($id>0) { $this->db->update('om_rules',$data,'id=:id',['id'=>$id]); return $id; }
         $data['position']=(int)$this->db->fetchColumn('SELECT COALESCE(MAX(position),0) FROM om_rules')+10;
@@ -296,8 +300,13 @@ final class OrderAutomationService
     {
         $rule=$this->rule($id);
         if (!$rule) { throw new InvalidArgumentException('Nie znaleziono automatyzacji.'); }
-        $rule['name']=mb_substr($rule['name'],0,140,'UTF-8').' (kopia)';
+        $taken=array_map(static function (array $other): string { return self::nameKey($other['name']); },$this->allRules());
+        $base=mb_substr($rule['name'],0,138,'UTF-8').' (kopia';
+        $name=$base.')';
+        for ($copy=2; in_array(self::nameKey($name),$taken,true); $copy++) { $name=$base.' '.$copy.')'; }
+        $rule['name']=$name;
         $rule['enabled']=false;
+        $rule['options']['shortcut']='';
         return $this->saveRule(0,$rule+$rule['options']);
     }
 
@@ -324,6 +333,81 @@ final class OrderAutomationService
         });
     }
 
+    /**
+     * Rules sharing a name form one button in the order ("Pakuj" with variants per condition set),
+     * so the same name may not repeat the same conditions and one shortcut may not serve two buttons.
+     */
+    private function assertDistinctRule(array $rule,int $id): void
+    {
+        $name=self::nameKey($rule['name']);
+        $signature=self::conditionSignature($rule['conditions']);
+        $shortcut=$rule['options']['shortcut'];
+        foreach ($this->allRules() as $other) {
+            if ($other['id']===$id) { continue; }
+            $sameName=self::nameKey($other['name'])===$name;
+            $otherShortcut=(string)$other['options']['shortcut'];
+            if ($sameName && self::conditionSignature($other['conditions'])===$signature) {
+                throw new InvalidArgumentException('Istnieje już automatyzacja „'.$other['name'].'” (#'.$other['id'].') '.($rule['conditions']?'z takimi samymi warunkami (JEŻELI)':'bez warunków (każde zamówienie)').'. Reguły o tej samej nazwie tworzą w zamówieniu jeden przycisk, więc muszą różnić się warunkami — zmień warunki albo nazwę.');
+            }
+            if ($shortcut==='' || $otherShortcut==='') { continue; }
+            if (!$sameName && $otherShortcut===$shortcut) {
+                throw new InvalidArgumentException('Skrót '.$shortcut.' jest już przypisany do automatyzacji „'.$other['name'].'” (#'.$other['id'].'). Wybierz inny skrót.');
+            }
+            if ($sameName && $otherShortcut!==$shortcut) {
+                throw new InvalidArgumentException('Automatyzacje o nazwie „'.$other['name'].'” mają wspólny przycisk ze skrótem '.$otherShortcut.'. Ustaw ten sam skrót albo zostaw pole puste.');
+            }
+        }
+    }
+
+    /** Case- and whitespace-insensitive rule name used to group button variants. */
+    private static function nameKey(string $name): string
+    {
+        return mb_strtolower(trim((string)preg_replace('/\s+/u',' ',$name)),'UTF-8');
+    }
+
+    /** Canonical form of the IF part: order-independent for pure AND/OR lists, select values sorted. */
+    private static function conditionSignature(array $conditions): string
+    {
+        $mode=count($conditions)>1?self::matchMode($conditions):'all';
+        $definitions=self::conditionDefinitions();
+        $items=[];
+        foreach (array_values($conditions) as $index=>$condition) {
+            $value=$condition['value']??'';
+            if (is_array($value)) {
+                $value=array_map('strval',$value);
+                if (($definitions[$condition['field']??'']['type']??'')==='select') { sort($value,SORT_STRING); }
+            } else {
+                $value=(string)$value;
+            }
+            $items[]=json_encode([(string)($condition['field']??''),(string)($condition['op']??''),$value,$mode==='mixed' && $index>0?(string)($condition['join']??'and'):''],JSON_UNESCAPED_UNICODE);
+        }
+        if ($mode!=='mixed') { sort($items,SORT_STRING); }
+        return $mode.'|'.implode(';',$items);
+    }
+
+    /** Normalizes "alt + p" to "Alt+P"; letters and digits need Ctrl or Alt so typing never fires a rule. */
+    public static function normalizeShortcut(string $raw): string
+    {
+        $raw=trim($raw);
+        if ($raw==='') { return ''; }
+        $error='Skrót klawiszowy: użyj Ctrl lub Alt (opcjonalnie z Shift) z literą A–Z albo cyfrą, np. Alt+P, albo samego klawisza F2, F4, F8–F10.';
+        $parts=array_map('trim',explode('+',$raw));
+        $key=strtoupper((string)array_pop($parts));
+        $modifiers=[];
+        foreach ($parts as $part) {
+            $modifier=['ctrl'=>'Ctrl','control'=>'Ctrl','alt'=>'Alt','option'=>'Alt','shift'=>'Shift'][strtolower($part)]??null;
+            if ($modifier===null) { throw new InvalidArgumentException($error); }
+            $modifiers[$modifier]=true;
+        }
+        if (!preg_match('/^(?:[A-Z0-9]|F(?:[1-9]|1[0-2]))$/D',$key)) { throw new InvalidArgumentException($error); }
+        if ($key[0]!=='F' || strlen($key)===1) {
+            if (!isset($modifiers['Ctrl']) && !isset($modifiers['Alt'])) { throw new InvalidArgumentException($error); }
+        }
+        $shortcut=implode('+',array_merge(array_values(array_filter(['Ctrl','Alt','Shift'],static function (string $modifier) use ($modifiers): bool { return isset($modifiers[$modifier]); })),[$key]));
+        if (in_array($shortcut,self::RESERVED_SHORTCUTS,true)) { throw new InvalidArgumentException('Skrót '.$shortcut.' jest zajęty przez przeglądarkę. Wybierz inny, np. Alt+litera.'); }
+        return $shortcut;
+    }
+
     public function normalizeRule(array $input,int $ruleId=0): array
     {
         $name=trim((string)($input['name']??''));
@@ -333,7 +417,8 @@ final class OrderAutomationService
         if (!$triggers) { throw new InvalidArgumentException('Wybierz przynajmniej jeden wyzwalacz.'); }
         foreach ($triggers as $trigger) { if (!isset($triggerDefinitions[$trigger])) { throw new InvalidArgumentException('Nieznany wyzwalacz automatyzacji.'); } }
         $source=is_array($input['options']??null)?$input['options']+$input:$input;
-        $options=['match'=>($source['match']??'all')==='any'?'any':'all','run_limit'=>($source['run_limit']??'every')==='once'?'once':'every','button_order'=>!empty($source['button_order']),'button_list'=>!empty($source['button_list']),'stop_on_error'=>!empty($source['stop_on_error']),'delay'=>null];
+        $options=['match'=>($source['match']??'all')==='any'?'any':'all','run_limit'=>($source['run_limit']??'every')==='once'?'once':'every','button_order'=>!empty($source['button_order']),'button_list'=>!empty($source['button_list']),'stop_on_error'=>!empty($source['stop_on_error']),'delay'=>null,'shortcut'=>''];
+        if ($options['button_order']) { $options['shortcut']=self::normalizeShortcut((string)(is_scalar($source['shortcut']??null)?$source['shortcut']:'')); }
         if (in_array('scheduled',$triggers,true)) {
             $delay=is_array($source['delay']??null)?$source['delay']:[];
             $value=filter_var($delay['value']??null,FILTER_VALIDATE_INT); $unit=(string)($delay['unit']??''); $from=(string)($delay['from']??'');
@@ -442,9 +527,11 @@ final class OrderAutomationService
     {
         $stats=[];
         foreach ($this->db->fetchAll("SELECT rule_id,COUNT(*) total,SUM(CASE WHEN result IN ('error','partial') THEN 1 ELSE 0 END) errors,MAX(created_at) last_run FROM om_rule_runs GROUP BY rule_id") as $row) { $stats[(int)$row['rule_id']]=$row; }
-        $rules=[];
-        foreach ($this->allRules() as $index=>$rule) {
+        $rules=[]; $all=$this->allRules(); $variants=[];
+        foreach ($all as $rule) { $key=self::nameKey($rule['name']); $variants[$key]=($variants[$key]??0)+1; }
+        foreach ($all as $index=>$rule) {
             $rule=$this->describe($rule);
+            $rule['variants']=$variants[self::nameKey($rule['name'])];
             $rule['number']=$index+1;
             $rule['runs_total']=(int)($stats[$rule['id']]['total']??0);
             $rule['runs_errors']=(int)($stats[$rule['id']]['errors']??0);
@@ -526,11 +613,18 @@ final class OrderAutomationService
     {
         $result=['order'=>[],'list'=>[]];
         foreach ($this->allRules(true) as $rule) {
-            $item=['id'=>$rule['id'],'name'=>$rule['name'],'confirm'=>$this->describe($rule)['has_costly_action']];
-            if ($rule['options']['button_order']) { $result['order'][]=$item; }
-            if ($rule['options']['button_list']) { $result['list'][]=$item; }
+            $confirm=$this->describe($rule)['has_costly_action'];
+            $key=self::nameKey($rule['name']);
+            foreach (['order','list'] as $place) {
+                if (!$rule['options']['button_'.$place]) { continue; }
+                $group=$result[$place][$key]??['id'=>$rule['id'],'name'=>$rule['name'],'confirm'=>false,'variants'=>0,'shortcut'=>''];
+                $group['variants']++;
+                $group['confirm']=$group['confirm'] || $confirm;
+                if ($place==='order' && $group['shortcut']==='') { $group['shortcut']=$rule['options']['shortcut']; }
+                $result[$place][$key]=$group;
+            }
         }
-        return $result;
+        return ['order'=>array_values($result['order']),'list'=>array_values($result['list'])];
     }
 
     public function stats(): array
@@ -595,15 +689,25 @@ final class OrderAutomationService
         $this->enqueue(['order_id'=>$orderId,'trigger'=>$trigger,'event'=>$event]);
     }
 
-    /** Runs one rule on selected orders from a button; conditions are checked, run limits are not. */
-    public function runManual(array $orderIds,int $ruleId,string $actor): array
+    /**
+     * Runs one rule on selected orders from a button; conditions are checked, run limits are not.
+     * With $button ('order' or 'list') the rule stands for its whole button: every enabled rule with the
+     * same name and that button is tried in execution order and only the first matching one runs.
+     */
+    public function runManual(array $orderIds,int $ruleId,string $actor,string $button=''): array
     {
         $rule=$this->rule($ruleId);
         if (!$rule || !$rule['enabled']) { throw new InvalidArgumentException('Automatyzacja nie istnieje albo jest wstrzymana.'); }
+        $ruleIds=[$ruleId];
+        if (in_array($button,['order','list'],true)) {
+            $key=self::nameKey($rule['name']);
+            $group=array_values(array_filter($this->allRules(true),static function (array $other) use ($key,$button): bool { return $other['options']['button_'.$button] && self::nameKey($other['name'])===$key; }));
+            if ($group) { $ruleIds=array_column($group,'id'); }
+        }
         $this->report=['executed'=>0,'skipped'=>0,'errors'=>0,'messages'=>[]];
         foreach (array_values(array_unique(array_map('intval',$orderIds))) as $orderId) {
             if ($orderId<1) { continue; }
-            $this->enqueue(['order_id'=>$orderId,'trigger'=>'manual','event'=>['actor'=>$actor],'rule_ids'=>[$ruleId],'manual'=>true]);
+            $this->enqueue(['order_id'=>$orderId,'trigger'=>'manual','event'=>['actor'=>$actor],'rule_ids'=>$ruleIds,'manual'=>true,'first_match'=>count($ruleIds)>1]);
         }
         $report=$this->report; $this->report=null;
         $parts=['wykonano: '.$report['executed']];
@@ -689,7 +793,7 @@ final class OrderAutomationService
         }
         if (!$rules) { return; }
         if ($item['trigger']==='document_issued' && !empty($item['event']['document_id']) && !$this->db->fetchColumn('SELECT id FROM om_documents WHERE id=:id',['id'=>(int)$item['event']['document_id']])) { return; }
-        $ctx=null;
+        $ctx=null; $firstMatch=!empty($item['first_match']); $matched=false;
         foreach ($rules as $rule) {
             $chainKey=$rule['id'].':'.$item['order_id'];
             if (isset($this->chain[$chainKey])) { continue; }
@@ -705,9 +809,10 @@ final class OrderAutomationService
             }
             if ($eventKey==='') { $eventKey=bin2hex(random_bytes(16)); }
             if (!$this->matches($rule,$ctx)) {
-                if ($manual && $this->report!==null && $item['depth']===0) { $this->report['skipped']++; }
+                if ($manual && !$firstMatch && $this->report!==null && $item['depth']===0) { $this->report['skipped']++; }
                 continue;
             }
+            $matched=true;
             $this->chain[$chainKey]=true;
             $outcome=$this->execute($rule,$ctx,$item,$eventKey);
             if ($manual && $this->report!==null && $item['depth']===0) {
@@ -715,8 +820,9 @@ final class OrderAutomationService
                 if ($outcome['state']!=='ok') { $this->report['messages'][]='#'.$item['order_id'].': '.$outcome['message']; }
             }
             $ctx['dirty']=true;
-            if ($outcome['stop']) { break; }
+            if ($outcome['stop'] || $firstMatch) { break; }
         }
+        if ($firstMatch && !$matched && $this->report!==null && $item['depth']===0) { $this->report['skipped']++; }
     }
 
     private function execute(array $rule,array &$ctx,array $item,string $eventKey): array
@@ -1025,9 +1131,9 @@ final class OrderAutomationService
                 return $ok(($action['type']==='add_tags'?'Dodano tagi: ':'Usunięto tagi: ').implode(', ',$changes));
             case 'append_note':
                 $text=trim($this->render((string)$params['text'],$ctx));
-                $note=trim((string)($order['note']??''));
-                $this->db->update('om_orders',['note'=>mb_substr(($note!==''?$note."\n":'').$text,0,10000,'UTF-8'),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$orderId]);
-                return $ok('Dopisano notatkę');
+                if ($text==='') { return $skip('Pusta treść notatki'); }
+                $this->repo->addNote($orderId,$text,$actor,'rule:'.$rule['id']);
+                return $ok('Dodano notatkę');
             case 'add_event':
                 $this->repo->event($orderId,mb_substr($this->render((string)$params['text'],$ctx),0,1000,'UTF-8'),$actor);
                 return $ok('Dodano wpis do historii');
@@ -1088,8 +1194,12 @@ final class OrderAutomationService
                 $this->repo->event($orderId,'Wysłano e-mail „'.$subject.'” na adres '.$to.'.',$actor);
                 return $ok('Wysłano e-mail na '.$to);
             case 'webhook':
-                $status=$this->webhook((string)$params['url'],$ctx,$rule);
-                return $ok('Webhook odpowiedział HTTP '.$status);
+                $response=$this->webhook((string)$params['url'],$ctx,$rule);
+                $notes=$this->webhookNotes($response['body']);
+                if ($notes===null) { return $ok('Webhook odpowiedział HTTP '.$response['status']); }
+                $added=$this->repo->replaceSourceNotes($orderId,'webhook:'.$rule['id'],$notes,$actor);
+                $this->repo->event($orderId,'Webhook „'.$rule['name'].'” zapisał notatki: '.$added.'.',$actor);
+                return $ok('Webhook odpowiedział HTTP '.$response['status'].', zapisano notatki: '.$added);
             case 'accept_order':
                 return $this->acceptOrder($order,$actor);
             case 'run_rule':
@@ -1235,8 +1345,25 @@ final class OrderAutomationService
         return ['state'=>'ok','message'=>'Zaakceptowano zamówienie w marketplace'];
     }
 
-    private function webhook(string $url,array $ctx,array $rule): int
+    /**
+     * Webhook reply {"notes":["…",…]} (or {"note":"…"}) becomes the order's notes from this rule;
+     * any other reply is ignored. null = the reply carries no notes.
+     */
+    private function webhookNotes(string $body): ?array
     {
+        $data=json_decode($body,true);
+        if (!is_array($data)) { return null; }
+        $notes=isset($data['notes']) && is_array($data['notes']) ? $data['notes'] : (isset($data['note']) && is_string($data['note']) ? [$data['note']] : null);
+        if ($notes===null) { return null; }
+        $notes=array_values(array_filter(array_map(static function ($note): string { return is_string($note)?trim($note):''; },$notes),'strlen'));
+        return $notes?array_slice($notes,0,10):null;
+    }
+
+    /** @return array{status:int,body:string} */
+    private function webhook(string $url,array $ctx,array $rule): array
+    {
+        // {id_order} / {order_id} in the address = SalesCenter order ID (e.g. ?action=computers_spec&id={id_order}).
+        $url=str_replace(['{id_order}','{order_id}'],rawurlencode((string)(int)$ctx['order']['id']),$url);
         $parts=parse_url($url);
         $host=strtolower((string)($parts['host']??'')); $port=(int)($parts['port']??443);
         if (strtolower((string)($parts['scheme']??''))!=='https' || $host==='' || isset($parts['user']) || !in_array($port,[443,8443],true)) { throw new InvalidArgumentException('Webhook wymaga publicznego adresu https:// (port 443 lub 8443).'); }
@@ -1261,11 +1388,16 @@ final class OrderAutomationService
             CURLOPT_HTTPHEADER=>['Content-Type: application/json','User-Agent: SalesCenter-Automation/1.0','X-SalesCenter-Event: '.$ctx['trigger']],
         ]);
         if (defined('CURLOPT_PROTOCOLS')) { curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS); }
-        curl_exec($curl);
+        $body=curl_exec($curl);
         $error=curl_error($curl); $status=(int)curl_getinfo($curl,CURLINFO_RESPONSE_CODE);
         curl_close($curl);
         if ($error!=='') { throw new RuntimeException('Webhook nie odpowiedział: '.$error); }
-        if ($status<200 || $status>=300) { throw new RuntimeException('Webhook zwrócił HTTP '.$status.'.'); }
-        return $status;
+        $body=is_string($body)?mb_substr($body,0,200000,'UTF-8'):'';
+        if ($status<200 || $status>=300) {
+            $reply=json_decode($body,true);
+            $reason=is_array($reply) && is_string($reply['error']??null) ? ': '.mb_substr(trim($reply['error']),0,300,'UTF-8') : '.';
+            throw new RuntimeException('Webhook zwrócił HTTP '.$status.$reason);
+        }
+        return ['status'=>$status,'body'=>$body];
     }
 }

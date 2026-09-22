@@ -1208,6 +1208,11 @@ class ComputersController extends Controller
         }
 
         $bulkAction = trim((string) $this->input('bulk_action', ''));
+        // Import CSV wskazuje produkty kolumna IDENTITY, wiec nie wymaga zaznaczenia na liscie.
+        if ($bulkAction === 'import_ean') {
+            $this->importEanCsv();
+            return;
+        }
         $productIds = $this->selectedComputerProductIdsFromRequest();
         if ($bulkAction !== '' && $productIds !== array()) {
             $this->handleProductsBulkAction($bulkAction, $productIds);

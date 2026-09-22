@@ -19,6 +19,7 @@ use App\Controllers\MediaController;
 use App\Controllers\MediaMarktController;
 use App\Controllers\ProductController;
 use App\Controllers\PrintTemplateController;
+use App\Controllers\SalescenterController;
 use App\Controllers\SellasistController;
 use App\Controllers\TaskboardController;
 use App\Controllers\TemuController;
@@ -85,6 +86,9 @@ class Application
                 break;
             case 'sellasist':
                 $controller = new SellasistController();
+                break;
+            case 'salescenter':
+                $controller = new SalescenterController();
                 break;
             case 'printtemplates':
                 $controller = new PrintTemplateController();

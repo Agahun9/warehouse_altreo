@@ -84,6 +84,7 @@ final class OrdersController extends Controller
             if ($detail['platform']==='altreo') { $sellerId=(string)($detail['details']['raw']['admin_url']??''); }
             $detail['source_order_url']=$this->sourceOrderUrl((string)$detail['platform'],(string)$detail['external_id'],$sellerId);
             $detail['raw_debug']=json_encode($detail['details']['raw']??[],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $detail['notes']=$repo->notes((int)$detail['id']);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
             $orderDocs=$this->db()->fetchAll('SELECT id,number,kind,created_at FROM om_documents WHERE order_id=:id ORDER BY id DESC',['id'=>$detail['id']]);
             foreach ($orderDocs as $orderDocument) {
@@ -281,15 +282,42 @@ final class OrdersController extends Controller
                 $db->transaction(function () use ($repo,$db,$id,$status,$actor) {
                     $order=$repo->order($id);
                     if ((int)$order['status_id']!==$status) { $repo->changeStatus($id,$status,$actor); }
-                    $note=mb_substr((string)($_POST['note']??''),0,10000);
+                    // Notes are edited one by one through ordernote().
                     $tags=mb_substr((string)($_POST['tags']??''),0,1000);
-                    if ((string)$order['note']!==$note || (string)$order['tags']!==$tags) {
-                        $db->update('om_orders',['note'=>$note,'tags'=>$tags,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
+                    if ((string)$order['tags']!==$tags) {
+                        $db->update('om_orders',['tags'=>$tags,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
                     }
                 });
             } catch (\Throwable $e) { $repo->discardAutomations(); throw $e; }
             $repo->flushAutomations();
             $this->jsonResponse(['ok'=>true,'saved_at'=>date('H:i:s')]);
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
+    }
+    /** Adds (op=add), edits (op=update) or deletes (op=delete) one internal note; returns the order's notes. */
+    public function ordernote(): void
+    {
+        try {
+            if (!$this->apiUser(true)) { return; }
+            if (!$this->isPost()) { $this->jsonResponse(['error'=>'Wymagany POST.','code'=>'METHOD_NOT_ALLOWED'],405); return; }
+            if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { $this->jsonResponse(['error'=>'Token formularza wymaga odświeżenia.','code'=>'CSRF_EXPIRED'],419); return; }
+            $orderId=(int)($_POST['order_id']??0); $noteId=(int)($_POST['note_id']??0); $op=(string)($_POST['op']??'');
+            if ($orderId<1) { throw new InvalidArgumentException('Nieprawidłowe zamówienie.'); }
+            $user=$this->currentUser(); $actor=(string)($user['name']??$user['email']??('użytkownik #'.($user['id']??0)));
+            $repo=$this->repository(); $body=(string)($_POST['body']??'');
+            if ($op==='add') {
+                $repo->addNote($orderId,$body,$actor);
+                $repo->event($orderId,'Dodano notatkę.',$actor);
+            } elseif ($op==='update' && $noteId>0) {
+                $repo->updateNote($orderId,$noteId,$body,$actor);
+                $repo->event($orderId,'Zmieniono notatkę.',$actor);
+            } elseif ($op==='delete' && $noteId>0) {
+                $repo->deleteNote($orderId,$noteId);
+                $repo->event($orderId,'Usunięto notatkę.',$actor);
+            } else {
+                throw new InvalidArgumentException('Nieznana operacja na notatce.');
+            }
+            $this->jsonResponse(['ok'=>true,'notes'=>$repo->notes($orderId)]);
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
     }
@@ -357,8 +385,8 @@ final class OrdersController extends Controller
                 case 'order':
                     $db->transaction(function () use ($repo,$db,$id,$actor) {
                         $repo->changeStatus($id,(int)$_POST['status_id'],$actor);
-                        $db->update('om_orders',['note'=>substr((string)($_POST['note']??''),0,10000),'tags'=>substr((string)($_POST['tags']??''),0,1000)],'id=:id',['id'=>$id]);
-                        $repo->event($id,'Zapisano notatkę i tagi.',$actor);
+                        $db->update('om_orders',['tags'=>substr((string)($_POST['tags']??''),0,1000)],'id=:id',['id'=>$id]);
+                        $repo->event($id,'Zapisano tagi.',$actor);
                     });
                     break;
                 case 'order_details':
@@ -434,7 +462,8 @@ final class OrdersController extends Controller
                 case 'run_rule':
                     $ids=isset($_POST['ids'])?array_values(array_unique(array_filter(array_map('intval',(array)$_POST['ids'])))):($id>0?[$id]:[]);
                     if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
-                    $report=$repo->automation()->runManual($ids,(int)($_POST['rule_id']??0),$actor);
+                    $button=isset($_POST['rule_group'])?(isset($_POST['ids'])?'list':'order'):'';
+                    $report=$repo->automation()->runManual($ids,(int)($_POST['rule_group']??$_POST['rule_id']??0),$actor,$button);
                     if (isset($_POST['ids'])) { $tab='list'; $id=0; } else { $redirectQuery='#om-automation'; }
                     if ($report['errors']) { throw new InvalidArgumentException($report['message']); }
                     $successMessage=$report['message'];

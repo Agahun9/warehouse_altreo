@@ -109,8 +109,6 @@
   });
   document.querySelectorAll('[data-auto-order-settings]').forEach(form => {
     const state = form.querySelector('[data-autosave-state]');
-    const note = form.querySelector('textarea[name="note"]');
-    const topNote = document.querySelector('.om-editor-note-body');
     let timer = 0, requestVersion = 0;
     const setState = (message, kind = '') => {
       if (!state) return;
@@ -126,23 +124,100 @@
         const data = await request('orderautosave', body);
         if (version !== requestVersion) return;
         setState(`Zapisano ${data.saved_at || ''}`.trim(), 'saved');
-        if (topNote && note) {
-          const paragraph = document.createElement('p');
-          paragraph.textContent = note.value.trim() || 'Brak notatek do zamówienia.';
-          if (!note.value.trim()) paragraph.className = 'om-muted';
-          topNote.replaceChildren(paragraph);
-        }
       } catch (error) {
         if (version === requestVersion) setState(error.message, 'error');
       }
     };
     const schedule = () => { clearTimeout(timer); timer = setTimeout(save, 600); };
     form.querySelector('select[name="status_id"]')?.addEventListener('change', save);
-    form.querySelectorAll('input[name="tags"],textarea[name="note"]').forEach(field => {
+    form.querySelectorAll('input[name="tags"]').forEach(field => {
       field.addEventListener('input', schedule);
       field.addEventListener('blur', save);
     });
     form.addEventListener('submit', event => { event.preventDefault(); save(); });
+  });
+
+  document.querySelectorAll('[data-order-notes]').forEach(panel => {
+    const list = panel.querySelector('[data-notes-list]');
+    const count = panel.querySelector('[data-notes-count]');
+    const errorBox = panel.querySelector('[data-notes-error]');
+    const addForm = panel.querySelector('[data-note-add]');
+    const canWrite = panel.dataset.canWrite === '1';
+    let notes = [];
+    try { notes = JSON.parse(panel.dataset.notes || '[]'); } catch (_) { notes = []; }
+    const node = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
+    const button = (icon, label, action, extra = '') => { const el = node('button', `oc-note-btn ${extra}`.trim()); el.type = 'button'; el.dataset.noteAction = action; el.title = label; el.setAttribute('aria-label', label); el.innerHTML = `<i class="bi ${icon}"></i>`; return el; };
+    const showError = message => { errorBox.hidden = !message; errorBox.textContent = message || ''; };
+    const sourceLabel = source => source === 'user' || source === 'legacy' || !source ? '' : source.startsWith('webhook:') ? 'Webhook' : source.startsWith('rule:') ? 'Automatyzacja' : '';
+    const render = () => {
+      count.textContent = String(notes.length);
+      if (!notes.length) { list.replaceChildren(node('li', 'oc-notes-empty', 'Brak notatek do zamówienia.')); return; }
+      list.replaceChildren(...notes.map(note => {
+        const item = node('li', `oc-note-item${note.source && note.source !== 'user' && note.source !== 'legacy' ? ' is-auto' : ''}`); item.dataset.noteId = note.id;
+        const meta = node('div', 'oc-note-meta');
+        const origin = sourceLabel(note.source);
+        if (origin) meta.append(node('span', 'oc-note-source', origin));
+        const when = String(note.updated_at || note.created_at || '').slice(0, 16);
+        const stamp = node('span', '', [note.author, when].filter(Boolean).join(' · ')); stamp.title = `${note.author ? note.author + ' · ' : ''}${note.updated_at || note.created_at} UTC`;
+        meta.append(stamp);
+        if (canWrite) { const tools = node('span', 'oc-note-tools'); tools.append(button('bi-pencil', 'Edytuj notatkę', 'edit'), button('bi-trash', 'Usuń notatkę', 'delete', 'is-danger')); meta.append(tools); }
+        const body = node('p', 'oc-note-body', note.body); body.title = 'Kliknij, aby rozwinąć / zwinąć';
+        item.append(meta, body);
+        return item;
+      }));
+    };
+    const send = async (payload) => {
+      showError('');
+      const data = await request('ordernote', { order_id: panel.dataset.orderId, ...payload });
+      notes = Array.isArray(data.notes) ? data.notes : [];
+      render();
+    };
+    addForm?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const field = addForm.elements.body; const submit = addForm.querySelector('button');
+      if (!field.value.trim()) return;
+      submit.disabled = true;
+      try { await send({ op: 'add', body: field.value }); field.value = ''; }
+      catch (error) { showError(error.message); }
+      finally { submit.disabled = false; }
+    });
+    addForm?.elements.body.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); addForm.requestSubmit(); } });
+    list.addEventListener('click', async event => {
+      const body = event.target.closest('.oc-note-body');
+      if (body) { body.classList.toggle('is-open'); return; }
+      const trigger = event.target.closest('[data-note-action]');
+      if (!trigger) return;
+      const item = trigger.closest('[data-note-id]'); const id = item.dataset.noteId;
+      const note = notes.find(entry => String(entry.id) === id);
+      if (!note) return;
+      if (trigger.dataset.noteAction === 'delete') {
+        if (!window.confirm('Usunąć tę notatkę?')) return;
+        try { await send({ op: 'delete', note_id: id }); } catch (error) { showError(error.message); }
+        return;
+      }
+      if (trigger.dataset.noteAction === 'cancel') { render(); return; }
+      if (trigger.dataset.noteAction === 'edit') {
+        const editor = node('textarea', 'oc-note-editor'); editor.value = note.body; editor.rows = Math.min(12, Math.max(3, note.body.split('\n').length + 1)); editor.maxLength = 10000;
+        const actions = node('div', 'oc-note-edit-actions');
+        const saveButton = node('button', 'oc-note-save', 'Zapisz'); saveButton.type = 'button'; saveButton.dataset.noteAction = 'save';
+        const cancelButton = node('button', 'oc-note-cancel', 'Anuluj'); cancelButton.type = 'button'; cancelButton.dataset.noteAction = 'cancel';
+        actions.append(saveButton, cancelButton);
+        item.querySelector('.oc-note-body').replaceWith(editor); item.append(actions);
+        editor.addEventListener('keydown', keyEvent => {
+          if (keyEvent.key === 'Escape') render();
+          if (keyEvent.key === 'Enter' && (keyEvent.ctrlKey || keyEvent.metaKey)) { keyEvent.preventDefault(); saveButton.click(); }
+        });
+        editor.focus();
+        return;
+      }
+      if (trigger.dataset.noteAction === 'save') {
+        const editor = item.querySelector('.oc-note-editor');
+        if (!editor.value.trim()) { showError('Notatka nie może być pusta. Aby ją usunąć, użyj kosza.'); return; }
+        trigger.disabled = true;
+        try { await send({ op: 'update', note_id: id, body: editor.value }); } catch (error) { showError(error.message); trigger.disabled = false; }
+      }
+    });
+    render();
   });
 
   const filterToggle = document.querySelector('[data-filters-toggle]');

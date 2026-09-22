@@ -41,6 +41,8 @@
                 {if $r.options.run_limit eq 'once'}<span class="oa-badge is-once"><i class="bi bi-1-circle"></i> Raz na zamówienie</span>{else}<span class="oa-badge"><i class="bi bi-arrow-repeat"></i> Przy każdym zdarzeniu</span>{/if}
                 {if $r.options.match eq 'any' && $r.conditions}<span class="oa-badge"><i class="bi bi-signpost-split"></i> Dowolny warunek</span>{elseif $r.options.match eq 'mixed'}<span class="oa-badge"><i class="bi bi-signpost-split"></i> Warunki ORAZ / LUB</span>{/if}
                 {if $r.options.button_order}<span class="oa-badge is-button"><i class="bi bi-hand-index-thumb"></i> Przycisk w zamówieniu</span>{/if}
+                {if $r.options.button_order && $r.options.shortcut}<span class="oa-badge is-button" title="Skrót klawiszowy w zamówieniu"><i class="bi bi-keyboard"></i> {$r.options.shortcut|escape}</span>{/if}
+                {if $r.variants gt 1}<span class="oa-badge" title="Reguły o tej samej nazwie tworzą jeden przycisk — uruchamia się pierwsza (od góry), której warunki pasują."><i class="bi bi-diagram-2"></i> Wariant · {$r.variants} o tej nazwie</span>{/if}
                 {if $r.options.button_list}<span class="oa-badge is-button"><i class="bi bi-list-check"></i> Akcja na liście</span>{/if}
                 {if $r.options.stop_on_error}<span class="oa-badge"><i class="bi bi-sign-stop"></i> Stop po błędzie</span>{/if}
               </div>

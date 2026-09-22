@@ -19,7 +19,7 @@ final class Tenant
 {
     /** Tabele należące do firmy. Tabele globalne SaaS mają prefiks `sc_` i nie są tu wymienione. */
     public const TABLES = [
-        'om_statuses', 'om_accounts', 'om_orders', 'om_mappings', 'om_events', 'om_rules', 'om_rule_runs',
+        'om_statuses', 'om_accounts', 'om_orders', 'om_mappings', 'om_events', 'om_order_notes', 'om_rules', 'om_rule_runs',
         'om_settings', 'om_series', 'om_documents', 'om_shipments', 'om_carrier_accounts', 'om_payment_methods',
         'om_payment_mappings', 'om_ksef_accounts', 'om_ksef_submissions', 'om_connections',
         'om_msg_threads', 'om_msg_messages', 'om_msg_rules', 'om_msg_rule_runs',

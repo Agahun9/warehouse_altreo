@@ -345,3 +345,14 @@
 @media (max-width:1400px){.oa-layout{grid-template-columns:minmax(0,1fr) 300px}.oa-hero{grid-template-columns:minmax(0,1fr) auto}.oa-hero-stats{grid-column:1/-1;grid-row:2}.oa-hero-button{grid-column:2;grid-row:1}}
 @media (max-width:1180px){.oa-layout{grid-template-columns:1fr}.oa-side{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.oa-builder{grid-template-columns:1fr;gap:14px}.oa-builder-arrow{display:none}.oa-order-grid{grid-template-columns:1fr}}
 @media (max-width:760px){.oa-hero{grid-template-columns:1fr;padding:16px}.oa-hero-button{grid-column:auto;grid-row:auto}.oa-hero-stats{grid-row:auto;display:grid;grid-template-columns:repeat(2,1fr)}.oa-flow{grid-template-columns:1fr;gap:6px}.oa-flow-arrow span{transform:rotate(90deg)}.oa-rule-head{flex-wrap:wrap}.oa-rule-title{flex-basis:calc(100% - 90px)}.oa-rule-tools{width:100%;justify-content:flex-end}.oa-trigger-options,.oa-step-body{grid-template-columns:1fr}.oa-cond,.oa-cond.is-new{grid-template-columns:minmax(0,1fr) 30px}.oa-cond>select:first-child{grid-column:1/2}.oa-cond>.oa-icon-btn{grid-column:2;grid-row:1}.oa-cond-op-static,.oa-cond>select:nth-child(2),.oa-cond-value,.oa-cond-placeholder{grid-column:1/-1}.oa-editor-head{flex-direction:column;align-items:stretch}.oa-editor-foot{flex-direction:column;align-items:stretch}.oa-editor-foot-actions{justify-content:flex-end}.oa-builder{padding:12px}.oa-block-head{flex-wrap:wrap}.oa-bulk{flex-wrap:wrap}}
+/* Keyboard shortcut of the order button */
+.oa-shortcut{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin:-2px 0 0 48px;padding:9px 10px;border:1px dashed var(--oa-line);border-radius:10px;background:#fbfcfe}
+.oa-shortcut[hidden]{display:none}
+.oa-shortcut-field{display:flex;align-items:center;gap:4px}
+.oa-shortcut-input{width:150px;height:32px;padding:0 10px;border:1px solid #d6dce8;border-radius:8px;background:#fff;color:var(--oa-ink);font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:center;cursor:pointer}
+.oa-shortcut-input:focus{outline:2px solid var(--oa-when);outline-offset:1px;border-color:transparent}
+.oa-shortcut-input::placeholder{font-family:inherit;font-weight:500;color:#9aa3b5}
+.oa-kbd{display:inline-block;margin-left:auto;padding:1px 6px;border:1px solid #d9deea;border-bottom-width:2px;border-radius:5px;background:#f7f8fb;color:#56607a;font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+.oa-run-pop button span{flex:1;min-width:0}
+.oa-run-pop button small{padding:0;color:#8a94a8;font-size:10px;font-weight:600;letter-spacing:0}
+@media(max-width:600px){.oa-shortcut{grid-template-columns:1fr;margin-left:0}.oa-shortcut-input{width:100%}.oa-shortcut-field{width:100%}}
