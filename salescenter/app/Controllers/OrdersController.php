@@ -203,7 +203,7 @@ final class OrdersController extends Controller
             'series'=>$series,
             'seller'=>$repo->setting('seller')+['name'=>'','nip'=>'','address'=>'','bank'=>'','bank_name'=>'','swift'=>'','email'=>'','phone'=>'','regon'=>'','krs'=>'','bdo'=>''],
             'documents'=>$documents,'documentSeriesFilter'=>$documentSeriesFilter,'ksefAccounts'=>$ksef->accounts(),'ksefTargets'=>$ksef->targets($ksefDocumentIds),'ksefSubmissions'=>$ksefSubmissions,
-            'shipments'=>$shipmentRegister,'shippingProviders'=>$tab==='shipments'?ShippingProviders::catalog($this->carrierAccountStats($carrierAccounts),$repo->accounts()):[],
+            'shipments'=>$shipmentRegister,'deliveryOverview'=>$tab==='shipments'?OrderShipmentService::deliveryOverview($repo):[],'shippingProviders'=>$tab==='shipments'?ShippingProviders::catalog($this->carrierAccountStats($carrierAccounts),$repo->accounts()):[],
             'shippingView'=>['selected'=>(int)$this->input('carrier',0),'add'=>preg_replace('/[^a-z_]/','',(string)$this->input('add',''))],
             'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
             'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
@@ -250,7 +250,7 @@ final class OrdersController extends Controller
         try {
             if (!$this->apiUser(false)) { return; }
             $orderId=(int)$this->input('order_id',0); $carrierAccountId=(int)$this->input('carrier_account_id',0);
-            if ($orderId<1 || $carrierAccountId<1) { $this->jsonResponse(['error'=>'Wybierz zamówienie i konto nadawcze.','code'=>'INVALID_INPUT'],422); return; }
+            if ($orderId<0 || $carrierAccountId<1) { $this->jsonResponse(['error'=>'Wybierz konto nadawcze.','code'=>'INVALID_INPUT'],422); return; }
             $this->releaseSessionLock();
             $this->jsonResponse((new OrderShipmentService($this->repository()))->options($orderId,$carrierAccountId));
         } catch (InvalidArgumentException $e) {
@@ -293,6 +293,23 @@ final class OrdersController extends Controller
             } catch (\Throwable $e) { $repo->discardAutomations(); throw $e; }
             $repo->flushAutomations();
             $this->jsonResponse(['ok'=>true,'saved_at'=>date('H:i:s')]);
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
+    }
+    public function orderstar(): void
+    {
+        try {
+            if (!$this->apiUser(true)) { return; }
+            if (!$this->isPost()) { $this->jsonResponse(['error'=>'Wymagany POST.','code'=>'METHOD_NOT_ALLOWED'],405); return; }
+            if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { $this->jsonResponse(['error'=>'Token formularza wymaga odświeżenia.','code'=>'CSRF_EXPIRED'],419); return; }
+            $id=(int)($_POST['order_id']??0);
+            if ($id<1) { throw new InvalidArgumentException('Nieprawidłowe zamówienie.'); }
+            $starred=!empty($_POST['starred']);
+            $user=$this->currentUser(); $actor=(string)($user['name']??$user['email']??('użytkownik #'.($user['id']??0)));
+            $repo=$this->repository(); $repo->order($id);
+            $repo->setStarred($id,$starred);
+            $repo->event($id,$starred?'Oznaczono gwiazdką.':'Usunięto gwiazdkę.',$actor);
+            $this->jsonResponse(['ok'=>true,'starred'=>$starred]);
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
     }
@@ -762,16 +779,29 @@ final class OrdersController extends Controller
                 case 'shipping_defaults':
                     $accountId=(int)($_POST['default_carrier_account_id']??0);
                     if ($accountId && !$db->fetchColumn('SELECT id FROM om_carrier_accounts WHERE id=:id AND enabled=1',['id'=>$accountId])) { throw new InvalidArgumentException('Wybierz aktywne konto nadawcze.'); }
-                    $number=static function (array $source,string $key,float $min,float $max): float { $value=filter_var($source[$key]??null,FILTER_VALIDATE_FLOAT); if ($value===false||$value<$min||$value>$max) { [$size,$field]=array_pad(explode('_',$key,2),2,''); throw new InvalidArgumentException('Sprawdź '.(['length'=>'długość','width'=>'szerokość','height'=>'wysokość','weight'=>'wagę'][$field]??$key).' w presecie „'.(['small'=>'Mała','medium'=>'Średnia','large'=>'Duża'][$size]??$size).'” (dozwolone '.$min.'–'.$max.').'); } return (float)$value; };
-                    $presets=[];
-                    foreach (['small','medium','large'] as $size) { $presets[$size]=['length'=>$number($_POST,$size.'_length',1,400),'width'=>$number($_POST,$size.'_width',1,400),'height'=>$number($_POST,$size.'_height',1,400),'weight'=>$number($_POST,$size.'_weight',0.01,1000)]; }
-                    $defaultPackage=(string)($_POST['default_package']??'auto'); if (!in_array($defaultPackage,['auto','small','medium','large'],true)) { $defaultPackage='auto'; }
-                    $service=(string)($_POST['service']??'auto'); if (!in_array($service,['auto','inpost_locker_standard','inpost_courier_standard'],true)) { $service='auto'; }
+                    $presets=$this->packagePresets(is_array($_POST['presets']??null)?$_POST['presets']:[]);
+                    foreach (array_diff(array_keys(OrderShipmentService::defaults($repo)['presets']),array_keys($presets)) as $removed) {
+                        $users=$repo->automation()->rulesUsingPackage((string)$removed);
+                        if ($users) { throw new InvalidArgumentException('Gabaryt „'.(OrderShipmentService::defaults($repo)['presets'][$removed]['name']).'” jest używany przez automatyzację „'.implode('”, „',$users).'”. Najpierw zmień w niej gabaryt albo ją usuń.'); }
+                    }
+                    $current=OrderShipmentService::defaults($repo);
+                    $defaultPackage=(string)($_POST['default_package']??$current['default_package']); if ($defaultPackage!=='auto' && !isset($presets[$defaultPackage])) { $defaultPackage='auto'; }
+                    $service=(string)($_POST['service']??$current['service']); if (!in_array($service,['auto','inpost_locker_standard','inpost_courier_standard'],true)) { $service='auto'; }
                     $bankAccount=preg_replace('/\s+/','',trim((string)($_POST['cod_bank_account']??'')))??'';
                     if (strncasecmp($bankAccount,'PL',2)===0) { $bankAccount=substr($bankAccount,2); }
                     if ($bankAccount!=='' && !preg_match('/^\d{26}$/D',$bankAccount)) { throw new InvalidArgumentException('Numer konta pobrania musi zawierać 26 cyfr (prefiks PL możesz pominąć).'); }
-                    $repo->saveSetting('shipping_defaults',['default_carrier_account_id'=>$accountId,'default_package'=>$defaultPackage,'service'=>$service,'apaczka_service_id'=>(int)($_POST['apaczka_service_id']??0),'pickup_type'=>($_POST['pickup_type']??'SELF')==='COURIER'?'COURIER':'SELF','default_point'=>substr(trim((string)($_POST['default_point']??'')),0,100),'content'=>mb_substr(trim((string)($_POST['shipment_content']??'')),0,180,'UTF-8'),'cod_bank_account'=>$bankAccount,'presets'=>$presets,'sender'=>['name'=>substr(trim((string)($_POST['sender_name']??'')),0,150),'email'=>substr(trim((string)($_POST['sender_email']??'')),0,200),'phone'=>substr(trim((string)($_POST['sender_phone']??'')),0,30),'street'=>substr(trim((string)($_POST['sender_street']??'')),0,150),'building'=>substr(trim((string)($_POST['sender_building']??'')),0,30),'postal_code'=>substr(trim((string)($_POST['sender_postal_code']??'')),0,20),'city'=>substr(trim((string)($_POST['sender_city']??'')),0,100)]]);
+                    $repo->saveSetting('shipping_defaults',['default_carrier_account_id'=>$accountId,'default_package'=>$defaultPackage,'service'=>$service,'apaczka_service_id'=>(int)($_POST['apaczka_service_id']??$current['apaczka_service_id']),'pickup_type'=>($_POST['pickup_type']??'SELF')==='COURIER'?'COURIER':'SELF','default_point'=>substr(trim((string)($_POST['default_point']??'')),0,100),'content'=>mb_substr(trim((string)($_POST['shipment_content']??'')),0,180,'UTF-8'),'cod_bank_account'=>$bankAccount,'presets'=>$presets,'sender'=>['name'=>substr(trim((string)($_POST['sender_name']??'')),0,150),'email'=>substr(trim((string)($_POST['sender_email']??'')),0,200),'phone'=>substr(trim((string)($_POST['sender_phone']??'')),0,30),'street'=>substr(trim((string)($_POST['sender_street']??'')),0,150),'building'=>substr(trim((string)($_POST['sender_building']??'')),0,30),'postal_code'=>substr(trim((string)($_POST['sender_postal_code']??'')),0,20),'city'=>substr(trim((string)($_POST['sender_city']??'')),0,100)]]);
                     $repo->saveSetting('document_defaults',['vat'=>in_array((string)($_POST['default_vat']??'23'),['23','8','5','0','zw','np'],true)?(string)$_POST['default_vat']:'23']);
+                    break;
+                case 'delivery_mapping':
+                    $carrierId=(int)($_POST['carrier_account_id']??0);
+                    OrderShipmentService::saveDeliveryMapping($repo,preg_replace('/[^a-z_]/','',(string)($_POST['platform']??''))??'',(string)($_POST['delivery']??''),$carrierId,(string)($_POST['service']??''));
+                    $successMessage=$carrierId===0?'Metoda dostawy będzie dobierana automatycznie.':($carrierId<0?'Metoda dostawy nie będzie nadawana automatycznie.':'Zapisano mapowanie metody dostawy.');
+                    $redirectQuery='#om-delivery-mapping';
+                    break;
+                case 'rule_shipping_buttons':
+                    $created=$repo->automation()->createShippingButtons();
+                    $successMessage=$created?'Utworzono automatyzacje: '.implode(', ',$created).'. Przyciski są w zamówieniu i na liście (akcja masowa).':'Automatyzacje nadawania dla wszystkich gabarytów już istnieją.';
                     break;
                 default: throw new InvalidArgumentException('Nieznana operacja.');
             }
@@ -881,6 +911,29 @@ final class OrdersController extends Controller
     private function documentPayload(OrderRepository $repo,array $order,string $buyerKind,string $requestKey,array $series=[]): array
     {
         return OrderDocumentService::orderPayload($repo,$order,$buyerKind,$requestKey,$series);
+    }
+    /** Gabaryty z formularza presets[n][key|name|length|width|height|weight]; zachowuje kolejność i klucze istniejących. */
+    private function packagePresets(array $rows): array
+    {
+        $presets=[]; $names=[];
+        $number=static function (array $row,string $field,float $min,float $max,string $name): float {
+            $value=filter_var(str_replace(',','.',(string)($row[$field]??'')),FILTER_VALIDATE_FLOAT);
+            if ($value===false || $value<$min || $value>$max) { throw new InvalidArgumentException('Sprawdź '.['length'=>'długość','width'=>'szerokość','height'=>'wysokość','weight'=>'wagę'][$field].' w gabarycie „'.$name.'” (dozwolone '.$min.'–'.$max.').'); }
+            return (float)$value;
+        };
+        foreach ($rows as $row) {
+            if (!is_array($row)) { continue; }
+            $name=mb_substr(trim((string)($row['name']??'')),0,60,'UTF-8');
+            if ($name==='') { throw new InvalidArgumentException('Każdy gabaryt musi mieć nazwę.'); }
+            if (isset($names[mb_strtolower($name,'UTF-8')])) { throw new InvalidArgumentException('Gabaryt „'.$name.'” występuje dwa razy – nazwy muszą być różne.'); }
+            $names[mb_strtolower($name,'UTF-8')]=true;
+            $key=(string)($row['key']??'');
+            if (!preg_match('/^[a-z0-9_]{1,40}$/D',$key) || isset($presets[$key])) { $key='p'.bin2hex(random_bytes(4)); }
+            $presets[$key]=['name'=>$name,'length'=>$number($row,'length',1,400,$name),'width'=>$number($row,'width',1,400,$name),'height'=>$number($row,'height',1,400,$name),'weight'=>$number($row,'weight',0.01,1000,$name)];
+        }
+        if (!$presets) { throw new InvalidArgumentException('Zostaw przynajmniej jeden gabaryt paczki.'); }
+        if (count($presets)>OrderShipmentService::MAX_PRESETS) { throw new InvalidArgumentException('Możesz zdefiniować maksymalnie '.OrderShipmentService::MAX_PRESETS.' gabarytów.'); }
+        return $presets;
     }
     private function shippingDefaults(OrderRepository $repo): array
     {

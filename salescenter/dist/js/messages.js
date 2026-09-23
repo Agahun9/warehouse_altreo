@@ -65,17 +65,49 @@
     }
   }
 
-  // Zaznaczanie wątków do zmiany statusu.
+  // Zaznaczanie wątków do zmiany statusu: pojedynczo, wszystkie naraz i zakres z Shiftem.
   var bulk = document.querySelector('[data-ms-bulk]');
   if (bulk) {
     var actions = bulk.querySelector('[data-ms-bulk-actions]');
     var selected = bulk.querySelector('[data-ms-selected]');
-    bulk.addEventListener('change', function (event) {
-      if (!event.target.matches('[data-ms-check]') || !actions) { return; }
-      var count = bulk.querySelectorAll('[data-ms-check]:checked').length;
-      actions.hidden = count === 0;
-      selected.textContent = String(count);
+    var all = bulk.querySelector('[data-ms-check-all]');
+    var boxes = function () { return Array.prototype.slice.call(bulk.querySelectorAll('[data-ms-check]')); };
+    var anchor = null;
+    var refresh = function () {
+      var list = boxes();
+      var count = list.filter(function (box) { return box.checked; }).length;
+      if (actions) { actions.hidden = count === 0; }
+      if (selected) { selected.textContent = String(count); }
+      list.forEach(function (box) { box.closest('.ms-row').classList.toggle('is-picked', box.checked); });
+      if (all) {
+        all.checked = count > 0 && count === list.length;
+        all.indeterminate = count > 0 && count < list.length;
+      }
+    };
+    if (all) {
+      all.addEventListener('change', function () {
+        boxes().forEach(function (box) { box.checked = all.checked; });
+        anchor = null;
+        refresh();
+      });
+    }
+    // Shift + klik zaznacza (albo odznacza) wszystko między ostatnim klikniętym a bieżącym wątkiem.
+    bulk.addEventListener('click', function (event) {
+      var box = event.target.closest ? event.target.closest('[data-ms-check]') : null;
+      if (!box) { return; }
+      var list = boxes();
+      if (event.shiftKey && anchor && anchor !== box && list.indexOf(anchor) !== -1) {
+        var from = list.indexOf(anchor);
+        var to = list.indexOf(box);
+        list.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(function (item) { item.checked = box.checked; });
+      }
+      anchor = box;
+      refresh();
     });
+    bulk.addEventListener('change', function (event) {
+      if (event.target.matches('[data-ms-check]')) { refresh(); }
+    });
+    refresh();
   }
 
   // Edytor reguły: gotowe szablony, znaczniki, podgląd.

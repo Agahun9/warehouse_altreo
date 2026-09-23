@@ -9,6 +9,7 @@ use App\Models\MessageRepository;
 use App\Models\OrderRepository;
 use App\Services\Messages\AllegroMessages;
 use App\Services\Messages\MessageCenter;
+use App\Services\Messages\MoreleLog;
 use App\Services\Messages\MoreleMessages;
 use InvalidArgumentException;
 
@@ -36,7 +37,7 @@ final class MessagesController extends Controller
         $filters = [
             'platform' => preg_replace('/[^a-z]/', '', (string) $this->input('platform', '')),
             'kind' => preg_replace('/[^a-z]/', '', (string) $this->input('kind', '')),
-            'status' => preg_replace('/[^a-z]/', '', (string) $this->input('status', 'open')) ?: 'open',
+            'status' => preg_replace('/[^a-z0-9_]/', '', (string) $this->input('status', 'open')) ?: 'open',
             'connection' => (int) $this->input('connection', 0),
             'q' => mb_substr(trim((string) $this->input('q', '')), 0, 100, 'UTF-8'),
             'page' => max(1, (int) $this->input('page', 1)),
@@ -75,13 +76,32 @@ final class MessagesController extends Controller
             'filters' => $filters, 'filterQuery' => $query, 'backQuery' => 'tab=inbox'.($query !== '' ? '&'.$query : '').($listing['page'] > 1 ? '&page='.$listing['page'] : '').($thread ? '&id='.(int) $thread['id'] : ''), 'listing' => $listing,
             'counters' => $repo->counters(), 'platforms' => $platforms, 'accounts' => $accounts,
             'thread' => $thread, 'messages' => $messages, 'threadView' => $threadView,
-            'statuses' => MessageRepository::STATUSES, 'kindLabels' => MessageRepository::KIND_LABELS, 'platformLabels' => MessageRepository::PLATFORMS,
+            'statuses' => $repo->statuses(), 'statusCounts' => $repo->statusCounts($filters), 'kindLabels' => MessageRepository::KIND_LABELS, 'platformLabels' => MessageRepository::PLATFORMS,
             'rules' => $tab === 'rules' ? $repo->rules() : [], 'editRule' => $editRule, 'runLog' => $tab === 'rules' ? $repo->runLog(30) : [],
             'triggers' => MessageRepository::TRIGGERS, 'afterStatuses' => MessageRepository::AFTER_STATUSES, 'placeholders' => MessageCenter::PLACEHOLDERS,
             'issueStatuses' => AllegroMessages::ISSUE_STATUSES, 'moreleTypes' => MoreleMessages::TYPES,
             'replyTemplatesJson' => json_encode($templates, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
             'threadJson' => $thread ? json_encode(['klient' => $thread['customer_name'] ?: $thread['customer_login'], 'zamowienie' => $thread['order_external_id'], 'temat' => $thread['subject'], 'numer' => $thread['meta']['reference'] ?? '', 'platforma' => MessageRepository::PLATFORMS[$thread['platform']] ?? '', 'podpis' => $settings[$thread['platform']]['signature'] ?? ''], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) : '{}',
             'syncStates' => array_map(static function (array $account): array { $sync = (array) $account['sync']; return ['last' => !empty($sync['last_sync']) ? self::local((string) $sync['last_sync']) : '', 'error' => (string) ($sync['error'] ?? '')]; }, array_column($accounts, null, 'id')),
+        ]);
+    }
+
+    /** Tymczasowy log diagnostyczny Morele: podgląd w panelu albo pobranie jako plik tekstowy. */
+    public function log(): void
+    {
+        $user = $this->requireModule('orders');
+        $content = MoreleLog::tail();
+        if ((string) $this->input('download', '') !== '') {
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Content-Disposition: attachment; filename="morele-messages.log"');
+            header('Cache-Control: no-store, private');
+            echo $content;
+            return;
+        }
+        header('Cache-Control: no-store, private');
+        $this->render('messages/log', [
+            'pageTitle' => 'Log Morele', 'csrf' => $this->csrfToken(), 'canWrite' => $this->moduleAccessLevel($user, 'orders') === 'edit',
+            'logContent' => $content, 'logSize' => MoreleLog::size(),
         ]);
     }
 
@@ -177,12 +197,11 @@ final class MessagesController extends Controller
                 case 'sync':
                     // Synchronizacja trwa długo (wiele wywołań API) – zwolnij sesję, żeby inne karty nie czekały; setFlash() otworzy ją ponownie.
                     $this->releaseSessionLock();
-                    $report =$center->sync(true, (int) ($_POST['connection_id'] ?? 0));
-                    $errors = array_filter(array_column($report, 'error'));
-                    $threads = array_sum(array_column($report, 'threads'));
-                    $auto = array_sum(array_column($report, 'auto'));
-                    if (!$report) { $this->setFlash('error', 'Brak aktywnych kont z włączonymi wiadomościami. Podłącz konto w „Konta i import” albo włącz synchronizację w ustawieniach.'); }
-                    else { $this->setFlash($errors ? 'error' : 'success', 'Synchronizacja: '.count($report).' kont, zaktualizowane wątki: '.$threads.($auto ? ', autoodpowiedzi: '.$auto : '').'.'.($errors ? ' Błędy: '.implode(' | ', $errors) : '')); }
+                    $this->reportFlash($center->sync(true, (int) ($_POST['connection_id'] ?? 0)), 'Synchronizacja');
+                    break;
+                case 'backfill':
+                    $this->releaseSessionLock();
+                    $this->reportFlash($center->backfill((int) ($_POST['connection_id'] ?? 0), (int) ($_POST['days'] ?? 30)), 'Pobieranie starszych wiadomości');
                     break;
                 case 'probe':
                     $this->releaseSessionLock();
@@ -218,6 +237,16 @@ final class MessagesController extends Controller
                     $center->resolveIncident((int) $_POST['thread_id'], array_map('strval', (array) ($_POST['lines'] ?? [])), (string) ($_POST['reason'] ?? ''), $actor);
                     $this->setFlash('success', 'Incydent oznaczony jako rozwiązany.');
                     break;
+                case 'status_save':
+                    $repo->saveStatuses($_POST);
+                    $this->setFlash('success', 'Zapisano statusy wiadomości.');
+                    $back = './index.php?controller=messages&tab=settings';
+                    break;
+                case 'status_delete':
+                    $repo->deleteStatus((string) ($_POST['code'] ?? ''));
+                    $this->setFlash('success', 'Status usunięty – wątki, które go miały, wróciły do „Do odpowiedzi”.');
+                    $back = './index.php?controller=messages&tab=settings';
+                    break;
                 case 'settings':
                     $platform = (string) ($_POST['platform'] ?? '');
                     $repo->saveSettings($platform, $_POST);
@@ -227,6 +256,11 @@ final class MessagesController extends Controller
                     $id = $repo->saveRule((int) ($_POST['rule_id'] ?? 0), $_POST);
                     $this->setFlash('success', 'Reguła autoodpowiedzi zapisana.');
                     $back = './index.php?controller=messages&tab=rules&rule='.$id;
+                    break;
+                case 'log_clear':
+                    MoreleLog::clear();
+                    $this->setFlash('success', 'Log diagnostyczny Morele wyczyszczony.');
+                    $back = './index.php?controller=messages&action=log';
                     break;
                 case 'rule_toggle': $repo->toggleRule((int) $_POST['rule_id']); break;
                 case 'rule_delete': $repo->deleteRule((int) $_POST['rule_id']); $this->setFlash('success', 'Reguła usunięta.'); break;
@@ -241,10 +275,25 @@ final class MessagesController extends Controller
         $this->redirect($back);
     }
 
+    /** Wynik synchronizacji w komunikacie: liczby z raportu, uwagi źródeł i błędy kont. */
+    private function reportFlash(array $report, string $label): void
+    {
+        if (!$report) {
+            $this->setFlash('error', 'Brak aktywnych kont z włączonymi wiadomościami. Podłącz konto w „Konta i import” albo włącz synchronizację w ustawieniach.');
+            return;
+        }
+        $errors = array_filter(array_column($report, 'error'));
+        $notes = array_merge([], ...array_map(static function (array $row): array { return (array) ($row['notes'] ?? []); }, $report));
+        $auto = array_sum(array_column($report, 'auto'));
+        $this->setFlash($errors ? 'error' : 'success', $label.': '.count($report).' kont, wątki na liście marketplace: '.array_sum(array_column($report, 'listed'))
+            .', zaktualizowane wątki: '.array_sum(array_column($report, 'threads')).($auto ? ', autoodpowiedzi: '.$auto : '').'.'
+            .($notes ? ' '.implode(' ', $notes) : '').($errors ? ' Błędy: '.implode(' | ', $errors) : ''));
+    }
+
     /** Powrót do tego samego widoku (zakładka, filtry, wątek) – tylko znane parametry. */
     private function backQuery(): string
     {
-        $allowed = ['tab' => '/^(inbox|rules|settings)$/', 'platform' => '/^[a-z]{1,20}$/', 'kind' => '/^[a-z]{1,20}$/', 'status' => '/^[a-z]{1,20}$/', 'connection' => '/^\d{1,10}$/', 'q' => '/^.{0,100}$/u', 'page' => '/^\d{1,5}$/', 'id' => '/^\d{1,12}$/'];
+        $allowed = ['tab' => '/^(inbox|rules|settings)$/', 'platform' => '/^[a-z]{1,20}$/', 'kind' => '/^[a-z]{1,20}$/', 'status' => '/^[a-z0-9_]{1,20}$/', 'connection' => '/^\d{1,10}$/', 'q' => '/^.{0,100}$/u', 'page' => '/^\d{1,5}$/', 'id' => '/^\d{1,12}$/'];
         $params = [];
         parse_str((string) ($_POST['back'] ?? ''), $source);
         foreach ($allowed as $key => $pattern) {

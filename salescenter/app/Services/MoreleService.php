@@ -17,6 +17,9 @@ final class MoreleService extends MarketplaceIntegration
     public function platform(): string { return 'morele'; }
     protected function label(): string { return 'Morele'; }
 
+    /** @var callable|null Log diagnostyczny centrum komunikacji (ustawiany przez MoreleMessages); nagłówków nie logujemy. */
+    public $logger = null;
+
     /** @var array Tokeny uzyskane w tym żądaniu – zapisywane w połączeniu także przy pierwszym łączeniu. */
     private $issued = [];
     private $offerImages = [];
@@ -134,12 +137,24 @@ final class MoreleService extends MarketplaceIntegration
             if ($json !== null) { $headers[] = 'Content-Type: application/json'; $body = $json; }
             return Http::json('Morele', $method, $url, $headers, $body);
         };
+        $log = $this->logger;
+        if ($log !== null) { $log('żądanie', ['method' => $method, 'url' => $url, 'body' => $json]); }
         try {
-            return $call(false);
+            $response = $call(false);
         } catch (RuntimeException $e) {
-            if (strpos($e->getMessage(), '[401]') === false || strpos($e->getMessage(), 'Wygeneruj') !== false) { throw $e; }
-            return $call(true);
+            if (strpos($e->getMessage(), '[401]') === false || strpos($e->getMessage(), 'Wygeneruj') !== false) {
+                if ($log !== null) { $log('błąd', ['url' => $url, 'message' => $e->getMessage()]); }
+                throw $e;
+            }
+            try {
+                $response = $call(true);
+            } catch (RuntimeException $retry) {
+                if ($log !== null) { $log('błąd po odświeżeniu tokenu', ['url' => $url, 'message' => $retry->getMessage()]); }
+                throw $retry;
+            }
         }
+        if ($log !== null) { $log('odpowiedź', ['url' => $url, 'data' => $response]); }
+        return $response;
     }
 
     /**

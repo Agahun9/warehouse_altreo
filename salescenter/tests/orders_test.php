@@ -565,4 +565,20 @@ $notesHtml=$smarty->fetch('orders/index.tpl');
 preg_match('/data-notes="([^"]*)"/',$notesHtml,$notesAttr);
 check(array_column(json_decode(html_entity_decode($notesAttr[1]??'',ENT_QUOTES,'UTF-8'),true)?:[],'body')===['Stara notatka','Spec B'],'Notes JSON attribute decodes');
 check(strpos($notesHtml,'data-order-notes')!==false && strpos($notesHtml,'Spec B')!==false && strpos($notesHtml,'textarea name="note"')===false,'Notes panel renders with notes data');
+check(strpos($notesHtml,'data-star-banner hidden')!==false,'Star banner hidden for unstarred order');
+$repo->setStarred($notesOrderId,true);
+check((int)$repo->order($notesOrderId)['starred']===1,'Order starred');
+$starredRows=array_column($repo->listing([])['rows'],'starred','id');
+check((int)($starredRows[$notesOrderId]??0)===1,'Listing exposes star');
+$starDetail=$repo->order($notesOrderId); $starDetail['notes']=$repo->notes($notesOrderId);
+$smarty->assign(['detail'=>$starDetail]);
+$starHtml=$smarty->fetch('orders/index.tpl');
+check(strpos($starHtml,'data-star-banner >')!==false && strpos($starHtml,'is-starred')!==false,'Star banner rendered for starred order');
+$repo->setStarred($notesOrderId,false);
+check((int)$repo->order($notesOrderId)['starred']===0,'Order unstarred');
+$countryRows=$repo->listing([])['rows'];
+$countryByPlatform=[]; foreach ($countryRows as $countryRow) { $countryByPlatform[$countryRow['platform']][]=$countryRow['country_code']; }
+check(in_array('PL',$countryByPlatform['allegro']??[],true) && in_array('PL',$countryByPlatform['empik']??[],true) && ($countryByPlatform['erli']??[])===[''],'Listing exposes delivery country code');
+$countryMethod=new ReflectionMethod(OrderRepository::class,'countryCode'); if (PHP_VERSION_ID<80100) { $countryMethod->setAccessible(true); }
+check($countryMethod->invoke(null,['country'=>'Niemcy'])==='DE' && $countryMethod->invoke(null,['countryCode'=>'cz'])==='CZ' && $countryMethod->invoke(null,['address'=>['country_code'=>'SVK']])==='SK' && $countryMethod->invoke(null,['country'=>'Atlantyda'])==='','Country code aliases');
 echo "OK: $checks checks; no network or production database used.\n";

@@ -25,7 +25,7 @@ final class OrderAutomationService
     private const DELAY_UNITS=['minutes'=>60,'hours'=>3600,'days'=>86400];
     private const DELAY_FROM=['status'=>'zmiany statusu','ordered'=>'złożenia zamówienia','imported'=>'pobrania zamówienia'];
     private const CANCELLED=['CANCELLED','CANCELED','ANULOWANO'];
-    private const PLATFORMS=['manual'=>'Własne','allegro'=>'Allegro','erli'=>'ERLI','empik'=>'Empik','mediamarkt'=>'MediaMarkt','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','altreo'=>'Altreo.pl','api'=>'Własny sklep (API)'];
+    public const PLATFORMS=['manual'=>'Własne','allegro'=>'Allegro','erli'=>'ERLI','empik'=>'Empik','mediamarkt'=>'MediaMarkt','morele'=>'Morele','temu'=>'Temu','prestashop'=>'PrestaShop','woocommerce'=>'WooCommerce','altreo'=>'Altreo.pl','api'=>'Własny sklep (API)'];
     private const OPERATORS=[
         'select'=>['in'=>'jest jednym z','not_in'=>'nie jest żadnym z'],
         'bool'=>['is'=>'jest'],
@@ -145,7 +145,7 @@ final class OrderAutomationService
             'issue_invoice'=>['label'=>'Wystaw fakturę','group'=>'Dokumenty','icon'=>'bi-file-earmark-text','hint'=>'Pomija zamówienie, dla którego faktura już istnieje.','params'=>[['key'=>'series_id','label'=>'Seria','type'=>'select','options'=>'invoice_series','default'=>'0']]],
             'issue_preferred'=>['label'=>'Wystaw dokument wybrany przez klienta','group'=>'Dokumenty','icon'=>'bi-file-earmark-medical','hint'=>'Faktura, gdy klient jej chce; w przeciwnym razie paragon.','params'=>[['key'=>'receipt_series_id','label'=>'Seria paragonów','type'=>'select','options'=>'receipt_series','default'=>'0'],['key'=>'invoice_series_id','label'=>'Seria faktur','type'=>'select','options'=>'invoice_series','default'=>'0'],['key'=>'print','label'=>'Paragon wyślij do drukarki fiskalnej','type'=>'checkbox','default'=>true]]],
             'print_fiscal'=>['label'=>'Drukuj paragon fiskalny','group'=>'Dokumenty','icon'=>'bi-printer','hint'=>'Wymaga wystawionego paragonu.','params'=>[['key'=>'printer_id','label'=>'Drukarka fiskalna','type'=>'select','options'=>'fiscal_printers','default'=>'0']]],
-            'create_shipment'=>['label'=>'Nadaj przesyłkę','group'=>'Wysyłka','icon'=>'bi-box-seam','warning'=>'Utworzenie przesyłki może naliczyć opłatę u przewoźnika.','params'=>[['key'=>'carrier_account_id','label'=>'Konto nadawcze','type'=>'select','options'=>'carrier_accounts_auto','default'=>'0'],['key'=>'package','label'=>'Gabaryt','type'=>'select','options'=>[['auto','Automatycznie wg liczby sztuk'],['small','Mała paczka'],['medium','Średnia paczka'],['large','Duża paczka']],'default'=>'auto'],['key'=>'service','label'=>'Usługa (opcjonalnie)','type'=>'text','max'=>100,'placeholder'=>'np. inpost_locker_standard albo ID usługi Apaczki'],['key'=>'allow_multiple','label'=>'Nadaj także, gdy zamówienie ma już aktywną przesyłkę','type'=>'checkbox','default'=>false]]],
+            'create_shipment'=>['label'=>'Nadaj przesyłkę','group'=>'Wysyłka','icon'=>'bi-box-seam','warning'=>'Utworzenie przesyłki może naliczyć opłatę u przewoźnika.','hint'=>'Konto „automatycznie” dobiera się do źródła i metody dostawy zamówienia. Gdy metoda wymaga mapowania (Przesyłki → Mapowanie metod dostawy), przesyłka nie zostanie nadana, a dziennik to zgłosi.','params'=>[['key'=>'carrier_account_id','label'=>'Konto nadawcze','type'=>'select','options'=>'carrier_accounts_auto','default'=>'0'],['key'=>'package','label'=>'Gabaryt','type'=>'select','options'=>'package_presets','default'=>'auto'],['key'=>'service','label'=>'Usługa (opcjonalnie)','type'=>'text','max'=>100,'placeholder'=>'np. inpost_locker_standard albo ID usługi Apaczki'],['key'=>'allow_multiple','label'=>'Nadaj także, gdy zamówienie ma już aktywną przesyłkę','type'=>'checkbox','default'=>false]]],
             'refresh_shipments'=>['label'=>'Odśwież status przesyłek','group'=>'Wysyłka','icon'=>'bi-arrow-repeat','params'=>[]],
             'publish_tracking'=>['label'=>'Przekaż numer przesyłki do marketplace','group'=>'Wysyłka','icon'=>'bi-cloud-arrow-up','params'=>[['key'=>'carrier','label'=>'Przewoźnik','type'=>'select','options'=>'source_carriers','default'=>'auto'],['key'=>'carrier_other','label'=>'Nazwa innego przewoźnika','type'=>'text','max'=>100]]],
             'print_label'=>['label'=>'Drukuj etykietę','group'=>'Wysyłka','icon'=>'bi-printer-fill','params'=>[['key'=>'printer','label'=>'Drukarka etykiet','type'=>'select','options'=>'label_printers','required'=>true],['key'=>'scope','label'=>'Zakres','type'=>'select','options'=>[['newest','Najnowsza przesyłka'],['all','Wszystkie aktywne przesyłki']],'default'=>'newest'],['key'=>'width','label'=>'Szerokość (mm)','type'=>'number','default'=>'100','min'=>30,'max'=>500],['key'=>'height','label'=>'Wysokość (mm)','type'=>'number','default'=>'150','min'=>30,'max'=>500]]],
@@ -214,6 +214,8 @@ final class OrderAutomationService
         foreach (OrderMarketplaceShipmentService::carrierOptions() as $code=>$name) { $sourceCarriers[]=[$code,$name]; }
         $rules=array_map(static function (array $r): array { return [(string)$r['id'],(string)$r['name']]; },$this->db->fetchAll('SELECT id,name FROM om_rules ORDER BY position,id'));
         $pairs=static function (array $map): array { $rows=[]; foreach ($map as $value=>$label) { $rows[]=[(string)$value,(string)$label]; } return $rows; };
+        $packagePresets=[['auto','Automatycznie wg liczby sztuk']];
+        foreach (OrderShipmentService::defaults($this->repo)['presets'] as $key=>$preset) { $packagePresets[]=[(string)$key,OrderShipmentService::presetLabel($preset)]; }
         return $this->options=[
             'statuses'=>$statuses,
             'accounts'=>$accounts,
@@ -228,7 +230,8 @@ final class OrderAutomationService
             'document_kinds'=>$pairs(['receipt'=>'Paragon','invoice'=>'Faktura','receipt_correction'=>'Korekta paragonu','invoice_correction'=>'Korekta faktury']),
             'status_sources'=>$pairs(['user'=>'Operator','sync'=>'Synchronizacja (mapowanie)','automation'=>'Automatyzacja']),
             'carrier_accounts'=>$carriers,
-            'carrier_accounts_auto'=>array_merge([['0','Dobierz jak podpowiedź w zamówieniu']],$carriers),
+            'carrier_accounts_auto'=>array_merge([['0','Automatycznie wg integracji i metody dostawy']],$carriers),
+            'package_presets'=>$packagePresets,
             'shipment_stages'=>$pairs(['pending'=>'Przygotowywana','created'=>'Utworzona','transit'=>'W drodze','delivery'=>'W doręczeniu','pickup'=>'Czeka w punkcie odbioru','delivered'=>'Doręczona','returned'=>'Zwrot','issue'=>'Problem z doręczeniem','cancelled'=>'Anulowana','unknown'=>'Nierozpoznany status']),
             'receipt_series'=>$seriesOptions('receipt','Domyślna seria paragonów'),
             'invoice_series'=>$seriesOptions('invoice','Domyślna seria faktur'),
@@ -294,6 +297,33 @@ final class OrderAutomationService
         if ($id>0) { $this->db->update('om_rules',$data,'id=:id',['id'=>$id]); return $id; }
         $data['position']=(int)$this->db->fetchColumn('SELECT COALESCE(MAX(position),0) FROM om_rules')+10;
         return (int)$this->db->insert('om_rules',$data);
+    }
+
+    /**
+     * Gotowe ręczne automatyzacje „Nadaj: <gabaryt>” – po jednej na gabaryt, z przyciskiem w zamówieniu i na liście.
+     * Konto nadawcze dobiera się samo; istniejących reguł o tej nazwie nie nadpisuje. Zwraca nazwy utworzonych reguł.
+     */
+    public function createShippingButtons(): array
+    {
+        $taken=array_map(static function (array $rule): string { return self::nameKey($rule['name']); },$this->allRules());
+        $created=[];
+        foreach (OrderShipmentService::defaults($this->repo)['presets'] as $key=>$preset) {
+            $name=mb_substr('Nadaj: '.$preset['name'],0,150,'UTF-8');
+            if (in_array(self::nameKey($name),$taken,true)) { continue; }
+            $this->saveRule(0,['name'=>$name,'enabled'=>true,'triggers'=>['manual'],'conditions'=>[],'actions'=>[['type'=>'create_shipment','params'=>['carrier_account_id'=>'0','package'=>(string)$key,'service'=>'','allow_multiple'=>false]]],'options'=>['button_order'=>true,'button_list'=>true,'stop_on_error'=>true]]);
+            $taken[]=self::nameKey($name); $created[]=$name;
+        }
+        return $created;
+    }
+
+    /** Automatyzacje, których efekt „Nadaj przesyłkę” używa gabarytu o danym kluczu. */
+    public function rulesUsingPackage(string $key): array
+    {
+        $names=[];
+        foreach ($this->allRules() as $rule) {
+            foreach ($rule['actions'] as $action) { if (($action['type']??'')==='create_shipment' && (string)($action['params']['package']??'')===$key) { $names[]=$rule['name']; break; } }
+        }
+        return $names;
     }
 
     public function duplicateRule(int $id): int
@@ -1291,13 +1321,21 @@ final class OrderAutomationService
         $defaults=OrderShipmentService::defaults($this->repo);
         $accounts=$this->repo->carrierAccounts();
         $suggestion=OrderShipmentService::suggestion($this->repo,$order,$accounts,$defaults);
-        $carrierId=(int)$params['carrier_account_id'] ?: (int)$suggestion['carrier_account_id'];
+        $carrierId=(int)$params['carrier_account_id'];
+        $delivery=$suggestion['delivery']!==''?'„'.$suggestion['delivery'].'”':'(brak metody dostawy)';
+        if (!$carrierId) {
+            if ($suggestion['source']==='skip') { return ['state'=>'skipped','message'=>'Metoda dostawy '.$delivery.' ma mapowanie „nie nadawaj automatycznie”']; }
+            if (in_array($suggestion['source'],['first','none'],true)) { throw new InvalidArgumentException('Metoda dostawy '.$delivery.' ('.(self::PLATFORMS[$order['platform']]??$order['platform']).') wymaga mapowania – przypisz konto nadawcze w Przesyłki → Mapowanie metod dostawy.'); }
+            $carrierId=(int)$suggestion['carrier_account_id'];
+        }
         $account=null;
         foreach ($accounts as $candidate) { if ((int)$candidate['id']===$carrierId && (int)$candidate['enabled']) { $account=$candidate; break; } }
         if (!$account) { throw new InvalidArgumentException('Brak aktywnego konta nadawczego dla tej przesyłki.'); }
-        $size=$params['package']==='auto'?$suggestion['preset']:$params['package'];
-        $package=$defaults['presets'][$size]??$suggestion['package'];
+        $size=$params['package']==='auto'?$suggestion['preset']:(string)$params['package'];
+        if (!isset($defaults['presets'][$size])) { throw new InvalidArgumentException('Gabaryt paczki użyty w automatyzacji został usunięty – wybierz inny w Przesyłki → Gabaryty.'); }
+        $package=$defaults['presets'][$size];
         $service=trim((string)$params['service']);
+        if ($service==='' && (int)$suggestion['carrier_account_id']===(int)$account['id']) { $service=(string)$suggestion['service']; }
         if ($service==='') { $service=\App\Services\Shipping\ShippingProviders::get($this->repo,(string)$account['provider'])->preferredService(['id'=>(int)$account['id'],'public'=>json_decode((string)$account['public_config_json'],true)?:[]],$order,$defaults); }
         $address=$order['shipping_address'];
         $cod=!empty($order['details']['cash_on_delivery']);
@@ -1306,7 +1344,7 @@ final class OrderAutomationService
         $shipmentId=(new OrderShipmentService($this->repo))->create($orderId,(int)$account['id'],$input,$actor);
         $ctx['cache']=[];
         $tracking=(string)$this->db->fetchColumn('SELECT tracking FROM om_shipments WHERE id=:id',['id'=>$shipmentId]);
-        return ['state'=>'ok','message'=>'Nadano przesyłkę przez '.$account['name'].(strpos($tracking,'PENDING:')===0?'':' ('.$tracking.')')];
+        return ['state'=>'ok','message'=>'Nadano przesyłkę przez '.$account['name'].', gabaryt '.$package['name'].(strpos($tracking,'PENDING:')===0?'':' ('.$tracking.')')];
     }
 
     private function publishTracking(array &$ctx,array $params,string $actor): array

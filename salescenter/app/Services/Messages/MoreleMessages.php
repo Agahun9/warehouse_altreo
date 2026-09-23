@@ -8,14 +8,18 @@ use App\Services\MoreleService;
 use InvalidArgumentException;
 
 /**
- * Morele – Centrum komunikacji. Specyfikacja OpenAPI jest pod GET /v1/docs (Bearer, ten sam host;
- * panel marketplace.morele.net/docs renderuje ją przez swagger-ui) – diagnostyka wysyłki czyta ją stamtąd.
+ * Morele – Centrum komunikacji. Kształt odpowiedzi potwierdzony logiem produkcyjnym:
  * GET /communication-center/threads (start, limit, type_id, needs_answer, date_created_from, date_created_to,
- * thread_id, resource_id), szczegóły przez filtr thread_id (thread.id, thread.no, thread.type_id,
- * thread.resource_id, messages[]), POST /communication-center/message (application/json). Trasy panelu
+ * thread_id, resource_id) zwraca {"data":[...],"total":N}, posortowane od najnowszych wątków.
+ * Wątek: id (długi identyfikator base64 – używany też jako thread_id w filtrze), sender (nazwa klienta),
+ * createdAt (założenie wątku, NIE ostatnia wiadomość), subject, resourceId (numer zamówienia), needsResponse,
+ * messages[] – pełna treść wątku jest już na liście, więc osobne pobieranie szczegółów nie jest potrzebne.
+ * Wiadomość: sender/receiver (adresy e-mail), isSentByOperator, messageBody (HTML zakodowany encjami),
+ * attachments[] (adresy URL), createdAt; kolejność od najnowszej.
+ * Rodzaju wątku API nie podaje – odczytujemy go z tematu („Pytanie o zamówienie nr: …”).
+ * POST /communication-center/message (application/json) wysyła odpowiedź. Trasy panelu
  * (/thread/list, /thread/{no}, /send) zwracają 403 – klucz API ich nie obsługuje.
  * Rodzaje wątków (typeId): 1 pytanie o zamówienie, 2 pytanie o produkt, 3 inne, 4 reklamacja, 5 zwrot 14-dniowy.
- * Kształt odpowiedzi jest parsowany tolerancyjnie – nierozpoznany format trafia jako błąd przy koncie.
  */
 final class MoreleMessages implements MessageSource
 {
@@ -24,6 +28,9 @@ final class MoreleMessages implements MessageSource
     /** Właściwy zasób API marketplace; /communication-center/thread/list to trasa panelu (HTTP 403). */
     private const THREADS = '/communication-center/threads';
     private const PAGE = 10;
+    /** Limit wątków dociąganych w jednym przebiegu: zwykła synchronizacja i tryb „pobierz starsze”. */
+    private const RUN_CAP = 80;
+    private const FULL_CAP = 250;
     /** Panel Morele podaje daty bez strefy, w czasie polskim. */
     private const ZONE = 'Europe/Warsaw';
 
@@ -32,38 +39,86 @@ final class MoreleMessages implements MessageSource
     /** @var int Indeks adresu szczegółów wątku, który zadziałał; -1 = jeszcze nie sprawdzono. */
     private $detailPath = -1;
 
+    /** @var bool Czy pisać do tymczasowego logu diagnostycznego (ustawienie kanału „Log diagnostyczny”). */
+    private $logging = false;
+
     public function __construct(?MoreleService $api = null) { $this->api = $api ?? new MoreleService(); }
+
+    /** Włącza log surowych odpowiedzi API i decyzji synchronizacji. */
+    private function logging(array $settings): void
+    {
+        $this->logging = !empty($settings['debug_log']);
+        $this->api->logger = $this->logging ? static function (string $event, $data): void { MoreleLog::write($event, $data); } : null;
+    }
+
+    private function log(string $event, $data = null): void
+    {
+        if ($this->logging) { MoreleLog::write($event, $data); }
+    }
 
     public function fetch(array $account, array $settings, array $state, MessageRepository $repo, callable $emit): array
     {
         $state['_errors'] = [];
-        if (empty($settings['sync_messages'])) { return $state; }
+        $state['_listed'] = 0;
+        $state['_notes'] = [];
+        $this->logging($settings);
+        $this->log('--- synchronizacja Morele: start', ['connection_id' => $account['connection_id'] ?? 0, 'sync_messages' => (int) !empty($settings['sync_messages']), 'history_days' => $settings['history_days'] ?? null]);
+        if (empty($settings['sync_messages'])) {
+            $state['_notes'][] = 'Wiadomości Morele są wyłączone w ustawieniach kanału – zaznacz „Wiadomości”.';
+            return $state;
+        }
+        // Tryb „pobierz starsze”: bez pomijania po znaczniku czasu i bez skrótów dla wątków, które lokalnie wyglądają na aktualne.
+        $full = !empty($state['force_full']);
+        $budget = $full ? self::FULL_CAP : self::RUN_CAP;
         $connectionId = (int) $account['connection_id'];
         $since = (string) ($state['threads_since'] ?? gmdate('Y-m-d H:i:s', time() - (int) $settings['history_days'] * 86400));
         $newest = $since;
         $empties = [];
-        for ($start = 0; $start < 300; $start += self::PAGE) {
+        // Najpierw wątki czekające na odpowiedź (filtr needs_answer). Nowa wiadomość klienta w starym wątku
+        // nie musi zmienić pól daty rozpoznawanych z listy, więc takie wątki dociągamy w całości za każdym razem.
+        $seen = [];
+        $awaiting = $this->awaiting($account);
+        $this->log('wątki czekające na odpowiedź (needs_answer)', ['liczba' => count($awaiting)]);
+        foreach ($awaiting as $item) {
+            $no = self::pick($item, ['no', 'threadNo', 'thread_no', 'number', 'identifier', 'id']);
+            if ($no === '' || isset($seen[$no])) { continue; }
+            $seen[$no] = true;
+            $budget--;
+            try { $thread = $this->mapThread($account, $item, true); }
+            catch (\RuntimeException $e) { $state['_errors'][] = 'Morele: wątek '.$no.': '.$e->getMessage(); continue; }
+            if (!array_filter(array_column($thread['messages'], 'body'), 'strlen')) { $empties[] = $no; }
+            $this->log('wątek pobrany (czeka na odpowiedź)', ['no' => $no, 'temat' => $thread['subject'], 'wiadomości' => count($thread['messages']), 'meta' => $thread['meta']]);
+            $newest = max($newest, (string) $thread['last_message_at']);
+            $emit($thread);
+        }
+        $start = 0;
+        $reverse = false;
+        for ($page = 0; $page < ($full ? 100 : 30); $page++) {
             try {
                 $response = $this->list($account, $start);
             } catch (\RuntimeException $e) {
-                if ($start > 0) { throw $e; }
+                if ($page > 0) { throw $e; }
                 // Odmowa dostępu nic nie mówi bez kontekstu – dokładamy wynik diagnostyki wprost do błędu przy koncie.
                 $state['_errors'][] = $e->getMessage().' '.$this->diagnosis($account, $state);
                 return $state;
             }
             $items = self::items($response);
             // Bez specyfikacji Morele nie zgadujemy w ciemno: nierozpoznana odpowiedź ma być widoczna przy koncie.
-            if ($start === 0 && !self::hasList($response)) {
+            if ($page === 0 && !self::hasList($response)) {
                 $state['_errors'][] = 'Morele zwróciło listę wątków w nieznanym formacie (klucze odpowiedzi: '.(implode(', ', array_slice(array_keys($response), 0, 10)) ?: 'brak').'). Użyj „Diagnostyka Morele” i prześlij wynik.';
                 break;
             }
+            $state['_listed'] += count($items);
             $older = 0;
             foreach ($items as $item) {
                 $no = self::pick($item, ['no', 'threadNo', 'thread_no', 'number', 'identifier', 'id']);
-                if ($no === '') { continue; }
+                if ($no === '' || isset($seen[$no])) { continue; }
                 $last = MessageRepository::date(self::lastAt($item), self::ZONE);
                 $needs = self::needsResponse($item);
-                if ($last !== '' && $last <= $since && !$needs) { $older++; continue; }
+                if ($last !== '' && $last <= $since && !$needs) {
+                    $older++;
+                    if (!$full) { $this->log('wątek pominięty: starszy niż znacznik', ['no' => $no, 'ostatnia_wiadomość' => $last, 'znacznik' => $since, 'klucze' => array_keys($item)]); continue; }
+                }
                 $newest = max($newest, $last);
                 $closed = self::isClosed($item);
                 $local = $repo->findByExternal($connectionId, 'message', $no);
@@ -73,23 +128,50 @@ final class MoreleMessages implements MessageSource
                 $meta = (array) ($local['meta'] ?? []);
                 $empty = $local && ((int) $local['message_count'] === 0 || trim((string) $local['last_preview']) === ''
                     || empty($meta['thread_id']) || empty($meta['type_id']));
-                if ($local && !$empty && (string) $local['last_message_at'] >= $last && (bool) $local['needs_reply'] === $needs && (bool) $local['remote_closed'] === $closed) { continue; }
-                // Wątek zamknięty w Morele: sam status, bez dociągania szczegółów.
-                if ($closed && $local && !$empty) {
+                if (!$full && $local && !$empty && (string) $local['last_message_at'] >= $last && (bool) $local['needs_reply'] === $needs && (bool) $local['remote_closed'] === $closed) {
+                    $this->log('wątek pominięty: lokalnie aktualny', ['no' => $no, 'lokalna_ostatnia' => (string) $local['last_message_at'], 'z_listy' => $last]);
+                    continue;
+                }
+                // Wątek zamknięty w Morele: sam status, bez dociągania szczegółów (przy „pobierz starsze” dociągamy też treść).
+                if (!$full && $closed && $local && !$empty) {
                     $emit(['kind' => 'message', 'external_id' => $no, 'remote_status' => 'CLOSED', 'closed' => true, 'needs_reply' => false, 'last_message_at' => $last, 'messages' => null]);
                     continue;
                 }
+                if ($budget-- <= 0) { $this->log('limit wątków w przebiegu osiągnięty', ['no' => $no]); break 2; }
                 $thread = $this->mapThread($account, $item);
+                $this->log('wątek pobrany', ['no' => $no, 'temat' => $thread['subject'], 'wiadomości' => count($thread['messages']), 'meta' => $thread['meta']]);
                 // Same puste treści są tak samo bezużyteczne jak brak wiadomości – zgłaszamy oba przypadki.
                 if (!array_filter(array_column($thread['messages'], 'body'), 'strlen')) { $empties[] = $no; }
                 $emit($thread);
             }
             $total = (int) ($response['filtered'] ?? $response['total'] ?? $response['count'] ?? 0);
-            if (count($items) < self::PAGE || ($items && $older === count($items)) || ($total > 0 && $start + self::PAGE >= $total)) { break; }
+            // Kolejność listy nie jest udokumentowana. Przy sortowaniu od najstarszych najnowsze wątki są na końcu –
+            // wtedy po pierwszej stronie przechodzimy od ostatniej strony wstecz.
+            if ($page === 0 && $total > self::PAGE && self::ascending($items)) {
+                $reverse = true;
+                $start = (int) (ceil($total / self::PAGE) - 1) * self::PAGE;
+                continue;
+            }
+            // „Cała strona starsza” kończy przegląd tylko wtedy, gdy idziemy od najnowszych i nie pobieramy historii.
+            $allOlder = !$full && $items && $older === count($items);
+            if ($reverse) {
+                $start -= self::PAGE;
+                if ($start < self::PAGE || $allOlder) { break; }
+                continue;
+            }
+            if (count($items) < self::PAGE || $allOlder || ($total > 0 && $start + self::PAGE >= $total)) { break; }
+            $start += self::PAGE;
         }
         // Wątek bez treści znaczy, że pola wiadomości nazywają się inaczej – dokładamy surową odpowiedź API.
         if ($empties) {
             $state['_errors'][] = 'Morele: wątki bez rozpoznanych treści wiadomości ('.implode(', ', array_slice($empties, 0, 5)).'). '.$this->shapeHint($account, $state);
+        }
+        $this->log('--- synchronizacja Morele: koniec', ['wątki_na_liście' => $state['_listed'], 'błędy' => $state['_errors']]);
+        if ($full) {
+            unset($state['force_full']);
+            $state['_notes'][] = $budget > 0
+                ? 'Morele: przejrzano historię wątków do '.mb_substr($since, 0, 10, 'UTF-8').'.'
+                : 'Morele: osiągnięto limit '.self::FULL_CAP.' wątków w jednym przebiegu – uruchom „Pobierz starsze” ponownie, aby pobrać kolejne.';
         }
         $state['threads_since'] = $newest;
         return $state;
@@ -114,6 +196,38 @@ final class MoreleMessages implements MessageSource
     private function list(array $account, int $start): array
     {
         return $this->api->api($account, 'GET', self::THREADS, ['start' => $start, 'limit' => self::PAGE]);
+    }
+
+    /** Limit wątków czekających na odpowiedź dociąganych w jednym przebiegu. */
+    private const AWAITING_CAP = 40;
+
+    /**
+     * Wątki z filtrem needs_answer=1. Filtrowi ufamy tylko wtedy, gdy liczniki odpowiedzi potwierdzają,
+     * że serwer go zastosował (filtered ≤ needResponse albo filtered < total) – inaczej każdy wątek
+     * zostałby błędnie oznaczony jako czekający. Błąd tej listy nie przerywa zwykłej synchronizacji.
+     */
+    private function awaiting(array $account): array
+    {
+        $found = [];
+        for ($start = 0; $start < self::AWAITING_CAP; $start += self::PAGE) {
+            try { $response = $this->api->api($account, 'GET', self::THREADS, ['start' => $start, 'limit' => self::PAGE, 'needs_answer' => 1]); }
+            catch (\RuntimeException $e) { return $found; }
+            if (!isset($response['filtered'])) { return $found; }
+            $filtered = (int) $response['filtered'];
+            $trusted = isset($response['needResponse']) ? $filtered <= (int) $response['needResponse'] : $filtered < (int) ($response['total'] ?? 0);
+            if (!$trusted) { return $found; }
+            $items = self::items($response);
+            foreach ($items as $item) { $found[] = (array) $item; }
+            if (count($items) < self::PAGE || $start + self::PAGE >= $filtered) { break; }
+        }
+        return $found;
+    }
+
+    /** Czy strona listy jest posortowana od najstarszych (pierwsza data < ostatniej). */
+    private static function ascending(array $items): bool
+    {
+        $dates = array_values(array_filter(array_map(static function ($item): string { return is_array($item) ? MessageRepository::date(self::lastAt($item), self::ZONE) : ''; }, $items), 'strlen'));
+        return count($dates) >= 2 && $dates[0] < $dates[count($dates) - 1];
     }
 
     private static function isClosed(array $item): bool
@@ -156,14 +270,32 @@ final class MoreleMessages implements MessageSource
         return '';
     }
 
+    /**
+     * Ostatnia aktywność wątku. Morele podaje w wątku tylko createdAt (data założenia), więc bierzemy
+     * najnowszą z dołączonych wiadomości – inaczej stary wątek z nową wiadomością wyglądałby na stary.
+     */
     private static function lastAt(array $item): string
     {
-        return self::pick($item, ['lastResponseAt', 'last_response_at', 'lastMessageAt', 'last_message_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at', 'date']);
+        $last = self::pick($item, ['lastResponseAt', 'last_response_at', 'last_response_date', 'lastMessageAt', 'last_message_at', 'last_message_date', 'lastMessageDate', 'date_last_message',
+            'updatedAt', 'updated_at', 'date_updated', 'dateUpdated', 'date_modified', 'modified_at', 'createdAt', 'created_at', 'date_created', 'dateCreated', 'date']);
+        foreach (self::rawMessages($item) as $message) {
+            $at = self::pick($message, self::MESSAGE_DATE_KEYS);
+            if ($at > $last) { $last = $at; }
+        }
+        return $last;
+    }
+
+    /** Wiadomości dołączone wprost do wątku na liście (Morele zwraca je razem z wątkiem). */
+    private static function rawMessages(array $item): array
+    {
+        return is_array($item['messages'] ?? null) ? array_values(array_filter($item['messages'], 'is_array')) : [];
     }
 
     private static function needsResponse(array $item): bool
     {
-        foreach (['needsResponse', 'needs_response', 'waitingForResponse', 'waiting_for_response', 'requiresResponse'] as $key) {
+        // needs_answer to nazwa filtra listy w API, needResponse – licznik w odpowiedzi; pole wątku bywa nazwane podobnie.
+        foreach (['needsResponse', 'needs_response', 'needResponse', 'need_response', 'needs_answer', 'needsAnswer', 'need_answer', 'needAnswer',
+            'waitingForResponse', 'waiting_for_response', 'requiresResponse'] as $key) {
             if (array_key_exists($key, $item)) { return !empty($item[$key]); }
         }
         return false;
@@ -328,7 +460,7 @@ final class MoreleMessages implements MessageSource
 
     private static function sender(array $message): string
     {
-        return self::pick($message, ['sender_name', 'senderName', 'sender', 'author_name', 'authorName', 'author', 'user_name', 'userName', 'login']);
+        return self::pick($message, ['sender', 'sender_name', 'senderName', 'author_name', 'authorName', 'author', 'user_name', 'userName', 'login']);
     }
 
     private static function flag(array $data, array $keys): bool
@@ -339,7 +471,11 @@ final class MoreleMessages implements MessageSource
         return false;
     }
 
-    /** Autor wiadomości: najpierw jawna flaga/typ nadawcy, a dopiero potem porównanie nazwy z klientem. */
+    /**
+     * Autor wiadomości. U Morele rozstrzyga adres nadawcy: wszystko z adresu klienta to wiadomość klienta.
+     * isSentByOperator nie mówi, kto pisze – bot Morele wysyła powiadomienia z adresu klienta – więc nie
+     * używamy go do ustalenia roli.
+     */
     private static function role(array $message, string $sender, string $customer): string
     {
         if (self::flag($message, ['sent_by_vendor', 'sentByVendor', 'is_vendor', 'vendor', 'is_seller', 'sent_by_seller'])) { return 'seller'; }
@@ -363,9 +499,17 @@ final class MoreleMessages implements MessageSource
                 if ($url !== '') { $files[] = ['name' => self::pick($entry, ['name', 'filename', 'title']) ?: 'załącznik', 'url' => $url]; }
                 continue;
             }
-            $files[] = ['name' => is_string($name) ? $name : 'załącznik', 'url' => is_string($entry) ? $entry : ''];
+            $url = is_string($entry) ? $entry : '';
+            $files[] = ['name' => is_string($name) ? $name : (self::fileName($url) ?: 'załącznik'), 'url' => $url];
         }
         return $files;
+    }
+
+    /** Nazwa załącznika z adresu URL (Morele podaje same adresy). */
+    private static function fileName(string $url): string
+    {
+        $name = rawurldecode((string) parse_url($url, PHP_URL_PATH));
+        return mb_substr(basename($name), 0, 120, 'UTF-8');
     }
 
     /** Gdy API nie poda rodzaju wątku, odczytujemy go z tematu („Pytanie o zamówienie nr: …”). */
@@ -378,24 +522,40 @@ final class MoreleMessages implements MessageSource
         return 0;
     }
 
-    public function mapThread(array $account, array $item): array
+    private const BODY_KEYS = ['message_body', 'messageBody', 'body', 'message', 'content', 'text', 'description'];
+    private const ID_KEYS = ['no', 'threadNo', 'thread_no', 'number', 'identifier', 'id'];
+    private const MESSAGE_DATE_KEYS = ['created_at', 'createdAt', 'date_created', 'dateCreated', 'send_date', 'date'];
+
+    /** $awaiting: wątek pochodzi z listy needs_answer, więc na pewno czeka na odpowiedź. */
+    public function mapThread(array $account, array $item, bool $awaiting = false): array
     {
-        $no = self::pick($item, ['no', 'threadNo', 'thread_no', 'number', 'identifier', 'id']);
-        $detail = $this->detail($account, $no);
-        $thread = self::threadOf($detail) ?: $item;
-        $raw = self::messagesOf($detail);
-        $customer = self::sender($raw[0] ?? []) ?: self::pick($item, ['sender', 'sender_name', 'customer_name', 'client_name']);
+        $no = self::pick($item, self::ID_KEYS);
+        // Wiadomości są już w wątku z listy; szczegóły dociągamy tylko wtedy, gdy ich tam nie ma.
+        $thread = $item;
+        $raw = self::rawMessages($item);
+        if (!$raw) {
+            $detail = $this->detail($account, $no);
+            $thread = self::threadOf($detail) ?: $item;
+            $raw = self::messagesOf($detail);
+        }
+        usort($raw, static function (array $a, array $b): int { return strcmp(self::pick($a, self::MESSAGE_DATE_KEYS), self::pick($b, self::MESSAGE_DATE_KEYS)); });
+        // Wątek zakłada klient, więc nadawca najstarszej wiadomości to jego adres; reszta od tego adresu to klient.
+        $customerAddress = self::sender($raw[0] ?? []);
+        $customerName = self::pick($thread, ['sender', 'sender_name', 'senderName', 'customer_name', 'client_name']) ?: self::pick($item, ['sender', 'sender_name', 'customer_name', 'client_name']);
         $messages = [];
         foreach ($raw as $message) {
             $sender = self::sender($message);
-            $operator = self::flag($message, ['sent_by_operator', 'sentByOperator', 'is_operator', 'operator']);
+            $role = self::role($message, $sender, $customerAddress);
             $messages[] = [
-                'external_id' => self::pick($message, ['id', 'message_id', 'messageId']),
-                'author_role' => $operator ? 'operator' : self::role($message, $sender, $customer),
-                'author_name' => $sender.($operator ? ' (pracownik Morele w imieniu klienta)' : ''),
-                'body' => self::text(self::pick($message, ['message_body', 'messageBody', 'body', 'message', 'content', 'text', 'description'])),
+                // Morele nie nadaje wiadomościom identyfikatorów – budujemy własny, stały (wątek + czas + nadawca),
+                // żeby ponowne pobranie wątku nie tworzyło duplikatów.
+                'external_id' => self::pick($message, ['id', 'message_id', 'messageId'])
+                    ?: 'morele:'.sha1($no.'|'.self::pick($message, self::MESSAGE_DATE_KEYS).'|'.$sender),
+                'author_role' => $role,
+                'author_name' => $role === 'customer' ? ($customerName !== '' ? $customerName : $sender) : $sender,
+                'body' => self::text(self::pick($message, self::BODY_KEYS)),
                 'attachments' => self::files($message),
-                'created_at' => MessageRepository::date(self::pick($message, ['created_at', 'createdAt', 'date_created', 'dateCreated', 'send_date', 'date']), self::ZONE),
+                'created_at' => MessageRepository::date(self::pick($message, self::MESSAGE_DATE_KEYS), self::ZONE),
             ];
         }
         $typeKeys = ['type_id', 'typeId', 'type', 'thread_type_id', 'threadType', 'thread_type', 'category_id', 'categoryId'];
@@ -403,21 +563,34 @@ final class MoreleMessages implements MessageSource
         $subject = (self::pick($thread, ['subject', 'title']) ?: self::pick($item, ['subject', 'title']));
         $type = (int) (self::pick($thread, $typeKeys) ?: self::pick($item, $typeKeys)) ?: self::typeFromSubject($subject);
         $resource = self::pick($thread, $resourceKeys) ?: self::pick($item, $resourceKeys);
-        $needs = self::needsResponse($item) || self::needsResponse($thread);
+        // Morele oznacza needsResponse tylko dla części wątków, więc traktujemy jako czekający także taki,
+        // w którym ostatnia wiadomość jest od klienta i nie ma po niej odpowiedzi sprzedawcy.
+        $lastRole = $messages ? (string) $messages[count($messages) - 1]['author_role'] : '';
+        $needs = $awaiting || self::needsResponse($item) || self::needsResponse($thread) || $lastRole === 'customer';
         return [
             'kind' => 'message', 'external_id' => $no, 'subject' => $subject ?: (self::TYPES[$type] ?? 'Wiadomość'),
-            'customer_name' => $customer, 'customer_login' => '', 'order_external_id' => in_array($type, [1, 4, 5], true) ? $resource : '',
+            'customer_name' => $customerName ?: $customerAddress, 'customer_login' => '', 'order_external_id' => in_array($type, [1, 4, 5], true) ? $resource : '',
             'remote_status' => $needs ? 'NEEDS_RESPONSE' : 'OK', 'needs_reply' => $needs, 'closed' => self::isClosed($item) || self::isClosed($thread),
             'last_message_at' => MessageRepository::date(self::lastAt($item) ?: self::lastAt($thread), self::ZONE),
             // Identyfikator do wysyłki: własne pole wątku, a w ostateczności jego numer z listy.
-            'meta' => ['thread_id' => self::pick($thread, ['id', 'thread_id', 'threadId', 'identifier']) ?: $no, 'type_id' => $type, 'category' => self::TYPES[$type] ?? '', 'resource_id' => $resource],
+            'meta' => ['thread_id' => self::pick($thread, ['id', 'thread_id', 'threadId', 'identifier']) ?: $no, 'type_id' => $type, 'category' => self::TYPES[$type] ?? '', 'resource_id' => $resource,
+                'email' => $customerAddress],
             'messages' => $messages,
         ];
     }
 
-    /** Treść HTML z edytora Morele → tekst z zachowaniem akapitów. */
+    /**
+     * Treść wiadomości → tekst z zachowaniem akapitów. Morele zwraca HTML zakodowany encjami
+     * (&lt;p&gt;…), a część wiadomości to czysty tekst – dlatego najpierw dekodujemy encje, a dopiero
+     * potem zamieniamy znaczniki na nowe linie.
+     */
     public static function text(string $html): string
     {
+        // Treść bez znaczników, ale z zakodowanymi (&lt;p&gt;) – najpierw odkodowanie, żeby akapity przetrwały.
+        // Prawdziwy HTML zostawiamy, inaczej zniknąłby tekst, który sami zakodowaliśmy przy wysyłce.
+        if (strpos($html, '&lt;') !== false && preg_match('#<[a-z!/]#i', $html) !== 1) {
+            $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
         $text = preg_replace(['#<br\s*/?>#i', '#</(p|div|li|h\d)>#i'], "\n", $html) ?? $html;
         $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         return trim(preg_replace("/\n{3,}/", "\n\n", str_replace("\r", '', $text)) ?? $text);
@@ -425,6 +598,8 @@ final class MoreleMessages implements MessageSource
 
     public function reply(array $account, array $thread, string $text, array $options, MessageRepository $repo): string
     {
+        $this->logging($repo->platformSettings('morele'));
+        $this->log('--- wysyłka odpowiedzi Morele', ['wątek' => $thread['external_id'] ?? '', 'meta' => $thread['meta'] ?? []]);
         $meta = (array) ($thread['meta'] ?? []);
         $missing = array_keys(array_filter(['identyfikator wątku' => empty($meta['thread_id']), 'rodzaj wątku' => empty($meta['type_id'])]));
         if ($missing) {
@@ -433,19 +608,24 @@ final class MoreleMessages implements MessageSource
         $html = implode('', array_map(static function (string $paragraph): string { return '<p>'.nl2br(htmlspecialchars($paragraph, ENT_QUOTES, 'UTF-8'), false).'</p>'; }, preg_split("/\n{2,}/", trim($text)) ?: [trim($text)]));
         // Wątek wskazują typeId + resourceIdentifier; klucz „identifier” z panelu API odrzuca („Expected the key to not exist”).
         $payload = ['typeId' => (int) $meta['type_id'], 'resourceIdentifier' => (string) ($meta['resource_id'] ?? ''), 'messageBody' => $html];
+        $dropped = [];
         for ($attempt = 0; ; $attempt++) {
             try {
                 $response = $this->api->api($account, 'POST', self::SEND, [], null, $payload);
                 // Morele zgłasza błędy także polem status w treści – samo HTTP 200 nie potwierdza wysyłki.
-                if (strtoupper(self::pick($response, ['status'])) === 'FAILED') {
+                $status = strtoupper(self::pick($response, ['status']));
+                $errors = $response['errors'] ?? $response['error'] ?? null;
+                if (in_array($status, ['FAILED', 'FAIL', 'ERROR'], true) || (array_key_exists('success', $response) && empty($response['success'])) || !empty($errors)) {
                     throw new \RuntimeException('Morele odrzuciło wiadomość: '.(self::pick($response, ['message']) ?: self::flat((string) json_encode($response, JSON_UNESCAPED_UNICODE))));
                 }
-                return self::pick($response, ['id', 'message_id', 'messageId']) ?: self::pick((array) ($response['data'] ?? []), ['id', 'message_id', 'messageId']);
+                $sentId = self::pick($response, ['id', 'message_id', 'messageId']) ?: self::pick((array) ($response['data'] ?? []), ['id', 'message_id', 'messageId']);
+                return $this->confirm($account, $thread, $text, $sentId, $response, $dropped);
             } catch (\RuntimeException $e) {
-                if (strpos($e->getMessage(), 'Morele odrzuciło wiadomość') === 0) { throw $e; }
+                if (strpos($e->getMessage(), 'Morele odrzuciło wiadomość') === 0 || strpos($e->getMessage(), 'Morele przyjęło żądanie') === 0) { throw $e; }
                 // Walidacja kluczy odrzuca żądanie przed zapisem, więc nadmiarowy klucz można usunąć i ponowić bez ryzyka dubla.
                 if ($attempt < 3 && preg_match('/\[400\].*Expected the key "([^"]+)" to not exist/', $e->getMessage(), $match) && $match[1] !== 'messageBody' && array_key_exists($match[1], $payload)) {
                     unset($payload[$match[1]]);
+                    $dropped[] = $match[1];
                     continue;
                 }
                 // Przy odmowie dokładamy kontrakt ze specyfikacji Morele i odpowiedź walidacji.
@@ -453,5 +633,49 @@ final class MoreleMessages implements MessageSource
                 throw new \RuntimeException($e->getMessage().' Diagnostyka wysyłki: '.$this->diagnoseSend($account));
             }
         }
+    }
+
+    /** Odstęp (s) między kolejnymi odczytami wątku przy potwierdzaniu wysyłki. */
+    public $confirmDelay = 2;
+
+    /**
+     * Potwierdzenie wysyłki: HTTP 200 od Morele nie znaczy, że wiadomość trafiła do wątku klienta.
+     * Odczytujemy wątek i szukamy wysłanej treści; gdy jej nie ma – błąd zamiast „wysłano”.
+     * Nieudany sam odczyt nie podważa wysyłki (ponowienie przez użytkownika groziłoby dublem).
+     */
+    private function confirm(array $account, array $thread, string $text, string $sentId, array $response, array $dropped): string
+    {
+        $no = (string) $thread['external_id'];
+        $wanted = mb_substr(self::normalize($text), 0, 200, 'UTF-8');
+        $this->log('potwierdzanie wysyłki – szukana treść', ['wątek' => $no, 'fragment' => $wanted]);
+        for ($check = 0; $check < 3; $check++) {
+            if ($check > 0 && $this->confirmDelay > 0) { sleep($this->confirmDelay); }
+            try { $messages = self::messagesOf($this->detail($account, $no)); }
+            catch (\Throwable $e) { return $sentId; }
+            foreach ($messages as $message) {
+                $body = self::normalize(self::text(self::pick($message, self::BODY_KEYS)));
+                if ($body !== '' && mb_strpos($body, $wanted, 0, 'UTF-8') !== false) {
+                    return self::pick($message, ['id', 'message_id', 'messageId']) ?: $sentId;
+                }
+            }
+        }
+        // Wiadomość mogła trafić do innego (nowego) wątku tego samego zamówienia/produktu – wskazujemy go.
+        $elsewhere = '';
+        $resource = (string) ($thread['meta']['resource_id'] ?? '');
+        if ($resource !== '') {
+            try {
+                $others = array_filter(array_map(static function ($item): string { return is_array($item) ? self::pick($item, ['no', 'threadNo', 'thread_no', 'number', 'identifier', 'id']) : ''; },
+                    self::items($this->api->api($account, 'GET', self::THREADS, ['start' => 0, 'limit' => self::PAGE, 'resource_id' => $resource]))), static function (string $other) use ($no): bool { return $other !== '' && $other !== $no; });
+                if ($others) { $elsewhere = ' Inne wątki Morele dla '.$resource.': '.implode(', ', array_slice($others, 0, 5)).'.'; }
+            } catch (\Throwable $e) { /* Tylko podpowiedź do komunikatu. */ }
+        }
+        throw new \RuntimeException('Morele przyjęło żądanie (odpowiedź: '.mb_substr(self::flat((string) json_encode($response, JSON_UNESCAPED_UNICODE)), 0, 300, 'UTF-8').'), ale wiadomość nie pojawiła się w wątku '.$no.'.'
+            .($dropped ? ' Wysłano bez pól odrzuconych przez API: '.implode(', ', $dropped).'.' : '').$elsewhere
+            .' Nie oznaczono jej jako wysłanej – sprawdź panel Morele przed ponownym wysłaniem.');
+    }
+
+    private static function normalize(string $text): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $text) ?? $text), 'UTF-8');
     }
 }

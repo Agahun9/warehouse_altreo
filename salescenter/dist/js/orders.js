@@ -336,10 +336,36 @@
   document.addEventListener('keydown', event => { if (event.key === 'Escape') closeColumns(); });
   document.querySelector('[data-columns-reset]')?.addEventListener('click', () => { view = defaultView(); applyView(); saveView(); });
   document.querySelector('[data-density-toggle]')?.addEventListener('click', () => { view.roomy = !view.roomy; applyView(); saveView(); });
-  document.querySelectorAll('.om-star').forEach(button => button.addEventListener('click', () => {
-    button.classList.toggle('is-active');
-    button.querySelector('i')?.classList.toggle('bi-star-fill');
-    button.querySelector('i')?.classList.toggle('bi-star');
+  const paintStar = (orderId, starred) => {
+    document.querySelectorAll(`.om-star[data-star-order="${orderId}"]`).forEach(star => {
+      star.classList.toggle('is-active', starred);
+      star.setAttribute('aria-pressed', starred ? 'true' : 'false');
+      star.title = starred ? 'Usuń gwiazdkę' : 'Oznacz gwiazdką';
+      const icon = star.querySelector('i');
+      icon?.classList.toggle('bi-star-fill', starred);
+      icon?.classList.toggle('bi-star', !starred);
+      star.closest('tr')?.classList.toggle('is-starred', starred);
+      const scope = star.closest('[data-star-scope]');
+      scope?.classList.toggle('is-starred', starred);
+      const banner = scope?.querySelector('[data-star-banner]');
+      if (banner) banner.hidden = !starred;
+    });
+  };
+  document.querySelectorAll('[data-star-order]').forEach(button => button.addEventListener('click', async event => {
+    event.preventDefault(); event.stopPropagation();
+    if (button.disabled || button.dataset.busy) return;
+    const orderId = button.dataset.starOrder;
+    const star = document.querySelector(`.om-star[data-star-order="${orderId}"]`);
+    const starred = button.hasAttribute('data-star-remove') ? false : !(star || button).classList.contains('is-active');
+    button.dataset.busy = '1';
+    paintStar(orderId, starred);
+    try {
+      const data = await request('orderstar', { order_id: orderId, starred: starred ? '1' : '' });
+      paintStar(orderId, !!data.starred);
+    } catch (error) {
+      paintStar(orderId, !starred);
+      window.alert(error.message || 'Nie udało się zapisać gwiazdki.');
+    } finally { delete button.dataset.busy; }
   }));
   const copyText = async value => {
     if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return; }
@@ -362,16 +388,73 @@
       window.setTimeout(() => { if (label) label.textContent = original; }, 1600);
     }
   }));
+  const rowIgnores = event => event.target.closest('.om-select-cell, .om-star, [data-copy-order], a, button, input, select, textarea, label');
+  document.querySelectorAll('tr[data-order-url]').forEach(row => {
+    // Kółko myszy (środkowy przycisk) otwiera zamówienie w nowej karcie.
+    row.addEventListener('mousedown', event => { if (event.button === 1 && !rowIgnores(event)) event.preventDefault(); });
+    row.addEventListener('auxclick', event => {
+      if (event.button !== 1 || rowIgnores(event)) return;
+      event.preventDefault();
+      window.open(row.dataset.orderUrl, '_blank', 'noopener');
+    });
+  });
   document.querySelectorAll('tr[data-order-url]').forEach(row => row.addEventListener('click', event => {
-    if (event.target.closest('.om-select-cell, [data-copy-order], input, select, textarea, label')) return;
+    if (event.target.closest('.om-select-cell, .om-star, [data-copy-order], input, select, textarea, label')) return;
     if (event.target.closest('.om-order-number') || window.getSelection()?.toString()) return;
     event.preventDefault();
     if (event.metaKey || event.ctrlKey) { window.open(row.dataset.orderUrl, '_blank'); return; }
     window.location.href = row.dataset.orderUrl;
   }));
+  document.querySelectorAll('[data-flag-image]').forEach(image => image.addEventListener('error', () => { image.remove(); }, { once: true }));
   document.querySelectorAll('[data-product-image]').forEach(image => image.addEventListener('error', () => {
     image.parentElement?.classList.add('is-missing');
   }, { once: true }));
+  (() => {
+    const thumbs = [...document.querySelectorAll('tr[data-order-url] .om-product-thumb')].filter(thumb => thumb.querySelector('img'));
+    if (!thumbs.length || !window.matchMedia('(hover: hover)').matches) return;
+    const card = document.createElement('div');
+    card.className = 'om-thumb-preview'; card.setAttribute('aria-hidden', 'true');
+    card.innerHTML = '<div class="om-thumb-preview-image"><img alt=""></div><div class="om-thumb-preview-info"><span data-p="order"></span><strong data-p="buyer"></strong><p data-p="product"></p><small data-p="note"></small></div>';
+    document.body.append(card);
+    const image = card.querySelector('img');
+    const field = name => card.querySelector(`[data-p="${name}"]`);
+    let showTimer = 0; let hideTimer = 0; let current = null;
+    const place = thumb => {
+      const rect = thumb.getBoundingClientRect();
+      const width = card.offsetWidth; const height = card.offsetHeight; const gap = 12;
+      let left = rect.right + gap;
+      if (left + width > window.innerWidth - 8) left = Math.max(8, rect.left - width - gap);
+      let top = rect.top + rect.height / 2 - height / 2;
+      top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+      card.style.left = `${left}px`; card.style.top = `${top}px`;
+      // Karta „wyrasta” z miniatury.
+      card.style.transformOrigin = `${rect.left + rect.width / 2 - left}px ${rect.top + rect.height / 2 - top}px`;
+    };
+    const show = thumb => {
+      const row = thumb.closest('tr[data-order-url]'); const source = thumb.querySelector('img');
+      if (!row || !source || thumb.classList.contains('is-missing')) return;
+      current = thumb;
+      image.src = source.currentSrc || source.src;
+      field('order').textContent = row.dataset.previewOrder || '';
+      field('buyer').textContent = row.dataset.previewBuyer || '';
+      field('product').textContent = thumb.parentElement?.querySelector('strong')?.textContent || '';
+      const note = row.dataset.previewNote || '';
+      field('note').textContent = note; field('note').hidden = note === '';
+      card.classList.remove('is-open'); card.style.display = 'block';
+      place(thumb);
+      requestAnimationFrame(() => { if (current === thumb) card.classList.add('is-open'); });
+    };
+    const hide = () => {
+      current = null; card.classList.remove('is-open');
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => { if (!current) card.style.display = 'none'; }, 180);
+    };
+    thumbs.forEach(thumb => {
+      thumb.addEventListener('mouseenter', () => { window.clearTimeout(showTimer); window.clearTimeout(hideTimer); showTimer = window.setTimeout(() => show(thumb), 120); });
+      thumb.addEventListener('mouseleave', () => { window.clearTimeout(showTimer); hide(); });
+    });
+    window.addEventListener('scroll', () => { if (current) hide(); }, { passive: true, capture: true });
+  })();
   document.querySelectorAll('[data-new-order-form]').forEach(form => {
     const items = form.querySelector('[data-new-items]');
     const currency = form.querySelector('[data-new-currency]');
@@ -512,6 +595,69 @@
     }
 
     updateTotals();
+  });
+  document.querySelectorAll('[data-preset-list]').forEach(list => {
+    const template = list.closest('form').querySelector('[data-preset-template]');
+    const addButton = list.closest('.om-preset-sizes').querySelector('[data-preset-add]');
+    let next = list.querySelectorAll('[data-preset-row]').length;
+    const syncRemove = () => {
+      const rows = list.querySelectorAll('[data-preset-row]');
+      rows.forEach(row => { row.querySelector('[data-preset-remove]').disabled = rows.length < 2; });
+      addButton.hidden = rows.length >= 30;
+    };
+    addButton.addEventListener('click', () => {
+      const index = `n${next++}`;
+      const row = template.content.firstElementChild.cloneNode(true);
+      row.querySelectorAll('[name]').forEach(field => { field.name = field.name.replace('__i__', index); });
+      list.append(row);
+      row.querySelector('.om-preset-name').focus();
+      syncRemove();
+    });
+    list.addEventListener('click', event => {
+      const remove = event.target.closest('[data-preset-remove]');
+      if (!remove || list.querySelectorAll('[data-preset-row]').length < 2) return;
+      remove.closest('[data-preset-row]').remove();
+      syncRemove();
+    });
+    syncRemove();
+  });
+  // Mapowanie metod dostawy: lista kurierów/usług wybranego konta (np. Apaczka → DPD, DHL, InPost…).
+  const mapServiceCache = new Map();
+  document.querySelectorAll('[data-delivery-map]').forEach(form => {
+    const carrier = form.querySelector('[data-map-carrier]');
+    const service = form.querySelector('[data-map-service]');
+    if (!carrier || !service) return;
+    let current = service.dataset.current || '', loadId = 0;
+    const load = async () => {
+      const accountId = Number(carrier.value);
+      const id = ++loadId;
+      if (accountId < 1) { service.replaceChildren(new Option(accountId < 0 ? '—' : 'Usługa wg zamówienia', '')); service.disabled = true; return; }
+      service.disabled = true;
+      service.replaceChildren(new Option('Pobieram usługi…', current));
+      try {
+        if (!mapServiceCache.has(accountId)) mapServiceCache.set(accountId, request(`shippingoptions&order_id=${encodeURIComponent(form.dataset.orderId || '0')}&carrier_account_id=${accountId}`).catch(error => { mapServiceCache.delete(accountId); throw error; }));
+        const data = await mapServiceCache.get(accountId);
+        if (id !== loadId) return;
+        const options = [new Option(data.automatic || 'Wybierz kuriera / usługę…', '')];
+        const groups = new Map();
+        (data.options || []).forEach(item => {
+          const label = item.carrier || 'Usługi';
+          if (!groups.has(label)) { const group = document.createElement('optgroup'); group.label = label; groups.set(label, group); options.push(group); }
+          groups.get(label).append(new Option(item.name, item.value, false, String(item.value) === current));
+        });
+        if (current && !(data.options || []).some(item => String(item.value) === current)) options.push(new Option(`Zapisana usługa ${current}`, current, false, true));
+        service.replaceChildren(...options);
+        service.value = current;
+      } catch (error) {
+        if (id !== loadId) return;
+        service.replaceChildren(new Option(current ? `Zapisana usługa ${current}` : 'Nie udało się pobrać usług', current));
+        service.title = error.message;
+      }
+      service.disabled = false;
+    };
+    carrier.addEventListener('change', () => { current = ''; load(); });
+    service.addEventListener('change', () => { current = service.value; });
+    load();
   });
   document.querySelectorAll('[data-smart-shipment]').forEach(form => {
     const preset = form.querySelector('[data-package-preset]');

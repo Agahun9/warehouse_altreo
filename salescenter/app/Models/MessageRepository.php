@@ -45,6 +45,7 @@ final class MessageRepository
     /** Kanały z natywnym API wiadomości (pozostałe mają tylko wątki z danych zamówień). */
     public const NATIVE = ['allegro', 'empik', 'mediamarkt', 'morele', 'prestashop'];
 
+    /** Wbudowane statusy wątków: nazwę, kolor i „do obsługi” można zmienić w ustawieniach, kodu nie. */
     public const STATUSES = [
         'new' => ['Nowa', '#6366f1'],
         'waiting' => ['Do odpowiedzi', '#f59e0b'],
@@ -152,6 +153,8 @@ final class MessageRepository
         if ($platform !== 'prestashop') { $settings['sync_notes'] = $flag('sync_notes', 1); }
         if ($platform === 'erli') { $settings['sync_returns'] = $flag('sync_returns', 1); }
         if ($platform === 'prestashop') { $settings['employee_id'] = max(1, min(99999, (int) ($input['employee_id'] ?? 1))); }
+        // Tymczasowy log diagnostyczny centrum komunikacji Morele – domyślnie włączony, bo API nie ma specyfikacji pól.
+        if ($platform === 'morele') { $settings['debug_log'] = $flag('debug_log', 1); }
         if ($platform === 'allegro') {
             $settings['sync_issues'] = $flag('sync_issues', 1);
             $settings['mark_read'] = $flag('mark_read', 1);
@@ -200,6 +203,19 @@ final class MessageRepository
     {
         $row = $this->db->fetch('SELECT * FROM om_msg_threads WHERE connection_id=:c AND kind=:k AND external_id=:e', ['c' => $connectionId, 'k' => $kind, 'e' => $externalId]);
         return $row ? self::hydrate($row) : null;
+    }
+
+    /**
+     * Usuwa wiadomości pobrane z marketplace we wszystkich wątkach połączenia (własne odpowiedzi zostają),
+     * żeby ponowne pobranie historii odtworzyło je w bieżącym formacie zamiast dokładać duplikaty.
+     */
+    public function purgeRemoteMessages(int $connectionId): int
+    {
+        $removed = $this->db->delete('om_msg_messages', "source='remote' AND thread_id IN (SELECT id FROM om_msg_threads WHERE connection_id=:c)", ['c' => $connectionId]);
+        foreach ($this->db->fetchAll('SELECT id FROM om_msg_threads WHERE connection_id=:c', ['c' => $connectionId]) as $row) {
+            $this->refreshSummary((int) $row['id']);
+        }
+        return (int) $removed;
     }
 
     /** Otwarte lokalnie wątki danego rodzaju (np. incydenty do sprawdzenia, czy nadal są otwarte). */
@@ -336,7 +352,7 @@ final class MessageRepository
 
     public function setStatus(int $threadId, string $status): void
     {
-        if (!isset(self::STATUSES[$status])) { throw new InvalidArgumentException('Nieznany status wiadomości.'); }
+        if (!isset($this->statuses()[$status])) { throw new InvalidArgumentException('Nieznany status wiadomości.'); }
         $this->db->update('om_msg_threads', ['status' => $status, 'updated_at' => self::now()], 'id=:id', ['id' => $threadId]);
     }
 
@@ -406,7 +422,8 @@ final class MessageRepository
         foreach (self::KINDS as $platform => $kinds) {
             $result['platforms'][$platform] = ['open' => 0, 'total' => 0, 'kinds' => array_fill_keys($kinds, ['open' => 0, 'new' => 0, 'total' => 0])];
         }
-        $rows = $this->db->fetchAll("SELECT platform,kind,SUM(CASE WHEN status IN ('new','waiting') THEN 1 ELSE 0 END) open_count,SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) new_count,COUNT(*) total FROM om_msg_threads GROUP BY platform,kind");
+        $open = self::inList($this->openStatuses());
+        $rows = $this->db->fetchAll("SELECT platform,kind,SUM(CASE WHEN status IN ($open) THEN 1 ELSE 0 END) open_count,SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) new_count,COUNT(*) total FROM om_msg_threads GROUP BY platform,kind");
         foreach ($rows as $row) {
             $platform = (string) $row['platform'];
             $result['platforms'][$platform]['kinds'][$row['kind']] = ['open' => (int) $row['open_count'], 'new' => (int) $row['new_count'], 'total' => (int) $row['total']];
@@ -422,10 +439,113 @@ final class MessageRepository
 
     public static function openCount(Database $db): int
     {
-        return (int) $db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads WHERE status IN ('new','waiting')");
+        $open = (new self($db))->openStatuses();
+        return (int) $db->fetchColumn('SELECT COUNT(*) FROM om_msg_threads WHERE status IN ('.self::inList($open).')');
     }
 
-    public function listing(array $filters): array
+    /**
+     * Statusy wątków: wbudowane (z nazwą i kolorem z ustawień) oraz własne, dodane przez użytkownika.
+     * Zachowany jest kształt [0 => nazwa, 1 => kolor] z wcześniejszej stałej, a klucze open/builtin
+     * mówią, czy status liczy się jako „do obsługi” i czy można go usunąć.
+     */
+    public function statuses(): array
+    {
+        $stored = $this->setting('messages_statuses');
+        $result = [];
+        foreach (self::STATUSES as $code => $default) {
+            $custom = is_array($stored[$code] ?? null) ? $stored[$code] : [];
+            $result[$code] = self::statusRow(
+                (string) ($custom['label'] ?? $default[0]),
+                (string) ($custom['color'] ?? $default[1]),
+                array_key_exists('open', $custom) ? !empty($custom['open']) : in_array($code, self::OPEN_STATUSES, true),
+                true
+            );
+        }
+        foreach ($stored as $code => $row) {
+            $code = (string) $code;
+            if (isset($result[$code]) || !is_array($row) || trim((string) ($row['label'] ?? '')) === '') { continue; }
+            $result[$code] = self::statusRow((string) $row['label'], (string) ($row['color'] ?? '#64748b'), !empty($row['open']), false);
+        }
+        return $result;
+    }
+
+    /** Kody statusów liczonych jako „do obsługi”. */
+    public function openStatuses(): array
+    {
+        $open = array_keys(array_filter($this->statuses(), static function (array $status): bool { return !empty($status['open']); }));
+        return $open ?: self::OPEN_STATUSES;
+    }
+
+    private static function statusRow(string $label, string $color, bool $open, bool $builtin): array
+    {
+        $label = mb_substr(trim($label), 0, 40, 'UTF-8');
+        return [0 => $label, 1 => self::color($color), 'label' => $label, 'color' => self::color($color), 'open' => $open ? 1 : 0, 'builtin' => $builtin ? 1 : 0];
+    }
+
+    private static function color(string $color): string
+    {
+        $color = trim($color);
+        return preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? strtolower($color) : '#64748b';
+    }
+
+    /** Lista kodów do klauzuli IN (kody są ograniczone do [a-z0-9_], więc nie wymagają parametrów). */
+    private static function inList(array $codes): string
+    {
+        $safe = array_map(static function (string $code): string { return "'".preg_replace('/[^a-z0-9_]/', '', $code)."'"; }, $codes);
+        return implode(',', $safe) ?: "''";
+    }
+
+    /**
+     * Zapis statusów z formularza ustawień: nazwy, kolory i „do obsługi” dla istniejących,
+     * plus opcjonalny nowy status. Kodu wbudowanego statusu nie da się zmienić ani usunąć.
+     */
+    public function saveStatuses(array $input): void
+    {
+        $labels = (array) ($input['label'] ?? []);
+        $colors = (array) ($input['color'] ?? []);
+        $open = (array) ($input['open'] ?? []);
+        $stored = [];
+        foreach ($this->statuses() as $code => $status) {
+            $label = mb_substr(trim((string) ($labels[$code] ?? $status['label'])), 0, 40, 'UTF-8');
+            if ($label === '') { $label = (string) $status['label']; }
+            $stored[$code] = ['label' => $label, 'color' => self::color((string) ($colors[$code] ?? $status['color'])), 'open' => !empty($open[$code]) ? 1 : 0];
+        }
+        $newLabel = mb_substr(trim((string) ($input['new_label'] ?? '')), 0, 40, 'UTF-8');
+        if ($newLabel !== '') {
+            $code = self::statusCode($newLabel, array_keys($stored));
+            $stored[$code] = ['label' => $newLabel, 'color' => self::color((string) ($input['new_color'] ?? '#64748b')), 'open' => !empty($input['new_open']) ? 1 : 0];
+        }
+        $this->saveSetting('messages_statuses', $stored);
+    }
+
+    /** Kod nowego statusu z jego nazwy (bez znaków diakrytycznych), unikalny wobec istniejących. */
+    private static function statusCode(string $label, array $taken): string
+    {
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT', $label);
+        $code = trim(preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($ascii !== false ? $ascii : $label, 'UTF-8')) ?? '', '_');
+        $code = mb_substr($code, 0, 18, 'UTF-8') ?: 'status';
+        $base = $code;
+        for ($index = 2; in_array($code, $taken, true); $index++) { $code = $base.'_'.$index; }
+        return $code;
+    }
+
+    /** Usuwa własny status; wątki z tym statusem wracają do „Do odpowiedzi”. */
+    public function deleteStatus(string $code): void
+    {
+        $statuses = $this->statuses();
+        if (!isset($statuses[$code])) { throw new InvalidArgumentException('Nieznany status wiadomości.'); }
+        if (!empty($statuses[$code]['builtin'])) { throw new InvalidArgumentException('Wbudowanego statusu nie można usunąć – możesz zmienić jego nazwę i kolor.'); }
+        $this->db->update('om_msg_threads', ['status' => 'waiting', 'updated_at' => self::now()], 'status=:s', ['s' => $code]);
+        $stored = $this->setting('messages_statuses');
+        unset($stored[$code]);
+        $this->saveSetting('messages_statuses', $stored);
+    }
+
+    /**
+     * Warunki listy wątków. $withStatus=false pomija filtr statusu – tak liczymy, ile wątków
+     * ma każdy status przy obecnym kanale, rodzaju, koncie i szukanej frazie.
+     */
+    private function listFilters(array $filters, bool $withStatus = true): array
     {
         $where = ['1=1'];
         $params = [];
@@ -433,24 +553,49 @@ final class MessageRepository
         if (isset(self::PLATFORMS[$platform])) { $where[] = 't.platform=:p'; $params['p'] = $platform; }
         $kind = (string) ($filters['kind'] ?? '');
         if (isset(self::KIND_LABELS[$kind])) { $where[] = 't.kind=:k'; $params['k'] = $kind; }
-        $status = (string) ($filters['status'] ?? 'open');
-        if ($status === 'open') { $where[] = "t.status IN ('new','waiting')"; }
-        elseif ($status === 'due') { $where[] = 't.remote_closed=0 AND t.due_at IS NOT NULL'; }
-        elseif (isset(self::STATUSES[$status])) { $where[] = 't.status=:s'; $params['s'] = $status; }
         if ((int) ($filters['connection'] ?? 0) > 0) { $where[] = 't.connection_id=:c'; $params['c'] = (int) $filters['connection']; }
         $q = trim((string) ($filters['q'] ?? ''));
         if ($q !== '') {
             $where[] = '(t.subject LIKE :q OR t.customer_name LIKE :q OR t.customer_login LIKE :q OR t.order_external_id LIKE :q OR t.last_preview LIKE :q OR t.external_id LIKE :q)';
             $params['q'] = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q).'%';
         }
-        $whereSql = implode(' AND ', $where);
+        $status = (string) ($filters['status'] ?? 'open');
+        if ($withStatus) {
+            if ($status === 'open') { $where[] = 't.status IN ('.self::inList($this->openStatuses()).')'; }
+            elseif ($status === 'due') { $where[] = 't.remote_closed=0 AND t.due_at IS NOT NULL'; }
+            elseif (isset($this->statuses()[$status])) { $where[] = 't.status=:s'; $params['s'] = $status; }
+        }
+        return [implode(' AND ', $where), $params];
+    }
+
+    /** Liczba wątków w każdym statusie (oraz „do obsługi”, „z terminem” i wszystkich) dla obecnych filtrów. */
+    public function statusCounts(array $filters): array
+    {
+        [$whereSql, $params] = $this->listFilters($filters, false);
+        $counts = array_map('intval', array_column($this->db->fetchAll("SELECT status,COUNT(*) c FROM om_msg_threads t WHERE $whereSql GROUP BY status", $params), 'c', 'status'));
+        $result = ['all' => array_sum($counts), 'open' => 0, 'due' => 0];
+        foreach ($this->statuses() as $code => $status) {
+            $result[$code] = (int) ($counts[$code] ?? 0);
+            if (!empty($status['open'])) { $result['open'] += $result[$code]; }
+        }
+        $result['due'] = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads t WHERE $whereSql AND t.remote_closed=0 AND t.due_at IS NOT NULL", $params);
+        return $result;
+    }
+
+    public function listing(array $filters): array
+    {
+        [$whereSql, $params] = $this->listFilters($filters);
+        $status = (string) ($filters['status'] ?? 'open');
         $total = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads t WHERE $whereSql", $params);
         $perPage = 40;
         $pages = max(1, (int) ceil($total / $perPage));
         $page = max(1, min($pages, (int) ($filters['page'] ?? 1)));
-        $order = $status === 'due' ? 't.due_at ASC' : "CASE t.status WHEN 'new' THEN 0 WHEN 'waiting' THEN 1 ELSE 2 END, t.last_message_at DESC";
+        $open = self::inList($this->openStatuses());
+        $order = $status === 'due' ? 't.due_at ASC' : "CASE WHEN t.status='new' THEN 0 WHEN t.status IN ($open) THEN 1 ELSE 2 END, t.last_message_at DESC";
         if (!in_array($status, ['open', 'due'], true)) { $order = 't.last_message_at DESC'; }
-        $rows = $this->db->fetchAll("SELECT t.*,c.name AS connection_name FROM om_msg_threads t LEFT JOIN om_connections c ON c.id=t.connection_id WHERE $whereSql ORDER BY $order, t.id DESC LIMIT $perPage OFFSET ".(($page - 1) * $perPage), $params);
+        // last_source rozróżnia naszą odpowiedź od autoodpowiedzi – lista pokazuje, czy ktoś naprawdę odpisał.
+        $lastSource = '(SELECT m.source FROM om_msg_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_source';
+        $rows = $this->db->fetchAll("SELECT t.*,c.name AS connection_name,$lastSource FROM om_msg_threads t LEFT JOIN om_connections c ON c.id=t.connection_id WHERE $whereSql ORDER BY $order, t.id DESC LIMIT $perPage OFFSET ".(($page - 1) * $perPage), $params);
         return ['rows' => array_map([self::class, 'hydrate'], $rows), 'total' => $total, 'page' => $page, 'pages' => $pages];
     }
 

@@ -38,12 +38,7 @@
       {if $filters.platform}<input type="hidden" name="platform" value="{$filters.platform|escape}">{/if}
       {if $filters.kind}<input type="hidden" name="kind" value="{$filters.kind|escape}">{/if}
       <label class="ms-search"><i class="bi bi-search"></i><input type="search" name="q" value="{$filters.q|escape}" placeholder="Klient, temat, nr zamówienia…"></label>
-      <select name="status" aria-label="Status" onchange="this.form.submit()">
-        <option value="open" {if $filters.status eq 'open'}selected{/if}>Do obsługi</option>
-        {foreach $statuses as $code=>$status}<option value="{$code}" {if $filters.status eq $code}selected{/if}>{$status[0]}</option>{/foreach}
-        <option value="due" {if $filters.status eq 'due'}selected{/if}>Z terminem (reklamacje)</option>
-        <option value="all" {if $filters.status eq 'all'}selected{/if}>Wszystkie</option>
-      </select>
+      {if $filters.status ne 'open'}<input type="hidden" name="status" value="{$filters.status|escape}">{/if}
       {if $accounts|count > 1}
       <select name="connection" aria-label="Konto" onchange="this.form.submit()">
         <option value="0">Wszystkie konta</option>
@@ -51,12 +46,22 @@
       </select>
       {/if}
     </form>
+    {capture name=statusBase}index.php?controller=messages{if $filters.platform}&platform={$filters.platform|escape:'url'}{/if}{if $filters.kind}&kind={$filters.kind|escape:'url'}{/if}{if $filters.connection}&connection={$filters.connection}{/if}{if $filters.q}&q={$filters.q|escape:'url'}{/if}{/capture}
+    <nav class="ms-status-filter" aria-label="Filtr statusu">
+      <a class="ms-chip{if $filters.status eq 'open'} active{/if}" href="{$smarty.capture.statusBase}&status=open"><i class="bi bi-inbox"></i> Do obsługi <b>{$statusCounts.open|default:0}</b></a>
+      {foreach $statuses as $code=>$status}
+        <a class="ms-chip{if $filters.status eq $code} active{/if}" style="--ms-c:{$status[1]}" href="{$smarty.capture.statusBase}&status={$code|escape:'url'}"><span class="ms-chip-dot"></span>{$status[0]|escape} <b>{$statusCounts[$code]|default:0}</b></a>
+      {/foreach}
+      <a class="ms-chip{if $filters.status eq 'due'} active{/if}" href="{$smarty.capture.statusBase}&status=due"><i class="bi bi-alarm"></i> Z terminem <b>{$statusCounts.due|default:0}</b></a>
+      <a class="ms-chip{if $filters.status eq 'all'} active{/if}" href="{$smarty.capture.statusBase}&status=all">Wszystkie <b>{$statusCounts.all|default:0}</b></a>
+    </nav>
     <form method="post" action="index.php?controller=messages&action=save" class="ms-bulk" data-ms-bulk>
       <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="bulk_status"><input type="hidden" name="back" value="{$backQuery|escape}">
       <div class="ms-list-head">
+        {if $canWrite && $listing.rows}<label class="ms-check-all" title="Zaznacz wszystkie wątki na tej stronie (Shift zaznacza zakres)"><input type="checkbox" data-ms-check-all><span>Zaznacz wszystkie</span></label>{/if}
         <span><strong>{$listing.total}</strong> {if $listing.total eq 1}wątek{else}wątków{/if}</span>
         {if $canWrite && $listing.rows}
-        <span class="ms-bulk-actions" hidden data-ms-bulk-actions><span data-ms-selected>0</span> zazn. <select name="status">{foreach $statuses as $code=>$status}<option value="{$code}">{$status[0]}</option>{/foreach}</select><button class="om-btn om-small">Ustaw</button></span>
+        <span class="ms-bulk-actions" hidden data-ms-bulk-actions><span data-ms-selected>0</span> zazn. → {foreach $statuses as $code=>$status}<button class="ms-chip is-action" style="--ms-c:{$status[1]}" name="status" value="{$code}" title="Ustaw status: {$status[0]|escape}"><span class="ms-chip-dot"></span>{$status[0]|escape}</button>{/foreach}</span>
         {/if}
       </div>
       <div class="ms-rows">
@@ -71,8 +76,11 @@
               <time>{$row.last_label|escape}</time>
             </span>
             <span class="ms-row-subject">{$row.subject|escape}</span>
-            <span class="ms-row-preview">{if $row.last_author eq 'seller'}<i class="bi bi-reply"></i> {/if}{$row.last_preview|escape|truncate:140:'…'}</span>
+            <span class="ms-row-preview"><b class="ms-who is-{if $row.last_author eq 'seller'}{if $row.last_source eq 'auto'}auto{else}us{/if}{elseif $row.last_author eq 'customer'}them{else}other{/if}">{if $row.last_author eq 'seller'}{if $row.last_source eq 'auto'}Autoodpowiedź:{else}Odpisaliśmy:{/if}{elseif $row.last_author eq 'customer'}Klient:{elseif $row.last_author eq 'operator'}Operator:{elseif $row.last_author}System:{/if}</b> {$row.last_preview|escape|truncate:140:'…'}</span>
             <span class="ms-row-tags">
+              {if $row.last_author eq 'customer'}<span class="ms-answer is-wait"><i class="bi bi-hourglass-split"></i> Czeka na naszą odpowiedź</span>
+              {elseif $row.last_author eq 'seller' && $row.last_source eq 'auto'}<span class="ms-answer is-auto"><i class="bi bi-robot"></i> Tylko autoodpowiedź</span>
+              {elseif $row.last_author eq 'seller'}<span class="ms-answer is-done"><i class="bi bi-reply-fill"></i> Odpisaliśmy{if $row.last_label} {$row.last_label|escape}{/if}</span>{/if}
               <span class="ms-status" style="--ms-c:{$statuses[$row.status][1]|default:'#64748b'}">{$statuses[$row.status][0]|default:$row.status|escape}</span>
               {if $row.due_label}<span class="ms-due{if $row.due_soon} is-soon{/if}"><i class="bi bi-alarm"></i> {$row.due_label}</span>{/if}
               {if $row.order_external_id}<span class="ms-tag"><i class="bi bi-bag"></i> {$row.order_external_id|escape|truncate:18:'…'}</span>{/if}

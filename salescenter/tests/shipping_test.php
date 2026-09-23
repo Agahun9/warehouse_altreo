@@ -139,5 +139,72 @@ check(substr_count($html,'data-pick=')===count(ShippingProviders::CLASSES),'Pick
 check(strpos($html,'Numer trafia do źródła sam')!==false && strpos($html,'Protokół odbioru')!==false && strpos($html,'Anulowana')!==false,'Capabilities and register status render');
 check(strpos($html,'tok-SECRET')===false && strpos($html,'ERLI-KEY')===false,'Shipments tab never renders secrets');
 
+// Gabaryty: wbudowane Mała/Średnia/Duża, własna lista z nazwami zastępuje wbudowaną.
+$defaults=OrderShipmentService::defaults($repo);
+check(array_keys($defaults['presets'])===['small','medium','large'] && $defaults['presets']['medium']['name']==='Średnia','Built-in package presets have names');
+check(OrderShipmentService::autoPreset(['a'=>[],'b'=>[]],1)==='a' && OrderShipmentService::autoPreset($defaults['presets'],3)==='medium','Auto preset falls back to first custom preset');
+$repo->saveSetting('shipping_defaults',['default_package'=>'gone','presets'=>['small'=>['name'=>'Mała','length'=>20,'width'=>15,'height'=>8,'weight'=>0.4],'p1a'=>['name'=>'Karton 60×40','length'=>60,'width'=>40,'height'=>40,'weight'=>8]]]);
+$defaults=OrderShipmentService::defaults($repo);
+check(array_keys($defaults['presets'])===['small','p1a'] && $defaults['presets']['p1a']['name']==='Karton 60×40' && $defaults['default_package']==='auto','Custom presets replace built-ins, unknown default resets to auto');
+check(strpos(OrderShipmentService::presetLabel($defaults['presets']['p1a']),'60×40×40 cm, 8 kg')!==false,'Preset label shows dimensions');
+
+// Gotowe ręczne automatyzacje „Nadaj: …” – po jednej na gabaryt, bez duplikatów.
+$automation=$repo->automation();
+check($automation->createShippingButtons()===['Nadaj: Mała','Nadaj: Karton 60×40'] && $automation->createShippingButtons()===[],'Shipping buttons created once per preset');
+$shipRules=array_values(array_filter($automation->allRules(),fn($rule)=>strpos($rule['name'],'Nadaj:')===0));
+check($shipRules[1]['triggers']===['manual'] && $shipRules[1]['options']['button_order'] && $shipRules[1]['options']['button_list'] && $shipRules[1]['actions'][0]['params']['package']==='p1a' && $shipRules[1]['actions'][0]['params']['carrier_account_id']==='0','Shipping button rule uses preset and automatic carrier');
+check($automation->rulesUsingPackage('p1a')===['Nadaj: Karton 60×40'],'Rules using a preset are detected');
+check(in_array(['p1a','Karton 60×40 (60×40×40 cm, 8 kg)'],$automation->catalog()['actions']['create_shipment']['params'][1]['options'],true),'Automation editor lists custom presets');
+
+// Mapowanie metod dostawy: mapowanie > dopasowanie źródła; „nie nadawaj”; brak dopasowania = wymaga mapowania.
+$delivery=$order['details']['delivery'];
+OrderShipmentService::saveDeliveryMapping($repo,'erli',mb_strtoupper($delivery,'UTF-8'),$inpostCarrierId,'inpost_courier_standard');
+$mapped=OrderShipmentService::suggestion($repo,$order,$repo->carrierAccounts(),$defaults);
+check($mapped['source']==='mapping' && $mapped['carrier_account_id']===$inpostCarrierId && $mapped['service']==='inpost_courier_standard','Delivery mapping wins (case-insensitive)');
+OrderShipmentService::saveDeliveryMapping($repo,'erli',$delivery,OrderShipmentService::MAPPING_SKIP,'x');
+$skipped=OrderShipmentService::suggestion($repo,$order,$repo->carrierAccounts(),$defaults);
+check($skipped['source']==='skip' && $skipped['carrier_account_id']===0 && count(OrderShipmentService::deliveryMappings($repo))===1,'Skip mapping replaces previous one');
+OrderShipmentService::saveDeliveryMapping($repo,'erli',$delivery,0,'');
+check(!OrderShipmentService::deliveryMappings($repo) && OrderShipmentService::suggestion($repo,$order,$repo->carrierAccounts(),$defaults)['source']==='match','Removing mapping restores automatic match');
+rejects(function () use ($repo) { OrderShipmentService::saveDeliveryMapping($repo,'erli','X',999999,''); },'Mapping to unknown carrier rejected','konta nadawczego');
+$unknown=OrderShipmentService::suggestion($repo,['id'=>0,'platform'=>'woocommerce','account_id'=>999,'details'=>['delivery'=>'Kurier DPD','items'=>[]]],$repo->carrierAccounts(),$defaults);
+check($unknown['source']==='first' && $unknown['carrier_account_id']===$inpostCarrierId,'Unmatched delivery falls back only as hint');
+
+// Automat: niezmapowana metoda nie nadaje paczki i zgłasza potrzebę mapowania; „nie nadawaj” pomija bez błędu.
+$db->update('om_carrier_accounts',['enabled'=>0],'id=:id',['id'=>$erliCarrierId]);
+$details=$order['details']; $details['delivery']='Kurier DPD'; $db->update('om_orders',['details_json'=>OrderRepository::json($details)],'id=:id',['id'=>$orderId]);
+$shipmentsBefore=(int)$db->fetchColumn('SELECT COUNT(*) FROM om_shipments');
+$db->update('om_shipments',['state'=>'CANCELLED'],'order_id=:o',['o'=>$orderId]);
+$report=$automation->runManual([$orderId],$shipRules[0]['id'],'Tester','order');
+check($report['errors']===1 && strpos($report['message'],'wymaga mapowania')!==false && strpos($report['message'],'Kurier DPD')!==false,'Automation reports delivery method that needs mapping');
+$overview=OrderShipmentService::deliveryOverview($repo);
+check($overview[0]['delivery']==='Kurier DPD' && $overview[0]['needs_mapping'] && $overview[0]['platform_label']==='ERLI','Shipments tab lists unmapped delivery first');
+OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',OrderShipmentService::MAPPING_SKIP,'');
+$report=$automation->runManual([$orderId],$shipRules[0]['id'],'Tester','order');
+check($report['errors']===0 && $report['executed']===1 && strpos((string)$db->fetchColumn('SELECT message FROM om_rule_runs ORDER BY id DESC LIMIT 1'),'nie nadawaj')!==false,'Skip mapping skips shipment without error');
+check((int)$db->fetchColumn('SELECT COUNT(*) FROM om_shipments')===$shipmentsBefore && !OrderShipmentService::deliveryOverview($repo)[0]['needs_mapping'],'No shipment created and mapping resolved');
+
+// Apaczka w mapowaniu: lista kurierów bez zamówienia (z cache), brak wybranego kuriera jest zgłaszany.
+$apaczkaId=(int)$db->insert('om_carrier_accounts',['provider'=>'apaczka','name'=>'Apaczka','enabled'=>1,'public_config_json'=>OrderRepository::json(['app_id'=>'A']),'secret_config_json'=>OrderSecretBox::encrypt(['app_secret'=>'S']),'updated_at'=>gmdate('Y-m-d H:i:s')]);
+$repo->saveSetting('carrier_services_'.$apaczkaId,['fetched_at'=>time(),'options'=>[['value'=>'21','name'=>'DPD Classic','carrier'=>'DPD'],['value'=>'82','name'=>'DHL Parcel','carrier'=>'DHL']]]);
+$apaczkaOptions=$service->options(0,$apaczkaId);
+check(array_column($apaczkaOptions['options'],'value')===['21','82'] && $apaczkaOptions['automatic']==='','Apaczka services listed without an order');
+OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',$apaczkaId,'');
+$row=OrderShipmentService::deliveryOverview($repo)[0];
+check($row['delivery']==='Kurier DPD' && $row['suggestion']['source']==='mapping' && $row['needs_service'],'Apaczka mapping without courier is flagged');
+OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',$apaczkaId,'21');
+$row=OrderShipmentService::deliveryOverview($repo)[0];
+check(!$row['needs_service'] && $row['service_name']==='DPD · DPD Classic','Apaczka mapping shows chosen courier');
+check($service->options($orderId,$apaczkaId)['preferred']==='21','Order shipment form preselects mapped courier');
+$orderSuggestion=OrderShipmentService::suggestion($repo,$repo->order($orderId),$repo->carrierAccounts(),OrderShipmentService::defaults($repo));
+check($orderSuggestion['carrier_account_id']===$apaczkaId && $orderSuggestion['source']==='mapping','Order shipment form preselects mapped account');
+OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',OrderShipmentService::MAPPING_SKIP,'');
+
+// Zakładka Przesyłki: edycja gabarytów i tabela mapowania.
+$smarty->assign(['shippingDefaults'=>$defaults,'deliveryOverview'=>OrderShipmentService::deliveryOverview($repo)]);
+$html=$smarty->fetch('orders/index.tpl');
+check(strpos($html,'data-preset-add')!==false && strpos($html,'name="presets[1][name]" value="Karton 60×40"')!==false && strpos($html,'name="presets[1][key]" value="p1a"')!==false && strpos($html,'name="default_package"')===false && strpos($html,'name="apaczka_service_id"')===false,'Custom presets editable with names, removed defaults hidden');
+check(strpos($html,'data-map-service')!==false && strpos($html,'id="om-delivery-mapping"')!==false && strpos($html,'Nie nadawaj automatycznie</span>')!==false && strpos($html,'value="Kurier DPD"')!==false,'Delivery mapping table renders');
+
 Http::$transport=null;
 echo "OK: $checks shipping checks; no network or production database used.\n";

@@ -71,7 +71,7 @@ final class OrderRepository
             }
         }
         foreach ([
-            'om_orders'=>['status_changed_at'=>'VARCHAR(30) NULL'],
+            'om_orders'=>['status_changed_at'=>'VARCHAR(30) NULL','starred'=>'INTEGER NOT NULL DEFAULT 0'],
             'om_rules'=>['triggers_json'=>'TEXT NULL','options_json'=>'TEXT NULL','position'=>'INTEGER NOT NULL DEFAULT 0','updated_at'=>'VARCHAR(30) NULL'],
             'om_rule_runs'=>['trigger_name'=>'VARCHAR(30) NULL','result'=>'VARCHAR(20) NULL','message'=>'TEXT NULL'],
         ] as $table=>$columns) {
@@ -501,6 +501,30 @@ final class OrderRepository
         }
         return array_values(array_unique($lines));
     }
+    /** Two-letter ISO code of the delivery address country, or '' when the address has none. */
+    private static function countryCode(array $address,int $depth=0): string
+    {
+        $aliases=['POL'=>'PL','POLSKA'=>'PL','POLAND'=>'PL','DEU'=>'DE','NIEMCY'=>'DE','GERMANY'=>'DE','CZE'=>'CZ','CZECHY'=>'CZ','SVK'=>'SK','SŁOWACJA'=>'SK','SLOVAKIA'=>'SK','HUN'=>'HU','WĘGRY'=>'HU','AUT'=>'AT','AUSTRIA'=>'AT','ROU'=>'RO','GBR'=>'GB','UK'=>'GB','USA'=>'US','FRA'=>'FR','FRANCJA'=>'FR','NLD'=>'NL','BEL'=>'BE','ITA'=>'IT','ESP'=>'ES','LTU'=>'LT','LITWA'=>'LT','LVA'=>'LV','EST'=>'EE','UKR'=>'UA','UKRAINA'=>'UA','IRL'=>'IE','DNK'=>'DK','SWE'=>'SE','FIN'=>'FI','PRT'=>'PT','BGR'=>'BG','HRV'=>'HR','SVN'=>'SI','GRC'=>'GR','LUX'=>'LU','CHE'=>'CH','NOR'=>'NO'];
+        foreach (['countryCode','country_code','country_iso_code','countryIsoCode','country_id','country'] as $key) {
+            $value=$address[$key]??null;
+            if (is_array($value)) { $value=$value['code']??$value['isoCode']??$value['iso_code']??null; }
+            if (!is_scalar($value)) { continue; }
+            $code=mb_strtoupper(trim((string)$value),'UTF-8');
+            $code=$aliases[$code]??$code;
+            if (preg_match('/^[A-Z]{2}$/D',$code)) { return $code; }
+        }
+        if ($depth<2) {
+            foreach (['address','delivery_address','shipping_address'] as $key) {
+                if (is_array($address[$key]??null) && ($code=self::countryCode($address[$key],$depth+1))!=='') { return $code; }
+            }
+        }
+        return '';
+    }
+    private static function countryName(string $code): string
+    {
+        $names=['PL'=>'Polska','DE'=>'Niemcy','CZ'=>'Czechy','SK'=>'Słowacja','HU'=>'Węgry','AT'=>'Austria','RO'=>'Rumunia','GB'=>'Wielka Brytania','US'=>'USA','FR'=>'Francja','NL'=>'Holandia','BE'=>'Belgia','IT'=>'Włochy','ES'=>'Hiszpania','LT'=>'Litwa','LV'=>'Łotwa','EE'=>'Estonia','UA'=>'Ukraina','IE'=>'Irlandia','DK'=>'Dania','SE'=>'Szwecja','FI'=>'Finlandia','PT'=>'Portugalia','BG'=>'Bułgaria','HR'=>'Chorwacja','SI'=>'Słowenia','GR'=>'Grecja','LU'=>'Luksemburg','CH'=>'Szwajcaria','NO'=>'Norwegia'];
+        return $names[$code]??$code;
+    }
     private static function pick(array $source,array $keys,string $default=''): string
     {
         foreach ($keys as $key) { if (isset($source[$key]) && is_scalar($source[$key]) && trim((string)$source[$key])!=='') { return trim((string)$source[$key]); } }
@@ -627,7 +651,7 @@ final class OrderRepository
             'buyer'=>'o.buyer_name ASC,o.id DESC',
         ];
         $orderBy=$orders[(string)($filters['sort']??'newest')]??$orders['newest'];
-        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.status_changed_at,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT 50 OFFSET $offset",$params);
+        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.status_changed_at,o.starred,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT 50 OFFSET $offset",$params);
         $skus=[];$allegroOfferIds=[];$erliExternalIds=[];$empikShopSkus=[];$empikProductSkus=[];$empikProductIds=[];$sourceAccounts=[];
         foreach ($rows as &$row) {
             try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
@@ -661,7 +685,10 @@ final class OrderRepository
             $row['items']=array_slice($items,0,3);
             $row['item_lines']=count($items);
             $row['item_quantity']=array_sum(array_map(static function ($item) { return max(0,(int)($item['quantity']??0)); },$items));
+            $row['buyer_note']=is_scalar($details['buyer_note']??null)?trim((string)$details['buyer_note']):'';
             $row['delivery']=(string)($details['delivery']??'');
+            $row['country_code']=self::countryCode(is_array($details['address']??null)?$details['address']:[]);
+            $row['country_name']=self::countryName($row['country_code']);
             $row['pickup']=(string)($details['pickup']??'');
             $row['shipping_cents']=(int)($details['shipping_cents']??0);
             $paymentText=strtolower((string)($details['payment_method']??''));
@@ -754,6 +781,10 @@ final class OrderRepository
     public function event(int $id,string $message,string $actor): void
     {
         $this->db->insert('om_events',['order_id'=>$id,'message'=>$message,'actor'=>$actor,'created_at'=>gmdate('Y-m-d H:i:s')]);
+    }
+    public function setStarred(int $id,bool $starred): void
+    {
+        $this->db->update('om_orders',['starred'=>$starred?1:0],'id=:id',['id'=>$id]);
     }
     /**
      * Internal order notes live in om_order_notes; om_orders.note keeps their joined text

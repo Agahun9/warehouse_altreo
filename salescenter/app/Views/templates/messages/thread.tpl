@@ -11,6 +11,14 @@
           {if $thread.due_label}<span class="ms-due{if $thread.due_soon} is-soon{/if}"><i class="bi bi-alarm"></i> termin {$thread.due_label}</span>{/if}
         </div>
         <h2>{$thread.subject|escape}</h2>
+        {if $messages}{assign var=lastMsg value=$messages[$messages|@count-1]}
+        <p class="ms-last-line">
+          {if $lastMsg.author_role eq 'customer'}<span class="ms-answer is-wait"><i class="bi bi-hourglass-split"></i> Ostatnia wiadomość od klienta ({$lastMsg.time_label|escape}) – czeka na naszą odpowiedź</span>
+          {elseif $lastMsg.author_role eq 'seller' && $lastMsg.source eq 'auto'}<span class="ms-answer is-auto"><i class="bi bi-robot"></i> Ostatnia wiadomość to autoodpowiedź ({$lastMsg.time_label|escape}) – nikt jeszcze nie odpisał osobiście</span>
+          {elseif $lastMsg.author_role eq 'seller'}<span class="ms-answer is-done"><i class="bi bi-reply-fill"></i> Odpisaliśmy {$lastMsg.time_label|escape}{if $lastMsg.actor} – {$lastMsg.actor|escape}{/if}</span>
+          {else}<span class="ms-answer"><i class="bi bi-info-circle"></i> Ostatni wpis: {$lastMsg.author_name|default:'system'|escape} ({$lastMsg.time_label|escape})</span>{/if}
+        </p>
+        {/if}
         <p><i class="bi bi-person"></i> {$thread.customer_name|default:$thread.customer_login|default:'Klient'|escape}
           {if $thread.order_external_id} · <i class="bi bi-bag"></i> {if $threadView.order_url}<a href="{$threadView.order_url}">zamówienie {$thread.order_external_id|escape}</a>{else}zamówienie {$thread.order_external_id|escape} <small>(nie ma go w SalesCenter)</small>{/if}{/if}
         </p>
@@ -19,7 +27,9 @@
     {if $canWrite}
     <form method="post" action="index.php?controller=messages&action=save" class="ms-status-form">
       <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="status"><input type="hidden" name="thread_id" value="{$thread.id}"><input type="hidden" name="back" value="{$backQuery|escape}">
-      <select name="status" aria-label="Status wątku" onchange="this.form.submit()">{foreach $statuses as $code=>$status}<option value="{$code}" {if $thread.status eq $code}selected{/if}>{$status[0]}</option>{/foreach}</select>
+      <div class="ms-status-pick" role="group" aria-label="Status wątku">
+        {foreach $statuses as $code=>$status}<button class="ms-chip{if $thread.status eq $code} active{/if}" style="--ms-c:{$status[1]}" name="status" value="{$code}" title="Ustaw status: {$status[0]|escape}"{if $thread.status eq $code} aria-current="true"{/if}><span class="ms-chip-dot"></span>{$status[0]|escape}</button>{/foreach}
+      </div>
     </form>
     {else}<span class="ms-status" style="--ms-c:{$statuses[$thread.status][1]}">{$statuses[$thread.status][0]}</span>{/if}
   </header>

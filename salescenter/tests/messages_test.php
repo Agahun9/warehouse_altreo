@@ -10,6 +10,7 @@ use App\Models\MessageRepository;
 use App\Models\OrderRepository;
 use App\Services\Integrations\Http;
 use App\Services\Messages\MessageCenter;
+use App\Services\Messages\MoreleLog;
 use App\Services\Messages\MoreleMessages;
 
 $checks=0;
@@ -199,6 +200,18 @@ $incident=$repo->findThread((int)$incident['id']);
 check((int)$incident['remote_closed']===1 && $incident['remote_status']==='INCIDENT_CLOSED' && $incident['status']==='closed','Incident missing from has_incident list is closed');
 
 // ---------------- Morele: centrum komunikacji
+// Atrapa Morele „pamięta” wysłane wiadomości i pokazuje je w szczegółach wątku 501 (jak prawdziwe API po wysyłce).
+$moreleSent=[]; $moreleEcho=true; $baseTransport=Http::$transport;
+Http::$transport=function (string $method,string $url,array $headers,?string $body) use (&$moreleSent,&$moreleEcho,$baseTransport): array {
+    $result=$baseTransport($method,$url,$headers,$body);
+    if ($method==='POST' && strpos($url,'api-marketplace.morele.net/communication-center/message')!==false && $result['status']===200 && $moreleEcho) { $moreleSent[]=(string)(json_decode((string)$body,true)['messageBody']??''); }
+    if ($method==='GET' && preg_match('#communication-center/threads\?thread_id=501$#',$url) && $result['status']===200) {
+        $detail=json_decode($result['body'],true);
+        foreach ($moreleSent as $i=>$html) { $detail['messages'][]=['id'=>'sent-'.$i,'sender_name'=>'Sklep XYZ','created_at'=>date('Y-m-d H:i:s'),'message_body'=>$html]; }
+        $result['body']=json_encode($detail);
+    }
+    return $result;
+};
 $moreleId=$connections->create('morele','Morele · sklep',['remote_id'=>'cid'],['client_id'=>'cid','client_secret'=>'sec','access_token'=>'mtok','refresh_token'=>'mref']);
 $responses=[
     ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10#',200,['data'=>['a'=>['no'=>501,'subject'=>'Reklamacja słuchawek','lastResponseAt'=>date('Y-m-d H:i:s',time()-120),'sender'=>'Adam Nowak','needsResponse'=>true]],'filtered'=>1,'total'=>1,'needResponse'=>1]],
@@ -208,8 +221,18 @@ $responses=[
         ['sender_name'=>'Adam Nowak','created_at'=>date('Y-m-d H:i:s',time()-120),'message_body'=>'SN123<br>pozdrawiam','attachments'=>null,'sent_by_operator'=>false],
     ]]],
 ];
+$center->source('morele')->confirmDelay=0;
+$repo->saveSettings('morele',['enabled'=>'1','sync_messages'=>'1','debug_log'=>'1']);
+MoreleLog::clear();
 $report=$center->sync(true,$moreleId);
 check($report[0]['error']===null && $report[0]['threads']===1,'Morele sync');
+$logged=MoreleLog::tail();
+check(strpos($logged,'communication-center/threads')!==false && strpos($logged,'Reklamacja słuchawek')!==false && strpos($logged,'wątek pobrany')!==false && stripos($logged,'mtok')===false,'Morele debug log records raw API traffic without the token');
+check(MoreleLog::size()>0 && (MoreleLog::clear()===null) && MoreleLog::size()===0,'Morele debug log can be cleared');
+$repo->saveSettings('morele',['enabled'=>'1','sync_messages'=>'1','debug_log'=>'0']);
+$center->sync(true,$moreleId);
+check(MoreleLog::size()===0,'Morele debug log stays off when the setting is disabled');
+$repo->saveSettings('morele',['enabled'=>'1','sync_messages'=>'1','debug_log'=>'1']);
 check(in_array('Authorization: Bearer mtok',$find('#communication-center/threads\?thread_id=501#')['headers'],true),'Morele uses bearer token');
 $mo=$repo->findByExternal($moreleId,'message','501');
 $moMessages=$repo->messages((int)$mo['id']);
@@ -243,6 +266,75 @@ $responses=$saved;
 $responses=array_merge([['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10#',200,['data'=>[['no'=>501,'lastResponseAt'=>date('Y-m-d H:i:s'),'closed'=>true]],'total'=>1]]],$responses);
 $center->sync(true,$moreleId);
 check((int)$repo->findThread((int)$mo['id'])['remote_closed']===1,'Morele closed thread detected');
+check(count(array_filter($repo->messages((int)$mo['id']),function (array $m) { return strpos($m['body'],'Druga odpowiedź.')!==false; }))===1,'Sent Morele reply not duplicated by later sync');
+// Wysyłka potwierdzona przez API (HTTP 200), ale wiadomości nie ma w wątku – błąd zamiast „wysłano”.
+$db->update('om_msg_threads',['remote_closed'=>0],'id=:id',['id'=>$mo['id']]);
+$moreleEcho=false;
+$countBefore=count($repo->messages((int)$mo['id']));
+$responses=array_merge([['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10&resource_id=998877$#',200,['data'=>[['no'=>501],['no'=>777]],'filtered'=>2,'total'=>9]]],$responses);
+rejects(function () use ($center,$mo) { $center->reply((int)$mo['id'],'Czy to dotarło?',[],'Ola'); },'Morele reply not visible in thread is reported','nie pojawiła się w wątku 501');
+$error=''; try { $center->reply((int)$mo['id'],'Czy to dotarło?',[],'Ola'); } catch (\Throwable $e) { $error=$e->getMessage(); }
+check(strpos($error,'Inne wątki Morele dla 998877: 777')!==false && count($repo->messages((int)$mo['id']))===$countBefore,'Unconfirmed Morele reply points to other thread and is not recorded as sent');
+$moreleEcho=true;
+// Nowa wiadomość klienta w starym wątku: lista nie zmienia daty ani flagi, ale filtr needs_answer ją wskazuje.
+$old=date('Y-m-d H:i:s',time()-5*86400);
+$responses=array_merge([
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10&needs_answer=1$#',200,['data'=>[['no'=>501,'date_created'=>$old]],'filtered'=>1,'total'=>12,'needResponse'=>1]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10$#',200,['data'=>array_map(function (int $n) use ($old) { return ['no'=>$n===0?501:800+$n,'date_created'=>date('Y-m-d H:i:s',strtotime($old)+$n)]; },range(0,9)),'filtered'=>12,'total'=>12]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=10&limit=10$#',200,['data'=>[['no'=>811,'date_created'=>$old],['no'=>900,'date_created'=>date('Y-m-d H:i:s',time()+60),'subject'=>'Pytanie o produkt']],'filtered'=>12,'total'=>12]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?thread_id=501$#',200,['thread'=>['id'=>'abc/501','no'=>501,'type_id'=>'4','resource_id'=>'998877'],'messages'=>[
+        ['id'=>'m9','sender_name'=>'Adam Nowak','created_at'=>date('Y-m-d H:i:s',time()-30),'message_body'=>'Czy jest już decyzja?','sent_by_operator'=>false]]]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?thread_id=900$#',200,['thread'=>['id'=>'x/900','no'=>900,'type_id'=>'2','resource_id'=>'P-1'],'messages'=>[
+        ['id'=>'q1','sender_name'=>'Ewa','created_at'=>date('Y-m-d H:i:s',time()-60),'message_body'=>'Czy pasuje do laptopa?']]]],
+],$responses);
+$db->update('om_msg_threads',['status'=>'answered','needs_reply'=>0],'id=:id',['id'=>$mo['id']]);
+$report=$center->sync(true,$moreleId);
+$mo=$repo->findThread((int)$mo['id']);
+check($report[0]['error']===null && (int)$mo['needs_reply']===1 && $mo['status']==='waiting' && in_array('Czy jest już decyzja?',array_column($repo->messages((int)$mo['id']),'body'),true),'Morele needs_answer pass brings new customer message into old thread');
+$q=$repo->findByExternal($moreleId,'message','900');
+check($q && $repo->messages((int)$q['id'])[0]['body']==='Czy pasuje do laptopa?','Morele list sorted oldest-first is read from the last page');
+// „Pobierz starsze”: wątek starszy niż znacznik synchronizacji i wątek wyglądający lokalnie na aktualny.
+$oldDay=date('Y-m-d H:i:s',time()-60*86400);
+$responses=array_merge([
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10&needs_answer=1$#',200,['data'=>[],'filtered'=>0,'total'=>2,'needResponse'=>0]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10$#',200,['data'=>[['no'=>700,'date_created'=>$oldDay,'closed'=>true],['no'=>900,'date_created'=>$oldDay]],'filtered'=>2,'total'=>2]],
+    ['#GET https://api-marketplace\.morele\.net/communication-center/threads\?thread_id=700$#',200,['thread'=>['id'=>'x/700','no'=>700,'type_id'=>'3','resource_id'=>''],'messages'=>[
+        ['id'=>'o1','sender_name'=>'Piotr','created_at'=>$oldDay,'message_body'=>'Stare pytanie sprzed dwóch miesięcy']]]],
+],$responses);
+$report=$center->backfill($moreleId,90);
+$older=$repo->findByExternal($moreleId,'message','700');
+check($older && $repo->messages((int)$older['id'])[0]['body']==='Stare pytanie sprzed dwóch miesięcy','Backfill brings threads older than the sync watermark, including closed ones');
+check($report[0]['listed']===2 && strpos(implode(' ',$report[0]['notes']),'przejrzano historię')!==false,'Backfill reports listed threads and history note');
+check(empty($repo->syncState()[(string)$moreleId]['force_full']),'Backfill flag cleared after the run');
+rejects(function () use ($center) { $center->backfill(99999,30); },'Backfill rejects unknown connection');
+// Ponowne pobranie tego samego wątku nie dubluje wiadomości (Morele nie nadaje im identyfikatorów),
+// a własna odpowiedź wysłana z SalesCenter zostaje po odbudowie historii.
+$dupBefore=count($repo->messages((int)$older['id']));
+$ownBefore=count(array_filter($repo->messages((int)$mo['id']),function (array $m) { return in_array($m['source'],['user','auto'],true); }));
+$center->backfill($moreleId,90);
+check(count($repo->messages((int)$older['id']))===$dupBefore,'Rebuilding Morele history does not duplicate messages');
+check(count(array_filter($repo->messages((int)$mo['id']),function (array $m) { return in_array($m['source'],['user','auto'],true); }))===$ownBefore,'Replies sent from SalesCenter survive the rebuild');
+// Prawdziwy kształt odpowiedzi Morele (z logu produkcyjnego): wiadomości są już na liście wątków,
+// treść jest HTML-em zakodowanym encjami, nadawcy to adresy e-mail, a needsResponse bywa 0 mimo pytania klienta.
+$realId=$connections->create('morele','Morele · konto 2',['remote_id'=>'cid2'],['client_id'=>'cid2','client_secret'=>'sec2','access_token'=>'mtok2','refresh_token'=>'mref2']);
+$tid='Y0UwUjZjb004NFJPSU1YRWx4TWdFTkJnaThuTE52NE9HaHpsQVBSOFA5bz06Ojr/K3hjaqiIfOC6';
+$responses=array_merge([['#GET https://api-marketplace\.morele\.net/communication-center/threads\?start=0&limit=10$#',200,['data'=>[[
+    'id'=>$tid,'sender'=>'Mariusz Frankowski','createdAt'=>date('Y-m-d H:i:s',time()-9000),'subject'=>'Pytanie o zamówienie nr: 23115631','resourceId'=>'23115631','needsResponse'=>0,
+    'messages'=>[
+        ['sender'=>'mariusz@example.invalid','receiver'=>'kontakt@sklep.invalid','isSentByOperator'=>1,'messageBody'=>'Czy komputer będzie kompletnie złożony?','attachments'=>[],'createdAt'=>date('Y-m-d H:i:s',time()-600)],
+        ['sender'=>'kontakt@sklep.invalid','receiver'=>'mariusz@example.invalid','isSentByOperator'=>0,'messageBody'=>'&lt;p&gt;Dzień dobry,&nbsp;&lt;br /&gt;komputer jest w pełni z&oacute;żony.&lt;/p&gt;','attachments'=>['https://api-marketplace-priv.morele.net/communication_center/85867/zrzut%20ekranu.png'],'createdAt'=>date('Y-m-d H:i:s',time()-1200)],
+        ['sender'=>'mariusz@example.invalid','receiver'=>'kontakt@sklep.invalid','isSentByOperator'=>0,'messageBody'=>'Dzień dobry  Kiedy zamowienie otrzymam ','attachments'=>[],'createdAt'=>date('Y-m-d H:i:s',time()-9000)],
+    ]]],'total'=>1]]],$responses);
+$before=count($calls);
+$report=$center->sync(true,$realId);
+$real=$repo->findByExternal($realId,'message',$tid);
+$realMessages=$repo->messages((int)$real['id']);
+check($report[0]['error']===null && $real && count($realMessages)===3,'Morele real payload: thread and all messages ingested');
+check(count(array_filter(array_slice($calls,$before),function (array $c) { return strpos($c['url'],'thread_id=')!==false; }))===0,'Messages embedded in the listing are used without extra detail requests');
+check(array_column($realMessages,'author_role')===['customer','seller','customer'],'Sender address decides the role, not the isSentByOperator flag');
+check($realMessages[1]['body']==="Dzień dobry,\u{00a0}\nkomputer jest w pełni zóżony." && $realMessages[1]['attachments'][0]['name']==='zrzut ekranu.png','Entity-encoded HTML becomes text and attachment URLs get names');
+check((int)$real['needs_reply']===1 && $real['status']==='new' && $real['customer_name']==='Mariusz Frankowski' && $real['order_external_id']==='23115631' && $real['meta']['type_id']===1 && $real['meta']['email']==='mariusz@example.invalid','Last message from the customer marks the thread as awaiting a reply');
+check(strpos((string)$real['last_message_at'],gmdate('Y-m-d',time()-600+7200))===0,'Thread activity comes from the newest message, not from the thread creation date');
 
 // ---------------- Autoodpowiedzi: warunki reguł
 $repo->saveSettings('morele',['enabled'=>'1','sync_messages'=>'1','autoresponder'=>'1','hours_days'=>['0'],'signature'=>'Zespół XYZ']);
@@ -383,6 +475,25 @@ check($moved[count($moved)-2]===end($ids),'Rule moved up');
 $repo->deleteRule($noReply);
 check($repo->rule($noReply)===null,'Rule deleted');
 
+// ---------------- Statusy wiadomości: edycja wbudowanych i własne statusy
+$builtin=$repo->statuses();
+check(count($builtin)===count(MessageRepository::STATUSES) && $builtin['new'][0]==='Nowa' && $builtin['new']['builtin']===1 && $builtin['waiting']['open']===1 && $builtin['closed']['open']===0,'Built-in statuses come from the repository with open/builtin flags');
+$repo->saveStatuses(['label'=>['waiting'=>'Do odpisania','closed'=>''],'color'=>['waiting'=>'#ff0000','closed'=>'nie-kolor'],'open'=>['new'=>'1','waiting'=>'1','answered'=>'1'],'new_label'=>'Czeka na kuriera','new_color'=>'#7c3aed','new_open'=>'1']);
+$statuses=$repo->statuses();
+check($statuses['waiting'][0]==='Do odpisania' && $statuses['waiting'][1]==='#ff0000' && $statuses['closed'][0]==='Zamknięta' && $statuses['closed'][1]==='#64748b','Renaming a built-in status keeps its code and falls back on empty or invalid input');
+check(isset($statuses['czeka_na_kuriera']) && $statuses['czeka_na_kuriera'][0]==='Czeka na kuriera' && $statuses['czeka_na_kuriera']['builtin']===0 && $repo->openStatuses()===['new','waiting','answered','czeka_na_kuriera'],'Custom status is added, gets a slug code and counts as open when asked');
+$repo->setStatus((int)$kasia['id'],'czeka_na_kuriera');
+check($repo->findThread((int)$kasia['id'])['status']==='czeka_na_kuriera' && count($repo->listing(['status'=>'czeka_na_kuriera'])['rows'])===1,'Threads can be set to a custom status and filtered by it');
+$counts=$repo->statusCounts(['status'=>'open']);
+check($counts['czeka_na_kuriera']===1 && $counts['all']===$repo->listing(['status'=>'all'])['total'] && $counts['open']>=1,'Status counters follow the same filters as the listing');
+$filtered=$repo->statusCounts(['platform'=>'allegro','status'=>'all']);
+check($filtered['all']===$repo->listing(['platform'=>'allegro','status'=>'all'])['total'] && $filtered['czeka_na_kuriera']===0,'Status counters respect the marketplace filter');
+check(MessageRepository::openCount($db)===$repo->statusCounts(['status'=>'all'])['open'],'Menu badge counts the statuses marked as open');
+rejects(function () use ($repo) { $repo->deleteStatus('new'); },'Built-in status cannot be deleted','nie można usunąć');
+rejects(function () use ($repo) { $repo->setStatus(1,'nie_ma_takiego'); },'Unknown status is rejected','Nieznany status');
+$repo->deleteStatus('czeka_na_kuriera');
+check(!isset($repo->statuses()['czeka_na_kuriera']) && $repo->findThread((int)$kasia['id'])['status']==='waiting','Deleting a custom status moves its threads back to waiting');
+
 // Widoki: skrzynka, wątki każdego rodzaju, reguły, ustawienia.
 $smarty=App\Core\SmartyFactory::create();
 $accounts=$center->connectedAccounts();
@@ -390,13 +501,24 @@ $settings=$repo->settings();
 $platforms=[];
 foreach (MessageRepository::PLATFORMS as $code=>$label) { $platforms[$code]=['label'=>$label,'kinds'=>MessageRepository::KINDS[$code],'accounts'=>array_values(array_filter($accounts,function ($a) use ($code) { return $a['platform']===$code; })),'settings'=>$settings[$code]]; }
 $base=['canWrite'=>true,'csrf'=>'x','flashSuccess'=>null,'flashError'=>null,'filters'=>['platform'=>'','kind'=>'','status'=>'open','connection'=>0,'q'=>'','page'=>1],'filterQuery'=>'','backQuery'=>'tab=inbox','counters'=>$repo->counters(),'platforms'=>$platforms,'accounts'=>$accounts,
-    'statuses'=>MessageRepository::STATUSES,'kindLabels'=>MessageRepository::KIND_LABELS,'platformLabels'=>MessageRepository::PLATFORMS,'rules'=>$repo->rules(),'editRule'=>null,'runLog'=>$repo->runLog(),'triggers'=>MessageRepository::TRIGGERS,'afterStatuses'=>MessageRepository::AFTER_STATUSES,'placeholders'=>MessageCenter::PLACEHOLDERS,
+    'statuses'=>$repo->statuses(),'statusCounts'=>$repo->statusCounts(['status'=>'all']),'kindLabels'=>MessageRepository::KIND_LABELS,'platformLabels'=>MessageRepository::PLATFORMS,'rules'=>$repo->rules(),'editRule'=>null,'runLog'=>$repo->runLog(),'triggers'=>MessageRepository::TRIGGERS,'afterStatuses'=>MessageRepository::AFTER_STATUSES,'placeholders'=>MessageCenter::PLACEHOLDERS,
     'replyTemplatesJson'=>'[]','threadJson'=>'{}','syncStates'=>array_map(function () { return ['last'=>'','error'=>'Błąd <testowy>']; },array_column($accounts,null,'id')),'thread'=>null,'messages'=>[],'threadView'=>[]];
 $listing=$repo->listing(['status'=>'all']);
 foreach ($listing['rows'] as &$row) { $row+=['last_label'=>'12:00','due_label'=>'','due_soon'=>false]; } unset($row);
 $smarty->assign(array_merge($base,['tab'=>'inbox','listing'=>$listing]));
 $html=$smarty->fetch('messages/index.tpl');
 check(strpos($html,'Wszystkie kanały')!==false && strpos($html,'ms-p-allegro')!==false && strpos($html,'Reklamacje')!==false && strpos($html,'Incydenty')!==false && strpos($html,'Morele')!==false,'Inbox renders sections per marketplace');
+check(strpos($html,'data-ms-check-all')!==false && strpos($html,'Zaznacz wszystkie')!==false,'Inbox offers select-all for bulk status changes');
+check(strpos($html,'ms-status-filter')!==false && strpos($html,'name="status" aria-label="Status"')===false && substr_count($html,'class="ms-chip')>=count($repo->statuses()),'Status filter is a row of clickable chips, not a dropdown');
+check(strpos($html,'&status=closed')!==false && preg_match('/Do obsługi <b>\\d+<\\/b>/u',$html)===1,'Each status chip carries its own counter');
+$sources=array_column($listing['rows'],'last_source','id');
+check(count(array_filter($sources,'strlen'))>0 && strpos($html,'Czeka na naszą odpowiedź')!==false && strpos($html,'Odpisaliśmy')!==false && strpos($html,'Klient:')!==false,'Inbox tells who wrote last and whether we replied');
+$repo->recordOutgoing((int)$kasia['id'],'Dzień dobry, fakturę wyślemy mailem.','Autoodpowiedź: Faktura','auto',$moreleRule);
+$listing=$repo->listing(['status'=>'all']);
+foreach ($listing['rows'] as &$autoFix) { $autoFix+=['last_label'=>'12:00','due_label'=>'','due_soon'=>false]; } unset($autoFix);
+$smarty->assign(array_merge($base,['tab'=>'inbox','listing'=>$listing]));
+$html=$smarty->fetch('messages/index.tpl');
+check($repo->findThread((int)$kasia['id'])['last_author']==='seller' && strpos($html,'Tylko autoodpowiedź')!==false && strpos($html,'Autoodpowiedź:')!==false,'Autoresponder replies are marked apart from a real answer');
 foreach ($repo->db()->fetchAll('SELECT id FROM om_msg_threads') as $threadRow) {
     $thread=$repo->findThread((int)$threadRow['id']) + ['last_label'=>'','due_label'=>'1.01.2026 10:00','due_soon'=>true];
     $view=['order_url'=>'','message_types'=>App\Services\Messages\AllegroMessages::MESSAGE_TYPES[$thread['kind']]??[],'decisions'=>$thread['kind']==='claim'?['Uznanie'=>['ACCEPTED_REFUND'=>'x'],'Odrzucenie'=>['REJECTED_OTHER'=>'y']]:[],'reasons'=>$thread['kind']==='incident'?['R'=>'Powód']:[],'reasons_error'=>'','recipients'=>$thread['platform']==='empik'?['CUSTOMER'=>'Klient']:[],'meta_rows'=>['Powód'=>'<b>x</b>'],'can_reply'=>MessageCenter::canReply($thread),'reply_hint'=>'Brak API <odpowiedzi>'];
@@ -408,12 +530,24 @@ foreach ($repo->db()->fetchAll('SELECT id FROM om_msg_threads') as $threadRow) {
     check(strpos($html,"ms-conversation")!==false && (MessageCenter::canReply($thread) ? strpos($html,"data-ms-reply")!==false : strpos($html,'Brak API &lt;odpowiedzi&gt;')!==false && strpos($html,'data-ms-reply')===false) && strpos($html,'<b>x</b>')===false,'Thread view renders and escapes: '.$thread['platform'].'/'.$thread['kind']);
     check(($thread['kind']==='claim')===(strpos($html,'Decyzja w reklamacji')!==false) && ($thread['kind']==='incident')===(strpos($html,'Rozwiąż incydent')!==false),'Kind-specific actions: '.$thread['platform'].'/'.$thread['kind']);
 }
+$kasiaThread=$repo->findThread((int)$kasia['id'])+['last_label'=>'','due_label'=>'','due_soon'=>false];
+$kasiaMessages=array_map(function ($m) { return $m+['time_label'=>'10:00']; },$repo->messages((int)$kasia['id']));
+$smarty->assign(array_merge($base,['tab'=>'inbox','listing'=>$listing,'thread'=>$kasiaThread,'messages'=>$kasiaMessages,'threadView'=>['order_url'=>'','message_types'=>[],'decisions'=>[],'reasons'=>[],'reasons_error'=>'','recipients'=>[],'meta_rows'=>[],'can_reply'=>true,'reply_hint'=>'']]));
+$html=$smarty->fetch('messages/index.tpl');
+check(strpos($html,'ms-last-line')!==false && strpos($html,'nikt jeszcze nie odpisał osobiście')!==false,'Thread header says the last message was only an auto-reply');
+
 $smarty->assign(array_merge($base,['tab'=>'rules','listing'=>$listing,'editRule'=>$repo->rule($moreleRule)]));
 $html=$smarty->fetch('messages/index.tpl');
 check(strpos($html,'Zapisz regułę')!==false && strpos($html,'{klient}')!==false && strpos($html,'Faktura')!==false,'Rules view renders editor and placeholders');
+$smarty->assign(['pageTitle'=>'Log Morele','csrf'=>'x','canWrite'=>true,'flashSuccess'=>null,'flashError'=>null,'logContent'=>MoreleLog::tail(),'logSize'=>MoreleLog::size()]);
+$html=$smarty->fetch('messages/log.tpl');
+check(strpos($html,'Log Morele')!==false && strpos($html,'value="log_clear"')!==false && strpos($html,'&lt;b&gt;')===false,'Morele log view renders');
 $smarty->assign(array_merge($base,['tab'=>'settings','listing'=>$listing]));
 $html=$smarty->fetch('messages/index.tpl');
+check(strpos($html,'Statusy wiadomości')!==false && strpos($html,'value="status_save"')!==false && strpos($html,'name="new_label"')!==false,'Settings let you edit and add message statuses');
 check(strpos($html,'Dyskusje i reklamacje')!==false && strpos($html,'Incydenty')!==false && strpos($html,'Błąd &lt;testowy&gt;')!==false && substr_count($html,'name="operation" value="settings"')===count(MessageRepository::PLATFORMS) && strpos($html,'name="sync_returns"')!==false && strpos($html,'name="employee_id"')!==false,'Settings view renders one form per marketplace');
+check(substr_count($html,'name="operation" value="backfill"')===count($accounts) && strpos($html,'Pobierz starsze')!==false && strpos($html,'ms-account-actions')!==false,'Settings view offers a backfill button for every connected account');
 
 Http::$transport=null;
+MoreleLog::clear();
 echo 'OK: '.$checks." message checks; no network or production database used.\n";

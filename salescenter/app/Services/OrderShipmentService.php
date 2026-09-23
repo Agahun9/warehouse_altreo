@@ -18,41 +18,174 @@ final class OrderShipmentService
 {
     private $repo;
     public function __construct(OrderRepository $repo) { $this->repo=$repo; }
+    public const BUILTIN_PRESETS=['small'=>['name'=>'Mała','length'=>23,'width'=>16,'height'=>10,'weight'=>0.5],'medium'=>['name'=>'Średnia','length'=>30,'width'=>20,'height'=>15,'weight'=>1],'large'=>['name'=>'Duża','length'=>40,'width'=>30,'height'=>20,'weight'=>2]];
+    public const MAX_PRESETS=30;
+    /** carrier_account_id w mapowaniu metody dostawy oznaczające „nie nadawaj automatycznie”. */
+    public const MAPPING_SKIP=-1;
+
     public static function defaults(OrderRepository $repo): array
     {
         $defaults=$repo->setting('shipping_defaults');
-        $base=['default_carrier_account_id'=>0,'default_package'=>'auto','service'=>'auto','apaczka_service_id'=>0,'pickup_type'=>'SELF','default_point'=>'','content'=>'Towar','cod_bank_account'=>'','presets'=>['small'=>['length'=>23,'width'=>16,'height'=>10,'weight'=>0.5],'medium'=>['length'=>30,'width'=>20,'height'=>15,'weight'=>1],'large'=>['length'=>40,'width'=>30,'height'=>20,'weight'=>2]],'sender'=>['name'=>'','email'=>'','phone'=>'','street'=>'','building'=>'','postal_code'=>'','city'=>'']];
-        return array_replace_recursive($base,$defaults);
+        $base=['default_carrier_account_id'=>0,'default_package'=>'auto','service'=>'auto','apaczka_service_id'=>0,'pickup_type'=>'SELF','default_point'=>'','content'=>'Towar','cod_bank_account'=>'','sender'=>['name'=>'','email'=>'','phone'=>'','street'=>'','building'=>'','postal_code'=>'','city'=>'']];
+        $stored=$defaults['presets']??null; unset($defaults['presets']);
+        $merged=array_replace_recursive($base,$defaults);
+        $merged['presets']=self::presets(is_array($stored)?$stored:[]);
+        if ($merged['default_package']!=='auto' && !isset($merged['presets'][$merged['default_package']])) { $merged['default_package']='auto'; }
+        return $merged;
     }
-    /** Konto nadawcze, preset paczki i usługa podpowiadane dla zamówienia. */
-    public static function suggestion(OrderRepository $repo,array $order,array $accounts,array $defaults): array
+    /** Gabaryty paczek: klucz => name, length, width, height, weight. Zapisana lista zastępuje wbudowane Mała/Średnia/Duża. */
+    public static function presets(array $stored): array
+    {
+        $presets=[];
+        foreach ($stored as $key=>$preset) {
+            if (!is_array($preset) || !preg_match('/^[a-z0-9_]{1,40}$/D',(string)$key)) { continue; }
+            $name=trim((string)($preset['name']??'')) ?: (self::BUILTIN_PRESETS[$key]['name']??(string)$key);
+            $presets[(string)$key]=['name'=>$name,'length'=>(float)($preset['length']??30),'width'=>(float)($preset['width']??20),'height'=>(float)($preset['height']??15),'weight'=>(float)($preset['weight']??1)];
+        }
+        return $presets ?: self::BUILTIN_PRESETS;
+    }
+    /** Gabaryt „automatycznie”: Mała do 1 szt., Średnia do 4 szt., potem Duża; brakujące zastępuje pierwszy zdefiniowany. */
+    public static function autoPreset(array $presets,int $quantity): string
+    {
+        $wanted=$quantity<=1?'small':($quantity<=4?'medium':'large');
+        foreach ([$wanted,'medium','small','large'] as $key) { if (isset($presets[$key])) { return $key; } }
+        return (string)array_key_first($presets);
+    }
+    public static function presetLabel(array $preset): string
+    {
+        $number=static function ($value): string { return rtrim(rtrim(number_format((float)$value,2,',',''),'0'),','); };
+        return $preset['name'].' ('.$number($preset['length']).'×'.$number($preset['width']).'×'.$number($preset['height']).' cm, '.$number($preset['weight']).' kg)';
+    }
+
+    /** Mapowanie metod dostawy: klucz platform|metoda => ['platform','delivery','carrier_account_id','service']. */
+    public static function deliveryMappings(OrderRepository $repo): array
+    {
+        $rows=[];
+        foreach ((array)($repo->setting('shipping_delivery_map')['rows']??[]) as $row) {
+            if (!is_array($row) || trim((string)($row['delivery']??''))==='') { continue; }
+            $row=['platform'=>(string)($row['platform']??''),'delivery'=>trim((string)$row['delivery']),'carrier_account_id'=>(int)($row['carrier_account_id']??0),'service'=>trim((string)($row['service']??''))];
+            $rows[self::deliveryKey($row['platform'],$row['delivery'])]=$row;
+        }
+        return $rows;
+    }
+    public static function deliveryKey(string $platform,string $delivery): string
+    {
+        return $platform.'|'.mb_strtolower(trim((string)preg_replace('/\s+/u',' ',$delivery)),'UTF-8');
+    }
+    public static function saveDeliveryMapping(OrderRepository $repo,string $platform,string $delivery,int $carrierAccountId,string $service): void
+    {
+        $delivery=trim($delivery); $service=trim($service);
+        if ($delivery==='' || mb_strlen($delivery,'UTF-8')>255) { throw new InvalidArgumentException('Brak nazwy metody dostawy.'); }
+        if (mb_strlen($service,'UTF-8')>100) { throw new InvalidArgumentException('Za długi kod usługi.'); }
+        if ($carrierAccountId>0 && !$repo->db()->fetchColumn('SELECT id FROM om_carrier_accounts WHERE id=:id',['id'=>$carrierAccountId])) { throw new InvalidArgumentException('Nie znaleziono konta nadawczego.'); }
+        $rows=self::deliveryMappings($repo);
+        $key=self::deliveryKey($platform,$delivery);
+        if ($carrierAccountId===0) { unset($rows[$key]); }
+        else { $rows[$key]=['platform'=>$platform,'delivery'=>$delivery,'carrier_account_id'=>$carrierAccountId<0?self::MAPPING_SKIP:$carrierAccountId,'service'=>$carrierAccountId<0?'':$service]; }
+        $repo->saveSetting('shipping_delivery_map',['rows'=>array_values($rows)]);
+    }
+
+    /**
+     * Konto nadawcze, preset paczki i usługa podpowiadane dla zamówienia.
+     * source: mapping (ręczne mapowanie metody dostawy), skip (mapowanie „nie nadawaj”), match (konto zgodne ze źródłem/metodą),
+     * default (globalne konto domyślne), first (pierwsze zgodne – wymaga potwierdzenia), none (brak konta).
+     */
+    public static function suggestion(OrderRepository $repo,array $order,array $accounts,array $defaults,?array $mappings=null): array
     {
         $quantity=array_sum(array_map(static function ($item) { return max(0,(int)($item['quantity']??0)); },(array)($order['details']['items']??[])));
-        $size=$defaults['default_package']==='auto'?($quantity<=1?'small':($quantity<=4?'medium':'large')):$defaults['default_package'];
-        $selected=null; $reason='Wybierz aktywne konto nadawcze'; $best=PHP_INT_MAX; $default=null; $first=null;
+        $presets=(array)$defaults['presets'];
+        $size=$defaults['default_package']==='auto' || !isset($presets[$defaults['default_package']])?self::autoPreset($presets,$quantity):$defaults['default_package'];
+        $delivery=trim((string)($order['details']['delivery']??''));
+        $mappings=$mappings??self::deliveryMappings($repo);
+        $mapping=$delivery!==''?($mappings[self::deliveryKey((string)($order['platform']??''),$delivery)]??$mappings[self::deliveryKey('',$delivery)]??null):null;
+        $selected=null; $reason='Wybierz aktywne konto nadawcze'; $source='none'; $best=PHP_INT_MAX; $default=null; $first=null; $mapped=null;
         foreach ($accounts as $account) {
             if (!(int)$account['enabled'] || !ShippingProviders::exists((string)$account['provider'])) { continue; }
             $provider=ShippingProviders::get($repo,(string)$account['provider']);
             $public=json_decode((string)$account['public_config_json'],true)?:[];
             if (!$provider->supportsOrder($order,$public)) { continue; }
+            if ($mapping && (int)$account['id']===(int)$mapping['carrier_account_id']) { $mapped=$account; }
             $match=$provider->matchOrder($order,$public);
-            if ($match && $match[0]<$best) { $best=$match[0]; $selected=$account; $reason=$match[1]; }
+            if ($match && $match[0]<$best) { $best=$match[0]; $selected=$account; $reason=$match[1]; $source='match'; }
             if ((int)$account['id']===(int)$defaults['default_carrier_account_id']) { $default=$account; }
             if (!$first) { $first=$account; }
         }
-        if (!$selected && $default) { $selected=$default; $reason='Użyto globalnego konta domyślnego'; }
-        if (!$selected && $first) { $selected=$first; $reason='Pierwsze zgodne konto nadawcze'; }
         $service='';
-        if ($selected) { $service=ShippingProviders::get($repo,(string)$selected['provider'])->preferredService(['id'=>(int)$selected['id'],'public'=>json_decode((string)$selected['public_config_json'],true)?:[]],$order,$defaults); }
-        return ['carrier_account_id'=>$selected?(int)$selected['id']:0,'reason'=>$reason,'preset'=>$size,'package'=>$defaults['presets'][$size],'service'=>$service];
+        if ($mapping && (int)$mapping['carrier_account_id']===self::MAPPING_SKIP) {
+            $selected=null; $source='skip'; $reason='Metoda dostawy „'.$delivery.'” jest oznaczona jako „nie nadawaj automatycznie”';
+        } elseif ($mapped) {
+            $selected=$mapped; $source='mapping'; $reason='Mapowanie metody dostawy „'.$delivery.'”'; $service=(string)$mapping['service'];
+        } elseif ($mapping) {
+            $reason='Mapowanie „'.$delivery.'” wskazuje wyłączone albo niezgodne konto nadawcze'; if (!$selected) { $source='none'; }
+        }
+        if (!$selected && $source==='none' && $default) { $selected=$default; $reason='Użyto globalnego konta domyślnego'; $source='default'; }
+        if (!$selected && $source==='none' && $first) { $selected=$first; $reason='Pierwsze zgodne konto nadawcze – ustaw mapowanie metody dostawy'; $source='first'; }
+        if ($selected && $service==='') { $service=ShippingProviders::get($repo,(string)$selected['provider'])->preferredService(['id'=>(int)$selected['id'],'public'=>json_decode((string)$selected['public_config_json'],true)?:[]],$order,$defaults); }
+        return ['carrier_account_id'=>$selected?(int)$selected['id']:0,'reason'=>$reason,'source'=>$source,'delivery'=>$delivery,'preset'=>$size,'package'=>$presets[$size],'service'=>$service];
+    }
+
+    /** Metody dostawy z ostatnich zamówień i to, jak zostaną nadane automatycznie (zakładka Przesyłki). */
+    public static function deliveryOverview(OrderRepository $repo,int $limit=3000): array
+    {
+        $defaults=self::defaults($repo); $accounts=$repo->carrierAccounts(); $mappings=self::deliveryMappings($repo);
+        $groups=[];
+        foreach ($repo->db()->fetchAll('SELECT o.id,o.account_id,o.details_json,a.platform FROM om_orders o JOIN om_accounts a ON a.id=o.account_id ORDER BY o.id DESC LIMIT '.max(1,min(10000,$limit))) as $row) {
+            $details=json_decode((string)$row['details_json'],true); if (!is_array($details)) { continue; }
+            $delivery=trim((string)($details['delivery']??'')); if ($delivery==='') { continue; }
+            $key=self::deliveryKey((string)$row['platform'],$delivery);
+            if (isset($groups[$key])) { $groups[$key]['orders']++; continue; }
+            $order=['id'=>(int)$row['id'],'account_id'=>(int)$row['account_id'],'platform'=>(string)$row['platform'],'details'=>$details];
+            $groups[$key]=['key'=>$key,'platform'=>(string)$row['platform'],'delivery'=>$delivery,'orders'=>1,'order_id'=>(int)$row['id'],'suggestion'=>self::suggestion($repo,$order,$accounts,$defaults,$mappings),'mapping'=>$mappings[$key]??null];
+        }
+        foreach ($mappings as $key=>$mapping) {
+            if (!isset($groups[$key])) { $groups[$key]=['key'=>$key,'platform'=>$mapping['platform'],'delivery'=>$mapping['delivery'],'orders'=>0,'order_id'=>0,'suggestion'=>['source'=>'mapping','carrier_account_id'=>$mapping['carrier_account_id'],'reason'=>'Mapowanie metody dostawy','service'=>$mapping['service']],'mapping'=>$mapping]; }
+        }
+        $names=array_column($accounts,'name','id'); $byId=array_column($accounts,null,'id');
+        foreach ($groups as &$group) {
+            $group['needs_mapping']=in_array($group['suggestion']['source'],['first','none'],true);
+            $group['platform_label']=OrderAutomationService::PLATFORMS[$group['platform']]??($group['platform']!==''?$group['platform']:'Każda integracja');
+            $group['carrier_name']=(string)($names[$group['suggestion']['carrier_account_id']]??'');
+            $group['service_name']=self::cachedServiceName($repo,(int)$group['suggestion']['carrier_account_id'],(string)$group['suggestion']['service']);
+            $group['needs_service']=false;
+            if (!$group['needs_mapping'] && $group['order_id'] && (string)$group['suggestion']['service']==='' && isset($byId[$group['suggestion']['carrier_account_id']])) {
+                // Operator bez automatycznego doboru usługi (np. Apaczka) – bez wybranego kuriera automat nie nada paczki.
+                $account=$byId[$group['suggestion']['carrier_account_id']];
+                if (ShippingProviders::exists((string)$account['provider'])) {
+                    $public=json_decode((string)$account['public_config_json'],true)?:[];
+                    $group['needs_service']=ShippingProviders::get($repo,(string)$account['provider'])->automaticService(['id'=>(int)$account['id'],'public'=>$public],['id'=>$group['order_id'],'platform'=>$group['platform'],'details'=>[]])==='';
+                }
+            }
+        }
+        unset($group);
+        uasort($groups,static function (array $a,array $b): int { return [$b['needs_mapping']||$b['needs_service'],$a['platform'],$b['orders']]<=>[$a['needs_mapping']||$a['needs_service'],$b['platform'],$a['orders']]; });
+        return array_values($groups);
+    }
+    /** Nazwa usługi z cache listy usług konta (bez zapytań do operatora). */
+    private static function cachedServiceName(OrderRepository $repo,int $carrierAccountId,string $service): string
+    {
+        if ($carrierAccountId<1 || $service==='') { return ''; }
+        foreach ((array)($repo->setting('carrier_services_'.$carrierAccountId)['options']??[]) as $option) {
+            if ((string)($option['value']??'')===$service) { return trim((string)($option['carrier']??'').' · '.(string)($option['name']??''),' ·'); }
+        }
+        return '';
     }
 
     public function options(int $orderId,int $carrierAccountId): array
     {
-        $order=$this->repo->order($orderId);
+        // Bez zamówienia (mapowanie metod dostawy) – lista usług konta, np. kurierzy Apaczki.
+        $order=$orderId>0?$this->repo->order($orderId):['id'=>0,'platform'=>'','account_id'=>0,'external_id'=>'','details'=>[]];
         [$carrier,$provider]=$this->carrier($carrierAccountId,true);
         $definition=$provider::definition();
-        return ['provider'=>$definition['key'],'options'=>$provider->cachedServices($carrier,$order),'automatic'=>$provider->automaticService($carrier,$order),'preferred'=>$provider->preferredService($carrier,$order,self::defaults($this->repo)),'valuation'=>!empty($definition['capabilities']['valuation']),'cod'=>(string)$definition['capabilities']['cod']];
+        $defaults=self::defaults($this->repo);
+        $preferred=$provider->preferredService($carrier,$order,$defaults);
+        if ($orderId>0) {
+            // Usługa z mapowania metody dostawy ma pierwszeństwo, gdy mapowanie wskazuje to samo konto.
+            $delivery=trim((string)($order['details']['delivery']??''));
+            $mappings=self::deliveryMappings($this->repo);
+            $mapping=$delivery!==''?($mappings[self::deliveryKey((string)$order['platform'],$delivery)]??$mappings[self::deliveryKey('',$delivery)]??null):null;
+            if ($mapping && (int)$mapping['carrier_account_id']===$carrierAccountId && $mapping['service']!=='') { $preferred=(string)$mapping['service']; }
+        }
+        return ['provider'=>$definition['key'],'options'=>$provider->cachedServices($carrier,$order),'automatic'=>$provider->automaticService($carrier,$order),'preferred'=>$preferred,'valuation'=>!empty($definition['capabilities']['valuation']),'cod'=>(string)$definition['capabilities']['cod']];
     }
 
     public function create(int $orderId,int $carrierAccountId,array $input,string $actor): int

@@ -97,11 +97,33 @@ final class MessageCenter
         return $report;
     }
 
+    /**
+     * Ponowne pobranie starszych wiadomości: cofa znacznik czasu ostatniej synchronizacji i każe źródłu
+     * odczytać wątki w całości, także te, które lokalnie wyglądają na aktualne.
+     */
+    public function backfill(int $connectionId, int $days): array
+    {
+        $account = $this->account($connectionId);
+        $platform = (string) $account['platform'];
+        $settings = $this->repo->platformSettings($platform);
+        if (empty($settings['enabled'])) { throw new InvalidArgumentException('Najpierw włącz synchronizację wiadomości dla: '.(MessageRepository::PLATFORMS[$platform] ?? $platform).'.'); }
+        $state = (array) ($this->repo->syncState()[(string) $connectionId] ?? []);
+        $since = gmdate('Y-m-d H:i:s', time() - max(1, min(365, $days)) * 86400);
+        foreach (['threads_since', 'orders_since'] as $key) { $state[$key] = $since; }
+        // Morele nie nadaje wiadomościom identyfikatorów, a pełne pobranie i tak odtworzy każdy wątek –
+        // kasujemy więc wcześniej pobrane treści, żeby historia odbudowała się bez duplikatów.
+        if ($platform === 'morele') { $this->repo->purgeRemoteMessages($connectionId); }
+        $state['force_full'] = 1;
+        $state['next_sync'] = 0;
+        $this->repo->saveConnectionState($connectionId, $state);
+        return $this->sync(true, $connectionId);
+    }
+
     private function syncAccount(array $account, array $settings, array $state): array
     {
         $id = (int) $account['connection_id'];
         $platform = (string) $account['platform'];
-        $result = ['connection_id' => $id, 'platform' => $platform, 'name' => (string) $account['name'], 'threads' => 0, 'new' => 0, 'auto' => 0, 'error' => null];
+        $result = ['connection_id' => $id, 'platform' => $platform, 'name' => (string) $account['name'], 'threads' => 0, 'new' => 0, 'auto' => 0, 'listed' => 0, 'notes' => [], 'error' => null];
         $created = [];
         $emit = function (array $thread) use ($id, $platform, &$result, &$created): void {
             $saved = $this->repo->ingest($id, $platform, $thread);
@@ -116,7 +138,10 @@ final class MessageCenter
                 $next = $this->source($sourceName)->fetch($account, $settings, $state, $this->repo, $emit);
                 foreach ((array) ($next['_open'] ?? []) as $kind => $openIds) { $this->closeMissing($id, $platform, (string) $kind, (array) $openIds); }
                 $errors = array_merge($errors, (array) ($next['_errors'] ?? []));
-                unset($next['_open'], $next['_errors']);
+                // Liczba wątków widzianych na liście marketplace i uwagi źródła – w raporcie widać, czy API w ogóle coś zwraca.
+                $result['listed'] += (int) ($next['_listed'] ?? 0);
+                $result['notes'] = array_merge($result['notes'], (array) ($next['_notes'] ?? []));
+                unset($next['_open'], $next['_errors'], $next['_listed'], $next['_notes']);
                 $state = $next;
             } catch (\Throwable $e) {
                 $errors[] = $e->getMessage();

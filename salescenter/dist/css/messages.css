@@ -57,7 +57,9 @@
 .ms-list { display: flex; flex-direction: column; min-height: 420px; }
 .ms-listbar { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px; border-bottom: 1px solid var(--ms-line); background: #fbfcfd; }
 .ms-listbar select, .ms-listbar input { height: 33px; border: 1px solid #dce2e9; border-radius: 7px; padding: 5px 9px; font-size: 12px; background: #fff; }
-.ms-search { position: relative; flex: 1 1 200px; margin: 0; }
+/* Wyszukiwarka zajmuje własny wiersz – w wąskiej kolumnie listy nie wchodzi na pola filtrów. */
+.ms-listbar select { flex: 1 1 130px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.ms-search { position: relative; flex: 1 1 100%; min-width: 0; margin: 0; }
 .ms-search i { position: absolute; left: 10px; top: 9px; color: #94a3b8; font-size: 12px; }
 .ms-search input { width: 100%; padding-left: 28px; }
 .ms-list-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #eef1f5; color: var(--ms-muted); font-size: 11px; min-height: 40px; }
@@ -175,7 +177,10 @@
 .ms-settings .ms-hours, .ms-settings .ms-kinds { border: 1px solid #eef1f5; padding: 8px 10px; }
 .ms-accounts { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ms-accounts li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px; border: 1px solid #eef1f5; border-radius: 8px; }
-.ms-accounts li form { grid-column: 2; grid-row: 1 / span 3; margin: 0; }
+.ms-account-actions { grid-column: 2; grid-row: 1 / span 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.ms-accounts li form { margin: 0; display: flex; align-items: center; gap: 6px; }
+.ms-backfill-days { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ms-muted); }
+.ms-backfill-days select { font-size: 11px; padding: 3px 5px; border: 1px solid #e3e8ef; border-radius: 6px; background: #fff; color: var(--ms-ink); }
 .ms-account-name { font-size: 12px; font-weight: 600; color: var(--ms-ink); }
 .ms-accounts small { font-size: 10px; color: var(--ms-muted); }
 .ms-ok { color: #10b981; }
@@ -198,4 +203,41 @@
   .ms-msg { max-width: 95%; }
   .ms-form-grid, .ms-decision-grid { grid-template-columns: minmax(0, 1fr); }
   .ms-thread-head { flex-direction: column; }
+}
+.ms-log { margin: 0; padding: 12px; background: #0f172a; color: #e2e8f0; border-radius: 8px; font-size: 11px; line-height: 1.5; max-height: 70vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ms-check-all { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; color: var(--ms-muted); cursor: pointer; user-select: none; }
+.ms-check-all input { margin: 0; }
+.ms-list-head { flex-wrap: wrap; }
+.ms-who { font-weight: 700; }
+.ms-who.is-them { color: #b45309; }
+.ms-who.is-us { color: #047857; }
+.ms-who.is-auto { color: #0369a1; }
+.ms-who.is-other { color: #64748b; }
+.ms-answer { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px; background: #f1f5f9; color: #475569; }
+.ms-answer.is-wait { background: #fef3c7; color: #92400e; }
+.ms-answer.is-auto { background: #e0f2fe; color: #075985; }
+.ms-answer.is-done { background: #dcfce7; color: #166534; }
+.ms-last-line { margin-top: 6px; }
+.ms-row.is-picked { background: #eef2ff; }
+
+/* Statusy klikane: filtr listy, zmiana statusu wątku i operacja masowa. */
+.ms-status-filter { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; border-bottom: 1px solid #eef1f5; background: #fff; }
+.ms-chip { --ms-c: #64748b; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid #e2e8f0; border-radius: 20px; background: #fff; color: #475569; font-size: 11px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.ms-chip:hover { border-color: var(--ms-c); color: var(--ms-c); }
+.ms-chip.active { border-color: var(--ms-c); background: color-mix(in srgb, var(--ms-c) 12%, #fff); color: var(--ms-c); }
+.ms-chip b { font-size: 10px; padding: 1px 5px; border-radius: 10px; background: #f1f5f9; color: #475569; }
+.ms-chip.active b { background: color-mix(in srgb, var(--ms-c) 22%, #fff); color: var(--ms-c); }
+.ms-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ms-c); flex-shrink: 0; }
+.ms-status-pick { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.ms-bulk-actions .ms-chip { padding: 3px 8px; }
+.ms-status-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ms-status-rows li { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 42px auto 70px; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid #eef1f5; border-radius: 8px; }
+.ms-status-rows small { font-size: 10px; color: var(--ms-muted); text-align: right; }
+.ms-status-new { background: #fbfcfd; }
+.ms-status-remove { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ms-status-remove form { margin: 0; }
+@media (max-width: 720px) {
+  .ms-status-rows li { grid-template-columns: 1fr auto; }
+  .ms-status-rows li > span:first-child { grid-column: 1 / -1; }
 }
