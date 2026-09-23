@@ -323,6 +323,7 @@
                 <option value="set_price">Cena: ustaw recznie</option>
                 <option value="set_price_from_product">Cena: z magazynu</option>
                 <option value="set_stock_from_product">Stan: z magazynu</option>
+                <option value="set_leadtime">Czas wysylki (leadtime-to-ship)</option>
                 <option value="set_description">Opis: ustaw recznie</option>
                 <option value="replace_description">Opis: znajdz i zamien</option>
                 <option value="end_offer">Zakoncz oferty</option>
@@ -336,6 +337,12 @@
             <div class="mb-3 mediamarkt-bulk-field" data-ops="set_price,set_description">
               <label class="form-label">Wartosc</label>
               <input type="text" class="form-control" name="value" placeholder="nowa cena lub opis">
+            </div>
+
+            <div class="mb-3 mediamarkt-bulk-field d-none" data-ops="set_leadtime">
+              <label class="form-label">Czas wysylki (dni)</label>
+              <input type="number" min="0" max="365" step="1" class="form-control" name="leadtime_days" placeholder="np. 1">
+              <div class="form-text">Wysylane od razu jednym plikiem CSV (import ofert Mirakl, PARTIAL_UPDATE) na konto, bez kolejki - takze dla wszystkich ofert z filtrowania, bez limitu ilosci.</div>
             </div>
 
             <div class="mb-3 mediamarkt-bulk-field d-none" data-ops="replace_description">

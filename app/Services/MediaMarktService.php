@@ -244,6 +244,74 @@ class MediaMarktService
         );
     }
 
+    /**
+     * Sets leadtime-to-ship for all targeted offers with a single Mirakl OF01 offer import
+     * per account (one CSV, PARTIAL_UPDATE so only leadtime-to-ship changes). Bypasses the
+     * per-offer queue on purpose: 20k offers would otherwise mean 20k API requests.
+     */
+    public function submitLeadtimeBatch(array $filters, array $selectedOfferIds, $days): array
+    {
+        $days = trim((string) $days);
+        if ($days === '' || !ctype_digit($days) || (int) $days > 365) {
+            throw new RuntimeException('Podaj poprawny czas wysylki w dniach (0-365).');
+        }
+
+        $targets = $this->storage->offerSkuTargets($filters, $selectedOfferIds);
+        if ($targets === array()) {
+            throw new RuntimeException('Brak ofert MediaMarkt do przetworzenia dla wybranego zakresu.');
+        }
+
+        $groups = array();
+        $skipped = 0;
+        foreach ($targets as $row) {
+            $shopSku = trim((string) ($row['shop_sku'] ?? ''));
+            if ($shopSku === '') {
+                $skipped++;
+                continue;
+            }
+            $accountId = (int) ($row['account_id'] ?? 0);
+            $groups[$accountId][$shopSku] = (int) ($row['id'] ?? 0);
+        }
+
+        $imports = array();
+        $offerCount = 0;
+        foreach ($groups as $accountId => $offers) {
+            $account = $this->storage->findAccountById($accountId);
+            if (!is_array($account) || $account === array()) {
+                throw new RuntimeException('Nie znaleziono konta MediaMarkt #' . $accountId . '.');
+            }
+
+            $csv = $this->csvRow(array('sku', 'leadtime-to-ship'));
+            foreach (array_keys($offers) as $shopSku) {
+                $csv .= $this->csvRow(array((string) $shopSku, $days));
+            }
+
+            $response = $this->requestMultipartImport($account, '/api/offers/imports', $csv, array(
+                'import_mode' => 'PARTIAL_UPDATE',
+            ));
+            $importId = trim((string) ($response['import_id'] ?? $response['importId'] ?? ''));
+            if ($importId === '') {
+                throw new RuntimeException('MediaMarkt nie zwrocil identyfikatora importu ofert (konto ' . (string) ($account['name'] ?? $accountId) . ').');
+            }
+
+            $this->storage->updateLeadtimeToShip(array_values($offers), (int) $days);
+            $offerCount += count($offers);
+            $imports[] = array(
+                'account_id' => (int) $accountId,
+                'account_name' => (string) ($account['name'] ?? ''),
+                'import_id' => $importId,
+                'offers' => count($offers),
+            );
+        }
+
+        return array(
+            'offers' => $offerCount,
+            'skipped' => $skipped,
+            'requests' => count($imports),
+            'imports' => $imports,
+        );
+    }
+
     public function processQueue(array $options = array()): array
     {
         // Recover anything a previous, abruptly-terminated run left stuck in "processing"
@@ -1905,7 +1973,7 @@ class MediaMarktService
         return array('import_id' => $importId, 'import_type' => 'offer');
     }
 
-    private function requestMultipartImport(array $accountOrOffer, string $path, string $csv): array
+    private function requestMultipartImport(array $accountOrOffer, string $path, string $csv, array $fields = array()): array
     {
         $tmpFile = tempnam(sys_get_temp_dir(), 'mediamarkt_');
         if ($tmpFile === false) {
@@ -1921,7 +1989,7 @@ class MediaMarktService
                 'POST',
                 $path,
                 array(),
-                array('file' => $file),
+                array_merge($fields, array('file' => $file)),
                 array()
             );
         } finally {
