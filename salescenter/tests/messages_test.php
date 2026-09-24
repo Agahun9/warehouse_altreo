@@ -276,6 +276,21 @@ rejects(function () use ($center,$mo) { $center->reply((int)$mo['id'],'Czy to do
 $error=''; try { $center->reply((int)$mo['id'],'Czy to dotarło?',[],'Ola'); } catch (\Throwable $e) { $error=$e->getMessage(); }
 check(strpos($error,'Inne wątki Morele dla 998877: 777')!==false && count($repo->messages((int)$mo['id']))===$countBefore,'Unconfirmed Morele reply points to other thread and is not recorded as sent');
 $moreleEcho=true;
+// „Wątek istnieje, odpowiedz używając jego ID” – ponowienie z identifier zamiast resourceIdentifier.
+$bodies=[]; $echoTransport=Http::$transport;
+Http::$transport=function (string $method,string $url,array $headers,?string $body) use (&$bodies,$echoTransport): array {
+    if ($method==='POST' && strpos($url,'/communication-center/message')!==false) {
+        $bodies[]=json_decode((string)$body,true);
+        $sent=json_decode((string)$body,true);
+        if (isset($sent['identifier'],$sent['resourceIdentifier'])) { return ['status'=>400,'body'=>json_encode(['status'=>'FAILED','message'=>'Expected the key "identifier" to not exist.']),'headers'=>[]]; }
+        if (isset($sent['resourceIdentifier'])) { return ['status'=>200,'body'=>json_encode(['message'=>'Wątek istnieje, odpowiedz używając jego ID','identifier'=>'QlAw/dI']),'headers'=>[]]; }
+        if (isset($sent['typeId'])) { return ['status'=>400,'body'=>json_encode(['status'=>'FAILED','message'=>'Expected the key "typeId" to not exist.']),'headers'=>[]]; }
+    }
+    return $echoTransport($method,$url,$headers,$body);
+};
+$center->reply((int)$mo['id'],'Odpowiedź w istniejącym wątku.',[],'Ola');
+Http::$transport=$echoTransport;
+check(count($bodies)===3 && $bodies[1]===['typeId'=>4,'identifier'=>'abc/501','messageBody'=>'<p>Odpowiedź w istniejącym wątku.</p>'] && end($bodies)===['identifier'=>'abc/501','messageBody'=>'<p>Odpowiedź w istniejącym wątku.</p>'],'Morele "thread exists" reply is retried with the thread ID');
 // Nowa wiadomość klienta w starym wątku: lista nie zmienia daty ani flagi, ale filtr needs_answer ją wskazuje.
 $old=date('Y-m-d H:i:s',time()-5*86400);
 $responses=array_merge([

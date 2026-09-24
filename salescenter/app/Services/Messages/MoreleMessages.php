@@ -609,9 +609,22 @@ final class MoreleMessages implements MessageSource
         // Wątek wskazują typeId + resourceIdentifier; klucz „identifier” z panelu API odrzuca („Expected the key to not exist”).
         $payload = ['typeId' => (int) $meta['type_id'], 'resourceIdentifier' => (string) ($meta['resource_id'] ?? ''), 'messageBody' => $html];
         $dropped = [];
+        // Gdy wątek dla typeId + resourceIdentifier już istnieje (np. dwa wątki jednego zamówienia), Morele nic nie
+        // zapisuje („Wątek istnieje, odpowiedz używając jego ID”) i trzeba wskazać nasz wątek (replyVariants).
+        // Odmowy następują przed zapisem, więc kolejne próby nie grożą dublem.
+        $variants = null;
+        $tried = [];
         for ($attempt = 0; ; $attempt++) {
             try {
                 $response = $this->api->api($account, 'POST', self::SEND, [], null, $payload);
+                if (self::threadExists($response)) {
+                    $this->log('Morele: wątek istnieje – ponowienie z ID wątku', ['odpowiedź' => $response, 'wątek' => $meta['thread_id']]);
+                    if ($variants === null) { $variants = self::replyVariants($payload, (string) $meta['thread_id']); }
+                    $tried[] = self::keysOf($payload).' → '.self::pick($response, ['message']);
+                    if (!$variants) { throw new \RuntimeException('Morele odrzuciło wiadomość: nie udało się wskazać wątku '.$meta['thread_id'].'. Próby: '.implode('; ', $tried)); }
+                    $payload = array_shift($variants);
+                    continue;
+                }
                 // Morele zgłasza błędy także polem status w treści – samo HTTP 200 nie potwierdza wysyłki.
                 $status = strtoupper(self::pick($response, ['status']));
                 $errors = $response['errors'] ?? $response['error'] ?? null;
@@ -622,6 +635,12 @@ final class MoreleMessages implements MessageSource
                 return $this->confirm($account, $thread, $text, $sentId, $response, $dropped);
             } catch (\RuntimeException $e) {
                 if (strpos($e->getMessage(), 'Morele odrzuciło wiadomość') === 0 || strpos($e->getMessage(), 'Morele przyjęło żądanie') === 0) { throw $e; }
+                // Wskazywanie wątku: odmowa wariantu (walidacja, nieznany zasób) → następny wariant.
+                if ($variants !== null && preg_match('/\[(400|404|422)\]/', $e->getMessage())) {
+                    $tried[] = self::keysOf($payload).' → '.mb_substr($e->getMessage(), 0, 160, 'UTF-8');
+                    if ($variants) { $payload = array_shift($variants); continue; }
+                    throw new \RuntimeException('Morele odrzuciło wiadomość: nie udało się wskazać wątku '.$meta['thread_id'].'. Próby: '.implode('; ', $tried));
+                }
                 // Walidacja kluczy odrzuca żądanie przed zapisem, więc nadmiarowy klucz można usunąć i ponowić bez ryzyka dubla.
                 if ($attempt < 3 && preg_match('/\[400\].*Expected the key "([^"]+)" to not exist/', $e->getMessage(), $match) && $match[1] !== 'messageBody' && array_key_exists($match[1], $payload)) {
                     unset($payload[$match[1]]);
@@ -633,6 +652,30 @@ final class MoreleMessages implements MessageSource
                 throw new \RuntimeException($e->getMessage().' Diagnostyka wysyłki: '.$this->diagnoseSend($account));
             }
         }
+    }
+
+    /**
+     * Kolejne sposoby wskazania istniejącego wątku. Z odpowiedzi Morele: resourceIdentifier to zawsze numer
+     * zamówienia/produktu (ID wątku w nim → 404 „Receiver … not found”), threadIdentifier/threadId są ignorowane,
+     * a „identifier” jest odrzucany tylko obok resourceIdentifier – więc wątek wskazuje identifier zamiast niego.
+     */
+    private static function replyVariants(array $payload, string $threadId): array
+    {
+        return [
+            ['typeId' => $payload['typeId'], 'identifier' => $threadId, 'messageBody' => $payload['messageBody']],
+            ['identifier' => $threadId, 'messageBody' => $payload['messageBody']],
+        ];
+    }
+
+    private static function keysOf(array $payload): string
+    {
+        return implode('+', array_map(static function (string $key, $value): string { return $key === 'messageBody' ? $key : $key.'='.mb_substr((string) $value, 0, 12, 'UTF-8'); }, array_keys($payload), $payload));
+    }
+
+    /** Odpowiedź „Wątek istnieje, odpowiedz używając jego ID” – nic nie zapisano, trzeba wskazać wątek. */
+    private static function threadExists(array $response): bool
+    {
+        return self::pick($response, ['identifier']) !== '' && preg_match('/wątek istnieje|thread exists/iu', self::pick($response, ['message'])) === 1;
     }
 
     /** Odstęp (s) między kolejnymi odczytami wątku przy potwierdzaniu wysyłki. */

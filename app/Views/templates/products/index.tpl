@@ -742,6 +742,11 @@
             <div class="products-section-subtitle">Klikaj naglowki kolumn, aby przelaczac: ASC, DESC, reset.</div>
           </div>
           <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" id="csvQueueOpenBtn" data-bs-toggle="modal" data-bs-target="#csvQueueModal" title="Pliki CSV dodane do kolejki generowania">
+              <i class="bi bi-inbox"></i> Kolejka CSV
+              <span class="badge rounded-pill text-bg-warning ms-1 d-none" id="csvQueuePendingBadge" title="W trakcie / czeka"></span>
+              <span class="badge rounded-pill text-bg-success ms-1 d-none" id="csvQueueReadyBadge" title="Gotowe do pobrania"></span>
+            </button>
             <a href="{$csvImportUrl|escape}" class="btn btn-outline-primary">Import CSV</a>
             <a href="{$baseUrl}?controller=products&action=contoursmanager" class="btn btn-outline-dark">Manager obrysow</a>
             <a href="{$baseUrl}?controller=products&action=create&return_url={$currentListUrl|escape:'url'}" class="btn btn-success">Dodaj produkt</a>
@@ -1123,11 +1128,11 @@
           <div class="mb-2">
             <label class="form-label d-block">Zakres eksportu</label>
             <div class="form-check">
-              <input class="form-check-input" type="radio" name="export_mode" id="exportFiltered" value="filtered" checked>
+              <input class="form-check-input" type="radio" name="export_mode" id="exportFiltered" value="filtered">
               <label class="form-check-label" for="exportFiltered">Wyfiltrowane produkty</label>
             </div>
             <div class="form-check">
-              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected">
+              <input class="form-check-input" type="radio" name="export_mode" id="exportSelected" value="selected" checked>
               <label class="form-check-label" for="exportSelected">Zaznaczone produkty (<span id="selectedCount">0</span>)</label>
             </div>
             <div class="form-check">
@@ -1218,8 +1223,10 @@
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Anuluj</button>
+            <button type="button" class="btn btn-outline-primary" id="csvExportQueueBtn" title="Plik wygeneruje się w tle - pobierzesz go potem z przycisku „Kolejka CSV”"{if !$exportTemplates} disabled{/if}><i class="bi bi-hourglass-split"></i> Dodaj do kolejki</button>
             <button type="submit" class="btn btn-primary"{if !$exportTemplates} disabled{/if}>Generuj CSV</button>
           </div>
+          <div id="csvExportQueueNotice" class="small text-end mt-2 d-none"></div>
           <div class="mt-4">
             <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
               <label class="form-label mb-0">Ostatnie ustawienia eksportu</label>
@@ -1242,6 +1249,43 @@
           <input type="hidden" name="filter_contours" value="{$filters.contours|default:''|escape}">
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- Kolejka eksportow CSV -->
+<style>
+  .csv-queue-item { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; }
+  .csv-queue-item.is-downloaded { opacity: .55; }
+  .csv-queue-item.is-downloaded:hover { opacity: 1; }
+  .csv-queue-icon { font-size: 1.4rem; width: 1.75rem; text-align: center; flex-shrink: 0; }
+  .csv-queue-main { flex: 1 1 auto; min-width: 0; }
+  .csv-queue-label { font-weight: 600; overflow-wrap: anywhere; }
+  .csv-queue-meta { font-size: .8rem; color: var(--bs-secondary-color, #6c757d); overflow-wrap: anywhere; }
+  .csv-queue-actions { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .csv-queue-empty { text-align: center; padding: 2rem 1rem; color: var(--bs-secondary-color, #6c757d); }
+  @media (max-width: 575.98px) {
+    .csv-queue-item { flex-wrap: wrap; }
+    .csv-queue-actions { width: 100%; }
+  }
+</style>
+<div class="modal fade" id="csvQueueModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-inbox"></i> Kolejka eksportów CSV</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <div class="small text-secondary" id="csvQueueSummary">Ładowanie...</div>
+          <button type="button" class="btn btn-sm btn-outline-danger d-none" id="csvQueueClearDownloaded"><i class="bi bi-trash"></i> Usuń pobrane</button>
+        </div>
+        <div class="list-group" id="csvQueueList"></div>
+        <div class="small text-secondary mt-3">
+          Pliki generują się po kolei w tle - możesz zamknąć to okno i dalej pracować. Gotowe pliki są trzymane przez 3 dni.
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2558,31 +2602,42 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Dopisuje do formularza eksportu ukryte product_ids[]; zwraca false, gdy tryb "zaznaczone" nie ma zaznaczen.
+  function fillSelectedExportProductIds() {
+    selectedContainer.innerHTML = '';
+
+    if (!exportSelected || !exportSelected.checked) {
+      return true;
+    }
+
+    var ids = [];
+    for (var i = 0; i < checkboxes.length; i++) {
+      if (checkboxes[i].checked) {
+        ids.push(checkboxes[i].value);
+      }
+    }
+
+    if (ids.length === 0) {
+      alert('Zaznacz produkty lub wybierz opcje "Wszystkie produkty".');
+      return false;
+    }
+
+    for (var j = 0; j < ids.length; j++) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'product_ids[]';
+      input.value = ids[j];
+      selectedContainer.appendChild(input);
+    }
+
+    return true;
+  }
+
   if (exportForm) {
     exportForm.addEventListener('submit', function (event) {
-      selectedContainer.innerHTML = '';
-
-      if (exportSelected && exportSelected.checked) {
-        var ids = [];
-        for (var i = 0; i < checkboxes.length; i++) {
-          if (checkboxes[i].checked) {
-            ids.push(checkboxes[i].value);
-          }
-        }
-
-        if (ids.length === 0) {
-          event.preventDefault();
-          alert('Zaznacz produkty lub wybierz opcje "Wszystkie produkty".');
-          return;
-        }
-
-        for (var j = 0; j < ids.length; j++) {
-          var input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = 'product_ids[]';
-          input.value = ids[j];
-          selectedContainer.appendChild(input);
-        }
+      if (!fillSelectedExportProductIds()) {
+        event.preventDefault();
+        return;
       }
 
       if (!window.fetch || !window.FormData) {
@@ -2643,6 +2698,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (downloadUrl) {
       var link = document.createElement('a');
       link.href = downloadUrl;
+      link.setAttribute('data-no-page-loader', '1');
       link.className = 'btn btn-sm btn-success mt-2 me-2';
       link.textContent = 'Pobierz ponownie';
       csvExportStatusBox.appendChild(link);
@@ -2692,9 +2748,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         csvExportStoredJob(data.job_id);
-        if (csvExportModalEl && window.bootstrap && bootstrap.Modal) {
-          bootstrap.Modal.getOrCreateInstance(csvExportModalEl).hide();
-        }
         if (csvExportRecentPresetsStatus) {
           csvExportRecentPresetsStatus.textContent = 'Zapisywanie ustawien eksportu...';
         }
@@ -2743,6 +2796,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (autoDownload) {
         var downloadLink = document.createElement('a');
         downloadLink.href = data.download_url;
+        downloadLink.setAttribute('data-no-page-loader', '1');
         downloadLink.style.display = 'none';
         document.body.appendChild(downloadLink);
         downloadLink.click();
@@ -2754,6 +2808,428 @@ document.addEventListener('DOMContentLoaded', function() {
 
     showCsvExportStatus('danger', (data && (data.error || data.message)) || 'eksport nie powiodl sie.');
   }
+
+  // Kolejka eksportow CSV: pliki generuja sie po kolei w tle i czekaja do pobrania w oknie "Kolejka CSV".
+  var csvQueueAddUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvqueueadd';
+  var csvQueueListUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvqueue';
+  var csvQueueMarkUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvqueuemark';
+  var csvQueueDeleteUrl = '{$baseUrl|escape:"javascript"}?controller=csvtemplates&action=exportcsvqueuedelete';
+  var csvExportQueueBtn = document.getElementById('csvExportQueueBtn');
+  var csvExportQueueNotice = document.getElementById('csvExportQueueNotice');
+  var csvQueueModalEl = document.getElementById('csvQueueModal');
+  var csvQueueList = document.getElementById('csvQueueList');
+  var csvQueueSummary = document.getElementById('csvQueueSummary');
+  var csvQueueClearDownloaded = document.getElementById('csvQueueClearDownloaded');
+  var csvQueuePendingBadge = document.getElementById('csvQueuePendingBadge');
+  var csvQueueReadyBadge = document.getElementById('csvQueueReadyBadge');
+  var csvQueueItems = [];
+  var csvQueueTimer = null;
+  var csvQueueLoading = false;
+  var csvQueueModalOpen = false;
+
+  function csvQueuePost(url, data) {
+    var body = new FormData();
+    Object.keys(data).forEach(function (key) {
+      body.append(key, data[key]);
+    });
+
+    return fetch(url, { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (response) {
+        return response.json().catch(function () {
+          return { ok: false, error: 'Nieprawidlowa odpowiedz serwera (HTTP ' + response.status + ').' };
+        });
+      });
+  }
+
+  function csvQueueFormatDate(timestamp) {
+    if (!timestamp) {
+      return '';
+    }
+
+    var date = new Date(timestamp * 1000);
+    var time = date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    return date.toDateString() === new Date().toDateString() ? 'dziś ' + time : date.toLocaleDateString('pl-PL') + ' ' + time;
+  }
+
+  function csvQueueEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) {
+      el.className = className;
+    }
+    if (typeof text !== 'undefined') {
+      el.textContent = text;
+    }
+    return el;
+  }
+
+  function renderCsvQueue() {
+    var pending = 0;
+    var ready = 0;
+    var downloadedCount = 0;
+
+    csvQueueItems.forEach(function (item) {
+      if (item.status === 'queued' || item.status === 'running') {
+        pending++;
+      } else if (item.status === 'done' && !item.downloaded) {
+        ready++;
+      }
+      if (item.downloaded) {
+        downloadedCount++;
+      }
+    });
+
+    if (csvQueuePendingBadge) {
+      csvQueuePendingBadge.textContent = pending;
+      csvQueuePendingBadge.classList.toggle('d-none', pending === 0);
+    }
+    if (csvQueueReadyBadge) {
+      csvQueueReadyBadge.textContent = ready;
+      csvQueueReadyBadge.classList.toggle('d-none', ready === 0);
+    }
+    if (csvQueueClearDownloaded) {
+      csvQueueClearDownloaded.classList.toggle('d-none', downloadedCount === 0);
+    }
+    if (csvQueueSummary) {
+      csvQueueSummary.textContent = csvQueueItems.length === 0
+        ? 'Kolejka jest pusta.'
+        : 'Gotowe do pobrania: ' + ready + ' · w trakcie / czeka: ' + pending + ' · pobrane: ' + downloadedCount;
+    }
+
+    if (!csvQueueList) {
+      return;
+    }
+
+    csvQueueList.innerHTML = '';
+    if (csvQueueItems.length === 0) {
+      var empty = csvQueueEl('div', 'csv-queue-empty');
+      empty.appendChild(csvQueueEl('i', 'bi bi-inbox d-block fs-1 mb-2'));
+      empty.appendChild(document.createTextNode('Nic tu jeszcze nie ma. W oknie „Eksport CSV” kliknij „Dodaj do kolejki”.'));
+      csvQueueList.appendChild(empty);
+      return;
+    }
+
+    // Najpierw niepobrane (w kolejnosci dodania), pobrane na koncu (najnowsze wyzej).
+    var sorted = csvQueueItems.slice().sort(function (a, b) {
+      if (a.downloaded !== b.downloaded) {
+        return a.downloaded ? 1 : -1;
+      }
+      return a.downloaded ? b.created_at - a.created_at : a.created_at - b.created_at;
+    });
+
+    sorted.forEach(function (item) {
+      var row = csvQueueEl('div', 'list-group-item csv-queue-item' + (item.downloaded ? ' is-downloaded' : ''));
+
+      var icon = csvQueueEl('div', 'csv-queue-icon');
+      if (item.status === 'running') {
+        icon.appendChild(csvQueueEl('span', 'spinner-border spinner-border-sm text-primary'));
+      } else if (item.status === 'queued') {
+        icon.appendChild(csvQueueEl('i', 'bi bi-hourglass-split text-warning'));
+      } else if (item.status === 'done') {
+        icon.appendChild(csvQueueEl('i', item.downloaded ? 'bi bi-check2-circle text-secondary' : 'bi bi-file-earmark-arrow-down text-success'));
+      } else {
+        icon.appendChild(csvQueueEl('i', 'bi bi-exclamation-triangle text-danger'));
+      }
+      row.appendChild(icon);
+
+      var main = csvQueueEl('div', 'csv-queue-main');
+      main.appendChild(csvQueueEl('div', 'csv-queue-label', item.label || 'Eksport CSV'));
+
+      var meta = ['dodano ' + csvQueueFormatDate(item.created_at)];
+      if (item.status === 'queued') {
+        meta.push(item.position ? 'czeka w kolejce (#' + item.position + ')' : 'czeka w kolejce');
+      } else if (item.status === 'running') {
+        meta.push('generowanie...');
+      } else if (item.status === 'done') {
+        meta.push(item.rows + ' produktów');
+        if (item.filename) {
+          meta.push(item.filename);
+        }
+      } else {
+        meta.push(item.message || 'błąd eksportu');
+      }
+      main.appendChild(csvQueueEl('div', 'csv-queue-meta' + (item.status === 'error' || item.status === 'missing' ? ' text-danger' : ''), meta.join(' · ')));
+      row.appendChild(main);
+
+      var actions = csvQueueEl('div', 'csv-queue-actions');
+      if (item.status === 'done' && item.download_url) {
+        var toggleWrap = csvQueueEl('div', 'form-check form-switch mb-0');
+        var toggle = csvQueueEl('input', 'form-check-input js-csv-queue-mark');
+        toggle.type = 'checkbox';
+        toggle.id = 'csvQueueMark_' + item.job_id;
+        toggle.checked = !!item.downloaded;
+        toggle.setAttribute('data-job', item.job_id);
+        var toggleLabel = csvQueueEl('label', 'form-check-label small', 'Pobrane');
+        toggleLabel.htmlFor = toggle.id;
+        toggleWrap.appendChild(toggle);
+        toggleWrap.appendChild(toggleLabel);
+        actions.appendChild(toggleWrap);
+
+        var download = csvQueueEl('a', 'btn btn-sm js-csv-queue-download ' + (item.downloaded ? 'btn-outline-secondary' : 'btn-success'));
+        download.href = item.download_url;
+        download.setAttribute('data-no-page-loader', '1');
+        download.setAttribute('data-job', item.job_id);
+        download.appendChild(csvQueueEl('i', 'bi bi-download'));
+        download.appendChild(document.createTextNode(item.downloaded ? ' Pobierz ponownie' : ' Pobierz'));
+        actions.appendChild(download);
+      }
+
+      if (item.status !== 'running' && !item.temp) {
+        var remove = csvQueueEl('button', 'btn btn-sm btn-link text-danger js-csv-queue-delete');
+        remove.type = 'button';
+        remove.title = item.status === 'queued' ? 'Anuluj' : 'Usuń z listy';
+        remove.setAttribute('data-job', item.job_id);
+        remove.appendChild(csvQueueEl('i', 'bi bi-x-lg'));
+        actions.appendChild(remove);
+      }
+      row.appendChild(actions);
+
+      csvQueueList.appendChild(row);
+    });
+  }
+
+  function csvQueueHasPending() {
+    return csvQueueItems.some(function (item) {
+      return item.status === 'queued' || item.status === 'running';
+    });
+  }
+
+  function scheduleCsvQueueRefresh() {
+    if (csvQueueTimer) {
+      window.clearTimeout(csvQueueTimer);
+      csvQueueTimer = null;
+    }
+
+    if (csvQueueModalOpen || csvQueueHasPending()) {
+      csvQueueTimer = window.setTimeout(refreshCsvQueue, csvQueueModalOpen ? 3000 : 8000);
+    }
+  }
+
+  function refreshCsvQueue() {
+    if (!window.fetch || csvQueueLoading) {
+      return;
+    }
+
+    csvQueueLoading = true;
+    fetch(csvQueueListUrl, { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        if (data && data.ok && Array.isArray(data.items)) {
+          csvQueueItems = data.items.concat(csvQueueItems.filter(function (item) {
+            return item.temp;
+          }));
+          renderCsvQueue();
+        }
+      })
+      .catch(function () {
+        // Chwilowy blad sieci - kolejna proba przy nastepnym odswiezeniu.
+      })
+      .then(function () {
+        csvQueueLoading = false;
+        scheduleCsvQueueRefresh();
+      });
+  }
+
+  function findCsvQueueItem(jobId) {
+    for (var i = 0; i < csvQueueItems.length; i++) {
+      if (csvQueueItems[i].job_id === jobId) {
+        return csvQueueItems[i];
+      }
+    }
+    return null;
+  }
+
+  function showCsvQueueNotice(type, html) {
+    if (!csvExportQueueNotice) {
+      return;
+    }
+    csvExportQueueNotice.className = 'small text-end mt-2 text-' + type;
+    csvExportQueueNotice.innerHTML = html;
+  }
+
+  var csvQueueTempSeq = 0;
+  var csvQueueAddedCount = 0;
+  var csvQueueBtnResetTimer = null;
+  var csvQueueBtnDefaultHtml = csvExportQueueBtn ? csvExportQueueBtn.innerHTML : '';
+
+  // Wyrazne potwierdzenie klikniecia: przycisk na chwile zielony + dymek w rogu (nad oknem modalnym).
+  function flashCsvQueueAdded(label) {
+    csvQueueAddedCount++;
+
+    if (csvExportQueueBtn) {
+      csvExportQueueBtn.classList.remove('btn-outline-primary');
+      csvExportQueueBtn.classList.add('btn-success');
+      csvExportQueueBtn.innerHTML = '<i class="bi bi-check-lg"></i> Dodano!';
+      if (csvQueueBtnResetTimer) {
+        window.clearTimeout(csvQueueBtnResetTimer);
+      }
+      csvQueueBtnResetTimer = window.setTimeout(function () {
+        csvExportQueueBtn.classList.remove('btn-success');
+        csvExportQueueBtn.classList.add('btn-outline-primary');
+        csvExportQueueBtn.innerHTML = csvQueueBtnDefaultHtml;
+      }, 1500);
+    }
+
+    var stack = document.getElementById('csvQueueToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'csvQueueToastStack';
+      stack.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2100;display:flex;flex-direction:column;gap:8px;max-width:360px;pointer-events:none;';
+      document.body.appendChild(stack);
+    }
+
+    var toast = document.createElement('div');
+    toast.className = 'alert alert-success shadow mb-0 py-2 px-3 d-flex align-items-start gap-2';
+    toast.style.cssText = 'transition:opacity .4s, transform .4s;opacity:0;transform:translateX(20px);';
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-check-circle-fill mt-1';
+    var text = document.createElement('div');
+    var title = document.createElement('div');
+    title.className = 'fw-semibold';
+    title.textContent = 'Dodano do kolejki (#' + csvQueueAddedCount + ')';
+    var detail = document.createElement('div');
+    detail.className = 'small';
+    detail.textContent = label;
+    text.appendChild(title);
+    text.appendChild(detail);
+    toast.appendChild(icon);
+    toast.appendChild(text);
+    stack.appendChild(toast);
+
+    window.requestAnimationFrame(function () {
+      toast.style.opacity = '1';
+      toast.style.transform = 'none';
+    });
+    window.setTimeout(function () {
+      toast.style.opacity = '0';
+      window.setTimeout(function () {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 400);
+    }, 3500);
+  }
+
+  if (csvExportQueueBtn && exportForm) {
+    csvExportQueueBtn.addEventListener('click', function () {
+      if (!exportForm.reportValidity() || !fillSelectedExportProductIds()) {
+        return;
+      }
+
+      // Kopia formularza z chwili klikniecia - od razu mozna wpisywac kolejne dane, a wysylka leci w tle.
+      var formData = new FormData(exportForm);
+      var templateOption = exportTemplateSelect && exportTemplateSelect.selectedIndex >= 0
+        ? exportTemplateSelect.options[exportTemplateSelect.selectedIndex]
+        : null;
+      var collectionValue = collectionNameInput ? collectionNameInput.value.trim() : '';
+      var tempItem = {
+        job_id: 'tmp-' + (++csvQueueTempSeq),
+        status: 'queued',
+        label: (templateOption ? templateOption.text : 'Eksport CSV') + (collectionValue ? ' | ' + collectionValue : ''),
+        created_at: Math.floor(Date.now() / 1000),
+        downloaded: false,
+        position: 0,
+        rows: 0,
+        temp: true
+      };
+      csvQueueItems.push(tempItem);
+      renderCsvQueue();
+      flashCsvQueueAdded(tempItem.label);
+      showCsvQueueNotice('success', '<i class="bi bi-check-circle"></i> Dodano do kolejki. Możesz od razu zmienić dane i dodać następny. Gotowe pliki pobierzesz z przycisku <strong>Kolejka CSV</strong>.');
+
+      fetch(csvQueueAddUrl, { method: 'POST', body: formData, credentials: 'same-origin' })
+        .then(function (response) {
+          return response.json().catch(function () {
+            return { ok: false, error: 'Nieprawidlowa odpowiedz serwera (HTTP ' + response.status + ').' };
+          });
+        })
+        .then(function (data) {
+          if (!data || !data.ok) {
+            throw new Error((data && (data.error || data.message)) || 'Nie udało się dodać do kolejki.');
+          }
+          tempItem.job_id = data.job_id;
+          tempItem.temp = false;
+          refreshCsvQueue();
+          scheduleRecentExportPresetsReload();
+        })
+        .catch(function (error) {
+          csvQueueItems = csvQueueItems.filter(function (item) {
+            return item !== tempItem;
+          });
+          renderCsvQueue();
+          showCsvQueueNotice('danger', '<i class="bi bi-exclamation-triangle"></i> ');
+          csvExportQueueNotice.appendChild(document.createTextNode('Nie dodano „' + tempItem.label + '”: ' + (error && error.message && error.message !== 'Failed to fetch' ? error.message : 'błąd połączenia z serwerem.')));
+        });
+    });
+  }
+
+  if (csvQueueModalEl) {
+    csvQueueModalEl.addEventListener('show.bs.modal', function () {
+      csvQueueModalOpen = true;
+      refreshCsvQueue();
+    });
+    csvQueueModalEl.addEventListener('hidden.bs.modal', function () {
+      csvQueueModalOpen = false;
+      scheduleCsvQueueRefresh();
+    });
+  }
+
+  if (csvQueueList) {
+    csvQueueList.addEventListener('click', function (event) {
+      var download = event.target.closest('.js-csv-queue-download');
+      if (download) {
+        // Serwer sam oznacza plik jako pobrany - tu tylko od razu odswiezamy widok.
+        var downloadedItem = findCsvQueueItem(download.getAttribute('data-job'));
+        if (downloadedItem) {
+          downloadedItem.downloaded = true;
+          window.setTimeout(renderCsvQueue, 0);
+        }
+        return;
+      }
+
+      var remove = event.target.closest('.js-csv-queue-delete');
+      if (remove) {
+        remove.disabled = true;
+        csvQueuePost(csvQueueDeleteUrl, { job: remove.getAttribute('data-job') })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              alert((data && data.error) || 'Nie udało się usunąć pozycji.');
+            }
+            refreshCsvQueue();
+          })
+          .catch(function () {
+            remove.disabled = false;
+          });
+      }
+    });
+
+    csvQueueList.addEventListener('change', function (event) {
+      var toggle = event.target.closest('.js-csv-queue-mark');
+      if (!toggle) {
+        return;
+      }
+
+      var item = findCsvQueueItem(toggle.getAttribute('data-job'));
+      if (item) {
+        item.downloaded = toggle.checked;
+        renderCsvQueue();
+      }
+      csvQueuePost(csvQueueMarkUrl, { job: toggle.getAttribute('data-job'), downloaded: toggle.checked ? '1' : '0' })
+        .then(refreshCsvQueue, refreshCsvQueue);
+    });
+  }
+
+  if (csvQueueClearDownloaded) {
+    csvQueueClearDownloaded.addEventListener('click', function () {
+      if (!confirm('Usunąć z listy wszystkie pobrane pliki?')) {
+        return;
+      }
+      csvQueuePost(csvQueueDeleteUrl, { downloaded: '1' }).then(refreshCsvQueue, refreshCsvQueue);
+    });
+  }
+
+  refreshCsvQueue();
 
   // Po przeladowaniu strony wznawiamy sledzenie eksportu, ktory nadal trwa w tle.
   if (csvExportStoredJob()) {
