@@ -285,7 +285,7 @@ final class OrderAutomationService
         $options['match']=self::matchMode($conditions);
         $options+=['run_limit'=>$legacyRule && (string)$row['trigger_name']==='import'?'once':'every','button_order'=>false,'button_list'=>false,'stop_on_error'=>false,'delay'=>null,'shortcut'=>''];
         $options['shortcut']=(string)$options['shortcut'];
-        return ['id'=>(int)$row['id'],'name'=>(string)$row['name'],'enabled'=>(bool)(int)$row['enabled'],'position'=>(int)($row['position']??0),'triggers'=>array_values(array_map('strval',$triggers)),'conditions'=>array_values($conditions),'actions'=>array_values($actions),'options'=>$options];
+        return ['id'=>(int)$row['id'],'name'=>(string)$row['name'],'enabled'=>(bool)(int)$row['enabled'],'position'=>(int)($row['position']??0),'group_id'=>(int)($row['group_id']??0),'triggers'=>array_values(array_map('strval',$triggers)),'conditions'=>array_values($conditions),'actions'=>array_values($actions),'options'=>$options];
     }
 
     public function saveRule(int $id,array $input): int
@@ -293,10 +293,58 @@ final class OrderAutomationService
         if ($id>0 && !$this->db->fetchColumn('SELECT id FROM om_rules WHERE id=:id',['id'=>$id])) { throw new InvalidArgumentException('Nie znaleziono automatyzacji.'); }
         $rule=$this->normalizeRule($input,$id);
         $this->assertDistinctRule($rule,$id);
-        $data=['name'=>$rule['name'],'enabled'=>$rule['enabled']?1:0,'trigger_name'=>$rule['triggers'][0],'triggers_json'=>OrderRepository::json($rule['triggers']),'conditions_json'=>OrderRepository::json($rule['conditions']),'actions_json'=>OrderRepository::json($rule['actions']),'options_json'=>OrderRepository::json($rule['options']),'updated_at'=>gmdate('Y-m-d H:i:s')];
+        $currentGroup=$id>0?(int)$this->db->fetchColumn('SELECT COALESCE(group_id,0) FROM om_rules WHERE id=:id',['id'=>$id]):0;
+        $groupId=array_key_exists('group_id',$input)?max(0,(int)$input['group_id']):$currentGroup;
+        if ($groupId>0 && !$this->db->fetchColumn('SELECT id FROM om_rule_groups WHERE id=:id',['id'=>$groupId])) { throw new InvalidArgumentException('Wybrana grupa automatyzacji nie istnieje.'); }
+        $data=['name'=>$rule['name'],'enabled'=>$rule['enabled']?1:0,'trigger_name'=>$rule['triggers'][0],'triggers_json'=>OrderRepository::json($rule['triggers']),'conditions_json'=>OrderRepository::json($rule['conditions']),'actions_json'=>OrderRepository::json($rule['actions']),'options_json'=>OrderRepository::json($rule['options']),'group_id'=>$groupId?:null,'updated_at'=>gmdate('Y-m-d H:i:s')];
         if ($id>0) { $this->db->update('om_rules',$data,'id=:id',['id'=>$id]); return $id; }
         $data['position']=(int)$this->db->fetchColumn('SELECT COALESCE(MAX(position),0) FROM om_rules')+10;
         return (int)$this->db->insert('om_rules',$data);
+    }
+
+    public function groups(): array
+    {
+        return $this->db->fetchAll('SELECT g.*,COUNT(r.id) rule_count FROM om_rule_groups g LEFT JOIN om_rules r ON r.group_id=g.id GROUP BY g.id,g.name,g.position,g.created_at ORDER BY g.position,g.id');
+    }
+
+    private function validateGroupName(string $name,int $exceptId=0): string
+    {
+        $name=mb_substr(trim($name),0,100,'UTF-8');
+        if ($name==='') { throw new InvalidArgumentException('Podaj nazwę grupy automatyzacji.'); }
+        $key=mb_strtolower(preg_replace('/\s+/u',' ',$name),'UTF-8');
+        foreach ($this->groups() as $group) {
+            if ((int)$group['id']!==$exceptId && mb_strtolower(preg_replace('/\s+/u',' ',trim((string)$group['name'])),'UTF-8')===$key) { throw new InvalidArgumentException('Grupa o tej nazwie już istnieje.'); }
+        }
+        return $name;
+    }
+
+    public function createGroup(string $name): int
+    {
+        $name=$this->validateGroupName($name);
+        $position=(int)$this->db->fetchColumn('SELECT COALESCE(MAX(position),0) FROM om_rule_groups')+10;
+        return (int)$this->db->insert('om_rule_groups',['name'=>$name,'position'=>$position,'created_at'=>gmdate('Y-m-d H:i:s')]);
+    }
+
+    public function renameGroup(int $id,string $name): void
+    {
+        if (!$this->db->fetchColumn('SELECT id FROM om_rule_groups WHERE id=:id',['id'=>$id])) { throw new InvalidArgumentException('Nie znaleziono grupy automatyzacji.'); }
+        $this->db->update('om_rule_groups',['name'=>$this->validateGroupName($name,$id)],'id=:id',['id'=>$id]);
+    }
+
+    public function deleteGroup(int $id): void
+    {
+        $this->db->transaction(function () use ($id) {
+            if (!$this->db->fetchColumn('SELECT id FROM om_rule_groups WHERE id=:id',['id'=>$id])) { throw new InvalidArgumentException('Nie znaleziono grupy automatyzacji.'); }
+            $this->db->update('om_rules',['group_id'=>null],'group_id=:id',['id'=>$id]);
+            $this->db->delete('om_rule_groups','id=:id',['id'=>$id]);
+        });
+    }
+
+    public function assignRuleGroup(int $ruleId,int $groupId): void
+    {
+        if (!$this->db->fetchColumn('SELECT id FROM om_rules WHERE id=:id',['id'=>$ruleId])) { throw new InvalidArgumentException('Nie znaleziono automatyzacji.'); }
+        if ($groupId>0 && !$this->db->fetchColumn('SELECT id FROM om_rule_groups WHERE id=:id',['id'=>$groupId])) { throw new InvalidArgumentException('Nie znaleziono grupy automatyzacji.'); }
+        $this->db->update('om_rules',['group_id'=>$groupId?:null,'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$ruleId]);
     }
 
     /**

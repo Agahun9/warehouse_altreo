@@ -1,0 +1,15 @@
+/* Zakładka Statusy: przeciąganie grup i statusów. */
+.om-status-board{display:flex;flex-direction:column;gap:6px}
+.om-status-config-list{min-height:8px}
+.om-status-board .om-inline-form.is-draggable{position:relative;padding-left:26px}
+.om-status-board .om-inline-form.is-draggable>.om-drag-handle{position:absolute;top:50%;left:0;transform:translateY(-50%)}
+.om-drag-handle{display:inline-grid;place-items:center;width:22px;height:26px;border-radius:6px;color:#8a94a8;cursor:grab;touch-action:none;user-select:none}
+.om-drag-handle:hover{background:#eef1f7;color:#3b4660}
+.om-drag-handle:active{cursor:grabbing}
+.om-status-config-group>h4 .om-drag-handle{margin-right:4px;vertical-align:middle}
+.om-status-board .is-dragging{opacity:.45;outline:2px dashed #6366f1;outline-offset:2px;border-radius:8px}
+.om-status-board.is-dragging-status .om-status-config-list{padding:4px;border:1px dashed #c7cbf5;border-radius:10px;background:#f7f7ff}
+.om-status-board.is-dragging-status .om-status-config-group.is-empty .om-status-config-list{min-height:40px}
+.om-status-order-bar{position:sticky;top:8px;z-index:5;display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid #c7cbf5;border-radius:10px;background:#f3f3ff;box-shadow:0 8px 20px -16px #3b37a8}
+.om-status-order-bar[hidden]{display:none}
+.om-status-order-bar span{flex:1;color:#3f3aa8;font-size:12px;font-weight:700}

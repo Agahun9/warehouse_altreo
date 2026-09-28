@@ -32,6 +32,7 @@ final class OrderRepository
             'om_mappings' => "id $id, account_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(account_id, remote_status)",
             'om_events' => "id $id, order_id BIGINT NOT NULL, actor VARCHAR(150) NOT NULL, message TEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
             'om_order_notes' => "id $id, order_id BIGINT NOT NULL, body TEXT NOT NULL, author VARCHAR(150) NOT NULL DEFAULT '', source VARCHAR(40) NOT NULL DEFAULT 'user', created_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL",
+            'om_rule_groups' => "id $id, name VARCHAR(100) NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at VARCHAR(30) NULL",
             'om_rules' => "id $id, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, trigger_name VARCHAR(30) NOT NULL, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL",
             'om_rule_runs' => "id $id, rule_id BIGINT NOT NULL, order_id BIGINT NOT NULL, event_key VARCHAR(80) NOT NULL, created_at VARCHAR(30) NOT NULL, UNIQUE(rule_id, order_id, event_key)",
             'om_settings' => "setting_key VARCHAR(100) PRIMARY KEY, value_json LONGTEXT NOT NULL",
@@ -72,7 +73,7 @@ final class OrderRepository
         }
         foreach ([
             'om_orders'=>['status_changed_at'=>'VARCHAR(30) NULL','starred'=>'INTEGER NOT NULL DEFAULT 0'],
-            'om_rules'=>['triggers_json'=>'TEXT NULL','options_json'=>'TEXT NULL','position'=>'INTEGER NOT NULL DEFAULT 0','updated_at'=>'VARCHAR(30) NULL'],
+            'om_rules'=>['triggers_json'=>'TEXT NULL','options_json'=>'TEXT NULL','position'=>'INTEGER NOT NULL DEFAULT 0','updated_at'=>'VARCHAR(30) NULL','group_id'=>'BIGINT NULL'],
             'om_rule_runs'=>['trigger_name'=>'VARCHAR(30) NULL','result'=>'VARCHAR(20) NULL','message'=>'TEXT NULL'],
         ] as $table=>$columns) {
             $existing=$sqlite ? array_column($this->db->fetchAll("PRAGMA table_info($table)"),'name') : array_column($this->db->fetchAll("SHOW COLUMNS FROM $table"),'Field');
@@ -144,6 +145,27 @@ final class OrderRepository
         $this->db->update('om_accounts',['name'=>$name],'platform=:p AND source_id=:s',['p'=>$platform,'s'=>$sourceId]);
     }
     public function statuses(): array { return $this->db->fetchAll('SELECT * FROM om_statuses ORDER BY position,id'); }
+    /** @param array<int,array{name:string,ids:int[]}> $layout groups in display order; positions are renumbered so group order follows status order. */
+    public function reorderStatuses(array $layout): void
+    {
+        $known=array_map('intval',array_column($this->statuses(),'id'));
+        $rows=[]; $seen=[];
+        foreach ($layout as $group) {
+            $name=is_array($group)?mb_substr(trim((string)($group['name']??'')),0,100):'';
+            if ($name==='' || !is_array($group['ids']??null)) { throw new InvalidArgumentException('Nieprawidłowy układ statusów.'); }
+            foreach ($group['ids'] as $statusId) {
+                $statusId=(int)$statusId;
+                if (!in_array($statusId,$known,true) || isset($seen[$statusId])) { throw new InvalidArgumentException('Nieprawidłowy układ statusów.'); }
+                $seen[$statusId]=true; $rows[]=[$statusId,$name];
+            }
+        }
+        if (count($seen)!==count($known)) { throw new InvalidArgumentException('Lista statusów zmieniła się. Odśwież stronę i ułóż je ponownie.'); }
+        $this->db->transaction(function () use ($rows) {
+            foreach ($rows as $index=>[$statusId,$name]) {
+                $this->db->update('om_statuses',['position'=>($index+1)*10,'group_name'=>$name],'id=:id',['id'=>$statusId]);
+            }
+        });
+    }
     public function paymentMethods(bool $enabledOnly=false): array
     {
         return $this->db->fetchAll('SELECT * FROM om_payment_methods'.($enabledOnly?' WHERE enabled=1':'').' ORDER BY position,id');
@@ -962,7 +984,7 @@ final class OrderRepository
     }
     public function dashboard(): array
     {
-        return ['statuses'=>$this->db->fetchAll('SELECT s.*,COUNT(o.id) total FROM om_statuses s LEFT JOIN om_orders o ON o.status_id=s.id GROUP BY s.id,s.name,s.color,s.position,s.group_name ORDER BY s.group_name,s.position,s.id'),
+        return ['statuses'=>$this->db->fetchAll('SELECT s.*,COUNT(o.id) total FROM om_statuses s LEFT JOIN om_orders o ON o.status_id=s.id GROUP BY s.id,s.name,s.color,s.position,s.group_name ORDER BY s.position,s.id'),
             'today'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders WHERE ordered_at>=:d',['d'=>gmdate('Y-m-d')]),
             'unpaid'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders WHERE paid=0'),
             'total'=>(int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_orders')];

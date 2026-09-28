@@ -152,10 +152,11 @@ final class OrdersController extends Controller
         $ksefSubmissions=$ksef->latest($ksefDocumentIds);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
         $automation=$repo->automation();
-        $automationView=['stats'=>['active'=>0,'paused'=>0,'runs_24h'=>0,'errors_24h'=>0],'log'=>[],'edit'=>null,'catalog_json'=>'{}','rule_json'=>'null','template'=>''];
+        $automationView=['stats'=>['active'=>0,'paused'=>0,'runs_24h'=>0,'errors_24h'=>0],'log'=>[],'groups'=>[],'edit'=>null,'catalog_json'=>'{}','rule_json'=>'null','template'=>''];
         if ($tab==='rules') {
             $automationView['stats']=$automation->stats();
             $automationView['log']=$automation->log(40);
+            $automationView['groups']=$automation->groups();
             $ruleParam=(string)$this->input('rule','');
             if ($settingsAccess && $ruleParam!=='') {
                 $editId=$ruleParam==='new'?0:max(0,(int)$ruleParam);
@@ -378,6 +379,11 @@ final class OrdersController extends Controller
                     if (!empty($_POST['status_id'])) { $repo->requireStatus((int)$_POST['status_id']); $db->update('om_statuses',$data,'id=:id',['id'=>(int)$_POST['status_id']]); }
                     else { $db->insert('om_statuses',$data); }
                     break;
+                case 'status_reorder':
+                    $layout=json_decode((string)($_POST['layout']??''),true);
+                    $repo->reorderStatuses(is_array($layout)?$layout:[]);
+                    $successMessage='Zapisano kolejność grup i statusów.';
+                    break;
                 case 'mapping':
                     $status=(int)$_POST['status_id']; $repo->requireStatus($status);
                     $account=(int)$_POST['account_id'];
@@ -477,6 +483,27 @@ final class OrdersController extends Controller
                     $repo->automation()->moveRule((int)($_POST['rule_id']??0),($_POST['direction']??'')==='up'?'up':'down');
                     $successMessage='Zmieniono kolejność wykonywania automatyzacji.';
                     $redirectQuery='#oa-rule-'.(int)($_POST['rule_id']??0);
+                    break;
+                case 'rule_group_create':
+                    $groupId=$repo->automation()->createGroup((string)($_POST['name']??''));
+                    $successMessage='Utworzono grupę automatyzacji.';
+                    $redirectQuery='#oa-group-'.$groupId;
+                    break;
+                case 'rule_group_rename':
+                    $groupId=(int)($_POST['group_id']??0);
+                    $repo->automation()->renameGroup($groupId,(string)($_POST['name']??''));
+                    $successMessage='Zmieniono nazwę grupy.';
+                    $redirectQuery='#oa-group-'.$groupId;
+                    break;
+                case 'rule_group_delete':
+                    $repo->automation()->deleteGroup((int)($_POST['group_id']??0));
+                    $successMessage='Usunięto grupę. Automatyzacje pozostawiono bez grupy.';
+                    break;
+                case 'rule_group_assign':
+                    $ruleId=(int)($_POST['rule_id']??0);
+                    $repo->automation()->assignRuleGroup($ruleId,max(0,(int)($_POST['group_id']??0)));
+                    $successMessage='Przypisano automatyzację do grupy.';
+                    $redirectQuery='#oa-rule-'.$ruleId;
                     break;
                 case 'run_rule':
                     $ids=isset($_POST['ids'])?array_values(array_unique(array_filter(array_map('intval',(array)$_POST['ids'])))):($id>0?[$id]:[]);

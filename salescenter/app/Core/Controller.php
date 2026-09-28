@@ -20,7 +20,17 @@ abstract class Controller
             $https = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
                 || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
             session_name('SALESCENTER');
-            session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
+            // Zalogowanie trwa 30 dni. Własny katalog sesji chroni przed czyszczeniem
+            // współdzielonego katalogu PHP z krótszym gc_maxlifetime innych aplikacji.
+            $lifetime = 30 * 24 * 3600;
+            $sessionPath = dirname(__DIR__) . '/Storage/sessions';
+            if (is_dir($sessionPath) || @mkdir($sessionPath, 0700, true)) {
+                if (is_writable($sessionPath)) {
+                    session_save_path($sessionPath);
+                }
+            }
+            ini_set('session.gc_maxlifetime', (string) $lifetime);
+            session_set_cookie_params(['lifetime' => $lifetime, 'path' => '/', 'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
             ini_set('session.use_strict_mode', '1');
             session_start();
         }

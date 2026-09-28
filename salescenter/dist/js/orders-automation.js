@@ -40,6 +40,100 @@
     if (!window.confirm(`Uruchomić „${option?.textContent || ''}” dla zaznaczonych zamówień (${checked})?${warning}`)) event.preventDefault();
   }));
 
+  /* User-defined groups only affect presentation; execution order stays visible on every rule. */
+  const rulesList = document.querySelector('.oa-rules');
+  if (rulesList) {
+    const rules = [...rulesList.querySelectorAll(':scope > .oa-rule[data-rule-group]')];
+    const definitions = new Map([...document.querySelectorAll('[data-oa-group-definitions] [data-group-id]')].map(row => [row.dataset.groupId, row.dataset.groupName || 'Grupa']));
+    const groups = new Map();
+    rules.forEach(rule => {
+      const groupId = rule.dataset.ruleGroup || '0';
+      if (groupId === '0' || !definitions.has(groupId)) return;
+      if (!groups.has(groupId)) groups.set(groupId, []);
+      groups.get(groupId).push(rule);
+    });
+    const output = document.createDocumentFragment();
+    const rendered = new Set();
+    rules.forEach(rule => {
+      const groupId = rule.dataset.ruleGroup || '0';
+      if (groupId === '0' || !groups.has(groupId)) { output.append(rule); return; }
+      if (rendered.has(groupId)) return;
+      rendered.add(groupId);
+      const groupedRules = groups.get(groupId) || [];
+
+      const group = document.createElement('section');
+      group.className = 'oa-rule-group';
+      group.id = `oa-rule-group-${groupId}`;
+      group.classList.add('is-collapsed');
+      const heading = document.createElement('button');
+      heading.type = 'button';
+      heading.className = 'oa-rule-group-head';
+      heading.setAttribute('aria-expanded', 'false');
+      heading.innerHTML = '<span class="oa-rule-group-icon"><i class="bi bi-collection-fill"></i></span><span class="oa-rule-group-title"></span><span class="oa-rule-group-count"></span><i class="bi bi-chevron-up oa-rule-group-chevron"></i>';
+      heading.querySelector('.oa-rule-group-title').textContent = definitions.get(groupId) || 'Grupa';
+      const ruleWord = groupedRules.length === 1 ? 'reguła' : groupedRules.length % 10 >= 2 && groupedRules.length % 10 <= 4 && (groupedRules.length % 100 < 12 || groupedRules.length % 100 > 14) ? 'reguły' : 'reguł';
+      heading.querySelector('.oa-rule-group-count').textContent = `${groupedRules.length} ${ruleWord}`;
+      const body = document.createElement('div');
+      body.className = 'oa-rule-group-list';
+      groupedRules.forEach(groupedRule => { groupedRule.classList.add('is-grouped'); body.append(groupedRule); });
+      heading.addEventListener('click', () => {
+        const collapsed = group.classList.toggle('is-collapsed');
+        heading.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      });
+      group.append(heading, body);
+      output.append(group);
+    });
+    rulesList.replaceChildren(output);
+    const target = location.hash.startsWith('#oa-rule-') ? document.getElementById(location.hash.slice(1)) : null;
+
+    /* Filter by group: '' = all, '0' = rules without a group, otherwise a group id. */
+    const filterBar = document.querySelector('[data-oa-group-filter]');
+    if (filterBar && definitions.size && rules.length) {
+      const storageKey = 'oa-rules-group-filter';
+      const groupOf = rule => (definitions.has(rule.dataset.ruleGroup) ? rule.dataset.ruleGroup : '0');
+      const countFor = key => (key ? rules.filter(rule => groupOf(rule) === key).length : rules.length);
+      const choices = [['', 'Wszystkie'], ...[...definitions].map(([id, name]) => [id, name]), ['0', 'Bez grupy']];
+      const emptyNote = document.createElement('div');
+      emptyNote.className = 'oa-group-filter-empty';
+      emptyNote.textContent = 'Brak automatyzacji w tej grupie.';
+      emptyNote.hidden = true;
+      rulesList.append(emptyNote);
+      const buttons = choices.map(([key, label]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.filter = key;
+        button.innerHTML = `<i class="bi ${key === '' ? 'bi-grid' : key === '0' ? 'bi-dash-circle' : 'bi-folder2-open'}"></i><span></span><b></b>`;
+        button.querySelector('span').textContent = label;
+        button.querySelector('b').textContent = String(countFor(key));
+        button.addEventListener('click', () => apply(key, true));
+        filterBar.append(button);
+        return button;
+      });
+      const apply = (key, remember) => {
+        if (!choices.some(([choice]) => choice === key)) key = '';
+        buttons.forEach(button => { const active = button.dataset.filter === key; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', String(active)); });
+        let visible = 0;
+        rulesList.querySelectorAll(':scope > .oa-rule-group').forEach(group => {
+          const show = !key || group.id === `oa-rule-group-${key}`;
+          group.hidden = !show;
+          if (show) visible += 1;
+        });
+        rulesList.querySelectorAll(':scope > .oa-rule').forEach(rule => { rule.hidden = Boolean(key) && key !== '0'; if (!rule.hidden) visible += 1; });
+        emptyNote.hidden = visible > 0;
+        if (remember) { try { sessionStorage.setItem(storageKey, key); } catch (_) { /* storage unavailable */ } }
+      };
+      let initial = '';
+      try { initial = sessionStorage.getItem(storageKey) || ''; } catch (_) { initial = ''; }
+      if (target && initial && groupOf(target) !== initial) initial = '';
+      apply(initial, false);
+      filterBar.hidden = false;
+    }
+    /* Groups start collapsed; open only the one holding a rule linked by #oa-rule-… (e.g. after saving it). */
+    const targetGroup = target?.closest('.oa-rule-group');
+    if (targetGroup) { targetGroup.classList.remove('is-collapsed'); targetGroup.querySelector('.oa-rule-group-head')?.setAttribute('aria-expanded', 'true'); }
+    if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+  }
+
   const form = document.querySelector('[data-oa-form]');
   if (!form) return;
 

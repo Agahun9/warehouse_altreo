@@ -151,6 +151,13 @@
 .om-status-list .om-status-link{min-height:39px;margin-top:3px;padding:9px 10px;border-radius:7px}
 .om-status-list .om-status-link span{min-width:0}
 .om-status-list .om-status-link.active{background:#eef3ff;color:#304dc4}
+.om-status-group{position:relative}
+.om-status-list .om-status-group:has(.om-group-toggle) .om-group-heading{padding-right:40px}
+.om-group-toggle{position:absolute;top:12px;right:13px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;color:#667085;cursor:pointer}
+.om-group-toggle:hover{background:#dde6f5;color:#2947a5}
+.om-group-toggle i{transition:transform .15s ease}
+.om-status-group.is-collapsed .om-group-toggle i{transform:rotate(-90deg)}
+.om-status-group.is-collapsed .om-status-link:not(.active){display:none}
 .om-status-list .om-queue-summary{border-top:1px solid #e9eef4}
 .om-list-heading h2{font-size:22px;line-height:1.3}
 .om-list-heading p,.om-result-range{font-size:12px}
@@ -335,3 +342,4 @@ td[data-col="payment"] .om-doc-pill,.om-fulfillment-cell .om-doc-pill{display:fl
 @media(prefers-reduced-motion:reduce){.om-thumb-preview{transition:opacity .1s}.om-thumb-preview,.om-thumb-preview.is-open{transform:none}}
 .om-buyer-note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:3px;padding:3px 6px;border-radius:5px;background:#eef4ff;color:#2f4f86;font-size:11px;line-height:1.35;white-space:normal}.om-buyer-note i{color:#4f75c2}
 .om-date-cell .om-ship-to{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:7px;padding-top:7px;border-top:1px dashed #e3e8ee;white-space:normal}.om-flag{display:inline-flex;align-items:center;gap:5px;padding:2px 7px 2px 3px;border:1px solid #e2e7ec;border-radius:999px;background:#f8fafc;color:#344054;font-size:10px;line-height:1}.om-flag img{display:block;width:20px;height:15px;object-fit:cover;border-radius:3px;box-shadow:0 0 0 1px rgba(15,23,42,.12)}.om-flag b{font-weight:700;letter-spacing:.04em}.om-flag.is-unknown{padding:2px 6px;color:#98a2b3}.om-ship-method{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:150px;color:#5b6b80;font-size:10px;line-height:1.3}.om-ship-method i{color:#8c98a7}
+@media(max-width:850px){.om-group-toggle{display:none}.om-status-list .om-status-group:has(.om-group-toggle) .om-group-heading{padding-right:10px}.om-status-group.is-collapsed .om-status-link:not(.active){display:flex}}
