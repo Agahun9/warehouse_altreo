@@ -150,6 +150,21 @@ class AdministrationController extends Controller
         $this->redirect('./index.php?controller=administration&action=users');
     }
 
+    private function allegroAppView(): array
+    {
+        $app = $this->allegro->sharedApp();
+        $config = \App\Core\Config::get('app');
+
+        return array(
+            'configured' => $app['client_id'] !== '' && $app['client_secret'] !== '',
+            'client_id_hint' => $app['client_id'] !== '' ? substr($app['client_id'], 0, 6) . '…' : '',
+            'application_name' => $app['application_name'],
+            'saved_at' => $app['saved_at'],
+            'saved_by' => $app['saved_by'],
+            'docs_url' => (string) ($config['allegro']['documentation_url'] ?? 'https://magazyn.altreo.pl/crm/new_version/allegro-app-info.php'),
+        );
+    }
+
     public function automation(): void
     {
         $currentUser = $this->requireRole('admin');
@@ -217,10 +232,15 @@ class AdministrationController extends Controller
             'temuShopId' => (string) ($temuSettings['shop_id'] ?? ''),
             'temuRegion' => (string) ($temuSettings['region'] ?? 'PL'),
             'defaultRedirectUri' => $baseUrl . '?controller=allegro&action=callback',
+            'allegroApp' => $this->allegroAppView(),
             'sellasistBaseUrl' => $this->settings->get('sellasist_base_url', 'https://altreo.sellasist.pl'),
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
             'sellasistPickingStatusId' => (int) $this->settings->get('sellasist_picking_status_id', '23'),
             'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
+            'salescenterStockUrls' => array(
+                'subtract' => $baseUrl . '?controller=salescenter&action=subtractstock&id={id_order}&key=' . SalescenterController::stockKey($this->settings),
+                'add' => $baseUrl . '?controller=salescenter&action=addstock&id={id_order}&key=' . SalescenterController::stockKey($this->settings),
+            ),
             'apiBearerToken' => $this->settings->get('api_bearer_token', ''),
             'apiBaseUrl' => $this->apiBaseUrl(),
             'moreleApiUrl' => $this->settings->get('morele_api_url', ''),

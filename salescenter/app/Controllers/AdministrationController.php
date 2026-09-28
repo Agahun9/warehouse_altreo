@@ -39,6 +39,7 @@ final class AdministrationController extends Controller
         $this->render('administration/index', [
             'pageTitle' => 'Administracja SalesCenter', 'cronUrls' => $urls, 'cronCommands' => $commands,
             'csrf' => $this->csrfToken(),
+            'adminNotes' => (string) ($saas->setting('admin_notes')['text'] ?? ''),
             'allegroApp' => [
                 'configured' => AllegroService::configured(),
                 'source' => (string) ($allegro['source'] ?? ''),
@@ -46,6 +47,7 @@ final class AdministrationController extends Controller
                 'saved_by' => (string) ($stored['saved_by'] ?? ''),
                 'saved_at' => (string) ($stored['saved_at'] ?? ''),
                 'redirect_uri' => IntegrationsController::appUrl('allegro-callback.php'),
+                'docs_url' => IntegrationsController::appUrl('allegro-app-info.php'),
             ],
         ]);
     }
@@ -68,6 +70,21 @@ final class AdministrationController extends Controller
             $this->setFlash('error', $e instanceof InvalidArgumentException ? $e->getMessage() : (strpos($e->getMessage(), '[401]') !== false || strpos($e->getMessage(), '[400]') !== false ? 'Allegro odrzuciło Client ID lub Client Secret. Skopiuj je ponownie z apps.developer.allegro.pl (bez spacji).' : 'Nie udało się sprawdzić aplikacji w Allegro. Spróbuj ponownie za chwilę.'));
         }
         $this->redirect('./index.php?controller=administration#allegro-app');
+    }
+
+    /** Notatki głównego administratora (np. linki webhooków magazynu). */
+    public function savenotes(): void
+    {
+        $user = $this->requireHeadmaster();
+        $this->requireCsrf();
+        $text = str_replace("\r\n", "\n", (string) ($_POST['notes'] ?? ''));
+        if (mb_strlen($text, 'UTF-8') > 20000) {
+            $this->setFlash('error', 'Notatki mogą mieć maksymalnie 20 000 znaków.');
+        } else {
+            $this->saas()->saveSetting('admin_notes', ['text' => $text, 'saved_by' => (string) ($user['email'] ?? ''), 'saved_at' => gmdate('c')]);
+            $this->setFlash('success', 'Notatki zapisane.');
+        }
+        $this->redirect('./index.php?controller=administration#notes');
     }
 
     public function run(): void

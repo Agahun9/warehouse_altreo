@@ -71,6 +71,16 @@ class AllegroStorageRepository
             }
         }
 
+        if (!$this->database->fetch("SHOW COLUMNS FROM allegro_accounts LIKE 'remote_user_id'")) {
+            try {
+                $this->database->query("ALTER TABLE allegro_accounts ADD COLUMN remote_user_id VARCHAR(40) DEFAULT NULL AFTER application_name, ADD KEY idx_allegro_accounts_remote_user (remote_user_id)");
+            } catch (\PDOException $exception) {
+                if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
+                    throw $exception;
+                }
+            }
+        }
+
         $this->database->query(
             "CREATE TABLE IF NOT EXISTS allegro_account_tokens (\n"
             . "account_id INT UNSIGNED NOT NULL,\n"
@@ -351,6 +361,22 @@ class AllegroStorageRepository
         return $this->database->fetch(
             'SELECT * FROM allegro_accounts WHERE sync_token = :sync_token LIMIT 1',
             array('sync_token' => $syncToken)
+        );
+    }
+
+    public function findAccountByRemoteUserId(string $remoteUserId)
+    {
+        return $this->database->fetch(
+            'SELECT * FROM allegro_accounts WHERE remote_user_id = :remote_user_id ORDER BY id ASC LIMIT 1',
+            array('remote_user_id' => $remoteUserId)
+        );
+    }
+
+    public function findAccountByName(string $name)
+    {
+        return $this->database->fetch(
+            'SELECT * FROM allegro_accounts WHERE LOWER(name) = LOWER(:name) ORDER BY id ASC LIMIT 1',
+            array('name' => $name)
         );
     }
 

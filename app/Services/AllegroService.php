@@ -9,6 +9,7 @@ use App\Core\Database;
 use App\Models\AllegroStorageRepository;
 use App\Models\ProductCustomFieldRepository;
 use App\Models\ProductRepository;
+use App\Models\SettingRepository;
 use App\Models\SharedStockGroupRepository;
 use App\Services\ProductChangeAuditService;
 use RuntimeException;
@@ -170,8 +171,154 @@ class AllegroService
 
         $this->saveTokenPayload((int) $account['id'], $response);
         $this->storage->clearOauthState((int) $account['id']);
+        try {
+            $me = $this->fetchMe($account, (string) $response['access_token']);
+            if ((string) ($me['id'] ?? '') !== '') {
+                $this->storage->saveAccount(array('remote_user_id' => (string) $me['id']), (int) $account['id']);
+            }
+        } catch (RuntimeException $exception) {
+            // Starsze aplikacje mogą nie mieć uprawnienia allegro:api:profile:read – autoryzacja i tak jest ważna.
+        }
 
         return (array) $this->storage->findAccountById((int) $account['id']);
+    }
+
+    /** Wspólna aplikacja Allegro (jak w SalesCenter): konta dodaje się samym logowaniem. */
+    public function sharedApp(): array
+    {
+        $settings = new SettingRepository(Database::instance());
+        $settings->ensureSchema();
+
+        return array(
+            'client_id' => trim($settings->get('allegro_app_client_id', '')),
+            'client_secret' => trim($settings->get('allegro_app_client_secret', '')),
+            'application_name' => trim($settings->get('allegro_app_application_name', (string) $this->configValue('application_name', 'accra_shop magazyn nowy'))),
+            'saved_at' => $settings->get('allegro_app_saved_at', ''),
+            'saved_by' => $settings->get('allegro_app_saved_by', ''),
+        );
+    }
+
+    public function sharedAppConfigured(): bool
+    {
+        $app = $this->sharedApp();
+        return $app['client_id'] !== '' && $app['client_secret'] !== '';
+    }
+
+    /** Sprawdza Client ID i Client Secret (grant client_credentials) i zapisuje wspólną aplikację. */
+    public function saveSharedApp(string $clientId, string $clientSecret, string $applicationName, string $savedBy): void
+    {
+        $current = $this->sharedApp();
+        $clientId = trim($clientId);
+        $clientSecret = trim($clientSecret) !== '' ? trim($clientSecret) : ($clientId === $current['client_id'] ? $current['client_secret'] : '');
+        $applicationName = trim($applicationName) !== '' ? trim($applicationName) : $current['application_name'];
+        if ($clientId === '' || $clientSecret === '') {
+            throw new RuntimeException('Podaj Client ID i Client Secret aplikacji Allegro.');
+        }
+        if (!preg_match('/^[A-Za-z0-9._ -]+$/D', $applicationName)) {
+            throw new RuntimeException('Nazwa aplikacji Allegro ma nieprawidlowe znaki.');
+        }
+
+        $app = array('client_id' => $clientId, 'client_secret' => $clientSecret, 'application_name' => $applicationName);
+        try {
+            $this->oauthTokenForAccount($app, array('grant_type' => 'client_credentials'));
+        } catch (RuntimeException $exception) {
+            throw new RuntimeException('Allegro nie przyjelo Client ID / Client Secret: ' . $exception->getMessage());
+        }
+
+        $settings = new SettingRepository(Database::instance());
+        $settings->set('allegro_app_client_id', $clientId);
+        $settings->set('allegro_app_client_secret', $clientSecret);
+        $settings->set('allegro_app_application_name', $applicationName);
+        $settings->set('allegro_app_saved_at', date('Y-m-d H:i:s'));
+        $settings->set('allegro_app_saved_by', $savedBy);
+    }
+
+    public function sharedAuthorizationUrl(string $state, string $redirectUri): string
+    {
+        $app = $this->sharedApp();
+        if ($app['client_id'] === '' || $app['client_secret'] === '') {
+            throw new RuntimeException('Najpierw skonfiguruj aplikacje Allegro (Client ID i Client Secret).');
+        }
+
+        return rtrim((string) $this->configValue('auth_base', 'https://allegro.pl/auth/oauth'), '/')
+            . '/authorize?'
+            . http_build_query(array(
+                'response_type' => 'code',
+                'client_id' => $app['client_id'],
+                'redirect_uri' => $redirectUri,
+                'state' => $state,
+                'prompt' => 'confirm',
+            ));
+    }
+
+    /**
+     * Wymienia kod na tokeny, odczytuje konto sprzedawcy (/me) i tworzy konto albo odnawia istniejące.
+     * @return array{account: array, created: bool}
+     */
+    public function connectSharedAccount(string $code, string $redirectUri): array
+    {
+        if ($code === '') {
+            throw new RuntimeException('Allegro nie przekazalo kodu autoryzacji.');
+        }
+        $app = $this->sharedApp();
+        if ($app['client_id'] === '' || $app['client_secret'] === '') {
+            throw new RuntimeException('Aplikacja Allegro nie jest skonfigurowana.');
+        }
+
+        $response = $this->oauthTokenForAccount($app, array(
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+        ));
+        if (empty($response['access_token'])) {
+            throw new RuntimeException('Allegro OAuth nie zwrocilo access_token.');
+        }
+        $me = $this->fetchMe($app, (string) $response['access_token']);
+        $remoteId = trim((string) ($me['id'] ?? ''));
+        $login = trim((string) ($me['login'] ?? ''));
+        if ($remoteId === '' || $login === '') {
+            throw new RuntimeException('Allegro nie zwrocilo danych konta (/me).');
+        }
+
+        $existing = $this->storage->findAccountByRemoteUserId($remoteId) ?: $this->storage->findAccountByName($login);
+        $payload = array(
+            'client_id' => $app['client_id'],
+            'client_secret' => $app['client_secret'],
+            'application_name' => $app['application_name'],
+            'redirect_uri' => $redirectUri,
+            'remote_user_id' => $remoteId,
+        );
+        if ($existing) {
+            $id = (int) $existing['id'];
+            $this->storage->saveAccount($payload, $id);
+        } else {
+            $id = $this->storage->saveAccount($payload + array(
+                'name' => $login,
+                'slug' => $this->uniqueSlug($login, null),
+                'is_active' => 1,
+                'sync_token' => $this->randomToken(48),
+            ));
+        }
+        $this->saveTokenPayload($id, $response);
+        $this->storage->clearOauthState($id);
+
+        return array('account' => (array) $this->storage->findAccountById($id), 'created' => !$existing, 'login' => $login);
+    }
+
+    private function fetchMe(array $account, string $accessToken): array
+    {
+        return $this->request(
+            'GET',
+            rtrim((string) $this->configValue('api_base', 'https://api.allegro.pl'), '/') . '/me',
+            array(
+                'Accept: ' . (string) $this->configValue('accept', 'application/vnd.allegro.public.v1+json'),
+                'Authorization: Bearer ' . $accessToken,
+            ),
+            null,
+            30,
+            10,
+            $account
+        );
     }
 
     public function offersPage(array $filters, int $page, int $perPage, string $sortBy, string $sortDir): array

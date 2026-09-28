@@ -9,7 +9,7 @@ header('Referrer-Policy: no-referrer');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>accra_shop magazyn nowy — integracja Allegro</title>
+    <title>Magazyn — integracja Allegro</title>
     <style>
         :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; color: #172033; background: #f4f6fb; }
         body { margin: 0; padding: 48px 20px; }
@@ -22,11 +22,11 @@ header('Referrer-Policy: no-referrer');
 </head>
 <body>
 <main>
-    <h1>accra_shop magazyn nowy</h1>
-    <p>Wewnętrzny system magazynowy firmy ALTREO zintegrowany z Allegro REST API.</p>
+    <h1>Magazyn</h1>
+    <p>Wewnętrzny system magazynowy zintegrowany z Allegro REST API.</p>
     <p>Aplikacja służy do pobierania i zarządzania ofertami sprzedażowymi, łączenia ofert z produktami magazynowymi, aktualizacji cen i stanów, a także kończenia oraz wznawiania ofert.</p>
     <p>Aktualna wersja integracji: <code>2026.09.08</code>.</p>
-    <p>Właściciel integracji: <a href="https://altreo.pl/">ALTREO</a>.</p>
+    <p>Właściciel integracji: Agahun.</p>
 </main>
 </body>
 </html>

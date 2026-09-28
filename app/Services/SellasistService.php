@@ -295,6 +295,115 @@ class SellasistService
         return $result;
     }
 
+    /**
+     * Stan magazynowy dla zamowienia z webhooka SalesCenter (POST JSON "order" z pozycjami "items").
+     * Odejmowanie wykonuje sie raz na zamowienie, dodawanie tylko po wczesniejszym odjeciu,
+     * wiec ponowne wywolanie automatyzacji nie zmienia stanu drugi raz.
+     */
+    public function changeStockForSalescenterOrder(array $salescenterOrder, string $mode): array
+    {
+        $mode = $mode === 'add' ? 'add' : 'subtract';
+        $operation = 'salescenter_' . $mode . '_stock';
+        $orderId = (int) ($salescenterOrder['id'] ?? 0);
+        if ($orderId <= 0) {
+            throw new RuntimeException('Brak poprawnego ID zamowienia SalesCenter.');
+        }
+
+        $items = array();
+        foreach ((isset($salescenterOrder['items']) && is_array($salescenterOrder['items']) ? $salescenterOrder['items'] : array()) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $items[] = array(
+                'signature' => trim((string) ($item['sku'] ?? '')),
+                'name' => trim((string) ($item['name'] ?? '')),
+                'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+                'price_brutto' => (float) ($item['unit_price'] ?? 0),
+            );
+        }
+        if ($items === array()) {
+            throw new RuntimeException('Zamowienie SalesCenter #' . $orderId . ' nie ma pozycji.');
+        }
+
+        $order = array(
+            'id' => $orderId,
+            'carts' => $items,
+            'total' => (float) ($salescenterOrder['total'] ?? 0),
+            'payment' => array('currency' => (string) ($salescenterOrder['currency'] ?? 'PLN')),
+        );
+
+        $result = array(
+            'order_id' => $orderId,
+            'external_id' => (string) ($salescenterOrder['external_id'] ?? ''),
+            'order_total' => $this->orderTotal($order),
+            'currency' => $this->orderCurrency($order),
+            'items_count' => count($items),
+            'processed_at' => date('c'),
+            'skipped' => false,
+            'deductions' => array(),
+        );
+
+        $last = $this->database->fetch(
+            'SELECT operation FROM ' . SellasistOrderSyncRepository::TABLE
+            . ' WHERE order_id = :order_id AND operation IN (\'salescenter_subtract_stock\', \'salescenter_add_stock\')'
+            . ' ORDER BY updated_at DESC, id DESC LIMIT 1',
+            array('order_id' => $orderId)
+        );
+        $lastOperation = is_array($last) ? (string) ($last['operation'] ?? '') : '';
+        if (($mode === 'subtract' && $lastOperation === 'salescenter_subtract_stock')
+            || ($mode === 'add' && $lastOperation !== 'salescenter_subtract_stock')) {
+            $result['skipped'] = true;
+            $result['message'] = $mode === 'subtract'
+                ? 'Stan dla tego zamowienia byl juz odjety.'
+                : 'Stan dla tego zamowienia nie byl odjety albo zostal juz dodany z powrotem.';
+
+            return $result;
+        }
+
+        $this->database->transaction(function () use ($order, $items, $mode, &$result): void {
+            foreach ($items as $item) {
+                $signature = $item['signature'];
+                if ($signature === '') {
+                    $result['deductions'][] = array(
+                        'signature' => '',
+                        'source_name' => $item['name'],
+                        'status' => 'not_found',
+                        'message' => 'Pozycja bez SKU.',
+                    );
+                    continue;
+                }
+
+                $resolved = $this->resolveProductBySignature($signature);
+                $targets = $this->stockTargetsForResolvedProduct($resolved, $item);
+                if ($targets === array()) {
+                    $result['deductions'][] = array(
+                        'signature' => $signature,
+                        'source_name' => $item['name'],
+                        'status' => 'not_found',
+                        'message' => 'Nie znaleziono produktu magazynowego.',
+                    );
+                    continue;
+                }
+
+                $quantity = max(1, $item['quantity'] * $this->bundleMultiplier($item['name']));
+                foreach ($targets as $target) {
+                    $result['deductions'][] = $this->adjustWarehouseProductStock($target, $quantity, $order, $item, $signature, $resolved, $mode, 'SalesCenter');
+                }
+            }
+        });
+
+        $this->syncLogs->recordDailyOrder(
+            $operation,
+            $orderId,
+            (float) $result['order_total'],
+            (string) $result['currency'],
+            (int) $result['items_count'],
+            $result
+        );
+
+        return $result;
+    }
+
     public function todaySubtractSummary(): array
     {
         return $this->syncLogs->todaySummary('subtract_stock');
@@ -753,7 +862,7 @@ class SellasistService
         return $this->adjustWarehouseProductStock($product, $deductQty, $order, $item, $signature, $resolved, 'subtract');
     }
 
-    private function adjustWarehouseProductStock(array $product, int $quantity, array $order, array $item, string $signature, array $resolved, string $mode): array
+    private function adjustWarehouseProductStock(array $product, int $quantity, array $order, array $item, string $signature, array $resolved, string $mode, string $source = 'Sellasist'): array
     {
         $productId = isset($product['id']) ? (int) $product['id'] : 0;
         if ($productId <= 0) {
@@ -790,7 +899,7 @@ class SellasistService
         );
         $updated = $this->products->find((int) $current['id']);
 
-        $summary = ($isAdd ? 'Dodano' : 'Odjeto') . ' stan magazynowy przez Sellasist dla zamowienia #' . (int) ($order['id'] ?? 0)
+        $summary = ($isAdd ? 'Dodano' : 'Odjeto') . ' stan magazynowy przez ' . $source . ' dla zamowienia #' . (int) ($order['id'] ?? 0)
             . ' | pozycja: ' . trim((string) ($item['name'] ?? ''))
             . ' | sygnatura: ' . $signature
             . ' | ilosc: ' . $normalizedQty . '.';
@@ -805,8 +914,8 @@ class SellasistService
                     'product_id' => $logProductId,
                     'product_name_snapshot' => isset($logProduct['product_name']) ? (string) $logProduct['product_name'] : null,
                     'product_sku_snapshot' => isset($logProduct['sku']) ? (string) $logProduct['sku'] : null,
-                    'actor_name' => 'Sellasist',
-                    'actor_email' => 'Sellasist',
+                    'actor_name' => $source,
+                    'actor_email' => $source,
                     'action' => 'update',
                     'change_count' => 3,
                     'summary' => $summary,
@@ -825,7 +934,7 @@ class SellasistService
                         ),
                         array(
                             'field' => 'sellasist_order',
-                            'label' => 'Sellasist',
+                            'label' => $source,
                             'before' => 'brak',
                             'after' => 'Zamowienie #' . (int) ($order['id'] ?? 0) . ', sygnatura ' . $signature,
                         ),

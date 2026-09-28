@@ -147,8 +147,70 @@ class AllegroController extends Controller
         }
     }
 
+    /** Wspólna aplikacja Allegro – Client ID i Client Secret podawane raz dla wszystkich kont. */
+    public function saveapp(): void
+    {
+        $user = $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation#allegro-pane');
+        }
+
+        $this->ensureSessionStarted();
+        $csrf = (string) ($_SESSION['marketplace_account_delete_csrf'] ?? '');
+        $this->releaseSessionLock();
+
+        try {
+            if ($csrf === '' || !hash_equals($csrf, (string) $this->input('csrf', ''))) {
+                throw new \RuntimeException('Sesja formularza wygasla. Odswiez strone i sprobuj ponownie.');
+            }
+            $this->allegro->saveSharedApp(
+                (string) $this->input('client_id', ''),
+                (string) $this->input('client_secret', ''),
+                (string) $this->input('application_name', ''),
+                (string) ($user['email'] ?? '')
+            );
+            $this->setFlash('success', 'Aplikacja Allegro zostala sprawdzona i zapisana. Konta dodasz przyciskiem „Zaloguj przez Allegro”.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation#allegro-pane');
+    }
+
+    /** Dodanie konta samym logowaniem (jak w SalesCenter): nazwa i ID konta pochodzą z /me. */
+    public function login(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        try {
+            $state = bin2hex(random_bytes(24));
+            $url = $this->allegro->sharedAuthorizationUrl($state, $this->sharedRedirectUri());
+            $this->ensureSessionStarted();
+            $_SESSION['allegro_shared_oauth'] = array('state' => $state, 'expires' => time() + 900);
+            $this->releaseSessionLock();
+            $this->redirect($url);
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=administration&action=automation#allegro-pane');
+        }
+    }
+
     public function callback(): void
     {
+        $this->ensureSessionStarted();
+        $pending = $_SESSION['allegro_shared_oauth'] ?? null;
+        $state = trim((string) $this->input('state', ''));
+        if (is_array($pending) && $state !== '' && hash_equals((string) ($pending['state'] ?? ''), $state)) {
+            unset($_SESSION['allegro_shared_oauth']);
+            $this->releaseSessionLock();
+            $this->sharedCallback((int) ($pending['expires'] ?? 0));
+            return;
+        }
+        $this->releaseSessionLock();
+
         try {
             $error = trim((string) $this->input('error', ''));
             if ($error !== '') {
@@ -164,6 +226,37 @@ class AllegroController extends Controller
         }
 
         $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    private function sharedCallback(int $expires): void
+    {
+        try {
+            $error = trim((string) $this->input('error', ''));
+            if ($error !== '') {
+                throw new \RuntimeException('Allegro nie udzielilo dostepu (' . preg_replace('/[^a-z_]/i', '', $error) . '). Sprobuj ponownie i kliknij „Zezwol”.');
+            }
+            if ($expires < time()) {
+                throw new \RuntimeException('Sesja logowania Allegro wygasla. Kliknij „Zaloguj przez Allegro” jeszcze raz.');
+            }
+
+            $result = $this->allegro->connectSharedAccount(trim((string) $this->input('code', '')), $this->sharedRedirectUri());
+            $this->setFlash('success', $result['created']
+                ? 'Polaczono konto Allegro „' . $result['login'] . '”.'
+                : 'Odnowiono polaczenie z kontem Allegro „' . $result['login'] . '”.');
+        } catch (Throwable $exception) {
+            $message = $exception->getMessage();
+            if (strpos($message, '[403]') !== false) {
+                $message .= ' Sprawdz, czy aplikacja Allegro ma uprawnienie allegro:api:profile:read.';
+            }
+            $this->setFlash('error', 'Nie udalo sie polaczyc: ' . $message);
+        }
+
+        $this->redirect('./index.php?controller=administration&action=automation#allegro-pane');
+    }
+
+    private function sharedRedirectUri(): string
+    {
+        return $this->absoluteBaseUrl() . '?controller=allegro&action=callback';
     }
 
     public function sync(): void

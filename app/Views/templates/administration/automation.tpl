@@ -293,9 +293,36 @@
                     <div class="col-xl-4">
                       <div class="card administration-form-card h-100">
                         <div class="card-header bg-white">
-                          <h3 class="card-title mb-0">Nowe konto Allegro</h3>
+                          <h3 class="card-title mb-0">Dodaj konto Allegro</h3>
                         </div>
                         <div class="card-body">
+                          {if $allegroApp.configured}
+                            <p class="mb-2"><span class="badge text-bg-success">Aplikacja włączona</span> Client ID <code>{$allegroApp.client_id_hint|escape}</code>{if $allegroApp.saved_by} · zapisał {$allegroApp.saved_by|escape}{if $allegroApp.saved_at}, {$allegroApp.saved_at|escape}{/if}{/if}</p>
+                            <a href="{$baseUrl}?controller=allegro&action=login" class="btn btn-primary w-100 mb-2">Zaloguj przez Allegro</a>
+                            <p class="small text-secondary">Zaloguj się na konto Allegro, które chcesz dodać, i kliknij „Zezwól”. Nazwa konta pobierze się automatycznie. Ponowne zalogowanie tym samym kontem odnawia połączenie zamiast tworzyć duplikat.</p>
+                          {else}
+                            <p class="mb-2"><span class="badge text-bg-warning">Nie skonfigurowana</span> Najpierw skonfiguruj aplikację Allegro (jednorazowo).</p>
+                          {/if}
+                          <p class="small mb-3">Link do dokumentacji aplikacji (do formularza Allegro): <a href="{$allegroApp.docs_url|escape}" target="_blank" rel="noopener noreferrer"><code>{$allegroApp.docs_url|escape}</code></a></p>
+                          <details class="mb-3"{if !$allegroApp.configured} open{/if}>
+                            <summary class="mb-2">{if $allegroApp.configured}Zmień aplikację Allegro{else}Skonfiguruj aplikację Allegro (jednorazowo){/if}</summary>
+                            <ol class="small ps-3">
+                              <li>Otwórz <a href="https://apps.developer.allegro.pl/new" target="_blank" rel="noopener noreferrer">apps.developer.allegro.pl</a> i zaloguj się kontem Allegro.</li>
+                              <li>„Zarejestruj nową aplikację”, typ <strong>„Aplikacja będzie miała dostęp do przeglądarki”</strong>.</li>
+                              <li>Adres URI do przekierowania: <code>{$defaultRedirectUri|escape}</code></li>
+                              <li>Adres dokumentacji / strony aplikacji: <code>{$allegroApp.docs_url|escape}</code></li>
+                              <li>Zaznacz uprawnienia do ofert, ustawień sprzedaży, zamówień, przesyłek i wiadomości oraz <strong>odczyt profilu konta (<code>allegro:api:profile:read</code>)</strong> – bez niego logowanie kończy się błędem 403. Zapisz i skopiuj Client ID oraz Client Secret.</li>
+                            </ol>
+                            <form method="post" action="{$baseUrl}?controller=allegro&action=saveapp" class="row g-2">
+                              <input type="hidden" name="csrf" value="{$deleteCsrf|escape}">
+                              <div class="col-12"><label class="form-label" for="allegro-app-client-id">Client ID</label><input id="allegro-app-client-id" name="client_id" class="form-control" autocomplete="off" required></div>
+                              <div class="col-12"><label class="form-label" for="allegro-app-client-secret">Client Secret</label><input id="allegro-app-client-secret" name="client_secret" type="password" class="form-control" autocomplete="off" required></div>
+                              <div class="col-12"><button class="btn btn-outline-primary w-100">Sprawdź i zapisz</button></div>
+                              <div class="col-12 small text-secondary">Po zmianie aplikacji zaloguj ponownie konta Allegro, aby korzystały z nowej aplikacji.</div>
+                            </form>
+                          </details>
+                          <details>
+                            <summary class="mb-2 small text-secondary">Zaawansowane: konto z własną aplikacją (ręcznie)</summary>
                           <form method="post" action="{$baseUrl}?controller=allegro&action=saveaccount" class="row g-3">
                             <input type="hidden" name="account_id" value="">
                             <div class="col-12">
@@ -332,6 +359,7 @@
                               <button type="submit" class="btn btn-primary">Zapisz konto</button>
                             </div>
                           </form>
+                          </details>
                         </div>
                       </div>
                     </div>
@@ -1285,6 +1313,13 @@
                           <button type="submit" class="btn btn-primary">Zapisz ustawienia Sellasist</button>
                         </div>
                       </form>
+                      <hr>
+                      <h4 class="h6">Stany z SalesCenter</h4>
+                      <p class="small text-secondary mb-2">W SalesCenter: Automatyzacje &rarr; akcja <strong>„Wywołaj webhook (POST JSON)”</strong> &rarr; wklej link. Odejmowanie działa raz na zamówienie, dodawanie tylko po wcześniejszym odjęciu. Wynik zapisuje się w notatkach zamówienia. Link zawiera tajny klucz.</p>
+                      <label class="form-label small mb-1" for="salescenter-subtract-url">Odejmowanie sztuk</label>
+                      <input id="salescenter-subtract-url" class="form-control form-control-sm font-monospace mb-2" readonly value="{$salescenterStockUrls.subtract|escape}" onclick="this.select()">
+                      <label class="form-label small mb-1" for="salescenter-add-url">Dodawanie sztuk (zwrot / anulowanie)</label>
+                      <input id="salescenter-add-url" class="form-control form-control-sm font-monospace" readonly value="{$salescenterStockUrls.add|escape}" onclick="this.select()">
                     </div>
                   </div>
                 </div>

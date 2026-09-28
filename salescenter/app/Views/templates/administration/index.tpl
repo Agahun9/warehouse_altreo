@@ -3,6 +3,15 @@
   <p class="text-secondary">Ustawienia całej platformy. Widzi je tylko główny administrator – firmy korzystające z SalesCenter nie mają tu dostępu.</p>
   {if $flashSuccess}<div class="alert alert-success">{$flashSuccess|escape}</div>{/if}
   {if $flashError}<div class="alert alert-danger">{$flashError|escape}</div>{/if}
+  <div class="card mb-4" id="notes"><div class="card-body">
+    <h2 class="h5">Notatki</h2>
+    <p class="text-secondary small">Twoje notatki, np. linki webhooków do magazynu (odejmowanie / dodawanie sztuk). Widoczne tylko tutaj.</p>
+    <form method="post" action="index.php?controller=administration&action=savenotes">
+      <input type="hidden" name="csrf" value="{$csrf|escape}">
+      <textarea name="notes" class="form-control font-monospace mb-2" rows="8" maxlength="20000" spellcheck="false">{$adminNotes|escape}</textarea>
+      <button class="btn btn-primary">Zapisz notatki</button>
+    </form>
+  </div></div>
   <div class="card mb-4" id="allegro-app"><div class="card-body">
     <h2 class="h5">Aplikacja Allegro</h2>
     {if $allegroApp.configured}
@@ -11,6 +20,7 @@
     {else}
       <p class="mb-2"><span class="badge text-bg-warning">Nie skonfigurowana</span> Firmy nie mogą jeszcze łączyć kont Allegro.</p>
     {/if}
+    <p class="mb-2 small">Link do dokumentacji aplikacji (do formularza Allegro): <a href="{$allegroApp.docs_url|escape}" target="_blank" rel="noopener noreferrer"><code>{$allegroApp.docs_url|escape}</code></a></p>
     {if $allegroApp.source neq 'file'}
     <details{if !$allegroApp.configured} open{/if}>
       <summary class="mb-2">{if $allegroApp.configured}Zmień aplikację Allegro{else}Skonfiguruj aplikację Allegro (jednorazowo){/if}</summary>
@@ -18,7 +28,8 @@
         <li>Otwórz <a href="https://apps.developer.allegro.pl/new" target="_blank" rel="noopener noreferrer">apps.developer.allegro.pl</a> i zaloguj się kontem Allegro.</li>
         <li>„Zarejestruj nową aplikację”, nazwa np. SalesCenter, typ <strong>„Aplikacja będzie miała dostęp do przeglądarki”</strong>.</li>
         <li>Adres URI do przekierowania: <code>{$allegroApp.redirect_uri|escape}</code></li>
-        <li>Zaznacz uprawnienia do zamówień, przesyłek, wiadomości i ofert, zapisz i skopiuj Client ID oraz Client Secret.</li>
+        <li>Adres dokumentacji / strony aplikacji: <code>{$allegroApp.docs_url|escape}</code></li>
+        <li>Zaznacz uprawnienia do zamówień, przesyłek, wiadomości i ofert oraz <strong>odczyt profilu konta (<code>allegro:api:profile:read</code>)</strong> – bez niego połączenie kończy się błędem 403. Zapisz i skopiuj Client ID oraz Client Secret.</li>
       </ol>
       <form method="post" action="index.php?controller=administration&action=allegroapp" class="row g-2">
         <input type="hidden" name="csrf" value="{$csrf|escape}">

@@ -23,10 +23,10 @@ header('Referrer-Policy: no-referrer');
 <body>
 <main>
     <h1>SalesCenter</h1>
-    <p>Wewnętrzny system firmy ALTREO do obsługi sprzedaży i komunikacji z klientami, zintegrowany z Allegro REST API.</p>
+    <p>Wewnętrzny system do obsługi sprzedaży i komunikacji z klientami, zintegrowany z Allegro REST API.</p>
     <p>Aplikacja służy do pobierania i obsługi zamówień, organizacji realizacji i wysyłki, przekazywania numerów przesyłek oraz odbierania i wysyłania wiadomości związanych ze sprzedażą. Umożliwia także obsługę dyskusji i reklamacji prowadzonych przez Allegro.</p>
     <p>Aktualna wersja integracji: <code>1.0</code>.</p>
-    <p>Właściciel integracji: <a href="https://altreo.pl/">ALTREO</a>.</p>
+    <p>Właściciel integracji: Agahun.</p>
 </main>
 </body>
 </html>
