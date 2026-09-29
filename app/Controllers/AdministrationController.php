@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Models\ApiTokenRepository;
+use App\Models\CategoryRepository;
 use App\Models\SettingRepository;
 use App\Models\UserRepository;
 use App\Services\AllegroService;
@@ -572,6 +574,132 @@ class AdministrationController extends Controller
         }
 
         $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function apitokens(): void
+    {
+        $currentUser = $this->requireRole('admin');
+        $flashSuccess = $this->getFlash('success');
+        $flashError = $this->getFlash('error');
+        $this->ensureSessionStarted();
+        $newToken = isset($_SESSION['new_api_token']) && is_array($_SESSION['new_api_token']) ? $_SESSION['new_api_token'] : null;
+        unset($_SESSION['new_api_token']);
+        $this->releaseSessionLock();
+
+        $this->render('administration/api_tokens', array(
+            'pageTitle' => 'Administracja',
+            'contentTitle' => 'Tokeny API',
+            'pageDescription' => 'Generuj i uniewazniaj tokeny dla aplikacji pobierajacych produkty z magazynu.',
+            'breadcrumbCurrent' => 'Tokeny API',
+            'currentUser' => $currentUser,
+            'flashSuccess' => $flashSuccess,
+            'flashError' => $flashError,
+            'apiTokens' => $this->apiTokenRepository()->all(),
+            'newApiToken' => $newToken,
+            'apiIndexUrl' => $this->publicIndexUrl(),
+        ));
+    }
+
+    public function createapitoken(): void
+    {
+        $currentUser = $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=apitokens');
+        }
+
+        try {
+            $name = trim((string) $this->input('name', ''));
+            if ($name === '') {
+                throw new RuntimeException('Podaj nazwe tokenu, np. nazwe aplikacji, ktora bedzie go uzywac.');
+            }
+
+            $name = function_exists('mb_substr') ? mb_substr($name, 0, 190, 'UTF-8') : substr($name, 0, 190);
+            $token = $this->apiTokenRepository()->create($name, $currentUser);
+            $this->ensureSessionStarted();
+            $_SESSION['new_api_token'] = array('name' => $name, 'token' => $token);
+            $this->setFlash('success', 'Token API "' . $name . '" zostal wygenerowany. Skopiuj go teraz - nie bedzie pokazany ponownie.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=apitokens');
+    }
+
+    public function revokeapitoken(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=apitokens');
+        }
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0 || $this->apiTokenRepository()->revoke($id) <= 0) {
+                throw new RuntimeException('Nie znaleziono tokenu do uniewaznienia.');
+            }
+            $this->setFlash('success', 'Token API zostal uniewazniony. Aplikacje uzywajace go straca dostep.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=apitokens');
+    }
+
+    public function deleteapitoken(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=apitokens');
+        }
+
+        try {
+            $id = (int) $this->input('id', 0);
+            if ($id <= 0 || $this->apiTokenRepository()->deleteById($id) <= 0) {
+                throw new RuntimeException('Nie znaleziono tokenu do usuniecia.');
+            }
+            $this->setFlash('success', 'Token API zostal usuniety.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+
+        $this->redirect('./index.php?controller=administration&action=apitokens');
+    }
+
+    public function apidocs(): void
+    {
+        $currentUser = $this->requireRole('admin');
+
+        $this->render('administration/api_docs', array(
+            'pageTitle' => 'Administracja',
+            'contentTitle' => 'Instrukcja API',
+            'pageDescription' => 'Instrukcja dla zewnetrznej aplikacji pobierajacej produkty po ID kategorii.',
+            'breadcrumbCurrent' => 'Instrukcja API',
+            'currentUser' => $currentUser,
+            'apiIndexUrl' => $this->publicIndexUrl(),
+            'apiCategories' => (new CategoryRepository($this->db()))->allWithProductCounts(),
+        ));
+    }
+
+    private function apiTokenRepository(): ApiTokenRepository
+    {
+        $repository = new ApiTokenRepository($this->db());
+        $repository->ensureSchema();
+
+        return $repository;
+    }
+
+    private function publicIndexUrl(): string
+    {
+        $appConfig = \App\Core\Config::get('app');
+        $publicBaseUrl = trim((string) ($appConfig['public_base_url'] ?? ''));
+
+        return $publicBaseUrl !== '' ? $publicBaseUrl : $this->absoluteBaseUrl();
     }
 
     public function savetemu(): void

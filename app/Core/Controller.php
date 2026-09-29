@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use App\Models\ApiTokenRepository;
 use App\Models\TaskboardRepository;
 use App\Models\UserRepository;
 use App\Models\SettingRepository;
@@ -88,6 +89,21 @@ abstract class Controller
         }
 
         return trim((string) $matches[1]);
+    }
+
+    protected function apiTokenFromRequest(): string
+    {
+        $token = $this->bearerToken();
+        if ($token !== '') {
+            return $token;
+        }
+
+        $headerToken = trim((string) ($_SERVER['HTTP_X_API_TOKEN'] ?? ''));
+        if ($headerToken !== '') {
+            return $headerToken;
+        }
+
+        return trim((string) ($_GET['api_token'] ?? ''));
     }
 
     protected function redirect(string $url): void
@@ -258,7 +274,19 @@ abstract class Controller
             $configuredToken = $storedToken;
         }
 
-        $providedToken = $this->bearerToken();
+        $providedToken = $this->apiTokenFromRequest();
+
+        if ($providedToken !== '') {
+            try {
+                $apiTokens = new ApiTokenRepository($this->db());
+                $apiTokens->ensureSchema();
+                if ($apiTokens->validate($providedToken, (string) ($_SERVER['REMOTE_ADDR'] ?? ''))) {
+                    return;
+                }
+            } catch (\Throwable $exception) {
+                // Brak tabeli tokenow nie moze blokowac starego tokenu z ustawien.
+            }
+        }
 
         if ($configuredToken !== '' && $providedToken !== '') {
             if (hash_equals($configuredToken, $providedToken)) {
@@ -278,8 +306,12 @@ abstract class Controller
             $this->apiErrorResponse('Brak dostepu do modulu.', 403);
         }
 
+        if ($providedToken !== '') {
+            $this->apiErrorResponse('Nieprawidlowy lub uniewazniony token API.', 403);
+        }
+
         if ($configuredToken === '') {
-            $this->apiErrorResponse('API token nie jest skonfigurowany. Ustaw app.api_bearer_token.', 503);
+            $this->apiErrorResponse('Brak autoryzacji API. Wygeneruj token w Administracja -> Tokeny API.', 401);
         }
 
         $this->apiErrorResponse('Brak autoryzacji API.', 401);

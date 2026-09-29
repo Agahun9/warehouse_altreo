@@ -1270,6 +1270,52 @@ class ProductRepository
         return $this->attachCustomFields($this->attachSharedStock($this->attachTemuParameters($this->attachMediaMarktParameters($this->attachEmpikParameters($this->attachAllegroParameters($rows))))));
     }
 
+    /**
+     * Stronicowana lista ID produktow z kategorii dla zewnetrznego API.
+     * Pelne dane pobiera sie potem przez exportRows($ids).
+     */
+    public function apiCategoryProductIds(array $categoryIds, array $filters, int $limit, int $offset): array
+    {
+        $params = array();
+        $sql = 'SELECT products.id FROM ' . self::TABLE
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
+            . ' WHERE ' . $this->apiCategoryWhere($categoryIds, $filters, $params)
+            . ' ORDER BY products.id ASC LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset);
+
+        return array_map('intval', array_column($this->database->fetchAll($sql, $params), 'id'));
+    }
+
+    public function apiCategoryProductCount(array $categoryIds, array $filters): int
+    {
+        $params = array();
+        $sql = 'SELECT COUNT(*) FROM ' . self::TABLE
+            . ' LEFT JOIN shared_stock_groups ON shared_stock_groups.id = products.shared_stock_group_id'
+            . ' WHERE ' . $this->apiCategoryWhere($categoryIds, $filters, $params);
+
+        return (int) $this->database->fetchColumn($sql, $params);
+    }
+
+    private function apiCategoryWhere(array $categoryIds, array $filters, array &$params): string
+    {
+        $whereParts = array('products.deleted_at IS NULL');
+
+        if ($categoryIds !== array()) {
+            $this->appendCategoryFilterCondition($whereParts, $params, $categoryIds, 'api_category_id');
+        }
+
+        $updatedSince = trim((string) ($filters['updated_since'] ?? ''));
+        if ($updatedSince !== '') {
+            $whereParts[] = 'products.updated_at >= :api_updated_since';
+            $params['api_updated_since'] = $updatedSince;
+        }
+
+        if (!empty($filters['in_stock'])) {
+            $whereParts[] = 'COALESCE(shared_stock_groups.quantity, products.quantity) > 0';
+        }
+
+        return implode(' AND ', $whereParts);
+    }
+
     private function parseImages(string $value): array
     {
         $value = trim($value);

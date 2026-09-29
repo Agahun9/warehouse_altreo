@@ -7,6 +7,7 @@ namespace App\Core;
 use App\Controllers\AdministrationController;
 use App\Controllers\AccountingWarehouseController;
 use App\Controllers\AllegroController;
+use App\Controllers\ApiController;
 use App\Controllers\AuthController;
 use App\Controllers\CategoryController;
 use App\Controllers\ComputersController;
@@ -98,6 +99,9 @@ class Application
                 break;
             case 'worktime':
                 $controller = new WorkTimeController();
+                break;
+            case 'api':
+                $controller = new ApiController();
                 break;
             default:
                 http_response_code(404);

@@ -1241,6 +1241,27 @@
                       <span class="badge text-bg-primary">Nowe</span>
                     </div>
                     <div class="card-body">
+                      <div class="alert alert-info mb-4">
+                        <h5 class="alert-heading mb-2"><i class="bi bi-info-circle me-1"></i>Jak uzywac API produktow</h5>
+                        <ol class="mb-2 ps-3">
+                          <li class="mb-1">Wejdz w <a href="{$baseUrl}?controller=administration&action=apitokens"><strong>Tokeny API</strong></a>, wpisz nazwe aplikacji i kliknij <em>Generuj token</em>. Skopiuj token od razu - pokazuje sie tylko raz. Dla kazdej aplikacji zrob osobny token.</li>
+                          <li class="mb-1">Wejdz w <a href="{$baseUrl}?controller=administration&action=apidocs"><strong>Instrukcja API</strong></a>, kliknij <em>Kopiuj instrukcje</em> albo <em>Pobierz .md</em> i przeslij ja autorowi drugiej aplikacji. Token wyslij osobno (np. innym kanalem).</li>
+                          <li class="mb-1">ID kategorii sprawdzisz w tabeli po prawej stronie zakladki <em>Instrukcja API</em> albo w <a href="{$baseUrl}?controller=categories&action=index">Liscie kategorii</a>.</li>
+                          <li class="mb-1">Aplikacja pobiera produkty strona po stronie, az <code>pagination.has_next</code> bedzie <code>false</code>. Dostaje pelne dane: SKU, EAN, nazwe, opis, ilosc, lokalizacje, ceny, zdjecia, pola wlasne i parametry Allegro/Empik/MediaMarkt/Temu.</li>
+                          <li>Zeby odciac aplikacji dostep, kliknij przy jej tokenie <em>Uniewaznij</em>. Tam tez widac, kiedy token byl ostatnio uzyty.</li>
+                        </ol>
+                        <div class="administration-inline-code mb-2">
+                          <label class="form-label small mb-1">Produkty z kategorii (glowny adres)</label>
+                          <input type="text" class="form-control form-control-sm" readonly value="{$apiBaseUrl|escape}/index.php?controller=api&amp;action=products&amp;category_id=ID_KATEGORII&amp;page=1&amp;per_page=100">
+                        </div>
+                        <div class="administration-inline-code mb-2">
+                          <label class="form-label small mb-1">Lista kategorii z ID</label>
+                          <input type="text" class="form-control form-control-sm" readonly value="{$apiBaseUrl|escape}/index.php?controller=api&amp;action=categories">
+                        </div>
+                        <div class="small">Autoryzacja: naglowek <code>Authorization: Bearer TOKEN</code> (albo <code>X-Api-Token: TOKEN</code>). Opcje: <code>category_id=5,7</code> (kilka kategorii), <code>updated_since=2026-01-31</code> (tylko zmienione), <code>in_stock=1</code> (tylko dostepne).</div>
+                      </div>
+
+                      <div class="small text-secondary mb-2">Stary, pojedynczy token (nadal dziala - zalecane sa tokeny z zakladki <a href="{$baseUrl}?controller=administration&action=apitokens">Tokeny API</a>):</div>
                       <form method="post" action="{$baseUrl}?controller=administration&action=saveapi" class="row g-3">
                         <div class="col-12">
                           <label class="form-label" for="api-bearer-token">Token API</label>

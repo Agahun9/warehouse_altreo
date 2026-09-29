@@ -153,6 +153,17 @@ class CategoryRepository
         return $this->database->fetchAll('SELECT * FROM categories ORDER BY name ASC');
     }
 
+    public function allWithProductCounts(): array
+    {
+        return $this->database->fetchAll(
+            'SELECT categories.*, COUNT(products.id) AS products_count'
+            . ' FROM categories'
+            . ' LEFT JOIN products ON products.category_id = categories.id AND products.deleted_at IS NULL'
+            . ' GROUP BY categories.id'
+            . ' ORDER BY categories.name ASC'
+        );
+    }
+
     public function countAll(): int
     {
         return (int) $this->database->fetchColumn('SELECT COUNT(*) FROM categories');

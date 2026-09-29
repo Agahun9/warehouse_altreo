@@ -544,7 +544,7 @@
               {/if}
               {if $currentUser.role eq 'admin'}
                 <li class="nav-item">
-                  <a href="{$baseUrl}?controller=administration&action=users" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction neq 'automation'} active{/if}">
+                  <a href="{$baseUrl}?controller=administration&action=users" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction neq 'automation' and $currentAction neq 'apitokens' and $currentAction neq 'apidocs'} active{/if}">
                     <i class="nav-icon bi bi-people"></i>
                     <p>Uzytkownicy</p>
                   </a>
@@ -553,6 +553,18 @@
                   <a href="{$baseUrl}?controller=administration&action=automation" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction eq 'automation'} active{/if}">
                     <i class="nav-icon bi bi-clock-history"></i>
                     <p>Administracja</p>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=administration&action=apitokens" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction eq 'apitokens'} active{/if}">
+                    <i class="nav-icon bi bi-key"></i>
+                    <p>Tokeny API</p>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a href="{$baseUrl}?controller=administration&action=apidocs" class="nav-link{if ($currentController eq 'administration' or $currentController eq 'admin') and $currentAction eq 'apidocs'} active{/if}">
+                    <i class="nav-icon bi bi-journal-code"></i>
+                    <p>Instrukcja API</p>
                   </a>
                 </li>
               {/if}
