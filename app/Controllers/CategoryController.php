@@ -344,7 +344,11 @@ class CategoryController extends Controller
             $this->redirect('./index.php?controller=categories&action=index');
         }
 
-        $this->categories->deleteById($id);
+        if ($this->categories->deleteById($id) < 1) {
+            $this->setFlash('error', 'Nie mozna usunac tej kategorii.');
+            $this->redirect('./index.php?controller=categories&action=index');
+        }
+
         $this->setFlash('success', 'Kategoria zostala usunieta.');
         $this->redirect('./index.php?controller=categories&action=index');
     }

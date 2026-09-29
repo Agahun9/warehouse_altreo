@@ -40,28 +40,28 @@
             <div class="col-12">
               <label class="form-label">Wzor tytulu</label>
               <textarea name="template_body" id="templateBody" class="form-control" rows="5" required>{$titleTemplate.template_body|default:''|escape}</textarea>
-              <div class="form-text">Przyklad: <code>Etui na Telefon {{ldelim}}field:product.allegro_parameter.123{rdelim} {{ldelim}}field:product.allegro_parameter.456{rdelim} wzory {{ldelim}}option:collection_name{rdelim}</code></div>
+              <div class="form-text">Przyklad: <code>Etui na Telefon {ldelim}{ldelim}field:product.allegro_parameter.123{rdelim}{rdelim} {ldelim}{ldelim}field:product.allegro_parameter.456{rdelim}{rdelim} wzory {ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code></div>
 
               <div class="form-text mt-2"><strong>Jak budowac tokeny:</strong></div>
-              <div class="form-text">1. Zwykla wartosc pola: <code>{{ldelim}}field:product.sku{rdelim}</code> albo <code>{{ldelim}}field:product.allegro_parameter.11484{rdelim}</code>.</div>
-              <div class="form-text">2. Opcja z eksportu: <code>{{ldelim}}option:collection_name{rdelim}</code> albo <code>{{ldelim}}option:price_to_csv{rdelim}</code>.</div>
-              <div class="form-text">3. Zamiana tekstu: po nazwie pola dopisz <code>+stare-nowe</code>, np. <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}</code>.</div>
-              <div class="form-text">4. Wiele zamian: dopisuj kolejne pary po <code>+</code>, np. <code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska{rdelim}</code>.</div>
-              <div class="form-text">5. Formatowanie: na samym koncu dopisz <code>=format</code>, np. <code>{{ldelim}}field:product.allegro_parameter.11484=upper{rdelim}</code>.</div>
+              <div class="form-text">1. Zwykla wartosc pola: <code>{ldelim}{ldelim}field:product.sku{rdelim}{rdelim}</code> albo <code>{ldelim}{ldelim}field:product.allegro_parameter.11484{rdelim}{rdelim}</code>.</div>
+              <div class="form-text">2. Opcja z eksportu: <code>{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}</code> albo <code>{ldelim}{ldelim}option:price_to_csv{rdelim}{rdelim}</code>.</div>
+              <div class="form-text">3. Zamiana tekstu: po nazwie pola dopisz <code>+stare-nowe</code>, np. <code>{ldelim}{ldelim}field:product.allegro_parameter.249512+Czarny-Czarna{rdelim}{rdelim}</code>.</div>
+              <div class="form-text">4. Wiele zamian: dopisuj kolejne pary po <code>+</code>, np. <code>{ldelim}{ldelim}field:product.allegro_parameter.249512+Czarny-Czarna+Bialy-Biala+Niebieski-Niebieska{rdelim}{rdelim}</code>.</div>
+              <div class="form-text">5. Formatowanie: na samym koncu dopisz <code>=format</code>, np. <code>{ldelim}{ldelim}field:product.allegro_parameter.11484=upper{rdelim}{rdelim}</code>.</div>
               <div class="form-text">6. Kolejnosc jest zawsze taka: pole, potem opcjonalne zamiany <code>+...</code>, a na koncu opcjonalny format <code>=...</code>.</div>
 
               <div class="form-text mt-2"><strong>Najczestsze przyklady:</strong></div>
-              <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=upper{rdelim}</code> zmieni wartosc pola na WIELKIE LITERY.</div>
-              <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=lower{rdelim}</code> zmieni wartosc pola na male litery.</div>
-              <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512=ucfirst{rdelim}</code> zmieni pierwsza litere tekstu na wielka.</div>
-              <div class="form-text"><code>{{ldelim}}field:product.allegro_parameter.249512+Czarny-Czarna=upper{rdelim}</code> najpierw podmieni tekst, a potem zrobi formatowanie.</div>
-              <div class="form-text"><code>{{ldelim}}field:product.created_at=date:Y-m-d{rdelim}</code> sformatuje date.</div>
-              <div class="form-text"><code>{{ldelim}}field:product.price_gross=number:2:,: {rdelim}</code> sformatuje liczbe do 2 miejsc po przecinku.</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.allegro_parameter.249512=upper{rdelim}{rdelim}</code> zmieni wartosc pola na WIELKIE LITERY.</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.allegro_parameter.249512=lower{rdelim}{rdelim}</code> zmieni wartosc pola na male litery.</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.allegro_parameter.249512=ucfirst{rdelim}{rdelim}</code> zmieni np. MĘSKA na Męska (pierwsza litera wielka, reszta male).</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.allegro_parameter.249512+Czarny-Czarna=upper{rdelim}{rdelim}</code> najpierw podmieni tekst, a potem zrobi formatowanie.</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.created_at=date:Y-m-d{rdelim}{rdelim}</code> sformatuje date.</div>
+              <div class="form-text"><code>{ldelim}{ldelim}field:product.price_gross=number:2:,: {rdelim}{rdelim}</code> sformatuje liczbe do 2 miejsc po przecinku.</div>
 
               <div class="form-text mt-2">Dostepne formaty po znaku <code>=</code>:
                 <code>upper</code> - wielkie litery,
                 <code>lower</code> - male litery,
-                <code>ucfirst</code> - pierwsza litera tekstu jako wielka,
+                <code>ucfirst</code> - pierwsza litera wielka, reszta male (MĘSKA -> Męska),
                 <code>trim</code> - usuniecie spacji z poczatku i konca,
                 <code>date:Y-m-d</code> - format daty,
                 <code>number:2:,: </code> - liczba z 2 miejscami, przecinkiem dziesietnym i spacjami tysiecznymi,
@@ -90,7 +90,7 @@
                 <label class="form-label">Formatowanie</label>
                 <select id="tokenFormat" class="form-select">
                   <option value="">Bez formatowania</option>
-                  <option value="ucfirst">ucfirst — pierwsza litera wielka</option>
+                  <option value="ucfirst">ucfirst — Pierwsza wielka, reszta małe</option>
                   <option value="upper">upper — wielkie litery</option>
                   <option value="lower">lower — małe litery</option>
                   <option value="trim">trim — usuń skrajne spacje</option>
@@ -103,8 +103,8 @@
             <div class="mt-3">
               <div class="small fw-semibold mb-2">Szybkie tokeny eksportowe</div>
               <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="{{ldelim}}option:collection_name{rdelim}">Kolekcja</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="{{ldelim}}option:price_to_csv{rdelim}">Cena z eksportu</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="{ldelim}{ldelim}option:collection_name{rdelim}{rdelim}">Kolekcja</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-quick-token" data-token="{ldelim}{ldelim}option:price_to_csv{rdelim}{rdelim}">Cena z eksportu</button>
               </div>
             </div>
           </div>

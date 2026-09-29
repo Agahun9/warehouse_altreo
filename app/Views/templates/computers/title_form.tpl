@@ -18,8 +18,8 @@
         <div class="col-12">
           <label class="form-label">Wzór tytułu</label>
           <textarea name="template_body" id="templateBody" class="form-control" rows="5" required>{$titleTemplate.template_body|default:''|escape:'html'}</textarea>
-          <div class="form-text">Przykład: <code>{{ldelim}}field:product.components.CPU{rdelim} {{ldelim}}field:product.components.GPU{rdelim} {{ldelim}}field:product.components.RAM{rdelim}</code></div>
-          <div class="form-text">Działa też formatowanie i podmiany, np. <code>{{ldelim}}field:product.components.OBUDOWA+Gaming-GAMING=upper{rdelim}</code></div>
+          <div class="form-text">Przykład: <code>{ldelim}{ldelim}field:product.components.CPU{rdelim}{rdelim} {ldelim}{ldelim}field:product.components.GPU{rdelim}{rdelim} {ldelim}{ldelim}field:product.components.RAM{rdelim}{rdelim}</code></div>
+          <div class="form-text">Działa też formatowanie i podmiany, np. <code>{ldelim}{ldelim}field:product.components.OBUDOWA+Gaming-GAMING=upper{rdelim}{rdelim}</code></div>
         </div>
       </div>
     </div>

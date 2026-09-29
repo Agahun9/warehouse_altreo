@@ -231,6 +231,9 @@ class ApiController extends Controller
             );
         }
 
+        $customFields = isset($row['custom_fields']) && is_array($row['custom_fields']) ? $row['custom_fields'] : array();
+        unset($customFields['old_sku']);
+
         $sharedStockEnabled = !empty($row['shared_stock_enabled']);
         $derivedStockEnabled = !empty($row['derived_stock_enabled']);
 
@@ -285,7 +288,7 @@ class ApiController extends Controller
             'dimensions' => (string) ($row['dimensions'] ?? ''),
             'contours' => (string) ($row['contours'] ?? ''),
             'images' => $images,
-            'custom_fields' => isset($row['custom_fields']) && is_array($row['custom_fields']) ? $row['custom_fields'] : array(),
+            'custom_fields' => $customFields,
             'parameters' => array(
                 'allegro' => $this->normalizeAllegroParameters(
                     isset($row['allegro_parameters_raw']) && is_array($row['allegro_parameters_raw']) ? $row['allegro_parameters_raw'] : array(),

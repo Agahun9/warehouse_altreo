@@ -995,14 +995,22 @@ class ValueResolver
         }
 
         if (in_array($format, array('ucfirst', 'capitalize'), true)) {
+            $value = trim(str_replace("\xC2\xA0", ' ', $value));
             if ($value === '') {
                 return '';
             }
-            if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
-                return mb_strtoupper(mb_substr($value, 0, 1, 'UTF-8'), 'UTF-8')
-                    . mb_substr($value, 1, null, 'UTF-8');
-            }
-            return ucfirst($value);
+
+            $value = function_exists('mb_strtolower')
+                ? mb_strtolower($value, 'UTF-8')
+                : strtr(strtolower($value), array('Ą' => 'ą', 'Ć' => 'ć', 'Ę' => 'ę', 'Ł' => 'ł', 'Ń' => 'ń', 'Ó' => 'ó', 'Ś' => 'ś', 'Ź' => 'ź', 'Ż' => 'ż'));
+
+            return (string) preg_replace_callback('/\p{L}/u', function (array $letter): string {
+                if (function_exists('mb_strtoupper')) {
+                    return mb_strtoupper($letter[0], 'UTF-8');
+                }
+
+                return strtr(strtoupper($letter[0]), array('ą' => 'Ą', 'ć' => 'Ć', 'ę' => 'Ę', 'ł' => 'Ł', 'ń' => 'Ń', 'ó' => 'Ó', 'ś' => 'Ś', 'ź' => 'Ź', 'ż' => 'Ż'));
+            }, $value, 1);
         }
 
         if ($format === 'trim') {

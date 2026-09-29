@@ -218,6 +218,17 @@ class CategoryRepository
 
     public function deleteById($id): int
     {
+        $defaultCategoryId = $this->ensureDefaultCategory();
+        if ((int) $id === $defaultCategoryId) {
+            return 0;
+        }
+
+        // Produkty usuniete miekko (deleted_at) nadal trzymaja klucz obcy do kategorii.
+        $this->database->query(
+            'UPDATE products SET category_id = :default_category_id WHERE category_id = :category_id AND deleted_at IS NOT NULL',
+            array('default_category_id' => $defaultCategoryId, 'category_id' => $id)
+        );
+
         return $this->database->delete('categories', 'id = :id', array('id' => $id));
     }
 
