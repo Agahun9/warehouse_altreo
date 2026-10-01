@@ -343,8 +343,8 @@
   </style>
 </head>
 {if $currentUser}
-<body class="layout-fixed sidebar-expand-lg sidebar-mini bg-body-tertiary sc-app{if !empty($detail)} sidebar-collapse sc-order-detail{/if}">
-  {literal}<script>try{if(document.body.classList.contains('sc-order-detail')){throw 0;}if(localStorage.getItem('sc-sidebar')==='collapsed'||(localStorage.getItem('sc-sidebar')===null&&window.innerWidth<1400)){document.body.classList.add('sidebar-collapse');}}catch(e){}</script>{/literal}
+<body class="layout-fixed sidebar-expand-lg sidebar-mini bg-body-tertiary sc-app{if !empty($detail)} sidebar-collapse sc-order-detail sc-sidebar-auto{elseif $currentController eq 'orders' and ($tab|default:'list') eq 'list'} sidebar-collapse sc-sidebar-auto{/if}">
+  {literal}<script>try{if(document.body.classList.contains('sc-sidebar-auto')){throw 0;}if(localStorage.getItem('sc-sidebar')==='collapsed'||(localStorage.getItem('sc-sidebar')===null&&window.innerWidth<1400)){document.body.classList.add('sidebar-collapse');}}catch(e){}</script>{/literal}
   <div class="app-page-loader" id="appPageLoader" aria-hidden="true" aria-live="polite">
     <div class="app-page-loader-card" role="status">
       <div class="spinner-border text-primary app-page-loader-spinner" aria-hidden="true"></div>
@@ -391,6 +391,7 @@
             <li class="nav-item"><a href="orders.php?tab=new" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'new'} active{/if}" title="Nowe zamówienie"><i class="nav-icon bi bi-plus-circle"></i><p>Nowe zamówienie</p></a></li>
             <li class="nav-item"><a href="{$baseUrl}?controller=messages" class="nav-link{if $currentController eq 'messages'} active{/if}" title="Wiadomości{if $messagesOpenCount|default:0 > 0} ({$messagesOpenCount} do obsługi){/if}"><i class="nav-icon bi bi-chat-left-text"></i><p>Wiadomości</p>{if $messagesOpenCount|default:0 > 0}<span class="sc-nav-badge">{if $messagesOpenCount > 99}99+{else}{$messagesOpenCount}{/if}</span>{/if}</a></li>
             <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'documents'} active{/if}" title="Dokumenty"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
+            <li class="nav-item"><a href="{$baseUrl}?controller=archive" class="nav-link{if $currentController eq 'archive'} active{/if}" title="Archiwum Sellasist"><i class="nav-icon bi bi-archive"></i><p>Archiwum</p></a></li>
             <li class="nav-header sc-nav-header">Konfiguracja</li>
             <li class="nav-item"><a href="orders.php?tab=accounts" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'accounts'} active{/if}" title="Konta i import"><i class="nav-icon bi bi-plug"></i><p>Konta i import</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=shipments" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'shipments'} active{/if}" title="Przesyłki"><i class="nav-icon bi bi-box-seam"></i><p>Przesyłki</p></a></li>

@@ -48,6 +48,9 @@ class Application
             case 'messages':
                 $controller = new MessagesController();
                 break;
+            case 'archive':
+                $controller = new \App\Controllers\ArchiveController();
+                break;
             default:
                 http_response_code(404);
                 echo 'Kontroler nie istnieje.';

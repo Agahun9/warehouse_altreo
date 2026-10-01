@@ -23,6 +23,7 @@ final class Tenant
         'om_settings', 'om_series', 'om_documents', 'om_shipments', 'om_carrier_accounts', 'om_payment_methods',
         'om_payment_mappings', 'om_ksef_accounts', 'om_ksef_submissions', 'om_connections',
         'om_msg_threads', 'om_msg_messages', 'om_msg_rules', 'om_msg_rule_runs',
+        'om_archive_orders', 'om_archive_documents',
         'print_agent_stations', 'print_agent_jobs', 'print_fiscal_printers', 'print_fiscal_jobs',
     ];
 

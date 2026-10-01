@@ -46,6 +46,17 @@ final class ErliShippingProvider extends ShippingProvider
 
     public function automaticService(array $carrier,array $order): string { return 'Automatycznie wg metody dostawy z zamówienia ERLI'; }
 
+    /** Metoda wybrana przez kupującego (delivery.typeId z zaimportowanego zamówienia) – zaznaczana zamiast „automatycznie”. */
+    public function preferredService(array $carrier,array $order,array $defaults): string
+    {
+        if (!$this->supportsOrder($order,(array)($carrier['public']??[]))) { return ''; }
+        $typeId=trim((string)($order['details']['raw']['delivery']['typeId']??''));
+        $presets=(array)($defaults['presets']??[]);
+        $quantity=array_sum(array_map(static function ($item) { return max(0,(int)($item['quantity']??0)); },(array)($order['details']['items']??[])));
+        $preset=$presets[(string)($defaults['default_package']??'auto')]??($presets?$presets[\App\Services\OrderShipmentService::autoPreset($presets,$quantity)]:[]);
+        return self::resolveType($typeId,(float)($preset['weight']??0));
+    }
+
     public function services(array $carrier,array $order): array
     {
         $options=[];
@@ -65,6 +76,7 @@ final class ErliShippingProvider extends ShippingProvider
         $package=ShipmentInput::package($input);
         $typeId=trim((string)($input['shipping_service']??''));
         if ($typeId==='') { $typeId=$this->typeFromOrder($carrier,$order,$package['weight']); }
+        else { $typeId=self::fitWeight($typeId,$package['weight']); }
         if (!in_array($typeId,self::PARCEL_TYPES,true)) { throw new InvalidArgumentException('Wybierz metodę Wysyłam z Erli.'); }
         $shipping=['typeId'=>$typeId];
         $postingPoint=(int)($carrier['public']['posting_point_id']??0);
@@ -132,14 +144,35 @@ final class ErliShippingProvider extends ShippingProvider
     {
         $remote=$this->api($carrier,'GET','/orders/'.rawurlencode((string)$order['external_id']));
         $typeId=trim((string)($remote['delivery']['typeId']??''));
-        if (in_array($typeId,self::PARCEL_TYPES,true)) { return $typeId; }
-        // Metoda z zamówienia bywa grupą (np. erliKurier24InPost) – dobierz najmniejszy wariant wagowy, który mieści paczkę.
+        $resolved=self::resolveType($typeId,$weightKg);
+        if ($resolved!=='') { return $resolved; }
+        throw new InvalidArgumentException('Zamówienie ERLI nie ma metody Wysyłam z Erli ('.($typeId!==''?$typeId:'brak').'). Wybierz metodę ręcznie.');
+    }
+
+    /** Metoda ERLI z zamówienia: dokładny typ albo – dla grupy (np. erliKurier24InPost) – najmniejszy wariant wagowy mieszczący paczkę. */
+    private static function resolveType(string $typeId,float $weightKg): string
+    {
+        if ($typeId==='') { return ''; }
+        if (in_array($typeId,self::PARCEL_TYPES,true)) { return self::fitWeight($typeId,$weightKg); }
         foreach (self::PARCEL_TYPES as $candidate) {
-            if ($typeId==='' || strpos($candidate,$typeId)!==0) { continue; }
-            if (preg_match('/([\d,]+)kg$/',$candidate,$m) && (float)str_replace(',','.',$m[1])<$weightKg) { continue; }
+            if (strpos($candidate,$typeId)!==0) { continue; }
+            if (self::weightLimit($candidate)<$weightKg) { continue; }
             return $candidate;
         }
-        throw new InvalidArgumentException('Zamówienie ERLI nie ma metody Wysyłam z Erli ('.($typeId!==''?$typeId:'brak').'). Wybierz metodę ręcznie.');
+        return '';
+    }
+    /** Wariant wagowy za lekki dla paczki (np. zmieniona waga w formularzu) → najmniejszy cięższy wariant tej samej metody. */
+    private static function fitWeight(string $typeId,float $weightKg): string
+    {
+        if (!preg_match('/^(.*?)[\d,]+kg$/',$typeId,$m) || self::weightLimit($typeId)>=$weightKg) { return $typeId; }
+        foreach (self::PARCEL_TYPES as $candidate) {
+            if (preg_match('/^(.*?)[\d,]+kg$/',$candidate,$c) && $c[1]===$m[1] && self::weightLimit($candidate)>=$weightKg) { return $candidate; }
+        }
+        return $typeId;
+    }
+    private static function weightLimit(string $typeId): float
+    {
+        return preg_match('/([\d,]+)kg$/',$typeId,$m)?(float)str_replace(',','.',$m[1]):INF;
     }
 
     private function parcelMeta(array $parcel): array

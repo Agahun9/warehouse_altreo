@@ -124,10 +124,13 @@ public sealed class PosnetClient : IAsyncDisposable
     public async Task<string?> PrintFiscalReceiptAsync(FiscalJob job, CancellationToken cancellationToken)
     {
         await EnsureReadyAsync(cancellationToken, requireNoOpenTransaction: true);
-        var vatRates = await ReadVatRatesAsync(cancellationToken);
+        var vatRates = ParseVatRates(await SendAsync("vatget", cancellationToken), job.Receipt.VatRates);
         var reference = ReceiptReference(job);
         if (reference.Length > 30)
             throw new InvalidOperationException("Numer dokumentu i zamówienia przekracza 30 znaków pola Posnet.");
+        foreach (var item in job.Receipt.Items)
+            if (!vatRates.ContainsKey(NormalizeVat(item.Vat)))
+                throw new InvalidOperationException($"Drukarka nie ma aktywnej stawki VAT {item.Vat}.");
         var transactionStarted = false;
         var finalizationAttempted = false;
         try
@@ -223,26 +226,26 @@ public sealed class PosnetClient : IAsyncDisposable
     {
         var device = await SendAsync("sdev", cancellationToken);
         var deviceState = FirstProperty(device, "ds");
-        if (deviceState is not null and not "0")
+        if (deviceState != "0")
             throw new PosnetException("Drukarka nie jest gotowa (menu, komunikat lub oczekiwanie na klawisz).", deviceState);
 
         var printer = await SendAsync("sprn", cancellationToken);
         var printerState = FirstProperty(printer, "pr");
-        if (printerState is not null and not "0")
-            throw new PosnetException(PrinterStateMessage(printerState), printerState);
+        if (printerState != "0")
+            throw new PosnetException(PrinterStateMessage(printerState ?? "brak statusu"), printerState);
 
         if (requireNoOpenTransaction)
         {
             var communication = await SendAsync("scomm", cancellationToken);
             var transactionState = FirstProperty(communication, "ts");
-            if (transactionState is not null and not "0")
+            if (transactionState != "0")
                 throw new PosnetException("Drukarka ma niezakończoną wcześniejszą transakcję. Wymaga sprawdzenia przed kolejnym paragonem.", transactionState);
         }
     }
 
-    private async Task<Dictionary<string, int>> ReadVatRatesAsync(CancellationToken cancellationToken)
+    internal static Dictionary<string, int> ParseVatRates(string response, IReadOnlyDictionary<string,string>? expected = null)
     {
-        var response = await SendAsync("vatget", cancellationToken);
+        var letters = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in response.Split('\t', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1))
         {
@@ -250,8 +253,22 @@ public sealed class PosnetClient : IAsyncDisposable
             var index = char.ToLowerInvariant(field[1]) - 'a';
             if (index is < 0 or > 6) continue;
             var value = field[2..].Replace(',', '.');
-            result[NormalizeVat(value)] = index;
+            letters[((char)('A' + index)).ToString()] = NormalizeVat(value);
         }
+        if (expected is not null)
+        {
+            if (expected.Count != 7)
+                throw new InvalidOperationException("Konfiguracja VAT musi zawierać wszystkie stawki A–G.");
+            foreach (var letter in "ABCDEFG")
+            {
+                var key = letter.ToString();
+                if (!expected.TryGetValue(key, out var rate) || !letters.TryGetValue(key, out var actual) || NormalizeVat(rate) != actual)
+                    throw new InvalidOperationException($"Stawka VAT {key} w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G.");
+            }
+        }
+        foreach (var letter in "ABCDEFG")
+            if (letters.TryGetValue(letter.ToString(), out var rate) && rate != "nieaktywna" && !result.ContainsKey(rate))
+                result[rate] = letter - 'A';
         return result;
     }
 
@@ -313,6 +330,7 @@ public sealed class PosnetClient : IAsyncDisposable
     private static string NormalizeVat(string vat)
     {
         var value = vat.Trim().ToLowerInvariant().Replace(',', '.');
+        if (value is "101" or "101.00" or "nieaktywna") return "nieaktywna";
         if (value is "100" or "100.00" or "zw") return "zw";
         if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var number))
             return number.ToString("0.##", CultureInfo.InvariantCulture);

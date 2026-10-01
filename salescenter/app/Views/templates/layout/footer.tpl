@@ -182,8 +182,8 @@
     (function () {
       document.querySelectorAll('[data-lte-toggle="sidebar"]').forEach(function (button) {
         button.addEventListener('click', function () {
-          // Widok zamówienia zawsze startuje zwinięty – nie nadpisuje zapamiętanego wyboru listy.
-          if (document.body.classList.contains('sc-order-detail')) { return; }
+          // Lista i widok zamówienia zawsze startują zwinięte – nie nadpisują zapamiętanego wyboru pozostałych stron.
+          if (document.body.classList.contains('sc-sidebar-auto')) { return; }
           window.setTimeout(function () {
             try { localStorage.setItem('sc-sidebar', document.body.classList.contains('sidebar-collapse') ? 'collapsed' : 'expanded'); } catch (e) {}
           }, 50);

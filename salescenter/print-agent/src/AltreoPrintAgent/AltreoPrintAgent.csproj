@@ -10,7 +10,7 @@
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Description>Tray agent for automatic PDF printing from magazyn.altreo.pl</Description>
     <AgentProfile Condition="'$(AgentProfile)' == ''">production</AgentProfile>
     <DefineConstants Condition="'$(AgentProfile)' == 'sandbox'">$(DefineConstants);SANDBOX</DefineConstants>

@@ -7,13 +7,13 @@
     {foreach $printStations as $station}
       {if $station.enabled and $station.printers}
         <optgroup label="{$station.name|escape}{if not $station.online} — offline{/if}">
-          {foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}">{$printer|escape}</option>{/foreach}
+          {foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}" {if ($labelPrinterDefault.target|default:'') eq ($station.id|cat:'|'|cat:$printer)}selected{/if}>{$printer|escape}</option>{/foreach}
         </optgroup>
       {/if}
     {/foreach}
   </select>
-  <label>Szerokość <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="100" required> mm</label>
-  <label>Wysokość <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="150" required> mm</label>
+  <label>Szerokość <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.width|default:100}" required> mm</label>
+  <label>Wysokość <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.height|default:150}" required> mm</label>
   <button class="om-btn om-small om-primary" name="label_scope" value="newest"><i class="bi bi-printer"></i> Drukuj najnowszą</button>
   <button class="om-btn om-small" name="label_scope" value="all"><i class="bi bi-printers"></i> Drukuj wszystkie</button>
 </form>

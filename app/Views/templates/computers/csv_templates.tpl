@@ -3,6 +3,7 @@
     <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=products">Produkty</a></li>
     <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=components">Komponenty</a></li>
     <li class="nav-item"><a class="nav-link active" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a></li>
+    <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=commissions">Prowizje</a></li>
     <li class="nav-item"><a class="nav-link" href="{$baseUrl}?controller=computers&action=titletemplates">Szablony tytułów</a></li>
   </ul>
 

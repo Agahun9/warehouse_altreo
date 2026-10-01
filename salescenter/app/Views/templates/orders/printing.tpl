@@ -43,6 +43,7 @@
       <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="fiscal_printer_configure"><input type="hidden" name="tab" value="printing"><input type="hidden" name="fiscal_printer_id" value="{$printer.id}">
       <label>Seria lokalna<input name="receipt_series" value="{$printer.receipt_series|escape}" maxlength="40" required></label>
       <label>Tryb<select name="environment"><option value="sandbox" {if $printer.environment eq 'sandbox'}selected{/if}>SANDBOX — wydruk niefiskalny</option><option value="production" {if $printer.environment eq 'production'}selected{/if}>PRODUKCJA — paragon fiskalny</option></select></label>
+      <fieldset><legend>Stawki VAT Posnet (A–G)</legend><p>Wpisz stawki odczytane z drukarki. Agent sprawdzi zgodność przed paragonem fiskalnym. Przy powtórzonej stawce użyje pierwszej litery w konfiguracji.</p>{foreach $printer.vat_rates as $letter=>$rate}<label>Stawka {$letter|escape}<select name="vat_rates[{$letter|escape}]">{foreach ['23','8','7','5','0','zw','nieaktywna'] as $v}<option value="{$v}" {if $rate eq $v}selected{/if}>{$v}{if $v ne 'zw' and $v ne 'nieaktywna'}%{/if}</option>{/foreach}</select></label>{/foreach}</fieldset>
       <label class="om-check"><input type="checkbox" name="enabled" value="1" {if $printer.enabled}checked{/if}> Aktywna</label>
       {if $canWrite}<button class="om-btn om-small">Zapisz</button>{/if}
       </form>

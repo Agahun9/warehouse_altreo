@@ -31,6 +31,15 @@ class ComputersController extends Controller
     private const DEFAULT_DESKTOP_EU_CATEGORY_ID = '486';
     private const DEFAULT_DESKTOP_MORELE_CATEGORY_ID = 672;
     private const DEFAULT_DESKTOP_EMPIK_CATEGORY_ID = '21-16-1';
+    // Prowizje w % uzywane do wyliczenia ceny na danym marketplace: cena = cena_magazyn / (1 - prowizja).
+    // Wartosci z formularza sa zapisywane w ustawieniach pod kluczem computers_commission_<marketplace>.
+    private const MARKETPLACE_COMMISSION_DEFAULTS = array(
+        'allegro' => 3.08,
+        'empik' => 4.36,
+        'mediamarkt' => 0.0,
+        'erli' => 0.0,
+        'morele' => 0.0,
+    );
     private const DESKTOP_CATEGORY_KEYWORDS = array(
         'komputery stacjonarne',
         'komputer stacjonarny',
@@ -65,6 +74,9 @@ class ComputersController extends Controller
 
     /** @var array<string>|null */
     private $computerMediaMarktCsvParameterNames = null;
+
+    /** @var array<string, float>|null */
+    private $marketplaceCommissionsCache = null;
 
     public function __construct()
     {
@@ -242,6 +254,10 @@ class ComputersController extends Controller
                 }
             }
             $product['private_categories'] = $productCategoryMap[(int) ($product['id'] ?? 0)] ?? array();
+            $product['expected_prices'] = array();
+            foreach (array_keys(self::MARKETPLACE_COMMISSION_DEFAULTS) as $market) {
+                $product['expected_prices'][$market] = $this->marketplacePriceWithCommission((float) ($product['price'] ?? 0), $market);
+            }
 
             $pagedProducts[] = $product;
         }
@@ -321,6 +337,7 @@ class ComputersController extends Controller
             'csvTemplates' => $this->computerCsvTemplates->active(),
             'titleTemplates' => $this->computerTitleTemplates->allForSelect(),
             'selectedTitleTemplateId' => (int) $this->input('title_template_id', 0),
+            'marketplaceCommissions' => $this->marketplaceCommissions(),
         ));
     }
 
@@ -416,6 +433,35 @@ class ComputersController extends Controller
             'titleTemplates' => $this->computerTitleTemplates->all(),
             'availableTitleTokens' => $this->availableComputerTitleTokens(),
             'computerTab' => 'titletemplates',
+        ));
+    }
+
+    public function commissions(): void
+    {
+        $currentUser = $this->requireModule('computers');
+
+        if ($this->isPost()) {
+            $this->requireModuleWrite('computers');
+            $errors = $this->saveMarketplaceCommissionsFromRequest();
+            if ($errors !== array()) {
+                $this->setFlash('error', (string) json_encode($errors));
+            } else {
+                $this->setFlash('success', 'Prowizje marketplace zostaly zapisane.');
+            }
+            $this->redirect('./index.php?controller=computers&action=commissions');
+        }
+
+        $this->render('computers/commissions', array(
+            'pageTitle' => 'Prowizje marketplace',
+            'contentTitle' => 'Prowizje marketplace',
+            'pageDescription' => 'Prowizje doliczane do ceny komputera na kazdym marketplace.',
+            'breadcrumbCurrent' => 'Prowizje',
+            'currentUser' => $currentUser,
+            'success' => $this->getFlash('success') ?? '',
+            'errors' => $this->normalizeErrors($this->getFlash('error')),
+            'marketplaceCommissions' => $this->marketplaceCommissions(),
+            'marketplaceLabels' => $this->marketplaceLabels(),
+            'computerTab' => 'commissions',
         ));
     }
 
@@ -1910,14 +1956,20 @@ class ComputersController extends Controller
             }
         } elseif ($bulkAction === 'calculate_profit_formula') {
             $minimumInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_min', '400')));
-            $maximumInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_max', '550')));
-            if (!is_numeric($minimumInput) || !is_numeric($maximumInput)) {
-                $errors[] = 'Wartosci MIN i MAX musza byc liczbami.';
+            $maximumInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_max', '1000')));
+            $priceFromInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_price_from', '3000')));
+            $priceToInput = str_replace(',', '.', trim((string) $this->input('bulk_formula_price_to', '10000')));
+            if (!is_numeric($minimumInput) || !is_numeric($maximumInput) || !is_numeric($priceFromInput) || !is_numeric($priceToInput)) {
+                $errors[] = 'Wartosci marzy i progow cenowych musza byc liczbami.';
             } else {
                 $minimum = (float) $minimumInput;
                 $maximum = (float) $maximumInput;
+                $priceFrom = (float) $priceFromInput;
+                $priceTo = (float) $priceToInput;
                 if ($maximum < $minimum) {
-                    $errors[] = 'Wartosc MAX nie moze byc mniejsza od MIN.';
+                    $errors[] = 'Marza MAX nie moze byc mniejsza od MIN.';
+                } elseif ($priceTo <= $priceFrom) {
+                    $errors[] = 'Prog cenowy dla marzy MAX musi byc wiekszy od progu dla MIN.';
                 } else {
                     foreach ($productIds as $productId) {
                         $product = $this->productById($productId);
@@ -1926,7 +1978,7 @@ class ComputersController extends Controller
                         }
                         $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
                         $priceSum = $this->priceSumForComponents($componentIds, $componentsById);
-                        $newProfit = $this->profitFromComponentPriceFormula($priceSum, $minimum, $maximum);
+                        $newProfit = $this->profitFromComponentPriceFormula($priceSum, $minimum, $maximum, $priceFrom, $priceTo);
                         $this->db()->update(self::PRODUCTS_TABLE, array(
                             'profit' => $newProfit,
                             'price' => $priceSum + $newProfit,
@@ -2033,6 +2085,7 @@ class ComputersController extends Controller
             $successfulProductIds = array();
             $empikBatchRequests = 0;
             $mediamarktBatchRequests = 0;
+            $recalculatedPrices = 0;
             foreach ($productIds as $productId) {
                 if ($selectedMarketAccounts === array()) {
                     break;
@@ -2040,6 +2093,15 @@ class ComputersController extends Controller
                 $product = $this->productById($productId);
                 if ($product === null) {
                     continue;
+                }
+                // Cena magazynowa musi odpowiadac aktualnym cenom podzespolow + marzy,
+                // bo od niej liczona jest cena z prowizja dla kazdego marketplace.
+                $componentIds = $this->csvIds((string) ($product['id_components'] ?? ''));
+                $warehousePrice = round($this->priceSumForComponents($componentIds, $componentsById) + (float) ($product['profit'] ?? 0), 2);
+                if (abs($warehousePrice - (float) ($product['price'] ?? 0)) >= 0.01) {
+                    $this->db()->update(self::PRODUCTS_TABLE, array('price' => $warehousePrice), 'id = :id', array('id' => $productId));
+                    $product['price'] = $warehousePrice;
+                    $recalculatedPrices++;
                 }
                 $queuedCounts = $this->queueMarketplacePriceUpdatesForProduct($product, $selectedMarketAccounts, $empikBatchUpdates, $mediamarktBatchUpdates);
                 foreach (array('allegro', 'erli', 'morele') as $market) {
@@ -2086,7 +2148,9 @@ class ComputersController extends Controller
                 $successMessage = 'Przygotowano aktualizacje cen dla ' . $successCount . ' produktow. Allegro: ' . $marketQueuedCounts['allegro']
                     . ' w kolejce, Empik: ' . $marketQueuedCounts['empik'] . ' ofert w ' . $empikBatchRequests
                     . ' zbiorczym imporcie, MediaMarkt: ' . $marketQueuedCounts['mediamarkt'] . ' ofert w ' . $mediamarktBatchRequests
-                    . ' zbiorczym imporcie, Erli: ' . $marketQueuedCounts['erli'] . ' w kolejce, Morele: ' . $marketQueuedCounts['morele'] . ' w kolejce.';
+                    . ' zbiorczym imporcie, Erli: ' . $marketQueuedCounts['erli'] . ' w kolejce, Morele: ' . $marketQueuedCounts['morele'] . ' w kolejce.'
+                    . ' Ceny wyliczone z prowizja kazdego marketplace.'
+                    . ($recalculatedPrices > 0 ? ' Przeliczono cene magazynowa (podzespoly + marza) dla ' . $recalculatedPrices . ' produktow.' : '');
             } elseif ($selectedMarketAccounts !== array() && $empikBatchUpdates === array() && $mediamarktBatchUpdates === array()) {
                 $successCount = 0;
                 $errors[] = 'Nie znaleziono aktywnych ofert na wybranych kontach dla zaznaczonych produktow.';
@@ -3664,7 +3728,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        $price = $this->marketplaceQueuePrice($product, 'allegro');
         if ($price === null) {
             return 0;
         }
@@ -3711,7 +3775,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        $price = $this->marketplaceQueuePrice($product, 'empik');
         if ($price === null) {
             return 0;
         }
@@ -3764,7 +3828,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        $price = $this->marketplaceQueuePrice($product, 'mediamarkt');
         if ($price === null) {
             return 0;
         }
@@ -3817,7 +3881,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        $price = $this->marketplaceQueuePrice($product, 'erli');
         if ($price === null) {
             return 0;
         }
@@ -3862,7 +3926,7 @@ class ComputersController extends Controller
             return 0;
         }
 
-        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        $price = $this->marketplaceQueuePrice($product, 'morele');
         if ($price === null) {
             return 0;
         }
@@ -4379,22 +4443,24 @@ class ComputersController extends Controller
             }
 
             $warehousePrice = round((float) ($product['price'] ?? 0), 2);
+            // Oczekiwana cena na marketplace zawiera jego prowizje.
             $marketPrices = array();
             foreach ($genericCandidates as $candidate) {
-                foreach (array($allegroPrices, $empikPrices, $mediamarktPrices, $erliPrices) as $priceMap) {
+                foreach (array('allegro' => $allegroPrices, 'empik' => $empikPrices, 'mediamarkt' => $mediamarktPrices, 'erli' => $erliPrices) as $market => $priceMap) {
                     foreach (($priceMap[$candidate] ?? array()) as $marketPrice) {
-                        $marketPrices[] = $marketPrice;
+                        $marketPrices[] = array($market, $marketPrice);
                     }
                 }
             }
             foreach ($moreleCandidates as $candidate) {
                 foreach (($morelePrices[$candidate] ?? array()) as $marketPrice) {
-                    $marketPrices[] = $marketPrice;
+                    $marketPrices[] = array('morele', $marketPrice);
                 }
             }
 
             foreach ($marketPrices as $marketPrice) {
-                if (abs(round($marketPrice, 2) - $warehousePrice) > 0.01) {
+                $expectedPrice = $this->marketplacePriceWithCommission($warehousePrice, $marketPrice[0]);
+                if (abs(round($marketPrice[1], 2) - $expectedPrice) > 0.01) {
                     $matchedIds[] = (int) ($product['id'] ?? 0);
                     break;
                 }
@@ -5914,6 +5980,9 @@ class ComputersController extends Controller
         $product = $context['product'];
         if (preg_match('/^title_template:(\d+)$/', $source, $matches) === 1) {
             return (string) ($context['generated_titles'][(int) $matches[1]] ?? '');
+        }
+        if (preg_match('/^(price|earning|commission)\.([a-z]+)$/', $source, $matches) === 1) {
+            return $this->computerCsvPriceSourceValue($matches[1], $matches[2], $product, (array) ($context['components'] ?? array()));
         }
         if (strpos($source, 'product.') === 0) {
             $field = substr($source, 8);
@@ -7473,12 +7542,120 @@ class ComputersController extends Controller
         return $priceSum;
     }
 
-    private function profitFromComponentPriceFormula(float $componentPriceSum, float $minimum, float $maximum): float
+    /**
+     * Marza netto (po prowizji marketplace) liniowo od sumy cen podzespolow:
+     * do $priceFrom -> $minimum, od $priceTo -> $maximum, pomiedzy proporcjonalnie.
+     * Prowizja jest doliczana osobno dla kazdego marketplace przy aktualizacji cen.
+     */
+    private function profitFromComponentPriceFormula(float $componentPriceSum, float $minimum, float $maximum, float $priceFrom, float $priceTo): float
     {
-        $baseProfit = min($maximum, max($minimum, (239.1 + 0.03 * $componentPriceSum) / 0.9264));
-        $profitWithCommission = ($baseProfit + 0.0436 * $componentPriceSum) / (1.0 - 0.0436);
+        if ($componentPriceSum <= $priceFrom) {
+            $profit = $minimum;
+        } elseif ($componentPriceSum >= $priceTo) {
+            $profit = $maximum;
+        } else {
+            $profit = $minimum + ($maximum - $minimum) * ($componentPriceSum - $priceFrom) / ($priceTo - $priceFrom);
+        }
 
-        return round($profitWithCommission, -1);
+        return round($profit, -1);
+    }
+
+    /** @return array<string, string> */
+    private function marketplaceLabels(): array
+    {
+        return array(
+            'allegro' => 'Allegro',
+            'empik' => 'Empik',
+            'mediamarkt' => 'MediaMarkt',
+            'erli' => 'ERLI',
+            'morele' => 'Morele',
+        );
+    }
+
+    private function computerCsvPriceSourceValue(string $kind, string $market, array $product, array $components): string
+    {
+        $warehousePrice = (float) ($product['price'] ?? 0);
+        if ($kind === 'price' && $market === 'warehouse') {
+            return number_format($warehousePrice, 2, '.', '');
+        }
+        $componentsPrice = 0.0;
+        foreach ($components as $component) {
+            $componentsPrice += (float) ($component['price'] ?? 0);
+        }
+        if ($kind === 'price' && $market === 'components') {
+            return number_format($componentsPrice, 2, '.', '');
+        }
+        if (!array_key_exists($market, self::MARKETPLACE_COMMISSION_DEFAULTS)) {
+            return '';
+        }
+        $commission = $this->marketplaceCommissions()[$market] ?? 0.0;
+        if ($kind === 'commission') {
+            return number_format($commission, 2, '.', '');
+        }
+        $marketPrice = $this->marketplacePriceWithCommission($warehousePrice, $market);
+        if ($kind === 'price') {
+            return number_format($marketPrice, 2, '.', '');
+        }
+        return number_format($marketPrice * (1.0 - $commission / 100) - $componentsPrice, 2, '.', '');
+    }
+
+    /** @return array<string, float> marketplace => prowizja w % */
+    private function marketplaceCommissions(): array
+    {
+        if ($this->marketplaceCommissionsCache !== null) {
+            return $this->marketplaceCommissionsCache;
+        }
+        $commissions = array();
+        foreach (self::MARKETPLACE_COMMISSION_DEFAULTS as $market => $default) {
+            $value = $this->settings ? trim($this->settings->get('computers_commission_' . $market, '')) : '';
+            $value = str_replace(',', '.', $value);
+            $commissions[$market] = is_numeric($value) ? (float) $value : $default;
+        }
+        return $this->marketplaceCommissionsCache = $commissions;
+    }
+
+    /** @return array<int, string> bledy walidacji */
+    private function saveMarketplaceCommissionsFromRequest(): array
+    {
+        $input = (array) $this->input('bulk_commission', array());
+        $errors = array();
+        foreach (array_keys(self::MARKETPLACE_COMMISSION_DEFAULTS) as $market) {
+            if (!array_key_exists($market, $input)) {
+                continue;
+            }
+            $value = str_replace(',', '.', trim((string) $input[$market]));
+            if ($value === '') {
+                $value = '0';
+            }
+            if (!is_numeric($value) || (float) $value < 0 || (float) $value >= 50) {
+                $errors[] = 'Prowizja ' . $market . ' musi byc liczba z zakresu 0-49,99%.';
+                continue;
+            }
+            if ($this->settings) {
+                $this->settings->set('computers_commission_' . $market, number_format((float) $value, 2, '.', ''));
+            }
+        }
+        $this->marketplaceCommissionsCache = null;
+        return $errors;
+    }
+
+    /** Cena magazynowa powiekszona o prowizje marketplace, zaokraglona do pelnych dziesiatek. */
+    private function marketplacePriceWithCommission(float $warehousePrice, string $market): float
+    {
+        $commission = $this->marketplaceCommissions()[$market] ?? 0.0;
+        if ($commission <= 0) {
+            return round($warehousePrice, 2);
+        }
+        return round($warehousePrice / (1.0 - $commission / 100), -1);
+    }
+
+    private function marketplaceQueuePrice(array $product, string $market): ?string
+    {
+        $price = $this->normalizeQueuePrice($product['price'] ?? null);
+        if ($price === null) {
+            return null;
+        }
+        return number_format($this->marketplacePriceWithCommission((float) $price, $market), 2, '.', '');
     }
 
     private function computerCsvSourceOptions(): array
@@ -7490,6 +7667,15 @@ class ComputersController extends Controller
             'product.name' => 'Produkt: nazwa',
             'product.price' => 'Produkt: cena',
             'product.profit' => 'Produkt: marza',
+            'price.warehouse' => 'Produkt: cena magazyn',
+            'price.components' => 'Produkt: suma cen podzespolow',
+        );
+        foreach ($this->marketplaceLabels() as $market => $marketLabel) {
+            $options['price.' . $market] = 'Produkt: cena ' . $marketLabel . ' (z prowizja)';
+            $options['earning.' . $market] = 'Produkt: zarobek ' . $marketLabel . ' (po prowizji)';
+            $options['commission.' . $market] = 'Produkt: prowizja ' . $marketLabel . ' (%)';
+        }
+        $options += array(
             'product.EAN' => 'Produkt: EAN',
             'product.producer_code' => 'Produkt: kod producenta (45 znakow nazwy)',
             'product.offerid' => 'Produkt: ID oferty',

@@ -59,6 +59,11 @@ final class GlobalCronService
                                 $report['auto_replies'] = ($report['auto_replies'] ?? 0) + (int) ($result['auto'] ?? 0);
                             }
                         } catch (\Throwable $error) { $report['errors']++; OrderSyncError::log($error, ['stage' => 'messages_sync']); }
+                        // Archiwum Sellasist – porcja importu w tle (tylko firmy, które je połączyły i nie wstrzymały).
+                        try {
+                            $archive = SellasistArchiveService::cron($db, 30);
+                            if (isset($archive['requests'])) { $report['archive'] = ($report['archive'] ?? 0) + (int) $archive['orders'] + (int) $archive['documents'] + (int) $archive['details']; }
+                        } catch (\Throwable $error) { $report['errors']++; OrderSyncError::log($error, ['stage' => 'sellasist_archive']); }
                     }
                 } catch (\Throwable $error) {
                     $report['errors']++;

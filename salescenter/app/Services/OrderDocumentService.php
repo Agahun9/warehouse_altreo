@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 use App\Core\Database;
 use App\Models\OrderRepository;
+use App\Models\PrintAgentRepository;
 use InvalidArgumentException;
 
 final class OrderDocumentService
@@ -45,10 +46,10 @@ final class OrderDocumentService
     {
         $settings=json_decode((string)($series['document_settings_json']??''),true)?:[];
         $defaultVat=(string)(($repo->setting('document_defaults')['vat']??'23'));
-        if (!in_array($defaultVat,['23','8','5','0','zw','np'],true)) { $defaultVat='23'; }
+        if (!in_array($defaultVat,['23','8','7','5','0','zw','np'],true)) { $defaultVat='23'; }
         $items=[]; $sum=0;
         foreach ((array)($order['details']['items']??[]) as $item) {
-            $vat=($settings['vat_source']??'order')==='static'?(string)($settings['vat_rate']??$defaultVat):(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { $vat=$defaultVat; }
+            $vat=($settings['vat_source']??'order')==='static'?(string)($settings['vat_rate']??$defaultVat):(string)($item['vat']??$defaultVat); if (!in_array($vat,['23','8','7','5','0','zw','np'],true)) { $vat=$defaultVat; }
             $quantity=max(0,(int)($item['quantity']??0)); $unit=(int)($item['unit_cents']??0); $sum+=$quantity*$unit;
             $items[]=['name'=>(string)($item['name']??'Produkt'),'quantity'=>$quantity,'price'=>number_format($unit/100,2,'.',''),'vat'=>$vat,'sku'=>(string)($item['sku']??''),'ean'=>(string)($item['ean']??$item['gtin']??'')];
         }
@@ -106,7 +107,7 @@ final class OrderDocumentService
             $name=trim((string)($item['name']??''));
             $quantity=filter_var($item['quantity']??null,FILTER_VALIDATE_INT);
             $vat=strtolower((string)($item['vat']??''));
-            if ($name==='' || $quantity===false || $quantity<0 || $quantity>100000 || !in_array($vat,['23','8','5','0','zw','np'],true)) { throw new InvalidArgumentException('Sprawdź nazwę, ilość i stawkę VAT każdej pozycji.'); }
+            if ($name==='' || $quantity===false || $quantity<0 || $quantity>100000 || !in_array($vat,['23','8','7','5','0','zw','np'],true)) { throw new InvalidArgumentException('Sprawdź nazwę, ilość i stawkę VAT każdej pozycji.'); }
             $unit=OrderNormalizer::money($item['price']??'');
             if ($unit< -100000000 || $unit>100000000) { throw new InvalidArgumentException('Cena poza dopuszczalnym zakresem.'); }
             $g=$quantity*$unit;
@@ -119,12 +120,12 @@ final class OrderDocumentService
         }
         return ['items'=>$result,'net_cents'=>$net,'tax_cents'=>$tax,'gross_cents'=>$gross];
     }
-    public function issue(int $orderId,array $input,string $actor): int
+    public function issue(int $orderId,array $input,string $actor,int $fiscalPrinterId=0): int
     {
         $db=$this->repo->db();
         $key=(string)($input['request_key']??'');
         if (!preg_match('/^[a-f0-9]{32,80}$/D',$key)) { throw new InvalidArgumentException('Odśwież formularz dokumentu.'); }
-        $documentId=$db->transaction(function () use ($orderId,$input,$actor,$db,$key) {
+        $documentId=$db->transaction(function () use ($orderId,$input,$actor,$db,$key,$fiscalPrinterId) {
             $existing=$db->fetch('SELECT id,order_id FROM om_documents WHERE request_key=:k',['k'=>$key]);
             if ($existing) {
                 if ((int)$existing['order_id']!==$orderId) { throw new InvalidArgumentException('Nieprawidłowy klucz dokumentu.'); }
@@ -147,7 +148,7 @@ final class OrderDocumentService
             $recipient=array_key_exists('recipient',$input)?trim((string)$input['recipient']):null;
             if ($recipient!==null && mb_strlen($recipient)>2000) { throw new InvalidArgumentException('Dane dostawy są za długie.'); }
             $documentItems=$input['items']??[];
-            if (empty($input['parent_id']) && ($settings['vat_source']??'order')==='static' && in_array((string)($settings['vat_rate']??''),['23','8','5','0','zw','np'],true)) {
+            if (empty($input['parent_id']) && ($settings['vat_source']??'order')==='static' && in_array((string)($settings['vat_rate']??''),['23','8','7','5','0','zw','np'],true)) {
                 foreach ($documentItems as &$documentItem) { $documentItem['vat']=$settings['vat_rate']; }
                 unset($documentItem);
             }
@@ -241,6 +242,10 @@ final class OrderDocumentService
             $id=(int)$db->insert('om_documents',['order_id'=>$orderId,'series_id'=>$series['id'],'kind'=>$series['kind'],'number'=>$number,'parent_id'=>$parentId,'request_key'=>$key,'snapshot_json'=>OrderRepository::json($snapshot),'created_at'=>gmdate('Y-m-d H:i:s')]);
             $db->update('om_series',['next_number'=>$counter+1,'numbering_period'=>$numbering?$period:null],'id=:id',['id'=>$series['id']]);
             $this->repo->event($orderId,'Zapisano dokument lokalny '.$number,$actor);
+            if ($fiscalPrinterId>0 && $series['kind']==='receipt' && empty($settings['non_fiscal'])) {
+                $jobId=(new PrintAgentRepository($db))->queueFiscalReceipt($orderId,$fiscalPrinterId,$actor,$id);
+                $this->repo->event($orderId,'Automatycznie dodano wystawiony paragon do kolejki drukarki Posnet (zadanie '.$jobId.').',$actor);
+            }
             $this->repo->automationEvent($orderId,'document_issued',['document_id'=>$id,'document_kind'=>(string)$series['kind']]);
             return $id;
         });

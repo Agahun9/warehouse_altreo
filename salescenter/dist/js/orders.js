@@ -621,6 +621,18 @@
     });
     syncRemove();
   });
+  // Mapowanie metod dostawy: poprawnie zmapowane wiersze są domyślnie ukryte.
+  document.querySelectorAll('[data-map-toggle]').forEach(button => {
+    const section = button.closest('.om-delivery-map');
+    button.addEventListener('click', () => {
+      const show = button.getAttribute('aria-expanded') !== 'true';
+      section?.querySelectorAll('[data-map-ok]').forEach(row => { row.hidden = !show; });
+      section?.querySelectorAll('[data-map-allok]').forEach(row => { row.hidden = show; });
+      button.setAttribute('aria-expanded', show ? 'true' : 'false');
+      button.querySelector('span').textContent = show ? button.dataset.labelHide : button.dataset.labelShow;
+      button.querySelector('i').className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+  });
   // Mapowanie metod dostawy: lista kurierów/usług wybranego konta (np. Apaczka → DPD, DHL, InPost…).
   const mapServiceCache = new Map();
   document.querySelectorAll('[data-delivery-map]').forEach(form => {

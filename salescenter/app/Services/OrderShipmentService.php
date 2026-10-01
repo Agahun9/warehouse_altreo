@@ -128,6 +128,11 @@ final class OrderShipmentService
     public static function deliveryOverview(OrderRepository $repo,int $limit=3000): array
     {
         $defaults=self::defaults($repo); $accounts=$repo->carrierAccounts(); $mappings=self::deliveryMappings($repo);
+        foreach ($accounts as $account) {
+            // Dobór usługi Apaczki po metodzie dostawy korzysta z zapisanej listy usług – pobierz ją raz, jeśli jeszcze jej nie ma.
+            if (!(int)$account['enabled'] || (string)$account['provider']!=='apaczka' || !empty($repo->setting('carrier_services_'.(int)$account['id'])['options'])) { continue; }
+            try { (new self($repo))->options(0,(int)$account['id']); } catch (\Throwable $error) { /* Bez listy usług wiersze pokażą „Wybierz kuriera”. */ }
+        }
         $groups=[];
         foreach ($repo->db()->fetchAll('SELECT o.id,o.account_id,o.details_json,a.platform FROM om_orders o JOIN om_accounts a ON a.id=o.account_id ORDER BY o.id DESC LIMIT '.max(1,min(10000,$limit))) as $row) {
             $details=json_decode((string)$row['details_json'],true); if (!is_array($details)) { continue; }

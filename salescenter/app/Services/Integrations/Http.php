@@ -12,7 +12,7 @@ final class Http
     /** @var callable|null Transport testowy: fn(method,url,headers,body): ['status'=>int,'body'=>string,'headers'=>array] */
     public static $transport = null;
 
-    public static function request(string $label, string $method, string $url, array $headers = [], ?string $body = null, int $timeout = 30, bool $publicOnly = false): array
+    public static function request(string $label, string $method, string $url, array $headers = [], ?string $body = null, int $timeout = 30, bool $publicOnly = false, ?int $httpVersion = null): array
     {
         if (self::$transport !== null) {
             return (self::$transport)($method, $url, $headers, $body);
@@ -32,6 +32,7 @@ final class Http
                 return strlen($line);
             },
         ]);
+        if ($httpVersion !== null && defined('CURLOPT_HTTP_VERSION')) { curl_setopt($ch, CURLOPT_HTTP_VERSION, $httpVersion); }
         if ($resolve) { curl_setopt($ch, CURLOPT_RESOLVE, [$resolve]); }
         if (defined('CURLOPT_PROTOCOLS')) { curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS | ($publicOnly ? 0 : CURLPROTO_HTTP)); }
         if ($body !== null) { curl_setopt($ch, CURLOPT_POSTFIELDS, $body); }

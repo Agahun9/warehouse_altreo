@@ -86,6 +86,65 @@ $db->insert('om_orders',['account_id'=>1,'external_id'=>'ORDER-NIP-BIG','remote_
 try { $repository->queueFiscalReceipt((int)$db->fetchColumn("SELECT id FROM om_orders WHERE external_id='ORDER-NIP-BIG'"),(int)$fiscalPrinter['id'],'tester'); printCheck(false,'Fiscal receipt with NIP above 450 PLN rejected'); }
 catch (InvalidArgumentException $e) { printCheck(strpos($e->getMessage(),'450 zł')!==false,'Fiscal receipt with NIP above 450 PLN rejected'); }
 
+// VAT configuration and receipt validation on isolated synthetic orders.
+printCheck($fiscalJob['receipt']['vatRates']===PrintAgentRepository::DEFAULT_VAT_RATES,'Queue freezes the configured A-G VAT rates');
+try { $repository->configureFiscalPrinter((int)$fiscalPrinter['id'],'POS1','production',true); printCheck(false,'Active queue blocks mode changes'); }
+catch (InvalidArgumentException $e) { printCheck(true,'Active queue blocks mode changes'); }
+$changedRates=PrintAgentRepository::DEFAULT_VAT_RATES; $changedRates['C']='5';
+try { $repository->configureFiscalPrinter((int)$fiscalPrinter['id'],'POS1','sandbox',true,$changedRates); printCheck(false,'Active queue blocks VAT changes'); }
+catch (InvalidArgumentException $e) { printCheck(true,'Active queue blocks VAT changes'); }
+$repository->reportFiscal((int)$station['id'],$nipJob['id'],'error','Synthetic test ended',null);
+try { $repository->configureFiscalPrinter((int)$fiscalPrinter['id'],'POS1','sandbox',true,['A'=>'23']); printCheck(false,'Incomplete rates rejected'); }
+catch (InvalidArgumentException $e) { printCheck(true,'Incomplete rates rejected'); }
+$baseOrder=$db->fetch('SELECT * FROM om_orders WHERE id=1'); unset($baseOrder['id']);
+foreach (['23','8','7','5','0','zw'] as $vat) {
+    $order=$baseOrder; $order['external_id']='VAT-'.$vat; $order['total_cents']=100;
+    $order['details_json']=json_encode(['payment_method'=>'Przelew','items'=>[['name'=>'Stawka '.$vat,'quantity'=>1,'unit_cents'=>100,'vat'=>$vat]]]);
+    $testOrderId=(int)$db->insert('om_orders',$order);
+    $repository->queueFiscalReceipt($testOrderId,(int)$fiscalPrinter['id'],'tester');
+    $testJob=$repository->nextFiscalJob((int)$station['id'],'sandbox');
+    printCheck($testJob['receipt']['items'][0]['vat']===$vat && $testJob['receipt']['totalCents']===100,'Receipt preserves VAT '.$vat);
+    $repository->reportFiscal((int)$station['id'],$testJob['id'],'error','Synthetic test ended',null);
+}
+foreach (['currency','sum','negative','zero_quantity','np','empty_name'] as $invalid) {
+    $order=$baseOrder; $order['external_id']='INVALID-'.$invalid; $order['total_cents']=100;
+    $item=['name'=>'Towar','quantity'=>1,'unit_cents'=>100,'vat'=>'23'];
+    if ($invalid==='currency') $order['currency']='EUR';
+    if ($invalid==='sum') $item['unit_cents']=99;
+    if ($invalid==='negative') $item['unit_cents']=-100;
+    if ($invalid==='zero_quantity') $item['quantity']=0;
+    if ($invalid==='np') $item['vat']='np';
+    if ($invalid==='empty_name') $item['name']='';
+    $order['details_json']=json_encode(['items'=>[$item]]);
+    $testOrderId=(int)$db->insert('om_orders',$order);
+    try { $repository->queueFiscalReceipt($testOrderId,(int)$fiscalPrinter['id'],'tester'); printCheck(false,'Invalid receipt rejected: '.$invalid); }
+    catch (InvalidArgumentException $e) { printCheck(!$db->fetchColumn('SELECT id FROM print_fiscal_jobs WHERE order_id=:id',['id'=>$testOrderId]),'Rejected receipt never enters queue: '.$invalid); }
+}
+$seven=App\Services\OrderDocumentService::calculate([['name'=>'VAT 7','quantity'=>1,'price'=>'107.00','vat'=>'7']]);
+printCheck($seven['net_cents']===10000 && $seven['tax_cents']===700 && $seven['gross_cents']===10700,'Document calculation preserves 7 percent VAT');
+
+$orders->registerAccount('manual',0,'Konto testowe');
+$orders->saveSetting('seller',['name'=>'Test','address'=>'Adres testowy','nip'=>'5260250274']);
+$atomicSeries=(int)$db->insert('om_series',['name'=>'Paragony testowe','kind'=>'receipt','pattern'=>'AT/{N}','next_number'=>1]);
+$order=$baseOrder; $order['external_id']='ATOMIC'; $order['total_cents']=100;
+$order['details_json']=json_encode(['payment_method'=>'Przelew','items'=>[['name'=>'Towar','quantity'=>1,'unit_cents'=>100,'vat'=>'7']]]);
+$atomicOrder=(int)$db->insert('om_orders',$order);
+$service=new App\Services\OrderDocumentService($orders);
+$input=['series_id'=>$atomicSeries,'request_key'=>str_repeat('b',40),'buyer'=>'Test','items'=>[['name'=>'Towar','quantity'=>1,'price'=>'1.00','vat'=>'np']]];
+try { $service->issue($atomicOrder,$input,'tester',(int)$fiscalPrinter['id']); printCheck(false,'Invalid fiscal VAT rolls back issuance'); }
+catch (InvalidArgumentException $e) { printCheck(!$db->fetchColumn('SELECT id FROM om_documents WHERE order_id=:id',['id'=>$atomicOrder]) && (int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$atomicSeries])===1,'Queue rejection rolls back document and numbering'); }
+$input['items'][0]['vat']='7';
+$issued=$service->issue($atomicOrder,$input,'tester',(int)$fiscalPrinter['id']);
+printCheck($db->fetchColumn('SELECT id FROM print_fiscal_jobs WHERE order_id=:id',['id'=>$atomicOrder])!==false,'Document and fiscal job commit together');
+printCheck($service->issue($atomicOrder,$input,'tester',(int)$fiscalPrinter['id'])===$issued && (int)$db->fetchColumn('SELECT COUNT(*) FROM print_fiscal_jobs WHERE order_id=:id',['id'=>$atomicOrder])===1,'Repeated request does not issue or queue twice');
+printCheck($repository->receiptLockReason($atomicOrder)!==null,'Queued fiscal document is protected against edits');
+$smarty=App\Core\SmartyFactory::create();
+$compileDir=sys_get_temp_dir().'/posnet-vat-smarty-test'; if (!is_dir($compileDir)) mkdir($compileDir,0700,true);
+$smarty->setCompileDir($compileDir);
+$smarty->assign(['csrf'=>'test','canWrite'=>true,'printStations'=>$repository->stations(),'printJobs'=>[],'printFiscalPrinters'=>$repository->fiscalPrinters(),'printFiscalJobs'=>[],'receiptPrinterSettings'=>['printer_id'=>0],'printAgentApiUrl'=>'https://example.test/print-agent-api.php']);
+$html=$smarty->fetch('orders/printing.tpl');
+foreach (PrintAgentRepository::DEFAULT_VAT_RATES as $letter=>$vat) { printCheck(strpos($html,'name="vat_rates['.$letter.']"')!==false,'VAT setting '.$letter.' renders'); }
+
 $newToken=$repository->regenerateToken((int)$station['id']);
 printCheck($repository->authenticate($token)===null && $repository->authenticate($newToken)!==null,'Token rotation invalidates the old token');
 

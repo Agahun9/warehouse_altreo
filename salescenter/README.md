@@ -136,6 +136,23 @@ między autoodpowiedziami w wątku, tylko wiadomości nowsze niż włączenie re
 dodatkowo włączyć dla każdego marketplace w **Ustawieniach marketplace** (tam też godziny pracy, podpis, interwał i zakres
 synchronizacji). Dziennik wysłanych autoodpowiedzi jest pod listą reguł.
 
+## Archiwum Sellasist (menu **Archiwum**)
+
+`index.php?controller=archive` – osobna, tylko do odczytu lista starych zamówień i dokumentów sprzedaży z Sellasist
+(nie trafiają do bieżącej kolejki ani numeracji). W zakładce „Połączenie i import” podaje się konto (`nazwa.sellasist.pl`)
+i klucz API (Sellasist → Integracje → Klucze API; zapisywany zaszyfrowany).
+
+- Tabele firmy: `t{ID}_om_archive_orders`, `t{ID}_om_archive_documents`; konfiguracja i postęp w `om_settings`
+  (`sellasist_archive`, `sellasist_archive_state`).
+- Import (`SellasistArchiveService`) czyta `GET /orders`, `/invoices`, `/corrects`, `/receipts`, `/receiptcorrects`
+  (offset, rosnąco), potem szczegóły każdego rekordu. Działa porcjami po ~30 s w `bin/orders-sync.php` (cron co minutę);
+  otwarta strona z „Pobieraj teraz” dokłada porcje z przeglądarki. 429/5xx wstrzymują import na 1–2 min, błędny klucz na 15 min.
+  Po zakończeniu listy są sprawdzane co 15 min pod kątem nowych rekordów.
+- Wyszukiwanie: numer, klient, firma, e-mail, telefon, NIP, produkt, SKU, EAN, nr przesyłki, nr dokumentu; filtry statusu,
+  źródła, płatności, dokumentu, dat i kwot; eksport CSV. API Sellasist nie udostępnia PDF dokumentów – podgląd/wydruk
+  jest generowany z danych dokumentu.
+- Test: `php tests/archive_test.php`.
+
 ## Agent druku
 
 - Paczki do pobrania: `downloads/PrintAgent-Windows-x64.zip`, `downloads/PrintAgent-macOS-AppleSilicon.zip`

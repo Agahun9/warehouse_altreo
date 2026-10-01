@@ -191,7 +191,7 @@ $apaczkaOptions=$service->options(0,$apaczkaId);
 check(array_column($apaczkaOptions['options'],'value')===['21','82'] && $apaczkaOptions['automatic']==='','Apaczka services listed without an order');
 OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',$apaczkaId,'');
 $row=OrderShipmentService::deliveryOverview($repo)[0];
-check($row['delivery']==='Kurier DPD' && $row['suggestion']['source']==='mapping' && $row['needs_service'],'Apaczka mapping without courier is flagged');
+check($row['delivery']==='Kurier DPD' && $row['suggestion']['source']==='mapping' && !$row['needs_service'] && $row['suggestion']['service']==='21','Apaczka mapping without courier picks courier from delivery name');
 OrderShipmentService::saveDeliveryMapping($repo,'erli','Kurier DPD',$apaczkaId,'21');
 $row=OrderShipmentService::deliveryOverview($repo)[0];
 check(!$row['needs_service'] && $row['service_name']==='DPD · DPD Classic','Apaczka mapping shows chosen courier');

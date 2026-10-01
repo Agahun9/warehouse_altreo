@@ -22,6 +22,7 @@ final class TenantProvisioner
             (new PrintAgentRepository($db))->ensureSchema();
             (new \App\Models\ConnectionRepository($db))->ensureSchema();
             (new \App\Models\MessageRepository($db))->ensureSchema();
+            (new \App\Models\SellasistArchiveRepository($db))->ensureSchema();
         } finally {
             if ($previous === null) { Tenant::clear(); } else { Tenant::activate($previous); }
         }

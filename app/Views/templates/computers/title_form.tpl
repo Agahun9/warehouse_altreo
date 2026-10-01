@@ -3,6 +3,7 @@
     <li class="nav-item"><a class="nav-link{if $computerTab eq 'products'} active{/if}" href="{$baseUrl}?controller=computers&action=products">Produkty</a></li>
     <li class="nav-item"><a class="nav-link{if $computerTab eq 'components'} active{/if}" href="{$baseUrl}?controller=computers&action=components">Komponenty</a></li>
     <li class="nav-item"><a class="nav-link{if $computerTab eq 'csvtemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a></li>
+    <li class="nav-item"><a class="nav-link{if $computerTab eq 'commissions'} active{/if}" href="{$baseUrl}?controller=computers&action=commissions">Prowizje</a></li>
     <li class="nav-item"><a class="nav-link{if $computerTab eq 'titletemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=titletemplates">Szablony tytułów</a></li>
   </ul>
 

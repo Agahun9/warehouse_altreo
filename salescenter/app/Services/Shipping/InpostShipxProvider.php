@@ -79,7 +79,7 @@ final class InpostShipxProvider extends ShippingProvider
 
     public function label(array $carrier,array $shipment,string $pageSize): string
     {
-        return ShipmentInput::getBinary($this->base($carrier).'/shipments/'.rawurlencode((string)$shipment['external_id']).'/label?format=pdf&type=normal',$this->auth($carrier));
+        return ShipmentInput::getBinary($this->base($carrier).'/shipments/'.rawurlencode((string)$shipment['external_id']).'/label?format=pdf&type='.($pageSize==='A4'?'normal':'A6'),$this->auth($carrier));
     }
 
     private function receiver(array $input): array

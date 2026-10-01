@@ -15,9 +15,9 @@ public sealed class FiscalReceiptService
             return PrintResult.Error("Automatyczna fiskalizacja obsługuje wyłącznie walutę PLN.");
         if (job.Receipt.PaymentType is not (0 or 2 or 3 or 4 or 5 or 6 or 7 or 8))
             return PrintResult.Error("Paragon zawiera nieobsługiwaną formę płatności.");
-        if (job.Receipt.Items.Any(item=>string.IsNullOrWhiteSpace(item.Name) || item.Quantity<1 || item.UnitCents<0 || !new[] { "23","8","5","0","zw" }.Contains(item.Vat,StringComparer.OrdinalIgnoreCase)))
+        if (job.Receipt.Items.Any(item=>string.IsNullOrWhiteSpace(item.Name) || item.Quantity<1 || item.UnitCents<0 || !new[] { "23","8","7","5","0","zw" }.Contains(item.Vat,StringComparer.OrdinalIgnoreCase)))
             return PrintResult.Error("Paragon zawiera nieprawidłową pozycję, ilość, cenę albo stawkę VAT.");
-        var calculated=job.Receipt.Items.Sum(item=>item.UnitCents*item.Quantity);
+        var calculated=job.Receipt.Items.Sum(item=>checked(item.UnitCents*item.Quantity));
         if (calculated!=job.Receipt.TotalCents)
             return PrintResult.Error($"Suma pozycji ({calculated}) nie zgadza się z kwotą zamówienia ({job.Receipt.TotalCents}).");
         try
@@ -32,6 +32,10 @@ public sealed class FiscalReceiptService
             var fiscalNumber = await client.PrintFiscalReceiptAsync(job, cancellationToken);
             var suffix = string.IsNullOrWhiteSpace(fiscalNumber) ? "" : $" Numer urządzenia: {fiscalNumber}.";
             return PrintResult.Printed("Drukarka Posnet potwierdziła zakończenie paragonu fiskalnego." + suffix, fiscalNumber);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return PrintResult.Error(exception.Message);
         }
         catch (SocketException exception)
         {

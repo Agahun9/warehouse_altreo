@@ -32,6 +32,26 @@ final class AllegroWzaProvider extends ShippingProvider
 
     public function automaticService(array $carrier,array $order): string { return 'Automatycznie z zamówienia Allegro'; }
 
+    /** Usługa odpowiadająca metodzie dostawy wybranej przez kupującego (delivery.method.id) – zaznaczana zamiast „automatycznie”. */
+    public function preferredService(array $carrier,array $order,array $defaults): string
+    {
+        static $failed=[];
+        $methodId=trim((string)($order['details']['raw']['delivery']['method']['id']??''));
+        $carrierId=(int)($carrier['id']??0);
+        if ($methodId==='' || isset($failed[$carrierId]) || !$this->supportsOrder($order,(array)($carrier['public']??[]))) { return ''; }
+        try { $options=$this->cachedServices($carrier,$order); }
+        catch (\Throwable $error) { $failed[$carrierId]=true; return ''; }
+        $best='';
+        foreach ($options as $option) {
+            [$deliveryId,$credentials]=array_pad(explode('::',(string)($option['value']??''),2),2,'');
+            if ($deliveryId!==$methodId) { continue; }
+            // Kilka umów dla tej samej metody: pierwszeństwo ma umowa Allegro (bez własnych credentials).
+            if ($best==='' || $credentials==='') { $best=(string)$option['value']; }
+            if ($credentials==='') { break; }
+        }
+        return $best;
+    }
+
     public function services(array $carrier,array $order): array
     {
         $this->assertOrder($carrier,$order);

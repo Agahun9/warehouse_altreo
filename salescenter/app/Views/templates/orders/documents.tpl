@@ -75,7 +75,7 @@
                 <label>Nazwa<input name="items[{$i}][name]" value="{$it.name|escape}" required><input type="hidden" name="items[{$i}][sku]" value="{$it.sku|escape}"><input type="hidden" name="items[{$i}][ean]" value="{$it.ean|escape}"></label>
                 <label>Ilość<input type="number" min="0" step="1" name="items[{$i}][quantity]" value="{$it.quantity}" required data-doc-qty></label>
                 <label>Cena brutto<input inputmode="decimal" name="items[{$i}][price]" value="{$it.price}" required data-doc-price></label>
-                <label>VAT<select name="items[{$i}][vat]">{foreach ['23','8','5','0','zw','np'] as $v}<option value="{$v}" {if $it.vat eq $v}selected{/if}>{$v}{if $v ne 'zw' and $v ne 'np'}%{/if}</option>{/foreach}</select></label>
+                <label>VAT<select name="items[{$i}][vat]">{foreach ['23','8','7','5','0','zw','np'] as $v}<option value="{$v}" {if $it.vat eq $v}selected{/if}>{$v}{if $v ne 'zw' and $v ne 'np'}%{/if}</option>{/foreach}</select></label>
                 <strong data-doc-line-total>{$it.price} PLN</strong>
                 <button class="om-icon-btn" type="button" data-doc-remove-item aria-label="Usuń pozycję"><i class="bi bi-trash"></i></button>
               </div>

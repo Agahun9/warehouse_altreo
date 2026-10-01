@@ -45,13 +45,58 @@ final class ApaczkaProvider extends ShippingProvider
         return $options;
     }
 
-    public function preferredService(array $carrier,array $order,array $defaults): string { $id=(int)($defaults['apaczka_service_id']??0); return $id>0?(string)$id:''; }
+    /** Przewoźnicy rozpoznawani w nazwie metody dostawy: klucz => wzorzec w metodzie dostawy i w nazwie/dostawcy usługi Apaczki. */
+    private const CARRIERS=['inpost'=>'/inpost|paczkomat/iu','dpd'=>'/\\bdpd\\b/iu','dhl'=>'/\\bdhl\\b/iu','pocztex'=>'/pocztex|poczta polska/iu','ups'=>'/\\bups\\b/iu','fedex'=>'/fedex/iu','gls'=>'/\\bgls\\b/iu','orlen'=>'/orlen/iu'];
+    private const POINT_PATTERN='/paczkomat|automat|punkt|point|pickup|\\bbox\\b|\\bpop\\b|odbi[oó]r w/iu';
+
+    public function preferredService(array $carrier,array $order,array $defaults): string
+    {
+        $id=(int)($defaults['apaczka_service_id']??0); if ($id>0) { return (string)$id; }
+        return $this->serviceForDelivery((int)($carrier['id']??0),$order);
+    }
+
+    public function matchOrder(array $order,array $public): array
+    {
+        $carrier=self::deliveryCarrier($order);
+        return $carrier!==''?[40,'Dopasowano '.strtoupper($carrier).' w Apaczce na podstawie metody dostawy']:[];
+    }
+
+    /** Przewoźnik z metody dostawy albo '' (zagranica, Allegro One, brak nazwy przewoźnika – wtedy potrzebne ręczne mapowanie). */
+    private static function deliveryCarrier(array $order): string
+    {
+        $delivery=(string)($order['details']['delivery']??'');
+        $address=(array)($order['details']['address']??[]);
+        $country=strtoupper(trim((string)($address['country']??$address['countryCode']??'PL')));
+        if (($country!=='' && $country!=='PL') || preg_match('/international|zagranic|z polski do|one box|one punkt|allegro one/iu',$delivery)) { return ''; }
+        foreach (self::CARRIERS as $key=>$pattern) { if (preg_match($pattern,$delivery)) { return $key; } }
+        return '';
+    }
+
+    /** Usługa Apaczki pasująca do przewoźnika i typu dostawy (punkt/kurier) – tylko z zapisanej listy usług, bez zapytań do API. */
+    private function serviceForDelivery(int $carrierAccountId,array $order): string
+    {
+        $carrier=self::deliveryCarrier($order); if ($carrier==='' || $carrierAccountId<1) { return ''; }
+        $toPoint=trim((string)($order['details']['pickup']??''))!=='' || preg_match(self::POINT_PATTERN,(string)($order['details']['delivery']??''));
+        $best=''; $bestScore=PHP_INT_MIN;
+        foreach ((array)($this->repo->setting('carrier_services_'.$carrierAccountId)['options']??[]) as $option) {
+            $text=(string)($option['carrier']??'').' '.(string)($option['name']??'');
+            if (!preg_match(self::CARRIERS[$carrier],$text)) { continue; }
+            $isPoint=(bool)preg_match(self::POINT_PATTERN,(string)($option['name']??''));
+            if ($isPoint!==$toPoint) { continue; }
+            // Najprostsza usługa: bez ekspresów, gwarancji godzinowych, sobót, palet i wysyłek zagranicznych.
+            $score=-mb_strlen((string)($option['name']??''),'UTF-8');
+            if (preg_match('/express|ekspres|\\d{1,2}[:.]\\d{2}|sobot|saturday|palet|pallet|international|zagranic|europ|\\bnstd\\b|niestandard/iu',$text)) { $score-=1000; }
+            if (preg_match('/standard|classic|parcel|kurier|courier/iu',$text)) { $score+=5; }
+            if ($score>$bestScore) { $bestScore=$score; $best=(string)($option['value']??''); }
+        }
+        return $best;
+    }
 
     public function create(array $carrier,array $order,array $input): array
     {
         $serviceId=(int)($input['shipping_service']??$input['apaczka_service_id']??0); if ($serviceId<1) throw new InvalidArgumentException('Wybierz usługę Apaczka.');
         $serviceMeta=$this->serviceMeta($carrier,$order,(string)$serviceId,trim((string)($order['details']['delivery']??'')),'Apaczka');
-        $response=$this->api($carrier,'order_send',['order'=>$this->orderData($order,$input,$serviceId)]);
+        $response=$this->api($carrier,'order_send',['order'=>$this->orderData($carrier,$order,$input,$serviceId)]);
         $remote=$response['response']['order']??[];
         return ['external_id'=>(string)($remote['id']??''),'tracking'=>(string)($remote['waybill_number']??''),'state'=>(string)($remote['status']??'created'),'service_code'=>(string)$serviceId,'service_name'=>$serviceMeta['service_name'],'carrier_name'=>$serviceMeta['carrier_name'],'response'=>$response];
     }
@@ -59,7 +104,7 @@ final class ApaczkaProvider extends ShippingProvider
     public function valuation(array $carrier,array $order,array $input): array
     {
         $serviceId=(int)($input['shipping_service']??0);
-        $response=$this->api($carrier,'order_valuation',['order'=>$this->orderData($order,$input,$serviceId)]);
+        $response=$this->api($carrier,'order_valuation',['order'=>$this->orderData($carrier,$order,$input,$serviceId)]);
         $prices=[];
         foreach ((array)($response['response']['price_table']??[]) as $id=>$entry) {
             $gross=(int)($entry['price_gross']??0);
@@ -93,10 +138,14 @@ final class ApaczkaProvider extends ShippingProvider
         return $bytes;
     }
 
-    private function orderData(array $order,array $input,int $serviceId): array
+    private function orderData(array $carrier,array $order,array $input,int $serviceId): array
     {
         $package=ShipmentInput::package($input); $defaults=$this->defaults();
-        $data=['service_id'=>$serviceId,'address'=>['sender'=>$this->address($this->sender()),'receiver'=>$this->receiver($input)],'shipment_value'=>(int)$order['total_cents'],'shipment_currency'=>$order['currency'],'pickup'=>['type'=>(string)($defaults['pickup_type']??'SELF'),'date'=>'','hours_from'=>'','hours_to'=>''],'shipment'=>[['dimension1'=>$package['length'],'dimension2'=>$package['width'],'dimension3'=>$package['height'],'weight'=>$package['weight'],'is_nstd'=>0,'shipment_type_code'=>'PACZKA']],'content'=>ShipmentInput::content((int)$order['id'],$input,$defaults)];
+        // is_zebra=1: etykieta 10x15 pod drukarkę etykiet zamiast strony A4 (bez tego Apaczka bierze format z ustawień konta).
+        $data=['is_zebra'=>1,'service_id'=>$serviceId,'address'=>['sender'=>$this->address($this->sender()),'receiver'=>$this->receiver($input)],'shipment_value'=>(int)$order['total_cents'],'shipment_currency'=>$order['currency'],'pickup'=>['type'=>(string)($defaults['pickup_type']??'SELF'),'date'=>'','hours_from'=>'','hours_to'=>''],'shipment'=>[['dimension1'=>$package['length'],'dimension2'=>$package['width'],'dimension3'=>$package['height'],'weight'=>$package['weight'],'is_nstd'=>0,'shipment_type_code'=>'PACZKA']],'content'=>ShipmentInput::content((int)$order['id'],$input,$defaults)];
+        // Dostawa do punktu (np. Paczkomat z Allegro): kod punktu odbiorcy z zamówienia.
+        $pickup=trim((string)($order['details']['pickup']??''));
+        if ($pickup!=='' && $serviceId>0 && preg_match(self::POINT_PATTERN,$this->serviceMeta($carrier,$order,(string)$serviceId,'','')['service_name'])) { $data['address']['receiver']['foreign_address_id']=$pickup; }
         $this->applyCod($data,$input,(string)$order['currency']);
         return $data;
     }

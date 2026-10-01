@@ -410,7 +410,7 @@ final class OrderRepository
                 $name=$text($item,'name',300); if ($name==='') { throw new InvalidArgumentException('Każda pozycja musi mieć nazwę.'); }
                 $quantity=filter_var($item['quantity']??null,FILTER_VALIDATE_INT);
                 if ($quantity===false || $quantity<0 || $quantity>100000) { throw new InvalidArgumentException('Sprawdź ilość produktów.'); }
-                $vat=strtolower($text($item,'vat',3)); if (!in_array($vat,['23','8','5','0','zw','np'],true)) { throw new InvalidArgumentException('Wybierz stawkę VAT każdej pozycji.'); }
+                $vat=strtolower($text($item,'vat',3)); if (!in_array($vat,['23','8','7','5','0','zw','np'],true)) { throw new InvalidArgumentException('Wybierz stawkę VAT każdej pozycji.'); }
                 $existing=is_array($details['items'][$index]??null)?$details['items'][$index]:[];
                 $items[]=$existing+[];
                 $items[array_key_last($items)]['name']=$name;
@@ -729,9 +729,16 @@ final class OrderRepository
         }
         unset($row);
         // Wskaźniki na liście: numer nadania, paragon i faktura (bez korekt i anulowanych przesyłek).
-        $orderIds=array_map('intval',array_column($rows,'id')); $shipmentFlags=[]; $documentFlags=[];
+        $orderIds=array_map('intval',array_column($rows,'id')); $shipmentFlags=[]; $documentFlags=[]; $listNotes=null;
         if ($orderIds) {
             $in=implode(',',$orderIds);
+            // Notatki z webhooków nie są pokazywane na liście (zostają w szczegółach zamówienia).
+            if ($this->db->fetchColumn("SELECT 1 FROM om_order_notes WHERE order_id IN ($in) AND source LIKE 'webhook:%' LIMIT 1")) {
+                $listNotes=[];
+                foreach ($this->db->fetchAll("SELECT order_id,body,source FROM om_order_notes WHERE order_id IN ($in) ORDER BY id") as $note) {
+                    $listNotes[(int)$note['order_id']][]=strpos((string)$note['source'],'webhook:')===0?null:(string)$note['body'];
+                }
+            }
             foreach ($this->db->fetchAll("SELECT order_id,tracking,state FROM om_shipments WHERE order_id IN ($in) ORDER BY id") as $shipment) {
                 if (OrderShipmentService::isCancelled((string)$shipment['state'])) { continue; }
                 $tracking=(string)$shipment['tracking']; $orderId=(int)$shipment['order_id'];
@@ -744,6 +751,7 @@ final class OrderRepository
         }
         foreach ($rows as &$row) {
             $id=(int)$row['id'];
+            if ($listNotes!==null && isset($listNotes[$id])) { $row['note']=implode("\n\n",array_filter($listNotes[$id],'is_string')); }
             $row['tracking_numbers']=implode(', ',$shipmentFlags[$id]['numbers']??[]);
             $row['tracking_pending']=(int)(!empty($shipmentFlags[$id]['pending']) && $row['tracking_numbers']==='');
             $row['receipt_numbers']=implode(', ',$documentFlags[$id]['receipt']??[]);

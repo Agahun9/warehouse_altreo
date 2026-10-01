@@ -69,7 +69,13 @@ public sealed class PollingWorker
         _log.Info($"Odebrano zadanie fiskalne {job.Id}; drukarka: {job.PrinterName}; tryb: {job.Environment}.");
         var result=await _fiscal.PrintAsync(job,cancellationToken);
         var fiscalNumber=result.Status==JobStatuses.Printed && job.Environment=="production" ? result.Reference : null;
-        await _api.ReportFiscalAsync(job,result,fiscalNumber,cancellationToken);
+        // Retry only the status report; never repeat the fiscal transaction.
+        for (var attempt=1; ; attempt++)
+        {
+            try { await _api.ReportFiscalAsync(job,result,fiscalNumber,cancellationToken); break; }
+            catch (Exception) when (attempt<3 && !cancellationToken.IsCancellationRequested)
+            { await Task.Delay(TimeSpan.FromSeconds(attempt*2),cancellationToken); }
+        }
         if (result.Status==JobStatuses.Printed) _log.Info($"Zadanie fiskalne {job.Id}: {result.Message}");
         else _log.Error($"Zadanie fiskalne {job.Id}: {result.Message}");
     }

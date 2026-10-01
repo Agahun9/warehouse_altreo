@@ -9,12 +9,12 @@
     {foreach $printStations as $station}
       {if $station.enabled and $station.printers}
         <optgroup label="{$station.name|escape}{if not $station.online} — offline{/if}">
-          {foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}">{$printer|escape}</option>{/foreach}
+          {foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}" {if ($labelPrinterDefault.target|default:'') eq ($station.id|cat:'|'|cat:$printer)}selected{/if}>{$printer|escape}</option>{/foreach}
         </optgroup>
       {/if}
     {/foreach}
   </select>
-  <label class="om-label-size">Szer. <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="100" required aria-label="Szerokość etykiety w mm"> mm</label>
-  <label class="om-label-size">Wys. <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="150" required aria-label="Wysokość etykiety w mm"> mm</label>
+  <label class="om-label-size">Szer. <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.width|default:100}" required aria-label="Szerokość etykiety w mm"> mm</label>
+  <label class="om-label-size">Wys. <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.height|default:150}" required aria-label="Wysokość etykiety w mm"> mm</label>
   <button class="om-btn om-small om-primary"><i class="bi bi-printer-fill"></i> Drukuj</button>
 </form>

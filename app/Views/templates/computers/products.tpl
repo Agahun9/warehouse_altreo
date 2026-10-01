@@ -10,6 +10,9 @@
       <a class="nav-link{if $computerTab eq 'csvtemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=csvtemplates">Szablony CSV</a>
     </li>
     <li class="nav-item">
+      <a class="nav-link{if $computerTab eq 'commissions'} active{/if}" href="{$baseUrl}?controller=computers&action=commissions">Prowizje</a>
+    </li>
+    <li class="nav-item">
       <a class="nav-link{if $computerTab eq 'titletemplates'} active{/if}" href="{$baseUrl}?controller=computers&action=titletemplates">Szablony tytułów</a>
     </li>
   </ul>
@@ -550,15 +553,24 @@
                   </div>
                   <div class="col-6">
                     <label for="bulk_formula_max" class="form-label">MAX</label>
-                    <input type="number" id="bulk_formula_max" name="bulk_formula_max" class="form-control" value="550" step="0.01" />
+                    <input type="number" id="bulk_formula_max" name="bulk_formula_max" class="form-control" value="1000" step="0.01" />
+                  </div>
+                  <div class="col-6">
+                    <label for="bulk_formula_price_from" class="form-label">MIN do sumy podzespołów</label>
+                    <input type="number" id="bulk_formula_price_from" name="bulk_formula_price_from" class="form-control" value="3000" step="0.01" />
+                  </div>
+                  <div class="col-6">
+                    <label for="bulk_formula_price_to" class="form-label">MAX od sumy podzespołów</label>
+                    <input type="number" id="bulk_formula_price_to" name="bulk_formula_price_to" class="form-control" value="10000" step="0.01" />
                   </div>
                 </div>
                 <p class="mb-2 text-muted small">
-                  Dla każdego zaznaczonego produktu system użyje sumy cen jego podzespołów,
-                  wyliczy i zaokrągli marżę do pełnych dziesiątek, a następnie ustawi cenę produktu
-                  jako sumę cen podzespołów i nowej marży.
+                  Marża netto (to, co zostaje po prowizji) zależy od sumy cen podzespołów: do 3000 zł wynosi MIN,
+                  od 10000 zł wynosi MAX, pomiędzy rośnie proporcjonalnie. Wynik jest zaokrąglany do pełnych dziesiątek.
+                  Cena w magazynie = suma podzespołów + marża. Prowizję każdego marketplace dolicza
+                  „Aktualizuj ceny z magazynem”.
                 </p>
-                <code class="small">ZAOKR((MIN(550;MAX(400;(239,1+0,03*cena_podzespolow)/0,9264))+4,36%*cena_podzespolow)/(1-4,36%);-1)</code>
+                <code class="small">ZAOKR(MIN + (MAX − MIN) × (podzespoły − 3000) / (10000 − 3000); -1)</code>
               </div>
               <div id="replace_name_fields" style="display:none; max-width: 400px;">
                 <label for="bulk_find" class="form-label">Znajdź w nazwie:</label>
@@ -692,17 +704,6 @@
                   {assign var="component_price_sum" value=$component_price_sum + $comp.price}
                 {/foreach}
                 {assign var="allegro_price" value=$prod.price_allegro|default:''}
-                {assign var="calculation_price" value=$prod.price}
-                {if $allegro_price != ''}
-                  {assign var="calculation_price" value=$allegro_price}
-                {/if}
-
-{assign var="commission" value=$calculation_price*0.0308}
-{assign var="commission_highlight" value=$calculation_price*0.0539}
-{assign var="commission_empik" value=$calculation_price*0.0436}
-{assign var="profit_net" value=$calculation_price - $component_price_sum - $commission}
-{assign var="profit_highlight_net" value=$calculation_price - $component_price_sum - $commission_highlight}
-{assign var="profit_empik_net" value=$calculation_price - $component_price_sum - $commission_empik}
 
                 <div class="col-12">
                   <div class="card mb-2 border border-primary-subtle shadow-sm product-card">
@@ -893,7 +894,7 @@
                               <tbody>
                            <tr>
     <th class="bg-light">Cena (zł)</th>
-    <td class="product-price-cell{if $allegro_price != '' && $prod.price != $allegro_price} product-price-cell--mismatch{/if}">
+    <td class="product-price-cell{if $allegro_price != '' && $allegro_price|string_format:'%.2f' != $prod.expected_prices.allegro|string_format:'%.2f'} product-price-cell--mismatch{/if}">
         <div class="market-price-list">
           <div class="market-price-row market-price-row--warehouse">
             <span class="market-price-logo market-price-logo--warehouse">
@@ -906,123 +907,163 @@
           {if $prod.allegro_accounts|@count > 0}
             {foreach from=$prod.allegro_accounts item=allegroAccount}
               <a href="https://allegro.pl/oferta/{$allegroAccount.offer_id|escape:'url'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--allegro">
-                <span class="market-price-logo">
-                  <img src="https://allegro.pl/favicon.ico" alt="Allegro">
-                </span>
+                <span class="market-price-logo"><img src="https://allegro.pl/favicon.ico" alt="Allegro"></span>
                 <span class="market-price-name">Allegro <strong>{$allegroAccount.account_name|escape:'html'}</strong></span>
                 <span class="market-price-value">
                   {if $allegroAccount.price_amount != ''}
                     {$allegroAccount.price_amount|number_format:2:',':'.'} zl
+                    {assign var="marketEarning" value=$allegroAccount.price_amount*(1-$marketplaceCommissions.allegro/100)-$component_price_sum}
+                    <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja allegro {$marketplaceCommissions.allegro}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
                   {else}
                     cena ?
+                  {/if}
+                  {if $allegroAccount.price_amount|string_format:'%.2f' != $prod.expected_prices.allegro|string_format:'%.2f'}
+                    <small class="market-price-target market-price-target--diff" title="Cena po prowizji z magazynu">docelowa {$prod.expected_prices.allegro|number_format:2:',':'.'} zl</small>
                   {/if}
                 </span>
               </a>
             {/foreach}
           {else}
-            <div class="market-price-row market-price-row--muted">
-              <span class="market-price-logo">
-                <img src="https://allegro.pl/favicon.ico" alt="Allegro">
+            <div class="market-price-row market-price-row--muted market-price-row--unlisted" title="Brak oferty – cena, jaka zostanie ustawiona po wystawieniu">
+              <span class="market-price-logo"><img src="https://allegro.pl/favicon.ico" alt="Allegro"></span>
+              <span class="market-price-name">Allegro <span class="market-price-badge">nie wystawione</span></span>
+              <span class="market-price-value">
+                {$prod.expected_prices.allegro|number_format:2:',':'.'} zl
+                {assign var="marketEarning" value=$prod.expected_prices.allegro*(1-$marketplaceCommissions.allegro/100)-$component_price_sum}
+                <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja allegro {$marketplaceCommissions.allegro}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
               </span>
-              <span class="market-price-name">Allegro</span>
-              <span class="market-price-value">brak aktywnej oferty</span>
             </div>
           {/if}
 
-          {foreach from=$prod.empik_accounts item=empikAccount}
-            <a href="{$empikAccount.empik_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--empik">
-              <span class="market-price-logo">
-                <img src="https://www.empik.com//b/mp/img/favicons/favicon-96x96.png" alt="Empik">
-              </span>
-              <span class="market-price-name">Empik <strong>{$empikAccount.account_name|escape:'html'}</strong></span>
+          {if $prod.empik_accounts|@count > 0}
+            {foreach from=$prod.empik_accounts item=empikAccount}
+              <a href="{$empikAccount.empik_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--empik">
+                <span class="market-price-logo"><img src="https://www.empik.com//b/mp/img/favicons/favicon-96x96.png" alt="Empik"></span>
+                <span class="market-price-name">Empik <strong>{$empikAccount.account_name|escape:'html'}</strong></span>
+                <span class="market-price-value">
+                  {if $empikAccount.price_amount != ''}
+                    {$empikAccount.price_amount|number_format:2:',':'.'} zl
+                    {assign var="marketEarning" value=$empikAccount.price_amount*(1-$marketplaceCommissions.empik/100)-$component_price_sum}
+                    <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja empik {$marketplaceCommissions.empik}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
+                  {else}
+                    cena ?
+                  {/if}
+                  {if $empikAccount.price_amount|string_format:'%.2f' != $prod.expected_prices.empik|string_format:'%.2f'}
+                    <small class="market-price-target market-price-target--diff" title="Cena po prowizji z magazynu">docelowa {$prod.expected_prices.empik|number_format:2:',':'.'} zl</small>
+                  {/if}
+                </span>
+              </a>
+            {/foreach}
+          {else}
+            <div class="market-price-row market-price-row--muted market-price-row--unlisted" title="Brak oferty – cena, jaka zostanie ustawiona po wystawieniu">
+              <span class="market-price-logo"><img src="https://www.empik.com//b/mp/img/favicons/favicon-96x96.png" alt="Empik"></span>
+              <span class="market-price-name">Empik <span class="market-price-badge">nie wystawione</span></span>
               <span class="market-price-value">
-                {if $empikAccount.price_amount != ''}
-                  {$empikAccount.price_amount|number_format:2:',':'.'} zl
-                {else}
-                  cena ?
-                {/if}
+                {$prod.expected_prices.empik|number_format:2:',':'.'} zl
+                {assign var="marketEarning" value=$prod.expected_prices.empik*(1-$marketplaceCommissions.empik/100)-$component_price_sum}
+                <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja empik {$marketplaceCommissions.empik}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
               </span>
-            </a>
-          {/foreach}
+            </div>
+          {/if}
 
-          {foreach from=$prod.mediamarkt_accounts item=mediamarktAccount}
-            <a href="{$mediamarktAccount.mediamarkt_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--mediamarkt">
+          {if $prod.mediamarkt_accounts|@count > 0}
+            {foreach from=$prod.mediamarkt_accounts item=mediamarktAccount}
+              <a href="{$mediamarktAccount.mediamarkt_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--mediamarkt">
+                <span class="market-price-logo"><span class="badge bg-danger">MM</span></span>
+                <span class="market-price-name">MediaMarkt <strong>{$mediamarktAccount.account_name|escape:'html'}</strong></span>
+                <span class="market-price-value">
+                  {if $mediamarktAccount.price_amount != ''}
+                    {$mediamarktAccount.price_amount|number_format:2:',':'.'} zl
+                    {assign var="marketEarning" value=$mediamarktAccount.price_amount*(1-$marketplaceCommissions.mediamarkt/100)-$component_price_sum}
+                    <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja mediamarkt {$marketplaceCommissions.mediamarkt}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
+                  {else}
+                    cena ?
+                  {/if}
+                  {if $mediamarktAccount.price_amount|string_format:'%.2f' != $prod.expected_prices.mediamarkt|string_format:'%.2f'}
+                    <small class="market-price-target market-price-target--diff" title="Cena po prowizji z magazynu">docelowa {$prod.expected_prices.mediamarkt|number_format:2:',':'.'} zl</small>
+                  {/if}
+                </span>
+              </a>
+            {/foreach}
+          {else}
+            <div class="market-price-row market-price-row--muted market-price-row--unlisted" title="Brak oferty – cena, jaka zostanie ustawiona po wystawieniu">
               <span class="market-price-logo"><span class="badge bg-danger">MM</span></span>
-              <span class="market-price-name">MediaMarkt <strong>{$mediamarktAccount.account_name|escape:'html'}</strong></span>
-              <span class="market-price-value">{if $mediamarktAccount.price_amount != ''}{$mediamarktAccount.price_amount|number_format:2:',':'.'} zl{else}cena ?{/if}</span>
-            </a>
-          {/foreach}
-
-          {foreach from=$prod.erli_accounts item=erliAccount}
-            <a href="{$erliAccount.erli_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--erli">
-              <span class="market-price-logo">
-                <img src="https://erli.pl/favicon.ico" alt="Erli">
-              </span>
-              <span class="market-price-name">Erli <strong>{$erliAccount.account_name|escape:'html'}</strong></span>
+              <span class="market-price-name">MediaMarkt <span class="market-price-badge">nie wystawione</span></span>
               <span class="market-price-value">
-                {if $erliAccount.price_amount != ''}
-                  {$erliAccount.price_amount|number_format:2:',':'.'} zl
-                {else}
-                  cena ?
-                {/if}
+                {$prod.expected_prices.mediamarkt|number_format:2:',':'.'} zl
+                {assign var="marketEarning" value=$prod.expected_prices.mediamarkt*(1-$marketplaceCommissions.mediamarkt/100)-$component_price_sum}
+                <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja mediamarkt {$marketplaceCommissions.mediamarkt}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
               </span>
-            </a>
-          {/foreach}
+            </div>
+          {/if}
 
-          {foreach from=$prod.morele_accounts item=moreleAccount}
-            <a href="{$moreleAccount.morele_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--morele">
-              <span class="market-price-logo">
-                <img src="https://www.morele.net/favicon.ico" alt="Morele">
-              </span>
-              <span class="market-price-name">Morele <strong>{$moreleAccount.account_name|escape:'html'}</strong></span>
+          {if $prod.erli_accounts|@count > 0}
+            {foreach from=$prod.erli_accounts item=erliAccount}
+              <a href="{$erliAccount.erli_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--erli">
+                <span class="market-price-logo"><img src="https://erli.pl/favicon.ico" alt="Erli"></span>
+                <span class="market-price-name">Erli <strong>{$erliAccount.account_name|escape:'html'}</strong></span>
+                <span class="market-price-value">
+                  {if $erliAccount.price_amount != ''}
+                    {$erliAccount.price_amount|number_format:2:',':'.'} zl
+                    {assign var="marketEarning" value=$erliAccount.price_amount*(1-$marketplaceCommissions.erli/100)-$component_price_sum}
+                    <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja erli {$marketplaceCommissions.erli}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
+                  {else}
+                    cena ?
+                  {/if}
+                  {if $erliAccount.price_amount|string_format:'%.2f' != $prod.expected_prices.erli|string_format:'%.2f'}
+                    <small class="market-price-target market-price-target--diff" title="Cena po prowizji z magazynu">docelowa {$prod.expected_prices.erli|number_format:2:',':'.'} zl</small>
+                  {/if}
+                </span>
+              </a>
+            {/foreach}
+          {else}
+            <div class="market-price-row market-price-row--muted market-price-row--unlisted" title="Brak oferty – cena, jaka zostanie ustawiona po wystawieniu">
+              <span class="market-price-logo"><img src="https://erli.pl/favicon.ico" alt="Erli"></span>
+              <span class="market-price-name">Erli <span class="market-price-badge">nie wystawione</span></span>
               <span class="market-price-value">
-                {if $moreleAccount.price_amount != ''}
-                  {$moreleAccount.price_amount|number_format:2:',':'.'} zl
-                {else}
-                  cena ?
-                {/if}
+                {$prod.expected_prices.erli|number_format:2:',':'.'} zl
+                {assign var="marketEarning" value=$prod.expected_prices.erli*(1-$marketplaceCommissions.erli/100)-$component_price_sum}
+                <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja erli {$marketplaceCommissions.erli}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
               </span>
-            </a>
-          {/foreach}
+            </div>
+          {/if}
+
+          {if $prod.morele_accounts|@count > 0}
+            {foreach from=$prod.morele_accounts item=moreleAccount}
+              <a href="{$moreleAccount.morele_url|escape:'html'}" target="_blank" rel="noreferrer" class="market-price-row market-price-row--link market-price-row--morele">
+                <span class="market-price-logo"><img src="https://www.morele.net/favicon.ico" alt="Morele"></span>
+                <span class="market-price-name">Morele <strong>{$moreleAccount.account_name|escape:'html'}</strong></span>
+                <span class="market-price-value">
+                  {if $moreleAccount.price_amount != ''}
+                    {$moreleAccount.price_amount|number_format:2:',':'.'} zl
+                    {assign var="marketEarning" value=$moreleAccount.price_amount*(1-$marketplaceCommissions.morele/100)-$component_price_sum}
+                    <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja morele {$marketplaceCommissions.morele}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
+                  {else}
+                    cena ?
+                  {/if}
+                  {if $moreleAccount.price_amount|string_format:'%.2f' != $prod.expected_prices.morele|string_format:'%.2f'}
+                    <small class="market-price-target market-price-target--diff" title="Cena po prowizji z magazynu">docelowa {$prod.expected_prices.morele|number_format:2:',':'.'} zl</small>
+                  {/if}
+                </span>
+              </a>
+            {/foreach}
+          {else}
+            <div class="market-price-row market-price-row--muted market-price-row--unlisted" title="Brak oferty – cena, jaka zostanie ustawiona po wystawieniu">
+              <span class="market-price-logo"><img src="https://www.morele.net/favicon.ico" alt="Morele"></span>
+              <span class="market-price-name">Morele <span class="market-price-badge">nie wystawione</span></span>
+              <span class="market-price-value">
+                {$prod.expected_prices.morele|number_format:2:',':'.'} zl
+                {assign var="marketEarning" value=$prod.expected_prices.morele*(1-$marketplaceCommissions.morele/100)-$component_price_sum}
+                <small class="market-price-earning{if $marketEarning < 0} market-price-earning--loss{/if}" title="Cena − prowizja morele {$marketplaceCommissions.morele}% − podzespoły">zarobek {$marketEarning|number_format:2:',':'.'} zl</small>
+              </span>
+            </div>
+          {/if}
         </div>
     </td>
 
     <th class="bg-light">Cena podzespołów</th>
     <td>{$component_price_sum|number_format:2:',':'.'}</td>
 </tr>
-
-                                <tr>
-                                  <th class="bg-light">Prowizja Allegro 3,08% bez wyróżnienia</th>
-                                  <td>
-                                    {$commission|number_format:2:',':'.'} zarobek -
-                                    {if $profit_net < 350}
-                                      <span style="color:red; font-weight:bold;">{$profit_net|number_format:2:',':'.'}</span>
-                                    {else}
-                                      {$profit_net|number_format:2:',':'.'}
-                                    {/if}
-                                  </td>
-                                  <th class="bg-light">Prowizja Allegro 5,39% z wyróżnieniem</th>
-                                  <td>
-                                    {$commission_highlight|number_format:2:',':'.'} zarobek -
-                                    {if $profit_highlight_net < 350}
-                                      <span style="color:red; font-weight:bold;">{$profit_highlight_net|number_format:2:',':'.'}</span>
-                                    {else}
-                                      {$profit_highlight_net|number_format:2:',':'.'}
-                                    {/if}
-                                  </td>
-                                </tr>
-
-                                <tr>
-                                  <th class="bg-light">Prowizja Empik 4,36%</th>
-                                  <td colspan="3">
-                                    {$commission_empik|number_format:2:',':'.'} zarobek -
-                                    {if $profit_empik_net < 350}
-                                      <span style="color:red; font-weight:bold;">{$profit_empik_net|number_format:2:',':'.'}</span>
-                                    {else}
-                                      {$profit_empik_net|number_format:2:',':'.'}
-                                    {/if}
-                                  </td>
-                                </tr>
                               </tbody>
                             </table>
                           </div>
@@ -1185,6 +1226,17 @@
       <div class="modal-body">
         <p class="mb-2">Wybierz konta, na ktorych zaktualizowac cene z magazynu.</p>
         <div id="priceMarketplaceAccounts" class="d-flex flex-column gap-2"></div>
+        <hr />
+        <p class="mb-2 small text-muted">
+          Przed wysłaniem cena magazynowa zostanie przeliczona jako suma podzespołów + marża.
+          Na każdy marketplace trafi cena magazynowa / (1 − prowizja), zaokrąglona do pełnych dziesiątek.
+        </p>
+        <div class="d-flex flex-wrap gap-1 mb-1">
+          {foreach from=['allegro' => 'Allegro', 'empik' => 'Empik', 'mediamarkt' => 'MediaMarkt', 'erli' => 'ERLI', 'morele' => 'Morele'] key=marketKey item=marketLabel}
+            <span class="badge {if $marketplaceCommissions[$marketKey]|default:0 > 0}text-bg-light border{else}text-bg-warning{/if}">{$marketLabel} {$marketplaceCommissions[$marketKey]|default:0|number_format:2:',':'.'}%</span>
+          {/foreach}
+        </div>
+        <a href="{$baseUrl}?controller=computers&action=commissions" class="small">Zmień prowizje</a>
         <div class="form-text mt-2">Dla Empik i MediaMarkt wszystkie wybrane aukcje z jednego konta zostana wyslane w jednym zbiorczym imporcie cen, bez tworzenia osobnej kolejki dla kazdej aukcji.</div>
         <div id="priceMarketplaceEmpty" class="alert alert-warning mb-0 d-none">
           Zaznaczone produkty nie maja aktywnych ofert na kontach marketplace.
@@ -1433,6 +1485,45 @@
     color: #111827;
     white-space: nowrap;
     text-align: right;
+  }
+  .market-price-value .market-price-target {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: #6c757d;
+  }
+  .market-price-value .market-price-earning {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #198754;
+  }
+  .market-price-value .market-price-earning--loss {
+    color: #dc3545;
+  }
+  .market-price-value .market-price-target--diff {
+    color: #dc3545;
+  }
+  .market-price-row--unlisted {
+    border-style: dashed;
+  }
+  .market-price-row--unlisted .market-price-logo {
+    opacity: 0.55;
+  }
+  .market-price-row--unlisted .market-price-value {
+    color: #6c757d;
+    font-weight: 500;
+  }
+  .market-price-badge {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: #e9ecef;
+    color: #6c757d;
+    font-size: 0.68rem;
+    font-weight: 600;
+    vertical-align: middle;
   }
   .card-header {
     font-size: 1.1rem;
