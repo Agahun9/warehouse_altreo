@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Models\SettingRepository;
 use App\Services\ComputerSpecificationService;
 use App\Services\SellasistService;
+use App\Services\SalescenterPickingService;
 use Throwable;
 
 /**
@@ -18,6 +19,66 @@ use Throwable;
 class SalescenterController extends Controller
 {
     const STOCK_KEY_SETTING = 'salescenter_stock_key';
+
+    public function zbieranie(): void
+    {
+        $this->requireModule('sellasist');
+        $service = new SalescenterPickingService(new SettingRepository($this->db()));
+        $orders = array();
+        try {
+            $orders = $service->listOrders();
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
+        $config = $service->configuration();
+        $this->render('sellasist/index', array(
+            'pageTitle' => 'SalesCenter · Zbieranie', 'contentTitle' => 'SalesCenter · Zbieranie',
+            'pageDescription' => 'Zbieranie zamówień SalesCenter i druk naklejek.', 'breadcrumbCurrent' => 'SalesCenter',
+            'sellasistTab' => 'salescenter', 'orders' => array_map([$this, 'prepareSalescenterOrder'], $orders),
+            'sellasistConfigured' => $service->configured(), 'sellasistPickingStatusId' => $config['picking_status_id'],
+            'sellasistPrintedStatusId' => $config['printed_status_id'], 'pickingController' => 'salescenter',
+            'pickingSourceName' => 'SalesCenter', 'pickingAction' => 'stickers',
+        ));
+    }
+
+    public function stickers(): void
+    {
+        $this->requireModuleWrite('sellasist');
+        if (!$this->isPost()) { $this->redirect('./index.php?controller=salescenter&action=zbieranie'); }
+        $orderIds = $this->input('order_id', array());
+        if (!is_array($orderIds)) { $orderIds = array(); }
+        try {
+            $settings = new SettingRepository($this->db());
+            $service = new SalescenterPickingService($settings);
+            $payload = $service->generateStickers($orderIds, new SellasistService($this->db(), $settings));
+            $this->renderTemplateOnly('sellasist/stickers', array(
+                'pageTitle' => 'Naklejki SalesCenter', 'caseStickers' => $payload['case_stickers'],
+                'glassStickers' => $payload['glass_stickers'], 'barcodeBaseUrl' => $payload['barcode_base_url'],
+                'warnings' => $payload['warnings'],
+            ));
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+            $this->redirect('./index.php?controller=salescenter&action=zbieranie');
+        }
+    }
+
+    private function prepareSalescenterOrder(array $order): array
+    {
+        $items = (array) ($order['carts'] ?? []);
+        $names = array(); $quantity = 0;
+        foreach ($items as $item) {
+            $name = trim((string) ($item['name'] ?? ''));
+            if ($name !== '') { $names[] = $name; }
+            $quantity += max(1, (int) ($item['quantity'] ?? 1));
+        }
+        return array(
+            'id' => (int) ($order['id'] ?? 0),
+            'customer_name' => trim((string) (($order['bill_address']['name'] ?? '') . ' ' . ($order['bill_address']['surname'] ?? ''))),
+            'delivery_name' => (string) ($order['external_data']['external_shipment_name'] ?? ''),
+            'comment' => (string) ($order['comment'] ?? ''), 'creator' => (string) ($order['creator'] ?? ''),
+            'item_count' => count($items), 'quantity_count' => $quantity, 'items_summary' => implode(', ', array_slice($names, 0, 4)),
+        );
+    }
 
     /** Staly klucz dla linkow stanow (tworzony przy pierwszym wyswietleniu w Administracji). */
     public static function stockKey(SettingRepository $settings): string

@@ -211,6 +211,7 @@ final class OrderNormalizer
                     'shop_sku' => (string) ($item['offer_sku'] ?? $item['shop_sku'] ?? ''),
                     'product_sku' => (string) ($item['product_sku'] ?? ''),
                     'product_id' => (string) ($item['product_id'] ?? ''),
+                    'offer_id' => (string) ($item['offer_id'] ?? ''),
                     'quantity' => (int) ($item['quantity'] ?? 1),
                     'unit_cents' => self::money($item['price_unit'] ?? '0'),
                     'vat' => null,
@@ -266,7 +267,10 @@ final class OrderNormalizer
                 $unit = self::money(self::decimal($item['price'] ?? '0'));
                 $sum += $unit * $quantity;
                 $vat = isset($item['vat']) && $item['vat'] !== '' ? strtolower(trim((string) $item['vat'])) : null;
-                $items[] = ['name' => mb_substr((string) ($item['name'] ?? ''), 0, 500, 'UTF-8'), 'sku' => mb_substr((string) ($item['sku'] ?? ''), 0, 190, 'UTF-8'), 'quantity' => $quantity, 'unit_cents' => $unit, 'vat' => $vat, 'image_url' => self::imageUrl($item)];
+                $line = ['name' => mb_substr((string) ($item['name'] ?? ''), 0, 500, 'UTF-8'), 'sku' => mb_substr((string) ($item['sku'] ?? ''), 0, 190, 'UTF-8'), 'quantity' => $quantity, 'unit_cents' => $unit, 'vat' => $vat, 'image_url' => self::imageUrl($item)];
+                if (is_scalar($item['offer_id'] ?? null) && trim((string) $item['offer_id']) !== '') { $line['offer_id'] = mb_substr(trim((string) $item['offer_id']), 0, 100, 'UTF-8'); }
+                if (is_string($item['offer_url'] ?? null) && preg_match('#^https?://#i', trim($item['offer_url']))) { $line['offer_url'] = mb_substr(trim($item['offer_url']), 0, 1000, 'UTF-8'); }
+                $items[] = $line;
             }
             $total = isset($raw['total']) && $raw['total'] !== '' ? self::money(self::decimal($raw['total'])) : $sum;
             $cashOnDelivery = !empty($raw['cash_on_delivery']) || self::cashOnDelivery(['payment_method' => (string) ($raw['payment_method'] ?? '')], $delivery);

@@ -145,6 +145,70 @@ $smarty->assign(['csrf'=>'test','canWrite'=>true,'printStations'=>$repository->s
 $html=$smarty->fetch('orders/printing.tpl');
 foreach (PrintAgentRepository::DEFAULT_VAT_RATES as $letter=>$vat) { printCheck(strpos($html,'name="vat_rates['.$letter.']"')!==false,'VAT setting '.$letter.' renders'); }
 
+// History exposes remote printing only for receipts without a prior job.
+$historyDoc=['id'=>7,'number'=>'P/2026/10/1','kind'=>'receipt','order_id'=>252,'series_name'=>'Paragon ACCRA','created_at'=>'2026-10-01 09:12:36','gross_cents'=>1167000,'currency'=>'PLN','has_correction'=>false,'buyer'=>'Test','recipient'=>'','additional_info'=>'','items'=>[],'fiscal_job'=>null,'effective_printer_id'=>(int)$fiscalPrinter['id'],'non_fiscal'=>false];
+$smarty->assign(['series'=>[],'documents'=>[$historyDoc],'documentSeriesFilter'=>0]);
+$historyHtml=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($historyHtml,'Drukuj zdalnie na Posnet')!==false && strpos($historyHtml,'name="operation" value="document_remote_print"')!==false && strpos($historyHtml,'name="document_id" value="7"')!==false,'Existing receipt has a remote print action with document id and CSRF');
+foreach (['queued','processing','printed','error','printer_offline'] as $status) {
+    $doc=$historyDoc; $doc['fiscal_job']=['status'=>$status,'status_message'=>'Test statusu <script>','fiscal_number'=>'','printer_name'=>'Posnet'];
+    $smarty->assign('documents',[$doc]); $html=$smarty->fetch('orders/documents.tpl');
+    printCheck(strpos($html,'document_remote_print')===false && strpos($html,'document_update')===false && strpos($html,'document_delete')===false,'Existing job blocks duplicate remote print and editing: '.$status);
+    printCheck(strpos($html,'Test statusu &lt;script&gt;')!==false,'Printer status is visible and HTML-escaped: '.$status);
+}
+$doc=$historyDoc; $doc['kind']='receipt_correction';
+$smarty->assign('documents',[$doc]);
+printCheck(strpos($smarty->fetch('orders/documents.tpl'),'document_remote_print')===false,'Corrections cannot start a fiscal receipt from history');
+$smarty->assign(['documents'=>[$historyDoc],'canWrite'=>false]);
+printCheck(strpos($smarty->fetch('orders/documents.tpl'),'document_remote_print')===false,'Read-only user cannot submit remote printing');
+
+$productionPrinter=$repository->fiscalPrinters()[0]; $productionPrinter['environment']='production';
+$smarty->assign(['canWrite'=>true,'documents'=>[$historyDoc],'printFiscalPrinters'=>[$productionPrinter]]);
+$html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'PRODUKCJA — fiskalny')!==false && strpos($html,'value="'.$productionPrinter['id'].'" selected')!==false,'Active production printer is selectable for a fiscal series');
+$nonFiscalDoc=$historyDoc; $nonFiscalDoc['non_fiscal']=true; $nonFiscalDoc['series_id']=1;
+$smarty->assign('documents',[$nonFiscalDoc]); $html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'PRODUKCJA — fiskalny · seria niefiskalna')!==false && strpos($html,'wyłącz „Dokument niefiskalny”')!==false,'Production printer remains visible with reason and instructions for non-fiscal series');
+printCheck(strpos($html,'value="'.$productionPrinter['id'].'" disabled')!==false,'Non-fiscal series cannot silently start production receipt');
+$smarty->assign(['documents'=>[$historyDoc],'printFiscalPrinters'=>[]]); $html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'nie ma zarejestrowanej drukarki Posnet')!==false,'Missing printer has explicit setup instructions');
+$productionPrinter['enabled']=0;
+$smarty->assign('printFiscalPrinters',[$productionPrinter]); $html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'drukarka wyłączona')!==false && strpos($html,'value="'.$productionPrinter['id'].'" disabled')!==false,'Disabled printer is visible but cannot be submitted');
+
+$productionPrinter['enabled']=1; $productionPrinter['station_enabled']=0;
+$smarty->assign('printFiscalPrinters',[$productionPrinter]); $html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'stanowisko wyłączone')!==false && strpos($html,'value="'.$productionPrinter['id'].'" disabled')!==false,'Disabled station is visible but cannot receive new receipt');
+// Only the exact pre-transaction VAT mismatch may be retried.
+$vatError='Stawka VAT C w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G.';
+printCheck(PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>$vatError,'fiscal_number'=>null]),'Legacy VAT mismatch is known to precede trinit');
+foreach (['printed','queued','processing','printer_offline'] as $status) { printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>$status,'status_message'=>$vatError]),'Retry rejected for status '.$status); }
+printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>'Połączenie zamknięte']), 'Unknown finalization result cannot be retried');
+printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>$vatError,'fiscal_number'=>'123']), 'Known fiscal number blocks retry');
+$retryJob=$repository->nextFiscalJob((int)$station['id'],'sandbox');
+$repository->reportFiscal((int)$station['id'],$retryJob['id'],'error',$vatError,null);
+$retryRates=PrintAgentRepository::DEFAULT_VAT_RATES; $retryRates['F']='zw';
+$repository->configureFiscalPrinter((int)$fiscalPrinter['id'],'POS1','production',true,$retryRates);
+$retryId=$repository->retryFiscalReceipt($issued,'tester');
+$retryStored=$db->fetch('SELECT * FROM print_fiscal_jobs WHERE id=:id',['id'=>$retryId]);
+$retryPayload=json_decode($retryStored['payload_json'],true);
+printCheck($retryId!==$retryJob['id'] && $retryStored['status']==='queued' && $retryStored['claimed_at']===null && $retryStored['reported_at']===null,'Safe retry rotates attempt id and resets claim fields');
+printCheck($retryPayload['vatRates']===$retryRates && $retryPayload['items']===$retryJob['receipt']['items'] && $retryPayload['orderNumber']===$retryJob['receipt']['orderNumber'],'Retry refreshes VAT mapping while preserving immutable receipt');
+printCheck(!$repository->reportFiscal((int)$station['id'],$retryJob['id'],'error',$vatError,null),'Delayed old attempt cannot overwrite retry');
+try { $repository->retryFiscalReceipt($issued,'tester'); printCheck(false,'Duplicate retry rejected'); }
+catch (InvalidArgumentException $e) { printCheck(true,'Duplicate retry rejected'); }
+$claimedRetry=$repository->nextFiscalJob((int)$station['id'],'production');
+printCheck($claimedRetry['id']===$retryId && $repository->nextFiscalJob((int)$station['id'],'production')===null,'Retried receipt is claimed only once');
+$repository->reportFiscal((int)$station['id'],$retryId,'printed','Posnet confirmed','123');
+try { $repository->retryFiscalReceipt($issued,'tester'); printCheck(false,'Printed fiscal receipt cannot be retried'); }
+catch (InvalidArgumentException $e) { printCheck(true,'Printed fiscal receipt cannot be retried'); }
+$retryHistory=$historyDoc; $retryHistory['fiscal_job']=['status'=>'error','status_message'=>$vatError,'fiscal_number'=>null,'printer_name'=>'Posnet','retry_allowed'=>true];
+$smarty->assign(['canWrite'=>true,'documents'=>[$retryHistory]]); $html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'document_remote_retry')!==false && strpos($html,'Nie wystawiła paragonu na drukarce')!==false && strpos($html,'paragon mógł zostać zapisany')===false,'Safe pre-transaction error exposes retry and accurate explanation');
+$retryHistory['fiscal_job']=['status'=>'printed','status_message'=>'Posnet confirmed','fiscal_number'=>'123','printer_name'=>'Posnet','retry_allowed'=>false,'reported_at'=>'2026-10-01 10:00:00'];
+$smarty->assign('documents',[$retryHistory]);$html=$smarty->fetch('orders/documents.tpl');
+printCheck(strpos($html,'document_remote_retry')===false && strpos($html,'Numer fiskalny: 123')!==false && strpos($html,'Potwierdzenie: 2026-10-01 10:00:00 UTC')!==false,'History shows printer confirmation and number without reissuing a receipt');
+
 $newToken=$repository->regenerateToken((int)$station['id']);
 printCheck($repository->authenticate($token)===null && $repository->authenticate($newToken)!==null,'Token rotation invalidates the old token');
 

@@ -214,6 +214,7 @@ final class OrderShipmentService
         $id=(int)$db->insert('om_shipments',['order_id'=>$orderId,'carrier_account_id'=>$carrierAccountId,'carrier'=>$carrier['name'],'tracking'=>$tracking,'weight'=>(string)$weight,'state'=>$state,'external_id'=>$external,'command_id'=>$requestKey,'payload_json'=>$this->payload($key,(array)($result['response']??[]),$meta),'cod_amount_cents'=>$codAmountCents,'shipment_currency'=>(string)$order['currency'],'created_at'=>gmdate('Y-m-d H:i:s')]);
         $this->repo->event($orderId,'Utworzono przesyłkę przez '.$carrier['name'].'; status: '.$state,$actor);
         $this->repo->automationEvent($orderId,'shipment_created',['shipment_id'=>$id,'carrier_account_id'=>$carrierAccountId]);
+        $this->publishToSource($id,$actor);
         return $id;
     }
 
@@ -236,6 +237,14 @@ final class OrderShipmentService
         if ($state!==(string)$shipment['state'] || (string)($meta['tracking_status']??'')!==$previousTrackingStatus) {
             $this->repo->automationEvent((int)$shipment['order_id'],'shipment_status',['shipment_id'=>$shipmentId,'shipment_state'=>$state]);
         }
+        $this->publishToSource($shipmentId,$actor);
+    }
+
+    /** Błąd przekazania numeru nie może cofnąć nadania ani odświeżenia – stan i komunikat zapisuje się w przesyłce. */
+    private function publishToSource(int $shipmentId,string $actor): void
+    {
+        try { (new OrderMarketplaceShipmentService($this->repo))->autoPublish($shipmentId,$actor); }
+        catch (\Throwable $e) { OrderSyncError::log($e,['stage'=>'source_shipment_auto','shipment_id'=>$shipmentId]); }
     }
 
     public function cancel(int $shipmentId,string $actor): void

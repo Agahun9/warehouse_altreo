@@ -27,6 +27,15 @@ final class ApiController extends Controller
             if (!$account) { $this->json(['error' => 'Połączenie API nie jest aktywne.', 'code' => 'INACTIVE'], 403); return; }
             $route = trim((string) ($_GET['api_route'] ?? ''), '/');
             $method = $this->requestMethod();
+            $connectionPublic = json_decode((string) ($connection['public_json'] ?? ''), true) ?: [];
+            if (($connectionPublic['purpose'] ?? '') === 'warehouse_picking'
+                && !(($route === 'v1/picking/orders' && $method === 'GET')
+                    || (preg_match('#^v1/picking/orders/\d+/status$#', $route) === 1 && $method === 'PUT')
+                    || ($route === 'v1/ping' && $method === 'GET')
+                    || ($route === 'v1/statuses' && $method === 'GET'))) {
+                $this->json(['error' => 'Ten token ma dostęp tylko do API zbierania magazynowego.', 'code' => 'FORBIDDEN'], 403);
+                return;
+            }
             if ($route === 'v1/ping' && $method === 'GET') {
                 $tenant = $this->saas()->tenant(Tenant::id());
                 $this->json(['ok' => true, 'company' => $tenant['name'] ?? '', 'connection' => $connection['name']]);
@@ -36,12 +45,16 @@ final class ApiController extends Controller
                 $this->upsert($repo, (int) $account['id']);
             } elseif ($route === 'v1/orders' && $method === 'GET') {
                 $this->changed($repo, (int) $account['id']);
+            } elseif ($route === 'v1/picking/orders' && $method === 'GET') {
+                $this->pickingOrders($repo);
+            } elseif (preg_match('#^v1/picking/orders/(\d+)/status$#', $route, $match) === 1 && $method === 'PUT') {
+                $this->pickingStatus($repo, (int) $match[1]);
             } elseif (preg_match('#^v1/orders/([^/]{1,190})$#', $route, $match) === 1 && $method === 'GET') {
                 $id = (int) $this->db()->fetchColumn('SELECT id FROM om_orders WHERE account_id=:a AND external_id=:e', ['a' => $account['id'], 'e' => rawurldecode($match[1])]);
                 if ($id < 1) { $this->json(['error' => 'Nie znaleziono zamówienia.', 'code' => 'NOT_FOUND'], 404); return; }
                 $this->json(['order' => $this->present($repo, $id)]);
             } else {
-                $this->json(['error' => 'Nieznany endpoint. Dostępne: GET v1/ping, GET v1/statuses, POST v1/orders, GET v1/orders, GET v1/orders/{id}.', 'code' => 'NOT_FOUND'], 404);
+                $this->json(['error' => 'Nieznany endpoint. Dostępne: GET v1/ping, GET v1/statuses, POST v1/orders, GET v1/orders, GET v1/orders/{id}, GET v1/picking/orders, PUT v1/picking/orders/{id}/status.', 'code' => 'NOT_FOUND'], 404);
             }
         } catch (InvalidArgumentException $e) {
             $this->json(['error' => $e->getMessage(), 'code' => 'INVALID_INPUT'], 422);
@@ -103,6 +116,47 @@ final class ApiController extends Controller
         if ($since === false) { throw new InvalidArgumentException('Podaj parametr updated_since, np. 2026-09-01T00:00:00Z.'); }
         $rows = $this->db()->fetchAll('SELECT id FROM om_orders WHERE account_id=:a AND (status_changed_at>=:s OR updated_at>=:s2) ORDER BY id LIMIT 100', ['a' => $accountId, 's' => gmdate('Y-m-d H:i:s', $since), 's2' => gmdate('Y-m-d H:i:s', $since)]);
         $this->json(['orders' => array_map(function ($row) use ($repo) { return $this->present($repo, (int) $row['id']); }, $rows)]);
+    }
+
+    /** Lista zamówień SalesCenter dla magazynowego zbierania; token ogranicza wynik do aktywnej firmy. */
+    private function pickingOrders(OrderRepository $repo): void
+    {
+        $statusId = (int) ($_GET['status_id'] ?? 0);
+        $repo->requireStatus($statusId);
+        $limit = max(1, min(100, (int) ($_GET['limit'] ?? 100)));
+        $offset = max(0, (int) ($_GET['offset'] ?? 0));
+        $rows = $this->db()->fetchAll(
+            'SELECT o.id FROM om_orders o WHERE o.status_id=:status ORDER BY o.ordered_at,o.id LIMIT '.$limit.' OFFSET '.$offset,
+            ['status' => $statusId]
+        );
+        $orders = [];
+        foreach ($rows as $row) {
+            $order = $repo->order((int) $row['id']);
+            $details = is_array($order['details'] ?? null) ? $order['details'] : [];
+            $delivery = trim((string) ($details['delivery'] ?? ''));
+            $comment = trim((string) ($details['buyer_note'] ?? ''));
+            $orders[] = [
+                'id' => (int) $order['id'], 'number' => (string) $order['external_id'],
+                'status_id' => (int) $order['status_id'], 'status' => (string) $order['status_name'],
+                'customer_name' => (string) $order['buyer_name'], 'creator' => (string) $order['account_name'],
+                'delivery_name' => $delivery, 'comment' => $comment,
+                'items' => array_values(array_map(static function ($item) {
+                    return ['name' => (string) ($item['name'] ?? ''), 'sku' => (string) ($item['sku'] ?? ''), 'quantity' => max(1, (int) ($item['quantity'] ?? 1))];
+                }, array_filter((array) ($details['items'] ?? []), 'is_array'))),
+                'shipping_name' => trim((string) ($order['shipping_address']['name'] ?? $order['buyer_name'])),
+            ];
+        }
+        $this->json(['orders' => $orders, 'limit' => $limit, 'offset' => $offset, 'has_more' => count($orders) === $limit]);
+    }
+
+    private function pickingStatus(OrderRepository $repo, int $orderId): void
+    {
+        $raw = (string) file_get_contents('php://input');
+        $body = json_decode($raw, true);
+        $statusId = is_array($body) ? (int) ($body['status_id'] ?? 0) : 0;
+        $repo->requireStatus($statusId);
+        $repo->changeStatus($orderId, $statusId, 'API zbierania');
+        $this->json(['ok' => true, 'id' => $orderId, 'status_id' => $statusId]);
     }
 
     private function present(OrderRepository $repo, int $id): array

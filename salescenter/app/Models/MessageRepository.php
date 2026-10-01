@@ -413,6 +413,31 @@ final class MessageRepository
         return array_map([self::class, 'hydrate'], $this->db->fetchAll($sql.' ORDER BY last_message_at DESC', $params));
     }
 
+    /**
+     * Wątki klienta do karty zamówienia: powiązane z tym zamówieniem oraz inne wątki tego samego
+     * kupującego (login/e-mail) w tym samym połączeniu. Każdy wątek z listą wiadomości.
+     */
+    public function customerThreads(int $orderId, int $connectionId, string $orderExternalId, array $logins): array
+    {
+        $where = ['order_id=:id'];
+        $params = ['id' => $orderId];
+        if ($connectionId > 0 && $orderExternalId !== '') { $where[] = '(connection_id=:c AND order_external_id=:e)'; $params['c'] = $connectionId; $params['e'] = $orderExternalId; }
+        $logins = array_values(array_unique(array_filter(array_map(static function ($login): string { return mb_substr(trim((string) $login), 0, 190, 'UTF-8'); }, $logins), 'strlen')));
+        if ($connectionId > 0 && $logins) {
+            $in = [];
+            foreach ($logins as $i => $login) { $in[] = ':l'.$i; $params['l'.$i] = $login; }
+            $where[] = '(connection_id=:lc AND customer_login IN ('.implode(',', $in).'))';
+            $params['lc'] = $connectionId;
+        }
+        $threads = array_map([self::class, 'hydrate'], $this->db->fetchAll('SELECT * FROM om_msg_threads WHERE '.implode(' OR ', $where).' ORDER BY last_message_at DESC,id DESC LIMIT 50', $params));
+        foreach ($threads as &$thread) {
+            $thread['messages'] = $this->messages((int) $thread['id']);
+            $thread['for_order'] = (int) ($thread['order_id'] ?? 0) === $orderId || ($orderExternalId !== '' && (string) $thread['order_external_id'] === $orderExternalId);
+        }
+        unset($thread);
+        return $threads;
+    }
+
     // ---------------------------------------------------------------- skrzynka
 
     /** Liczniki sekcji menu: [platform][kind] => ['open'=>…, 'total'=>…] oraz sumy. */

@@ -51,6 +51,7 @@
                 {if $r.variants gt 1}<span class="oa-badge is-variant" title="Reguły o tej samej nazwie tworzą jeden przycisk — uruchamia się pierwsza (od góry), której warunki pasują."><i class="bi bi-diagram-2"></i> Wariant · {$r.variants} o tej nazwie</span>{/if}
                 {if $r.options.button_list}<span class="oa-badge is-button"><i class="bi bi-list-check"></i> Akcja na liście</span>{/if}
                 {if $r.options.stop_on_error}<span class="oa-badge"><i class="bi bi-sign-stop"></i> Stop po błędzie</span>{/if}
+                {if $r.options.skip_confirm|default:false}<span class="oa-badge" title="Przycisk w zamówieniu uruchamia bez potwierdzenia"><i class="bi bi-lightning-charge"></i> Bez pytania</span>{/if}
               </div>
             </div>
             {if $canWrite}<div class="oa-rule-tools">

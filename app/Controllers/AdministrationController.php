@@ -239,6 +239,10 @@ class AdministrationController extends Controller
             'sellasistApiKey' => $this->settings->get('sellasist_api_key', ''),
             'sellasistPickingStatusId' => (int) $this->settings->get('sellasist_picking_status_id', '23'),
             'sellasistPrintedStatusId' => (int) $this->settings->get('sellasist_printed_status_id', '3'),
+            'salescenterPickingUrl' => $this->settings->get('salescenter_api_url', ''),
+            'salescenterHasApiKey' => $this->settings->get('salescenter_api_key', '') !== '',
+            'salescenterPickingStatusId' => (int) $this->settings->get('salescenter_picking_status_id', '2'),
+            'salescenterPrintedStatusId' => (int) $this->settings->get('salescenter_printed_status_id', '3'),
             'salescenterStockUrls' => array(
                 'subtract' => $baseUrl . '?controller=salescenter&action=subtractstock&id={id_order}&key=' . SalescenterController::stockKey($this->settings),
                 'add' => $baseUrl . '?controller=salescenter&action=addstock&id={id_order}&key=' . SalescenterController::stockKey($this->settings),
@@ -458,6 +462,32 @@ class AdministrationController extends Controller
             $this->setFlash('error', $exception->getMessage());
         }
 
+        $this->redirect('./index.php?controller=administration&action=automation');
+    }
+
+    public function savesalescenterpicking(): void
+    {
+        $this->requireRole('admin');
+        $this->requireWriteAccess();
+        if (!$this->isPost()) {
+            $this->redirect('./index.php?controller=administration&action=automation');
+        }
+        try {
+            $url = rtrim(trim((string) $this->input('salescenter_api_url', '')), '/');
+            $key = trim((string) $this->input('salescenter_api_key', ''));
+            $pickingStatusId = max(1, (int) $this->input('salescenter_picking_status_id', 2));
+            $printedStatusId = max(0, (int) $this->input('salescenter_printed_status_id', 3));
+            if ($url !== '' && !filter_var($url, FILTER_VALIDATE_URL)) {
+                throw new RuntimeException('Podaj poprawny adres URL SalesCenter, np. https://magazyn.altreo.pl/crm/new_version/salescenter.');
+            }
+            if ($key !== '') { $this->settings->set('salescenter_api_key', $key); }
+            $this->settings->set('salescenter_api_url', $url);
+            $this->settings->set('salescenter_picking_status_id', (string) $pickingStatusId);
+            $this->settings->set('salescenter_printed_status_id', (string) $printedStatusId);
+            $this->setFlash('success', 'Ustawienia zbierania SalesCenter zostały zapisane.');
+        } catch (Throwable $exception) {
+            $this->setFlash('error', $exception->getMessage());
+        }
         $this->redirect('./index.php?controller=administration&action=automation');
     }
 

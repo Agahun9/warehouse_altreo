@@ -25,7 +25,10 @@
         <div class="card-body pb-0">
           <ul class="nav nav-tabs">
             <li class="nav-item">
-              <a class="nav-link{if $sellasistTab eq 'zbieranie'} active{/if}" href="{$baseUrl}?controller=sellasist&action=zbieranie">Zbieranie</a>
+              <a class="nav-link{if $sellasistTab eq 'zbieranie'} active{/if}" href="{$baseUrl}?controller=sellasist&action=zbieranie">Sellasist</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link{if $sellasistTab eq 'salescenter'} active{/if}" href="{$baseUrl}?controller=salescenter&action=zbieranie">SalesCenter</a>
             </li>
           </ul>
         </div>
@@ -33,13 +36,13 @@
 
       {if not $sellasistConfigured}
         <div class="alert alert-warning">
-          Brak konfiguracji Sellasist API. Uzupelnij dane w <a href="{$baseUrl}?controller=administration&action=automation" class="alert-link">Administracja</a>.
+          Brak konfiguracji {$pickingSourceName|default:'Sellasist'|escape}. Uzupełnij dane w <a href="{$baseUrl}?controller=administration&action=automation" class="alert-link">Administracja</a>.
         </div>
       {/if}
 
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-          <h3 class="card-title mb-0">Lista zamowien do zbierania</h3>
+          <h3 class="card-title mb-0">Lista zamówień {$pickingSourceName|default:'Sellasist'|escape} do zbierania</h3>
           <span class="small text-secondary">
             status pobierania: {$sellasistPickingStatusId|escape}, po wydruku:
             {if $sellasistPrintedStatusId > 0}
@@ -50,7 +53,7 @@
           </span>
         </div>
         <div class="card-body">
-          <form method="post" action="{$baseUrl}?controller=sellasist&action=stickers" target="_blank" id="sellasistPickingForm">
+          <form method="post" action="{$baseUrl}?controller={$pickingController|default:'sellasist'|escape}&action={$pickingAction|default:'stickers'|escape}" target="_blank" id="sellasistPickingForm">
             <div class="d-flex flex-wrap gap-2 mb-3">
               <button type="submit" class="btn btn-primary">Generuj stickers</button>
               <button type="button" class="btn btn-outline-secondary" id="sellasistSelectAll">Zaznacz wszystko</button>

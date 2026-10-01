@@ -65,7 +65,7 @@ final class AltreoService extends MarketplaceIntegration
                 return is_array($option) ? trim((string) ($option['group'] ?? '').': '.(string) ($option['value'] ?? ''), ': ') : '';
             }, (array) ($item['options'] ?? [])), 'strlen');
             if ($options) { $name .= ' ('.implode(', ', $options).')'; }
-            $items[] = ['name' => $name, 'sku' => (string) ($item['sku'] ?? ''), 'ean' => (string) ($item['ean'] ?? ''), 'quantity' => (int) ($item['qty'] ?? 1), 'price' => OrderNormalizer::decimal($item['price'] ?? '0'), 'image_url' => (string) ($item['image_url'] ?? '')];
+            $items[] = ['name' => $name, 'sku' => (string) ($item['sku'] ?? ''), 'ean' => (string) ($item['ean'] ?? ''), 'quantity' => (int) ($item['qty'] ?? 1), 'price' => OrderNormalizer::decimal($item['price'] ?? '0'), 'image_url' => (string) ($item['image_url'] ?? ''), 'offer_id' => (string) ($item['product_id'] ?? ''), 'offer_url' => (string) (($item['url'] ?? '') ?: ($item['product_url'] ?? '') ?: (trim((string) ($item['sku'] ?? '')) !== '' ? $shopUrl.'/szukaj?q='.rawurlencode(trim((string) $item['sku'])) : ''))];
         }
         // Dopłata za metodę płatności jest osobną pozycją; rabat z kuponu wyrównuje linia korekty dokumentu.
         $paymentFee = OrderNormalizer::decimal($order['payment_fee'] ?? '0');

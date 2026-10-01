@@ -70,7 +70,7 @@ final class PrestaShopService extends MarketplaceIntegration
         };
         $items = [];
         foreach ((array) ($order['associations']['order_rows'] ?? []) as $row) {
-            $items[] = ['name' => (string) ($row['product_name'] ?? ''), 'sku' => (string) (($row['product_reference'] ?? '') ?: ($row['product_ean13'] ?? '')), 'quantity' => (int) ($row['product_quantity'] ?? 1), 'price' => OrderNormalizer::decimal($row['unit_price_tax_incl'] ?? '0')];
+            $items[] = ['name' => (string) ($row['product_name'] ?? ''), 'sku' => (string) (($row['product_reference'] ?? '') ?: ($row['product_ean13'] ?? '')), 'quantity' => (int) ($row['product_quantity'] ?? 1), 'price' => OrderNormalizer::decimal($row['unit_price_tax_incl'] ?? '0'), 'offer_id' => (string) ($row['product_id'] ?? ''), 'offer_url' => (int) ($row['product_id'] ?? 0) > 0 ? rtrim((string) $account['shop_url'], '/').'/index.php?controller=product&id_product='.(int) $row['product_id'] : ''];
         }
         $invoice = $invoiceAddress ? $address($invoiceAddress) : [];
         $invoice['required'] = trim((string) ($invoice['company'] ?? '')) !== '' || trim((string) ($invoice['nip'] ?? '')) !== '';

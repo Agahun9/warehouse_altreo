@@ -11,7 +11,7 @@
   <div class="om-docs-panel-title"><div><span class="om-eyebrow">01 · NUMERACJA</span><h3>Serie dokumentów</h3><p>Każda seria ma własny licznik i przypisanie drukarki.</p></div><span class="om-chip">{$series|count} {if $series|count eq 1}seria{elseif $series|count >= 2 and $series|count <= 4}serie{else}serii{/if}</span></div>
   <div class="om-series-list">
   {foreach $series as $s}
-    <details class="om-series-item">
+    <details class="om-series-item" id="om-series-{$s.id}">
       <summary>
         <span class="om-series-summary-main"><span class="om-series-badge om-series-badge-{$s.kind}">{$documentKindLabels[$s.kind]|default:$s.kind}</span><strong>{if !empty($s.numbering.color)}<span class="om-series-color" style="background:{$s.numbering.color|escape}" aria-hidden="true"></span>{/if}{$s.name|escape}</strong><span class="om-series-pattern">{$s.pattern|escape}</span></span>
         <span class="om-series-summary-meta"><span class="om-series-next">Następny numer <b>{$s.next_number}</b></span>{if $s.document_count}<span class="om-chip">{$s.document_count} dok.</span>{else}<span class="om-chip om-chip-idle">nieużywana</span>{/if}<i class="bi bi-chevron-down oc-chevron"></i></span>
@@ -59,8 +59,25 @@
       </summary>
       <div class="om-doc-body">
         <div class="om-actions"><a class="om-btn om-small" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Podgląd A4 ↗</a>{if $canWrite}<a class="om-btn om-small" href="?controller=orders&action=correctdocument&id={$d.id}"><i class="bi bi-arrow-counterclockwise"></i> Wystaw korektę</a>{/if}</div>
+        {if $d.kind eq 'receipt'}
+        {assign var=fiscalJob value=$d.fiscal_job|default:null}
+        {if $fiscalJob}
+          <div class="om-fiscal-help"><i class="bi bi-printer"></i><div><strong>Posnet · {$fiscalJob.printer_name|escape} · {if $fiscalJob.status eq 'queued'}Oczekuje na agenta{elseif $fiscalJob.status eq 'processing'}Drukowanie / oczekiwanie na wynik{elseif $fiscalJob.status eq 'printed'}Wydruk potwierdzony przez Posnet{elseif $fiscalJob.status eq 'printer_offline'}Drukarka offline{else}Błąd druku{/if}</strong><p>{$fiscalJob.status_message|escape}{if $fiscalJob.fiscal_number} · Numer fiskalny: {$fiscalJob.fiscal_number|escape}{/if}{if $fiscalJob.status eq 'printed' && !empty($fiscalJob.reported_at)} · Potwierdzenie: {$fiscalJob.reported_at|escape} UTC{/if}</p><a href="?controller=orders&tab=printing">Sprawdź stanowisko i kolejkę druku</a>{if !empty($fiscalJob.retry_allowed)}<p>Ta próba zatrzymała się przed rozpoczęciem transakcji fiskalnej. Nie wystawiła paragonu na drukarce. Popraw stawki A–G przed ponowieniem.</p>{elseif $fiscalJob.status eq 'error' or $fiscalJob.status eq 'printer_offline' or $fiscalJob.status eq 'processing'}<p>Przed ponownym drukiem sprawdź urządzenie — paragon mógł zostać zapisany mimo braku potwierdzenia. Ponowne wysłanie jest zablokowane.</p>{/if}</div></div>
+          {if $canWrite && !empty($fiscalJob.retry_allowed)}<form class="om-top" method="post" action="?controller=orders&action=save" data-confirm-action="Ponowić fiskalny wydruk tego paragonu na tej samej drukarce po poprawieniu stawek VAT? Poprzednia próba zakończyła się przed rozpoczęciem transakcji."><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_remote_retry"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}"><button class="om-btn om-primary om-small" type="submit"><i class="bi bi-arrow-repeat"></i> Ponów druk po poprawieniu stawek</button></form>{/if}
+        {elseif $canWrite}
+          <form class="om-form om-top" method="post" action="?controller=orders&action=save" data-confirm-action="Wysłać paragon {$d.number|escape} do wybranej drukarki Posnet? Tryb PRODUKCJA fiskalizuje sprzedaż, SANDBOX drukuje niefiskalnie.">
+            <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_remote_print"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
+            {assign var=remotePrinterCount value=0}
+            <label>Drukarka Posnet<select name="fiscal_printer_id" required><option value="">Wybierz drukarkę</option>{foreach $printFiscalPrinters as $printer}{assign var=printerAllowed value=($printer.enabled && (!isset($printer.station_enabled) or $printer.station_enabled) && (empty($d.non_fiscal) or $printer.environment eq 'sandbox'))}{if $printerAllowed}{assign var=remotePrinterCount value=$remotePrinterCount+1}{/if}<option value="{$printer.id}" {if !$printerAllowed}disabled{elseif ($d.effective_printer_id|default:0) eq $printer.id}selected{/if}>{$printer.name|escape} · {$printer.station_name|escape} · {if $printer.environment eq 'production'}PRODUKCJA — fiskalny{else}SANDBOX — niefiskalny{/if}{if !$printer.enabled} · drukarka wyłączona{elseif (isset($printer.station_enabled) && !$printer.station_enabled)} · stanowisko wyłączone{elseif !empty($d.non_fiscal) && $printer.environment eq 'production'} · seria niefiskalna{elseif !$printer.station_online} · agent offline{/if}</option>{/foreach}</select></label>
+            {if !$remotePrinterCount}<div class="om-muted">{if !$printFiscalPrinters}W tej firmie nie ma zarejestrowanej drukarki Posnet. Dodaj urządzenie lub połącz agenta w <a href="?controller=orders&tab=printing">Drukowaniu</a>.{elseif !empty($d.non_fiscal)}Seria tego dokumentu jest oznaczona jako niefiskalna. Drukarka produkcyjna nie może jej drukować. Jeśli chcesz paragon fiskalny, wyłącz „Dokument niefiskalny” w <a href="?controller=orders&tab=documents#om-series-{$d.series_id}">ustawieniach tej serii</a>. Do testu wybierz drukarkę w trybie SANDBOX.{else}Brak dostępnej drukarki. W <a href="?controller=orders&tab=printing">Drukowaniu</a> włącz drukarkę oraz jej stanowisko.{/if}</div>{/if}
+            <button class="om-btn om-primary om-small" type="submit" {if !$remotePrinterCount}disabled{/if}><i class="bi bi-printer"></i> Drukuj zdalnie na Posnet</button>
+            <small class="om-muted">Wysyła zapisane pozycje tego dokumentu do agenta, bez wystawiania nowego dokumentu. Test niefiskalny agenta nie potwierdza poprawności stawek i danych paragonu fiskalnego.</small>
+          </form>
+        {/if}
+        {/if}
         {include file='orders/ksef_document.tpl' doc=$d ksefTab='documents' ksefOrderId=0}
         {if $canWrite}
+        {if $d.kind ne 'receipt' or empty($d.fiscal_job)}
         <details class="om-doc-edit"><summary><i class="bi bi-pencil"></i> Edytuj dokument</summary>
           <form class="om-form om-doc-edit-form" method="post" action="?controller=orders&action=save">
             <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_update"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
@@ -90,6 +107,7 @@
           {if $d.has_correction}<button class="om-btn om-small" type="button" disabled title="Do tego dokumentu wystawiono korektę — usuń najpierw korektę"><i class="bi bi-trash"></i> Usuń dokument</button>
           {else}<button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń dokument</button>{/if}
         </form>
+        {/if}
         {/if}
       </div>
     </details>

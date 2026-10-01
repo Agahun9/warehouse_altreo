@@ -445,9 +445,9 @@
               {/if}
               {if $currentUser.role eq 'admin' or in_array('sellasist', $currentUser.modules)}
                 <li class="nav-item">
-                  <a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link{if $currentController eq 'sellasist'} active{/if}">
+                  <a href="{$baseUrl}?controller=sellasist&action=zbieranie" class="nav-link{if $currentController eq 'sellasist' or $currentController eq 'salescenter'} active{/if}">
                     <i class="nav-icon bi bi-bag-check"></i>
-                    <p>Sellasist</p>
+                    <p>Naklejki</p>
                   </a>
                 </li>
               {/if}

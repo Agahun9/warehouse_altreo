@@ -158,6 +158,37 @@ class SellasistService
         );
     }
 
+    /** Buduje ten sam zestaw naklejek dla zamówień przekazanych przez integrację SalesCenter. */
+    public function generateStickersFromOrders(array $orders): array
+    {
+        if (!$orders) { throw new RuntimeException('Nie znaleziono wybranych zamówień.'); }
+        $caseStickers = array();
+        $glassStickers = array();
+        foreach ($orders as $order) {
+            if (!is_array($order)) { continue; }
+            $entries = $this->buildOrderStickers($order);
+            $caseStickers = array_merge($caseStickers, $entries['case']);
+            $glassStickers = array_merge($glassStickers, $entries['glass']);
+        }
+        usort($caseStickers, array($this, 'compareStickerRows'));
+        usort($glassStickers, array($this, 'compareStickerRows'));
+        $glassNumbers = $this->buildGlassNumberMap($glassStickers);
+        foreach ($glassStickers as $index => $sticker) {
+            $glassKey = (string) ($sticker['glass_key'] ?? '');
+            $glassStickers[$index]['glass_number'] = $glassKey !== '' && isset($glassNumbers[$glassKey]) ? $glassNumbers[$glassKey] : '';
+        }
+        foreach ($caseStickers as $index => $sticker) {
+            $glassKey = (string) ($sticker['glass_key'] ?? '');
+            $caseStickers[$index]['glass_number'] = $glassKey !== '' && isset($glassNumbers[$glassKey]) ? $glassNumbers[$glassKey] : '';
+        }
+        return array(
+            'case_stickers' => $caseStickers,
+            'glass_stickers' => $glassStickers,
+            'barcode_base_url' => $this->baseUrl() . '/api/get_barcode',
+            'warnings' => array(),
+        );
+    }
+
     public function subtractStockForOrder(int $orderId): array
     {
         $order = $this->getOrderById($orderId);

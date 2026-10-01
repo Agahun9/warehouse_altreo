@@ -283,7 +283,7 @@ final class OrderAutomationService
         }
         unset($condition);
         $options['match']=self::matchMode($conditions);
-        $options+=['run_limit'=>$legacyRule && (string)$row['trigger_name']==='import'?'once':'every','button_order'=>false,'button_list'=>false,'stop_on_error'=>false,'delay'=>null,'shortcut'=>''];
+        $options+=['run_limit'=>$legacyRule && (string)$row['trigger_name']==='import'?'once':'every','button_order'=>false,'button_list'=>false,'stop_on_error'=>false,'delay'=>null,'shortcut'=>'','skip_confirm'=>false];
         $options['shortcut']=(string)$options['shortcut'];
         return ['id'=>(int)$row['id'],'name'=>(string)$row['name'],'enabled'=>(bool)(int)$row['enabled'],'position'=>(int)($row['position']??0),'group_id'=>(int)($row['group_id']??0),'triggers'=>array_values(array_map('strval',$triggers)),'conditions'=>array_values($conditions),'actions'=>array_values($actions),'options'=>$options];
     }
@@ -413,7 +413,8 @@ final class OrderAutomationService
 
     /**
      * Rules sharing a name form one button in the order ("Pakuj" with variants per condition set),
-     * so the same name may not repeat the same conditions and one shortcut may not serve two buttons.
+     * so the same name may not repeat the same conditions. A shortcut, like a name, may be shared by many rules:
+     * pressing it runs the first rule (by position) whose triggers and conditions match.
      */
     private function assertDistinctRule(array $rule,int $id): void
     {
@@ -428,9 +429,6 @@ final class OrderAutomationService
                 throw new InvalidArgumentException('Istnieje już automatyzacja „'.$other['name'].'” (#'.$other['id'].') '.($rule['conditions']?'z takimi samymi warunkami (JEŻELI)':'bez warunków (każde zamówienie)').'. Reguły o tej samej nazwie tworzą w zamówieniu jeden przycisk, więc muszą różnić się warunkami — zmień warunki albo nazwę.');
             }
             if ($shortcut==='' || $otherShortcut==='') { continue; }
-            if (!$sameName && $otherShortcut===$shortcut) {
-                throw new InvalidArgumentException('Skrót '.$shortcut.' jest już przypisany do automatyzacji „'.$other['name'].'” (#'.$other['id'].'). Wybierz inny skrót.');
-            }
             if ($sameName && $otherShortcut!==$shortcut) {
                 throw new InvalidArgumentException('Automatyzacje o nazwie „'.$other['name'].'” mają wspólny przycisk ze skrótem '.$otherShortcut.'. Ustaw ten sam skrót albo zostaw pole puste.');
             }
@@ -495,7 +493,7 @@ final class OrderAutomationService
         if (!$triggers) { throw new InvalidArgumentException('Wybierz przynajmniej jeden wyzwalacz.'); }
         foreach ($triggers as $trigger) { if (!isset($triggerDefinitions[$trigger])) { throw new InvalidArgumentException('Nieznany wyzwalacz automatyzacji.'); } }
         $source=is_array($input['options']??null)?$input['options']+$input:$input;
-        $options=['match'=>($source['match']??'all')==='any'?'any':'all','run_limit'=>($source['run_limit']??'every')==='once'?'once':'every','button_order'=>!empty($source['button_order']),'button_list'=>!empty($source['button_list']),'stop_on_error'=>!empty($source['stop_on_error']),'delay'=>null,'shortcut'=>''];
+        $options=['match'=>($source['match']??'all')==='any'?'any':'all','run_limit'=>($source['run_limit']??'every')==='once'?'once':'every','button_order'=>!empty($source['button_order']),'button_list'=>!empty($source['button_list']),'stop_on_error'=>!empty($source['stop_on_error']),'delay'=>null,'shortcut'=>'','skip_confirm'=>!empty($source['skip_confirm'])];
         if ($options['button_order']) { $options['shortcut']=self::normalizeShortcut((string)(is_scalar($source['shortcut']??null)?$source['shortcut']:'')); }
         if (in_array('scheduled',$triggers,true)) {
             $delay=is_array($source['delay']??null)?$source['delay']:[];
@@ -691,7 +689,7 @@ final class OrderAutomationService
     {
         $result=['order'=>[],'list'=>[]];
         foreach ($this->allRules(true) as $rule) {
-            $confirm=$this->describe($rule)['has_costly_action'];
+            $confirm=$this->describe($rule)['has_costly_action'] && empty($rule['options']['skip_confirm']);
             $key=self::nameKey($rule['name']);
             foreach (['order','list'] as $place) {
                 if (!$rule['options']['button_'.$place]) { continue; }
@@ -748,7 +746,7 @@ final class OrderAutomationService
             }
             $matches=self::combine(array_map(static function (array $condition,array $item): array { return [$condition['join']??'and',['pass'=>true,'fail'=>false,'event'=>null][$item['state']]]; },$rule['conditions'],$items));
             $described=$this->describe($rule);
-            $result[]=['id'=>$rule['id'],'name'=>$rule['name'],'match'=>$matches,'conditions'=>$items,'triggers'=>$described['trigger_items'],'actions'=>$described['action_items'],'last_run_at'=>(string)($lastRuns[$rule['id']]??''),'button_order'=>$rule['options']['button_order'],'confirm'=>$described['has_costly_action']];
+            $result[]=['id'=>$rule['id'],'name'=>$rule['name'],'match'=>$matches,'conditions'=>$items,'triggers'=>$described['trigger_items'],'actions'=>$described['action_items'],'last_run_at'=>(string)($lastRuns[$rule['id']]??''),'button_order'=>$rule['options']['button_order'],'confirm'=>$described['has_costly_action'] && empty($rule['options']['skip_confirm'])];
         }
         return $result;
     }
@@ -781,6 +779,10 @@ final class OrderAutomationService
             $key=self::nameKey($rule['name']);
             $group=array_values(array_filter($this->allRules(true),static function (array $other) use ($key,$button): bool { return $other['options']['button_'.$button] && self::nameKey($other['name'])===$key; }));
             if ($group) { $ruleIds=array_column($group,'id'); }
+        } elseif ($button==='shortcut' && $rule['options']['shortcut']!=='') {
+            $shortcut=$rule['options']['shortcut'];
+            $group=array_values(array_filter($this->allRules(true),static function (array $other) use ($shortcut): bool { return $other['options']['button_order'] && $other['options']['shortcut']===$shortcut; }));
+            if ($group) { $ruleIds=array_column($group,'id'); }
         }
         $this->report=['executed'=>0,'skipped'=>0,'errors'=>0,'messages'=>[]];
         foreach (array_values(array_unique(array_map('intval',$orderIds))) as $orderId) {
@@ -791,7 +793,7 @@ final class OrderAutomationService
         $parts=['wykonano: '.$report['executed']];
         if ($report['skipped']) { $parts[]='pominięto (warunki niespełnione): '.$report['skipped']; }
         if ($report['errors']) { $parts[]='z błędami: '.$report['errors']; }
-        $report['message']='Automatyzacja „'.$rule['name'].'” — '.implode(', ',$parts).'.'.($report['messages']?' '.implode(' ',array_slice($report['messages'],0,3)):'');
+        $report['message']=($button==='shortcut'?'Skrót '.$rule['options']['shortcut']:'Automatyzacja „'.$rule['name'].'”').' — '.implode(', ',$parts).'.'.($report['messages']?' '.implode(' ',array_slice($report['messages'],0,3)):'');
         return $report;
     }
 
@@ -1406,12 +1408,8 @@ final class OrderAutomationService
         if (!$shipment) { return ['state'=>'skipped','message'=>'Brak nadanego numeru przesyłki']; }
         $code=(string)$params['carrier']; $other=(string)($params['carrier_other']??'');
         if ($code==='auto') {
-            $presentation=OrderShipmentService::presentation($shipment,$order);
-            $haystack=mb_strtolower($presentation['carrier'].' '.$presentation['service'].' '.($order['details']['delivery']??''),'UTF-8');
-            $code='other'; $other=(string)$presentation['carrier'];
-            foreach (['inpost'=>['inpost','paczkomat'],'dpd'=>['dpd'],'gls'=>['gls'],'dhl'=>['dhl'],'ups'=>['ups'],'fedex'=>['fedex'],'orlen'=>['orlen'],'pocztex'=>['pocztex','poczta']] as $candidate=>$needles) {
-                foreach ($needles as $needle) { if (strpos($haystack,$needle)!==false) { $code=$candidate; break 2; } }
-            }
+            [$code,$other]=OrderMarketplaceShipmentService::guessCarrier($shipment,$order);
+            if ($code==='') { $code='other'; }
         }
         $message=(new OrderMarketplaceShipmentService($this->repo))->publishShipment((int)$shipment['id'],$code,$other,$actor);
         $ctx['cache']=[];

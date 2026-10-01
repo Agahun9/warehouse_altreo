@@ -7,6 +7,8 @@
       <tr><td><span class="sc-method get">GET</span></td><td><code>/v1/orders/{literal}{id}{/literal}</code></td><td>Status w SalesCenter, płatność, numery przesyłek i dokumentów.</td></tr>
       <tr><td><span class="sc-method get">GET</span></td><td><code>/v1/orders?updated_since=2026-09-01T00:00:00Z</code></td><td>Zamówienia zmienione od daty (maks. 100) – do aktualizacji statusów w sklepie.</td></tr>
       <tr><td><span class="sc-method get">GET</span></td><td><code>/v1/statuses</code></td><td>Lista statusów firmy.</td></tr>
+      <tr><td><span class="sc-method get">GET</span></td><td><code>/v1/picking/orders?status_id=2&amp;limit=100&amp;offset=0</code></td><td>Zamówienia z wybranego statusu dla magazynowego zbierania (stronicowanie; pozycje zawierają nazwę, SKU i ilość).</td></tr>
+      <tr><td><span class="sc-method post">PUT</span></td><td><code>/v1/picking/orders/{literal}{id}{/literal}/status</code></td><td>Zmienia status po wydruku; JSON: <code>{literal}{"status_id":3}{/literal}</code>.</td></tr>
       <tr><td><span class="sc-method get">GET</span></td><td><code>/v1/ping</code></td><td>Test tokenu.</td></tr>
     </table>
     <p><strong>Przykład – nowe zamówienie</strong> (wymagane: <code>id</code>, <code>created_at</code>, <code>items</code>):</p>

@@ -26,6 +26,12 @@
       if (event.ctrlKey && event.altKey && event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
       event.preventDefault();
       button.closest('details')?.removeAttribute('open');
+      // Many rules may share a shortcut: the server runs the first one whose triggers and conditions match.
+      if (button.form && !button.form.querySelector('input[name="via_shortcut"]')) {
+        const flag = document.createElement('input');
+        flag.type = 'hidden'; flag.name = 'via_shortcut'; flag.value = '1';
+        button.form.appendChild(flag);
+      }
       button.click();
     });
   }
@@ -231,7 +237,7 @@
     state.options = {
       match: 'all',
       run_limit: options.run_limit === 'once' ? 'once' : 'every',
-      button_order: Boolean(options.button_order), button_list: Boolean(options.button_list), stop_on_error: Boolean(options.stop_on_error),
+      button_order: Boolean(options.button_order), button_list: Boolean(options.button_list), stop_on_error: Boolean(options.stop_on_error), skip_confirm: Boolean(options.skip_confirm),
       shortcut: typeof options.shortcut === 'string' ? options.shortcut : '',
       delay: { value: 24, unit: 'hours', from: 'status', ...(options.delay || {}) },
     };
@@ -626,6 +632,7 @@
         shortcutField(),
         optionToggle('button_list', 'Akcja masowa na liście zamówień', 'Uruchomisz ją dla zaznaczonych zamówień (do 50 naraz).', 'bi-list-check'),
         optionToggle('stop_on_error', 'Zatrzymaj po błędzie kroku', 'Gdy krok się nie powiedzie, kolejne efekty nie zostaną wykonane.', 'bi-sign-stop'),
+        optionToggle('skip_confirm', 'Uruchom bez pytania', 'Przycisk i skrót w zamówieniu wykonają automatyzację od razu, bez okna „Czy na pewno uruchomić?”.', 'bi-lightning-charge'),
       ]),
     );
   };

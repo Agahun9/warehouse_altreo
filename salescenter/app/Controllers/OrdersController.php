@@ -73,7 +73,7 @@ final class OrdersController extends Controller
         $activeFilterCount=count(array_filter($filters,static function ($value,$key) {
             return !in_array($key,['page','sort','status_id','group'],true) && $value!=='' && $value!==null;
         },ARRAY_FILTER_USE_BOTH));
-        $detail=null; $events=[]; $orderDocs=[]; $orderShipments=[]; $issuedDocuments=['receipt'=>null,'invoice'=>null];
+        $detail=null; $events=[]; $orderMessages=null; $orderDocs=[]; $orderShipments=[]; $issuedDocuments=['receipt'=>null,'invoice'=>null];
         if ((int)$this->input('id',0)>0) {
             $detail=$repo->order((int)$this->input('id'));
             $sellerId=$detail['platform']==='allegro'?$this->allegroSellerId($repo,(int)($detail['account_source_id']??0)):'';
@@ -86,6 +86,7 @@ final class OrdersController extends Controller
             $detail['source_order_url']=$this->sourceOrderUrl((string)$detail['platform'],(string)$detail['external_id'],$sellerId);
             $detail['raw_debug']=json_encode($detail['details']['raw']??[],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $detail['notes']=$repo->notes((int)$detail['id']);
+            $orderMessages=$this->orderMessages($detail);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
             $orderDocs=$this->db()->fetchAll('SELECT id,number,kind,created_at FROM om_documents WHERE order_id=:id ORDER BY id DESC',['id'=>$detail['id']]);
             foreach ($orderDocs as $orderDocument) {
@@ -147,10 +148,30 @@ final class OrdersController extends Controller
             },(array)($snap['items']??[]));
             $documents[]=$docRow;
         }
+        $seriesById=array_column($series,null,'id');
+        $fiscalByOrder=[];
+        $documentOrderIds=array_values(array_unique(array_map('intval',array_column($documents,'order_id'))));
+        if ($documentOrderIds) {
+            foreach ($this->db()->fetchAll('SELECT j.order_id,j.status,j.status_message,j.fiscal_number,j.reported_at,p.name AS printer_name FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id WHERE j.order_id IN ('.implode(',',$documentOrderIds).') ORDER BY j.created_at DESC,j.id DESC') as $jobRow) {
+                $jobRow['retry_allowed']=PrintAgentRepository::fiscalRetryAllowed($jobRow);
+                if (!isset($fiscalByOrder[$jobRow['order_id']])) { $fiscalByOrder[$jobRow['order_id']]=$jobRow; }
+            }
+        }
+        foreach ($documents as &$documentRow) {
+            $documentSeries=$seriesById[$documentRow['series_id']]??[];
+            $documentRow['fiscal_job']=$fiscalByOrder[$documentRow['order_id']]??null;
+            $documentRow['effective_printer_id']=(int)($documentSeries['effective_printer_id']??0);
+            $documentRow['non_fiscal']=!empty($documentSeries['document_settings']['non_fiscal']);
+        }
+        unset($documentRow);
         $ksef=$this->ksef($repo);
         $ksefDocumentIds=array_merge(array_column($documents,'id'),array_column($orderDocs,'id'));
         $ksefSubmissions=$ksef->latest($ksefDocumentIds);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
+        $printStations=$printAgents->stations();
+        $labelActionPrinterDefault=$repo->setting('label_printer_action')+['target'=>''];
+        $labelPrinterDefault=$repo->setting('label_printer_user_'.(int)($user['id']??0))+['target'=>$labelActionPrinterDefault['target'],'width'=>100,'height'=>150];
+        if ($labelActionPrinterDefault['target']!=='') { $labelPrinterDefault['target']=$labelActionPrinterDefault['target']; }
         $automation=$repo->automation();
         $automationView=['stats'=>['active'=>0,'paused'=>0,'runs_24h'=>0,'errors_24h'=>0],'log'=>[],'groups'=>[],'edit'=>null,'catalog_json'=>'{}','rule_json'=>'null','template'=>''];
         if ($tab==='rules') {
@@ -196,7 +217,7 @@ final class OrdersController extends Controller
             'integrations'=>$integrationsView,
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
             'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$dashboard,'statusGroups'=>$statusGroups,
-            'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,
+            'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderMessages'=>$orderMessages,'orderLayout'=>$detail?$this->savedOrderLayout($repo,(int)($user['id']??0)):[],'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,'autoRefreshShipmentId'=>(int)$this->input('auto_refresh_shipment',0),'autoRefreshAttempt'=>max(1,(int)$this->input('auto_attempt',1)),
             'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),
             'mappings'=>$this->db()->fetchAll('SELECT m.*,a.name account_name,a.platform,s.name status_name FROM om_mappings m JOIN om_accounts a ON a.id=m.account_id JOIN om_statuses s ON s.id=m.status_id ORDER BY a.platform,a.name,m.remote_status'),
             'rules'=>$tab==='rules'?$repo->rules():[],'automation'=>$automationView,'manualRules'=>$automation->manualRules(),
@@ -207,8 +228,8 @@ final class OrdersController extends Controller
             'shipments'=>$shipmentRegister,'deliveryOverview'=>$tab==='shipments'?OrderShipmentService::deliveryOverview($repo):[],'shippingProviders'=>$tab==='shipments'?ShippingProviders::catalog($this->carrierAccountStats($carrierAccounts),$repo->accounts()):[],
             'shippingView'=>['selected'=>(int)$this->input('carrier',0),'add'=>preg_replace('/[^a-z_]/','',(string)$this->input('add',''))],
             'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
-            'labelPrinterDefault'=>$repo->setting('label_printer_user_'.(int)($user['id']??0))+['target'=>'','width'=>100,'height'=>150],
-            'printStations'=>$printAgents->stations(),'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
+            'labelPrinterDefault'=>$labelPrinterDefault,'labelActionPrinterDefault'=>$labelActionPrinterDefault,
+            'printStations'=>$printStations,'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
     }
@@ -314,6 +335,36 @@ final class OrdersController extends Controller
             $this->jsonResponse(['ok'=>true,'starred'=>$starred]);
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
+    }
+    /** Kolejność bloków karty zamówienia zapisana w ustawieniach konta (osobno dla każdego użytkownika). */
+    public function orderlayout(): void
+    {
+        try {
+            if (!$this->apiUser(false)) { return; }
+            if (!$this->isPost()) { $this->jsonResponse(['error'=>'Wymagany POST.','code'=>'METHOD_NOT_ALLOWED'],405); return; }
+            if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { $this->jsonResponse(['error'=>'Token formularza wymaga odświeżenia.','code'=>'CSRF_EXPIRED'],419); return; }
+            $user=$this->currentUser();
+            $layout=empty($_POST['reset'])?self::layoutInput(['main'=>(string)($_POST['main']??''),'cards'=>(string)($_POST['cards']??'')]):['main'=>[],'cards'=>[]];
+            $this->repository()->saveSetting('order_layout_user_'.(int)($user['id']??0),$layout);
+            $this->jsonResponse(['ok'=>true,'layout'=>$layout]);
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
+    }
+    private const LAYOUT_BLOCKS=['main'=>['om-notes','om-inline-data','om-messages','om-shipping','om-documents','om-payment-info','om-automation','om-history','om-raw-debug'],'cards'=>['buyer','delivery','billing','payment']];
+    private function savedOrderLayout(OrderRepository $repo,int $userId): array
+    {
+        try { return self::layoutInput($repo->setting('order_layout_user_'.$userId)); }
+        catch (\Throwable $e) { return ['main'=>[],'cards'=>[]]; }
+    }
+    /** Zostawia tylko znane identyfikatory bloków, bez powtórzeń. */
+    private static function layoutInput(array $input): array
+    {
+        $layout=[];
+        foreach (self::LAYOUT_BLOCKS as $group=>$allowed) {
+            $ids=is_array($input[$group]??null)?$input[$group]:explode(',',(string)($input[$group]??''));
+            $layout[$group]=array_values(array_unique(array_intersect(array_map('trim',array_map('strval',$ids)),$allowed)));
+        }
+        return $layout;
     }
     /** Adds (op=add), edits (op=update) or deletes (op=delete) one internal note; returns the order's notes. */
     public function ordernote(): void
@@ -431,6 +482,11 @@ final class OrdersController extends Controller
                     $tab='list';
                     $this->setFlash('success','Utworzono nowe zamówienie.');
                     break;
+                case 'copy_order':
+                    $withItems=!empty($_POST['with_items']);
+                    $id=$repo->copyOrder($id,$withItems,$actor);
+                    $successMessage=$withItems?'Skopiowano zamówienie z produktami.':'Skopiowano zamówienie bez produktów — uzupełnij pozycje.';
+                    break;
                 case 'bulk':
                     $ids=array_unique(array_map('intval',(array)($_POST['ids']??[])));
                     if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
@@ -509,9 +565,10 @@ final class OrdersController extends Controller
                 case 'run_rule':
                     $ids=isset($_POST['ids'])?array_values(array_unique(array_filter(array_map('intval',(array)$_POST['ids'])))):($id>0?[$id]:[]);
                     if (!$ids || count($ids)>50) { throw new InvalidArgumentException('Zaznacz od 1 do 50 zamówień.'); }
-                    $button=isset($_POST['rule_group'])?(isset($_POST['ids'])?'list':'order'):'';
+                    $button=isset($_POST['rule_group'])?(isset($_POST['ids'])?'list':(!empty($_POST['via_shortcut'])?'shortcut':'order')):'';
                     $report=$repo->automation()->runManual($ids,(int)($_POST['rule_group']??$_POST['rule_id']??0),$actor,$button);
-                    if (isset($_POST['ids'])) { $tab='list'; $id=0; } else { $redirectQuery='#om-automation'; }
+                    // Przycisk „Automaty” w nagłówku i skrót zostawiają widok na górze; kotwica tylko dla sekcji automatyzacji na dole.
+                    if (isset($_POST['ids'])) { $tab='list'; $id=0; } elseif ($button==='') { $redirectQuery='#om-automation'; }
                     if ($report['errors']) { throw new InvalidArgumentException($report['message']); }
                     $successMessage=$report['message'];
                     break;
@@ -531,6 +588,21 @@ final class OrdersController extends Controller
                     $repo->saveSetting('receipt_printer',['printer_id'=>$printerId]);
                     $successMessage=$printerId>0?'Zapisano drukarkę do automatycznego druku paragonów.':'Wyłączono automatyczny druk paragonów.';
                     $tab='documents';
+                    break;
+                case 'label_printer_action':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $target=trim((string)($_POST['printer_target']??''));
+                    if ($target!=='') {
+                        [$stationId,$printerName]=array_pad(explode('|',$target,2),2,'');
+                        $stationId=(int)$stationId;
+                        $station=$db->fetch('SELECT id,enabled,printers_json FROM print_agent_stations WHERE id=:id',['id'=>$stationId]);
+                        $printers=$station?json_decode((string)$station['printers_json'],true):[];
+                        if (!$station || !(int)$station['enabled'] || !is_array($printers) || !in_array($printerName,$printers,true)) { throw new InvalidArgumentException('Wybierz drukarkę etykiet z aktywnego stanowiska.'); }
+                        $target=$stationId.'|'.$printerName;
+                    }
+                    $repo->saveSetting('label_printer_action',['target'=>$target]);
+                    $successMessage=$target!==''?'Przypisano domyślną drukarkę do etykiety kurierskiej.':'Usunięto domyślne przypisanie drukarki do etykiety kurierskiej.';
+                    $tab='printing';
                     break;
                 case 'series':
                     $kind=(string)($_POST['kind']??''); $numbering=$this->seriesNumbering(); $pattern=$numbering ? $this->seriesPattern($numbering) : $this->required('pattern',100);
@@ -560,6 +632,27 @@ final class OrdersController extends Controller
                     if ($db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId])) { throw new InvalidArgumentException('Nie można usunąć serii, w której wystawiono już dokumenty.'); }
                     $db->delete('om_series','id=:id',['id'=>$seriesId]);
                     $successMessage='Usunięto serię „'.$existingSeries['name'].'”.';
+                    break;
+                case 'document_remote_retry':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $jobId=$printAgents->retryFiscalReceipt((int)($_POST['document_id']??0),$actor);
+                    $successMessage='Paragon ponownie przekazano do Posnet po poprawieniu stawek VAT (zadanie '.$jobId.').';
+                    $tab='documents';
+                    break;
+                case 'document_remote_print':
+                    $documentId=(int)($_POST['document_id']??0);
+                    $document=$db->fetch('SELECT d.*,s.document_settings_json FROM om_documents d LEFT JOIN om_series s ON s.id=d.series_id WHERE d.id=:id',['id'=>$documentId]);
+                    if (!$document || $document['kind']!=='receipt') { throw new InvalidArgumentException('Zdalny druk Posnet wymaga wystawionego paragonu.'); }
+                    $printerId=(int)($_POST['fiscal_printer_id']??0);
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printer=$db->fetch('SELECT name,environment FROM print_fiscal_printers WHERE id=:id AND enabled=1 AND deleted_at IS NULL',['id'=>$printerId]);
+                    if (!$printer) { throw new InvalidArgumentException('Wybierz aktywną drukarkę Posnet.'); }
+                    $documentSettings=json_decode((string)($document['document_settings_json']??''),true)?:[];
+                    if (!empty($documentSettings['non_fiscal']) && $printer['environment']==='production') { throw new InvalidArgumentException('Seria niefiskalna może być drukowana wyłącznie w trybie SANDBOX.'); }
+                    $jobId=$printAgents->queueFiscalReceipt((int)$document['order_id'],$printerId,$actor,$documentId);
+                    $repo->event((int)$document['order_id'],'Zdalnie przekazano paragon '.$document['number'].' do Posnet '.$printer['name'].' (zadanie '.$jobId.').',$actor);
+                    $successMessage='Paragon '.$document['number'].' przekazano do agenta Posnet '.$printer['name'].'. Wynik będzie widoczny przy dokumencie i w zakładce Drukowanie.';
+                    $tab='documents';
                     break;
                 case 'document_update':
                     $documentId=(int)($_POST['document_id']??0);
@@ -685,10 +778,14 @@ final class OrdersController extends Controller
                     if ($submission['state']==='rejected') { throw new InvalidArgumentException($successMessage); }
                     break;
                 case 'create_shipment':
-                    (new OrderShipmentService($repo))->create($id,(int)($_POST['carrier_account_id']??0),$_POST,$actor);
+                    $createdShipmentId=(new OrderShipmentService($repo))->create($id,(int)($_POST['carrier_account_id']??0),$_POST,$actor);
+                    if ($createdShipmentId>0) { $redirectQuery='&auto_refresh_shipment='.$createdShipmentId; }
                     break;
                 case 'refresh_shipment':
-                    (new OrderShipmentService($repo))->refresh((int)($_POST['shipment_id']??0),$actor);
+                    $refreshedShipmentId=(int)($_POST['shipment_id']??0);
+                    (new OrderShipmentService($repo))->refresh($refreshedShipmentId,$actor);
+                    $autoAttempt=(int)($_POST['auto_attempt']??0);
+                    if ($autoAttempt>0 && $autoAttempt<6 && strpos((string)$db->fetchColumn('SELECT tracking FROM om_shipments WHERE id=:id',['id'=>$refreshedShipmentId]),'PENDING:')===0) { $redirectQuery='&auto_refresh_shipment='.$refreshedShipmentId.'&auto_attempt='.($autoAttempt+1); }
                     break;
                 case 'publish_shipment':
                     $successMessage=(new OrderMarketplaceShipmentService($repo))->publishShipment((int)($_POST['shipment_id']??0),(string)($_POST['source_carrier']??''),(string)($_POST['source_carrier_other']??''),$actor);
@@ -1052,6 +1149,46 @@ final class OrdersController extends Controller
         $state=$cod?'cod':((int)$detail['paid']?'paid':((int)($detail['details']['amount_paid_cents']??0)>0?'partial':'unpaid'));
         $stateLabels=['cod'=>'Za pobraniem','paid'=>'Opłacone','partial'=>'Częściowo opłacone','unpaid'=>'Nieopłacone'];
         return $info+['platform_label'=>$platformLabel,'state'=>$state,'state_label'=>$stateLabels[$state],'confirmed_by'=>$confirmedBy,'confirmed_at'=>$confirmedAt];
+    }
+    /** Wiadomości klienta do karty zamówienia: wątki z Centrum wiadomości, liczniki nieprzeczytanych i czekających. */
+    private function orderMessages(array $detail): array
+    {
+        $result=['threads'=>[],'total'=>0,'customer'=>0,'unread'=>0,'waiting'=>0,'error'=>''];
+        try {
+            $messages=new \App\Models\MessageRepository($this->db());
+            $raw=(array)($detail['details']['raw']??[]);
+            $logins=[(string)($raw['buyer']['login']??''),(string)($detail['email']??''),(string)($detail['shipping_address']['email']??'')];
+            $threads=$messages->customerThreads((int)$detail['id'],(int)($detail['account_source_id']??0),(string)$detail['external_id'],$logins);
+            $statuses=$messages->statuses();
+            $zone=new \DateTimeZone('Europe/Warsaw');
+            $local=static function (?string $utc) use ($zone): string {
+                if (!$utc) { return ''; }
+                try { return (new \DateTimeImmutable($utc,new \DateTimeZone('UTC')))->setTimezone($zone)->format('d.m.Y H:i'); } catch (\Throwable $e) { return $utc; }
+            };
+            foreach ($threads as &$thread) {
+                $thread['unread']=$thread['status']==='new';
+                $thread['waiting']=!empty($thread['needs_reply']) && empty($thread['remote_closed']);
+                $thread['status_label']=(string)($statuses[$thread['status']]['label']??$thread['status']);
+                $thread['status_color']=(string)($statuses[$thread['status']]['color']??'#64748b');
+                $thread['kind_label']=\App\Models\MessageRepository::KIND_LABELS[$thread['kind']]??$thread['kind'];
+                $thread['last_label']=$local($thread['last_message_at']??null);
+                $thread['customer_count']=0;
+                foreach ($thread['messages'] as &$message) {
+                    $message['time_label']=$local($message['created_at']??null);
+                    if ($message['author_role']==='customer') { $thread['customer_count']++; }
+                }
+                unset($message);
+                $result['total']+=count($thread['messages']);
+                $result['customer']+=$thread['customer_count'];
+                if ($thread['unread']) { $result['unread']++; }
+                if ($thread['waiting']) { $result['waiting']++; }
+            }
+            unset($thread);
+            $result['threads']=$threads;
+        } catch (\Throwable $e) {
+            $result['error']='Nie udało się wczytać wiadomości klienta.';
+        }
+        return $result;
     }
     private function sourceOrderUrl(string $platform,string $externalId,string $sellerId=''): string
     {

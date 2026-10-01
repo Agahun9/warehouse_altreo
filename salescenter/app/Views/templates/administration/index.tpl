@@ -12,6 +12,27 @@
       <button class="btn btn-primary">Zapisz notatki</button>
     </form>
   </div></div>
+  <div class="card mb-4" id="warehouse-api"><div class="card-body">
+    <h2 class="h5">API zbierania magazynowego</h2>
+    <p class="text-secondary small">Token jest przypisany do firmy <strong>{$warehouseApiTenant|escape}</strong> i ograniczony do pobierania jej zamówień z wybranego statusu oraz zmiany statusu po wydruku. Wygenerowanie nowego unieważni poprzedni token dla tego API.</p>
+    <dl class="row small mb-3">
+      <dt class="col-sm-3">Adres API</dt><dd class="col-sm-9"><code>{$warehouseApiBase|escape}</code></dd>
+      <dt class="col-sm-3">Pobieranie</dt><dd class="col-sm-9"><code>{$warehouseApiPickingUrl|escape}</code></dd>
+      <dt class="col-sm-3">Autoryzacja</dt><dd class="col-sm-9"><code>Authorization: Bearer &lt;token&gt;</code></dd>
+      {if $warehouseApi}<dt class="col-sm-3">Token zapisany</dt><dd class="col-sm-9">{if $warehouseApi.status eq 'active'}Aktywny{else}Nieaktywny{/if}, końcówka <code>…{$warehouseApi.token_hint|escape}</code></dd>{/if}
+    </dl>
+    {if $warehouseApiToken}
+      <div class="alert alert-success">
+        <strong>Skopiuj token teraz — później nie będzie można go odczytać.</strong>
+        <input class="form-control font-monospace mt-2" value="{$warehouseApiToken|escape}" readonly onclick="this.select()" aria-label="Nowy token API zbierania">
+      </div>
+    {/if}
+    <form method="post" action="index.php?controller=administration&action=warehouseapitoken" onsubmit="return confirm('Nowy token unieważni poprzedni token API zbierania. Wygenerować?')">
+      <input type="hidden" name="csrf" value="{$csrf|escape}">
+      <button class="btn btn-primary">{if $warehouseApi}Wygeneruj nowy token{else}Wygeneruj token API{/if}</button>
+    </form>
+    <p class="small text-secondary mt-2 mb-0">Wklej token do ustawień zbierania SalesCenter w CRM magazynu. W polu adresu podaj adres bazowy tej aplikacji, np. <code>https://magazyn.altreo.pl/crm/new_version/salescenter</code>.</p>
+  </div></div>
   <div class="card mb-4" id="allegro-app"><div class="card-body">
     <h2 class="h5">Aplikacja Allegro</h2>
     {if $allegroApp.configured}

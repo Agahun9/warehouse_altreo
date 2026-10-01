@@ -384,7 +384,7 @@ check($automation->saveRule($packB,$automation->rule($packB)+$automation->rule($
 $automation->saveRule(0,['name'=>'Sygnatura','enabled'=>false,'triggers'=>['manual'],'conditions'=>[['field'=>'platform','op'=>'in','value'=>['allegro','erli']],['field'=>'paid','op'=>'is','value'=>'yes']],'actions'=>$packAction('x')]);
 rejects(fn()=>$automation->saveRule(0,['name'=>'sygnatura','triggers'=>['manual'],'conditions'=>[['field'=>'paid','op'=>'is','value'=>'yes'],['field'=>'platform','op'=>'in','value'=>['erli','allegro']]],'actions'=>$packAction('y')]),'IF comparison ignores condition and value order');
 check($automation->saveRule(0,['name'=>'Sygnatura','triggers'=>['manual'],'conditions'=>[['field'=>'paid','op'=>'is','value'=>'no']],'actions'=>$packAction('x')])>0,'Same name with different IF is allowed');
-rejects(fn()=>$automation->saveRule(0,['name'=>'Inna','triggers'=>['manual'],'actions'=>$packAction('x'),'options'=>['button_order'=>true,'shortcut'=>'Alt+P']]),'One shortcut cannot serve two buttons');
+check($automation->saveRule(0,['name'=>'Inna','enabled'=>false,'triggers'=>['manual'],'actions'=>$packAction('x'),'options'=>['button_order'=>true,'shortcut'=>'Alt+P']])>0,'Shortcut may be shared by differently named rules');
 rejects(fn()=>$automation->saveRule(0,['name'=>'Pakuj','triggers'=>['manual'],'conditions'=>[['field'=>'paid','op'=>'is','value'=>'no']],'actions'=>$packAction('x'),'options'=>['button_order'=>true,'shortcut'=>'Alt+K']]),'Variants share one shortcut');
 check($automation->rule($automation->saveRule(0,['name'=>'Bez przycisku','triggers'=>['manual'],'actions'=>$packAction('x'),'options'=>['shortcut'=>'Alt+P']]))['options']['shortcut']==='','Shortcut dropped without order button');
 rejects(fn()=>App\Services\OrderAutomationService::normalizeShortcut('P'),'Letter shortcut needs Ctrl or Alt');
@@ -400,6 +400,14 @@ $autoTags=$repo->order($autoId)['tags']; $otherTags=$repo->order($otherId)['tags
 check($groupReport['executed']===2 && $groupReport['skipped']===0 && $groupReport['errors']===0,'Group button runs one variant per order');
 check(strpos($autoTags,'pakuj-b')!==false && strpos($autoTags,'pakuj-a')===false && strpos($autoTags,'pakuj-c')===false && strpos($otherTags,'pakuj-c')!==false && strpos($otherTags,'pakuj-b')===false,'First matching variant wins');
 check($automation->runManual([$otherId],$packA,'Tester')['skipped']===1,'Single-rule run still checks only that rule');
+$sharedShortcut=$automation->saveRule(0,['name'=>'Inny skrót','enabled'=>true,'triggers'=>['manual'],'conditions'=>[['field'=>'tags','op'=>'any','value'=>'nie-ma-takiego']],'actions'=>$packAction('skrot-x'),'options'=>['button_order'=>true,'shortcut'=>'Alt+P']]);
+$shortcutReport=$automation->runManual([$otherId],$sharedShortcut,'Tester','shortcut');
+check($shortcutReport['executed']===1 && strpos($shortcutReport['message'],'Skrót Alt+P')===0 && strpos($repo->order($otherId)['tags'],'skrot-x')===false,'Shared shortcut runs the first rule whose conditions match');
+$db->update('om_rules',['enabled'=>0],'id=:id',['id'=>$sharedShortcut]);
+$silentShip=$automation->saveRule(0,['name'=>'Nadaj cicho','enabled'=>true,'triggers'=>['manual'],'actions'=>[['type'=>'create_shipment','params'=>['carrier_account_id'=>'0','package'=>'auto','service'=>'']]],'options'=>['button_order'=>true,'skip_confirm'=>true]]);
+$silentButton=array_values(array_filter($automation->manualRules()['order'],fn($button)=>$button['id']===$silentShip));
+check($automation->rule($silentShip)['options']['skip_confirm']===true && $silentButton && $silentButton[0]['confirm']===false,'Costly rule can run from the order button without confirmation');
+$db->update('om_rules',['enabled'=>0],'id=:id',['id'=>$silentShip]);
 $db->update('om_rules',['enabled'=>0],'id=:id',['id'=>$packC]);
 $noneReport=$automation->runManual([$otherId],$packA,'Tester','order');
 check($noneReport['executed']===0 && $noneReport['skipped']===1,'Group button skips order once when no variant matches');

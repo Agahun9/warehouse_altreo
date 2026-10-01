@@ -319,6 +319,37 @@ final class OrderRepository
         if ((int)$this->db->fetchColumn('SELECT paid FROM om_orders WHERE id=:id',['id'=>$id])) { $this->automationEvent($id,'paid',['payment_source'=>'user']); }
         return $id;
     }
+    /** Copies buyer, delivery and invoice data (optionally with items) into a new own order; payment is never copied. */
+    public function copyOrder(int $sourceId,bool $withItems,string $actor): int
+    {
+        $source=$this->order($sourceId);
+        $details=$source['details']; $ship=$source['shipping_address']; $invoice=$details['invoice_form'];
+        $items=[];
+        if ($withItems) {
+            foreach ((array)($details['items']??[]) as $item) {
+                if (!is_array($item) || trim((string)($item['name']??''))==='') { continue; }
+                $vat=strtolower((string)($item['vat']??'23'));
+                $items[]=['name'=>(string)$item['name'],'sku'=>(string)($item['sku']??''),'quantity'=>(string)max(0,(int)($item['quantity']??1)),'price'=>number_format((int)($item['unit_cents']??0)/100,2,'.',''),'vat'=>in_array($vat,['23','8','7','5','0','zw','np'],true)?$vat:'23'];
+            }
+        }
+        if (!$items) { $items[]=['name'=>'Pozycja','sku'=>'','quantity'=>'1','price'=>'0.00','vat'=>'23']; }
+        $statuses=$this->statuses();
+        $input=[
+            'status_id'=>(int)($statuses[0]['id']??0),'ordered_at'=>gmdate('Y-m-d H:i:s'),
+            'buyer_name'=>(string)$source['buyer_name'],'email'=>(string)$source['email'],'phone'=>(string)$source['phone'],'currency'=>(string)$source['currency'],
+            'items'=>$items,'shipping_price'=>number_format((int)($details['shipping_cents']??0)/100,2,'.',''),
+            'delivery'=>(string)($details['delivery']??''),'pickup'=>(string)($details['pickup']??''),'payment_method'=>(string)($details['payment_method']??''),
+            'cash_on_delivery'=>empty($details['cash_on_delivery'])?'':'1','amount_paid'=>'0.00','buyer_note'=>(string)($details['buyer_note']??''),
+            'document_preference'=>(string)$details['document_preference'],
+            'shipping_name'=>$ship['name'],'shipping_email'=>filter_var($ship['email'],FILTER_VALIDATE_EMAIL)?$ship['email']:'','shipping_phone'=>$ship['phone'],'shipping_street'=>$ship['street'],'shipping_building'=>$ship['building'],'shipping_postal_code'=>$ship['postal_code'],'shipping_city'=>$ship['city'],'shipping_country'=>$ship['country'],
+            'invoice_name'=>$invoice['name'],'invoice_company'=>$invoice['company'],'invoice_nip'=>$invoice['nip'],'invoice_street'=>$invoice['street'],'invoice_building'=>$invoice['building'],'invoice_postal_code'=>$invoice['postal_code'],'invoice_city'=>$invoice['city'],'invoice_country'=>$invoice['country'],
+        ];
+        if (!filter_var($input['email'],FILTER_VALIDATE_EMAIL)) { $input['email']=''; }
+        $id=$this->createManualOrder($input,$actor);
+        $this->event($id,'Skopiowano z zamówienia #'.$sourceId.($withItems?' (z produktami).':' (bez produktów).'),$actor);
+        $this->event($sourceId,'Utworzono kopię jako zamówienie #'.$id.'.',$actor);
+        return $id;
+    }
     private function rowLock(): string
     {
         return $this->db->pdo()->inTransaction() && $this->db->pdo()->getAttribute(\PDO::ATTR_DRIVER_NAME) !== 'sqlite' ? ' FOR UPDATE' : '';
@@ -383,8 +414,76 @@ final class OrderRepository
             'city'=>self::pick($invoice,['city']),
             'country'=>strtoupper(self::pick($invoice,['country','countryCode','country_code'],'PL')),
         ];
+        $raw=is_array($row['details']['raw']??null)?$row['details']['raw']:[];
+        $rawItems=$row['platform']==='allegro'?($raw['lineItems']??[]):(in_array($row['platform'],['empik','mediamarkt'],true)?($raw['order_lines']??[]):($raw['items']??[]));
+        foreach ((array)($row['details']['items']??[]) as $index=>$item) {
+            if (!is_array($item)) { continue; }
+            $row['details']['items'][$index]['offer_link']=self::offerLink((string)$row['platform'],$item,is_array($rawItems[$index]??null)?$rawItems[$index]:[],(string)($row['account_name']??''));
+        }
         unset($row['details_json']);
         return $row;
+    }
+
+    /** Link do oferty, z której kupiono pozycję: ['label'=>…,'url'=>…] albo [] gdy źródło go nie zna. */
+    public static function offerLink(string $platform,array $item,array $rawItem=[],string $accountName=''): array
+    {
+        $first=static function (array $sources,array $paths): string {
+            foreach ($sources as $source) {
+                foreach ($paths as $path) {
+                    $value=$source;
+                    foreach (explode('.',$path) as $key) { $value=is_array($value)&&array_key_exists($key,$value)?$value[$key]:null; }
+                    if (is_scalar($value) && trim((string)$value)!=='') { return trim((string)$value); }
+                }
+            }
+            return '';
+        };
+        $sources=[$item,$rawItem];
+        $name=trim((string)($item['name']??''));
+        $sku=trim((string)($item['sku']??''));
+        $url=$first($sources,['offer_url','productUrl','product_url','offerUrl']);
+        if ($url!=='' && !preg_match('#^https?://#i',$url)) { $url=''; }
+        $id='';
+        switch ($platform) {
+            case 'allegro':
+                $id=$first($sources,['offer_id','offer.id']);
+                if ($url==='' && preg_match('/^\d{5,20}$/D',$id)) { $url='https://allegro.pl/oferta/'.$id; }
+                break;
+            case 'erli':
+                $id=$first($sources,['external_id','productExternalId','externalId','product.externalId','product.id']);
+                break;
+            case 'empik':
+            case 'mediamarkt':
+                $id=$platform==='empik'?$first($sources,['product_sku','offer_id']):$first($sources,['offer_id']);
+                // Empik wyszukuje produkt po swoim product_sku (np. 1796582675); MediaMarkt po nazwie.
+                $query=$platform==='empik'?($first($sources,['product_sku']) ?: $name):($name!==''?$name:$first($sources,['product_sku','sku']));
+                if ($url==='' && $query!=='') { $url=$platform==='empik'?'https://www.empik.com/szukaj/produkt?q='.rawurlencode($query):'https://mediamarkt.pl/pl/search.html?query='.rawurlencode($query); }
+                break;
+            case 'morele':
+                $id=$first($sources,['offer_id','product_id']);
+                // Starsze importy bez offer_id: numer produktu jest w adresie zdjęcia (images.morele.net/full/15715904_0_f.jpg).
+                if ($id==='' && preg_match('#images\.morele\.net/[^/]+/(\d{4,12})_#',$first($sources,['image_url','thumbnail_url']),$match)) { $id=$match[1]; }
+                // Wyszukiwarka morele.net po numerze produktu prowadzi do jego karty.
+                if ($url==='' && $id!=='') { $url='https://www.morele.net/wyszukiwarka/?q='.rawurlencode($id).'&d=0'; }
+                elseif ($url==='' && $name!=='') { $url='https://www.morele.net/wyszukiwarka/?q='.rawurlencode($name); }
+                break;
+            case 'temu':
+                $id=$first($sources,['offer_id','goodsId']);
+                if ($url==='' && preg_match('/^\d{3,30}$/D',$id)) { $url='https://www.temu.com/goods.html?goods_id='.$id; }
+                break;
+            case 'altreo':
+                $id=$first($sources,['offer_id','product_id']);
+                if ($url==='' && $sku!=='') { $url='https://altreo.pl/szukaj?q='.rawurlencode($sku); }
+                break;
+            default:
+                $id=$first($sources,['offer_id','product_id']);
+                // API własnego sklepu: altreo.pl przekierowuje z wyszukiwarki prosto na kartę produktu o tym SKU.
+                if ($platform==='api' && $url==='' && $sku!=='' && (stripos($accountName,'altreo')!==false || stripos($sku,'ALTREO_')===0)) {
+                    $url='https://altreo.pl/szukaj?q='.rawurlencode($sku);
+                    if ($id==='') { $id=$sku; }
+                }
+        }
+        if ($id==='' && $url==='') { return []; }
+        return ['label'=>$id!==''?'Oferta '.$id:'Zobacz ofertę','url'=>$url];
     }
 
     public function updateOrderDetails(int $id,array $input,string $actor): void
@@ -594,6 +693,27 @@ final class OrderRepository
         if (preg_match('#^(?:uploads|img_components|dist)/[a-zA-Z0-9_./ -]+$#D',$candidate) && strpos($candidate,'..')===false) { return $candidate; }
         return '';
     }
+    /** Termin wysyłki („realizacja do”) podany przez marketplace; czas w Europe/Warsaw albo null, gdy źródło go nie zwraca. */
+    private static function dispatchDeadline(string $platform,array $raw): ?\DateTimeImmutable
+    {
+        $candidates=$platform==='allegro'
+            ? [$raw['delivery']['time']['dispatch']['to']??null]
+            : (in_array($platform,['empik','mediamarkt'],true)
+                ? [$raw['shipping_deadline']??null]
+                : [$raw['expectShipLatestTime']??null,$raw['latestShippingTime']??null,$raw['shippingDeadline']??null,$raw['dispatchDeadline']??null,$raw['dispatchTime']??null,$raw['sendUntil']??null,$raw['shipping_deadline']??null,$raw['ship_by']??null]);
+        foreach ($candidates as $value) {
+            if (is_array($value)) { $value=$value['to']??$value['date']??null; }
+            if (!is_scalar($value) || trim((string)$value)==='') { continue; }
+            $value=trim((string)$value);
+            try {
+                $date=ctype_digit($value)
+                    ? (new \DateTimeImmutable('@'.(strlen($value)>11?intdiv((int)$value,1000):(int)$value)))
+                    : new \DateTimeImmutable($value,new \DateTimeZone('UTC'));
+                return $date->setTimezone(new \DateTimeZone('Europe/Warsaw'));
+            } catch (\Throwable $error) { continue; }
+        }
+        return null;
+    }
     private static function shortDate(string $value): string
     {
         return preg_match('/^\d{2}(\d{2})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/',$value,$m) ? "$m[3].$m[2].$m[1] $m[4]" : $value;
@@ -722,6 +842,16 @@ final class OrderRepository
             $invoiceNip=self::pick($invoiceAddress,['nip','taxId','tax_id']); if ($invoiceNip==='') { $invoiceNip=self::pick($invoiceCompany,['taxId','tax_id','nip']); }
             $row['document_choice']=$preference==='invoice'?($invoiceNip!==''?'invoice_nip':'invoice'):'receipt';
             $row['document_nip']=$preference==='invoice'?$invoiceNip:'';
+            $deadline=self::dispatchDeadline((string)$row['platform'],$raw);
+            $row['deadline_at']=$deadline?$deadline->format('Y-m-d H:i'):'';
+            $row['deadline_date']=$deadline?$deadline->format('d.m.Y'):'';
+            $row['deadline_time']=$deadline?$deadline->format('H:i'):'';
+            $row['deadline_days']=null; $row['deadline_overdue']=0;
+            if ($deadline) {
+                $today=new \DateTimeImmutable('today',new \DateTimeZone('Europe/Warsaw'));
+                $row['deadline_days']=(int)$today->diff($deadline->setTime(0,0))->format('%r%a');
+                $row['deadline_overdue']=$deadline<new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw'))?1:0;
+            }
             $row['ordered_short']=self::shortDate((string)$row['ordered_at']);
             $row['status_changed_short']=self::shortDate((string)($row['status_changed_at']??''));
             $row['external_short']=(function (string $id): string { return mb_strlen($id,'UTF-8')>10?mb_substr($id,0,10,'UTF-8').'…':$id; })((string)$row['external_id']);

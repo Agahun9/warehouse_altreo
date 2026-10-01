@@ -92,6 +92,41 @@ final class OrderMarketplaceShipmentService
         }
     }
 
+    /** Dobiera przewoźnika ze słownika źródła na podstawie danych przesyłki: [kod, nazwa dla „other”]. */
+    public static function guessCarrier(array $shipment,array $order): array
+    {
+        $presentation=OrderShipmentService::presentation($shipment,$order);
+        $hints=array_map(static function (string $hint): string { return mb_strtolower($hint,'UTF-8'); },[$presentation['carrier'],$presentation['service'],(string)($order['details']['delivery']??''),(string)($shipment['carrier']??'')]);
+        // Najpierw nazwy firm (np. „Allegro One Box, DHL” → DHL), dopiero potem ogólne określenia typu „paczkomat”.
+        $brands=['inpost'=>['inpost'],'dpd'=>['dpd'],'gls'=>['gls'],'dhl'=>['dhl'],'ups'=>['ups'],'fedex'=>['fedex'],'orlen'=>['orlen'],'pocztex'=>['pocztex','poczta polska','envelo']];
+        $generic=['inpost'=>['paczkomat'],'orlen'=>['ruch'],'pocztex'=>['poczta']];
+        foreach ([[$brands,'\b'],[$generic,'']] as [$map,$suffix]) {
+            foreach ($hints as $hint) {
+                foreach ($map as $code=>$needles) {
+                    foreach ($needles as $needle) { if (preg_match('/\b'.preg_quote($needle,'/').$suffix.'/u',$hint)) { return [$code,'']; } }
+                }
+            }
+        }
+        $name=trim((string)$presentation['carrier']);
+        return [$name!==''?'other':'',$name];
+    }
+
+    /** Po pojawieniu się numeru przekazuje go do źródła sam, jeśli nikt jeszcze tego nie zrobił. Zwraca komunikat albo null, gdy pominięto. */
+    public function autoPublish(int $shipmentId,string $actor): ?string
+    {
+        $shipment=$this->repo->db()->fetch('SELECT s.*,ca.provider carrier_provider FROM om_shipments s LEFT JOIN om_carrier_accounts ca ON ca.id=s.carrier_account_id WHERE s.id=:id',['id'=>$shipmentId]);
+        if (!$shipment) { return null; }
+        $tracking=trim((string)$shipment['tracking']);
+        if ($tracking==='' || strpos($tracking,'PENDING:')===0) { return null; }
+        $order=$this->repo->order((int)$shipment['order_id']);
+        if (!in_array((string)$order['platform'],['allegro','empik','mediamarkt','erli','prestashop','woocommerce','altreo'],true)) { return null; }
+        $presentation=OrderShipmentService::presentation($shipment,$order);
+        if ($presentation['cancelled'] || $presentation['source_tracking_auto'] || (string)($presentation['source_publication']['state']??'')!=='') { return null; }
+        [$code,$other]=self::guessCarrier($shipment,$order);
+        if ($code==='' || ($code==='other' && (string)$order['platform']==='erli')) { return null; }
+        return $this->publishShipment($shipmentId,$code,$other,$actor);
+    }
+
     public function publish(array $order,string $tracking,string $carrierCode,string $carrierName): string
     {
         $target=$this->target($order);

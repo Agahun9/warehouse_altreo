@@ -44,7 +44,7 @@ final class WooCommerceService extends MarketplaceIntegration
         ], null, $headers);
         $orders = [];
         foreach ($rows as $order) {
-            if (is_array($order) && ($order['status'] ?? '') !== 'checkout-draft') { $orders[] = $this->canonical($order); }
+            if (is_array($order) && ($order['status'] ?? '') !== 'checkout-draft') { $orders[] = $this->canonical($order, (string) ($account['shop_url'] ?? '')); }
         }
         // Wersje draft są pomijane, ale liczą się do stronicowania – kursor przesuwa się o całą stronę.
         return ['orders' => $orders, 'total_count' => (int) ($headers['x-wp-total'] ?? 0), 'page_size' => count($rows)];
@@ -56,7 +56,7 @@ final class WooCommerceService extends MarketplaceIntegration
         $this->api($account, 'POST', 'orders/'.(int) $orderId.'/notes', [], ['note' => 'Twoja przesyłka została nadana. Przewoźnik: '.trim($carrierName).', numer przesyłki: '.trim($tracking), 'customer_note' => true]);
     }
 
-    private function canonical(array $order): array
+    private function canonical(array $order, string $shopUrl = ''): array
     {
         $meta = [];
         foreach ((array) ($order['meta_data'] ?? []) as $entry) { if (is_array($entry) && is_scalar($entry['value'] ?? null)) { $meta[strtolower((string) $entry['key'])] = trim((string) $entry['value']); } }
@@ -71,7 +71,7 @@ final class WooCommerceService extends MarketplaceIntegration
         foreach ((array) ($order['line_items'] ?? []) as $line) {
             $quantity = max(1, (int) ($line['quantity'] ?? 1));
             $gross = ((float) ($line['total'] ?? 0) + (float) ($line['total_tax'] ?? 0)) / $quantity;
-            $items[] = ['name' => (string) ($line['name'] ?? ''), 'sku' => (string) ($line['sku'] ?? ''), 'quantity' => $quantity, 'price' => OrderNormalizer::decimal($gross), 'image_url' => (string) ($line['image']['src'] ?? '')];
+            $items[] = ['name' => (string) ($line['name'] ?? ''), 'sku' => (string) ($line['sku'] ?? ''), 'quantity' => $quantity, 'price' => OrderNormalizer::decimal($gross), 'image_url' => (string) ($line['image']['src'] ?? ''), 'offer_id' => (string) ($line['product_id'] ?? ''), 'offer_url' => $shopUrl !== '' && (int) ($line['product_id'] ?? 0) > 0 ? rtrim($shopUrl, '/').'/?post_type=product&p='.(int) $line['product_id'] : ''];
         }
         $shippingLine = (array) ($order['shipping_lines'][0] ?? []);
         $created = (string) (($order['date_created_gmt'] ?? '') ?: ($order['date_created'] ?? ''));

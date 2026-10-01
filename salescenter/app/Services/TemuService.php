@@ -53,7 +53,7 @@ final class TemuService extends MarketplaceIntegration
         foreach ((array) ($item['orderList'] ?? []) as $line) {
             if (!is_array($line)) { continue; }
             $sku = (string) ($line['productList'][0]['extCode'] ?? '');
-            $items[] = ['name' => trim((string) ($line['goodsName'] ?? '').(!empty($line['spec']) ? ' ('.$line['spec'].')' : '')), 'sku' => $sku !== '' ? $sku : (string) ($line['skuId'] ?? ''), 'quantity' => (int) ($line['quantity'] ?? 1), 'price' => OrderNormalizer::decimal(self::money(self::find($line, ['unitRetailPriceVat', 'unitPrice', 'retailPrice'])) ?? 0), 'image_url' => (string) ($line['thumbUrl'] ?? '')];
+            $items[] = ['name' => trim((string) ($line['goodsName'] ?? '').(!empty($line['spec']) ? ' ('.$line['spec'].')' : '')), 'sku' => $sku !== '' ? $sku : (string) ($line['skuId'] ?? ''), 'quantity' => (int) ($line['quantity'] ?? 1), 'price' => OrderNormalizer::decimal(self::money(self::find($line, ['unitRetailPriceVat', 'unitPrice', 'retailPrice'])) ?? 0), 'image_url' => (string) ($line['thumbUrl'] ?? ''), 'offer_id' => (string) ($line['goodsId'] ?? '')];
         }
         $total = self::money(self::find($amount, ['totalAmount', 'parentOrderTotalAmount', 'orderAmount', 'totalPrice']));
         $status = (int) ($parent['parentOrderStatus'] ?? 0);

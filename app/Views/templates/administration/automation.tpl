@@ -1341,6 +1341,30 @@
                       <input id="salescenter-subtract-url" class="form-control form-control-sm font-monospace mb-2" readonly value="{$salescenterStockUrls.subtract|escape}" onclick="this.select()">
                       <label class="form-label small mb-1" for="salescenter-add-url">Dodawanie sztuk (zwrot / anulowanie)</label>
                       <input id="salescenter-add-url" class="form-control form-control-sm font-monospace" readonly value="{$salescenterStockUrls.add|escape}" onclick="this.select()">
+                      <hr class="my-4">
+                      <h4 class="h6">Zbieranie z SalesCenter</h4>
+                      <p class="small text-secondary">Po wygenerowaniu naklejek zamówienia przejdą na wybrany status docelowy. Wklej adres bazowy SalesCenter i token API z ustawień integracji API w SalesCenter.</p>
+                      <form method="post" action="{$baseUrl}?controller=administration&action=savesalescenterpicking" class="row g-3">
+                        <div class="col-12">
+                          <label class="form-label" for="salescenter-picking-url">Adres API SalesCenter</label>
+                          <input type="url" class="form-control" id="salescenter-picking-url" name="salescenter_api_url" value="{$salescenterPickingUrl|escape}" placeholder="https://magazyn.altreo.pl/crm/new_version/salescenter/api.php/v1" required>
+                          <div class="form-text">Możesz wkleić ten adres z Administracja SalesCenter albo sam adres aplikacji.</div>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label" for="salescenter-picking-key">Token API {if $salescenterHasApiKey}<span class="text-success">(zapisany; puste pole zachowa token)</span>{/if}</label>
+                          <input type="password" autocomplete="new-password" class="form-control" id="salescenter-picking-key" name="salescenter_api_key" value="" placeholder="Wklej token API SalesCenter">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label" for="salescenter-picking-status">Status pobierania</label>
+                          <input type="number" min="1" step="1" class="form-control" id="salescenter-picking-status" name="salescenter_picking_status_id" value="{$salescenterPickingStatusId|escape}" required>
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label" for="salescenter-printed-status">Status po wydruku</label>
+                          <input type="number" min="0" step="1" class="form-control" id="salescenter-printed-status" name="salescenter_printed_status_id" value="{$salescenterPrintedStatusId|escape}" required>
+                        </div>
+                        <div class="col-12 small text-secondary">Wpisz 0 w statusie po wydruku, aby nie zmieniać statusu zamówienia.</div>
+                        <div class="col-12"><button type="submit" class="btn btn-outline-primary">Zapisz ustawienia SalesCenter</button></div>
+                      </form>
                     </div>
                   </div>
                 </div>

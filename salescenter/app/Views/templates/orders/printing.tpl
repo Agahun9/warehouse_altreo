@@ -1,4 +1,13 @@
 <div class="om-section-heading"><div><h2>Automatyczny druk etykiet</h2><p>Stanowiska pobierają zadania w tle, a każda etykieta trafia na drukarkę wybraną przy przesyłce.</p></div><span class="om-chip">{$printStations|count} stanowisk</span></div>
+<section class="om-panel om-pad om-top">
+  <h3>Przypisanie drukarki do czynności</h3>
+  <p class="om-muted">Etykieta kurierska będzie domyślnie kierowana na przypisaną drukarkę. Przy zamówieniu nadal możesz wybrać inną.</p>
+  {if $canWrite}<form class="om-form" method="post" action="?controller=orders&action=save">
+    <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="label_printer_action"><input type="hidden" name="tab" value="printing">
+    <label>Etykieta kurierska<select name="printer_target"><option value="">Nie przypisuj — wybór przy wydruku</option>{foreach $printStations as $station}{if $station.enabled and $station.printers}<optgroup label="{$station.name|escape}{if not $station.online} — offline{/if}">{foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}" {if ($labelActionPrinterDefault.target|default:'') eq ($station.id|cat:'|'|cat:$printer)}selected{/if}>{$printer|escape}</option>{/foreach}</optgroup>{/if}{/foreach}</select></label>
+    <button class="om-btn om-primary"><i class="bi bi-check2"></i> Zapisz przypisanie</button>
+  </form>{/if}
+</section>
 <div class="om-two-col">
   <section class="om-panel om-pad">
     <h3>Stanowiska i drukarki</h3>

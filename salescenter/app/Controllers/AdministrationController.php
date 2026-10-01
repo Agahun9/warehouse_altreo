@@ -6,6 +6,8 @@ namespace App\Controllers;
 use App\Core\Config;
 use App\Core\Controller;
 use App\Core\Tenant;
+use App\Models\ConnectionRepository;
+use App\Models\OrderRepository;
 use App\Models\SaasRepository;
 use App\Services\AllegroService;
 use App\Services\GlobalCronService;
@@ -34,11 +36,29 @@ final class AdministrationController extends Controller
         foreach ($urls as $task => $url) { $commands[$task] = '/usr/bin/curl --silent --show-error --fail "'.$url.'" >/dev/null'; }
         $allegro = AllegroService::config();
         $stored = $saas->setting('allegro_app');
+        $orders = new OrderRepository($this->db());
+        $orders->ensureSchema();
+        $connections = new ConnectionRepository($this->db());
+        $connections->ensureSchema();
+        $warehouseApi = null;
+        foreach ($connections->all() as $connection) {
+            if ($connection['platform'] === 'api' && ($connection['public']['purpose'] ?? '') === 'warehouse_picking') {
+                $warehouseApi = ['name' => $connection['name'], 'status' => $connection['status'], 'token_hint' => (string) ($connection['public']['token_hint'] ?? '')];
+                break;
+            }
+        }
+        $this->ensureSessionStarted();
+        $newWarehouseToken = (string) ($_SESSION['sc_warehouse_api_token'] ?? '');
+        unset($_SESSION['sc_warehouse_api_token']);
         header('Cache-Control: no-store, private');
         header('Referrer-Policy: no-referrer');
         $this->render('administration/index', [
             'pageTitle' => 'Administracja SalesCenter', 'cronUrls' => $urls, 'cronCommands' => $commands,
             'csrf' => $this->csrfToken(),
+            'warehouseApi' => $warehouseApi, 'warehouseApiToken' => $newWarehouseToken,
+            'warehouseApiTenant' => (string) ($user['tenant']['name'] ?? ''),
+            'warehouseApiBase' => IntegrationsController::apiBase(),
+            'warehouseApiPickingUrl' => IntegrationsController::apiBase().'/picking/orders?status_id={STATUS_ID}',
             'adminNotes' => (string) ($saas->setting('admin_notes')['text'] ?? ''),
             'allegroApp' => [
                 'configured' => AllegroService::configured(),
@@ -70,6 +90,39 @@ final class AdministrationController extends Controller
             $this->setFlash('error', $e instanceof InvalidArgumentException ? $e->getMessage() : (strpos($e->getMessage(), '[401]') !== false || strpos($e->getMessage(), '[400]') !== false ? 'Allegro odrzuciło Client ID lub Client Secret. Skopiuj je ponownie z apps.developer.allegro.pl (bez spacji).' : 'Nie udało się sprawdzić aplikacji w Allegro. Spróbuj ponownie za chwilę.'));
         }
         $this->redirect('./index.php?controller=administration#allegro-app');
+    }
+
+    /** Token ograniczony do API zbierania magazynowego bieżącej firmy. */
+    public function warehouseapitoken(): void
+    {
+        $this->requireHeadmaster();
+        $this->requireCsrf();
+        try {
+            $orders = new OrderRepository($this->db());
+            $orders->ensureSchema();
+            $repository = new ConnectionRepository($this->db());
+            $repository->ensureSchema();
+            $existing = null;
+            foreach ($repository->all() as $connection) {
+                if ($connection['platform'] === 'api' && ($connection['public']['purpose'] ?? '') === 'warehouse_picking') {
+                    $existing = $connection;
+                    break;
+                }
+            }
+            $token = Tenant::tokenPrefix().rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+            $public = ['token_hint' => substr($token, -4), 'purpose' => 'warehouse_picking'];
+            if ($existing) {
+                $repository->update((int) $existing['id'], ['token_hash' => hash('sha256', $token), 'public' => $public, 'status' => 'active', 'checked' => true]);
+            } else {
+                $repository->create('api', 'Zbieranie magazynowe', $public, [], 'active', hash('sha256', $token));
+            }
+            $this->ensureSessionStarted();
+            $_SESSION['sc_warehouse_api_token'] = $token;
+            $this->setFlash('success', 'Token API gotowy. Skopiuj go teraz – nie pokażemy go ponownie.');
+        } catch (\Throwable $e) {
+            $this->setFlash('error', $e instanceof InvalidArgumentException ? $e->getMessage() : 'Nie udało się wygenerować tokenu API.');
+        }
+        $this->redirect('./index.php?controller=administration#warehouse-api');
     }
 
     /** Notatki głównego administratora (np. linki webhooków magazynu). */

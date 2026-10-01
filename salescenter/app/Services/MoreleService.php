@@ -72,7 +72,7 @@ final class MoreleService extends MarketplaceIntegration
         $items = [];
         foreach ((array) $pick($o, ['products', 'items', 'order_items', 'lines', 'positions'], []) as $line) {
             if (!is_array($line)) { continue; }
-            $items[] = ['name' => (string) $pick($line, ['vendor_product_name', 'name', 'product_name', 'title']), 'sku' => (string) $pick($line, ['part_number', 'sku', 'offer_id', 'ean', 'code', 'product_id']), 'quantity' => (int) $pick($line, ['quantity', 'qty', 'amount'], 1), 'price' => OrderNormalizer::decimal($pick($line, ['sale_price_brutto', 'price_gross', 'price', 'unit_price', 'priceGross'], 0)), 'image_url' => (string) $pick($line, ['image_url', 'thumbnail_url'], '')];
+            $items[] = ['name' => (string) $pick($line, ['vendor_product_name', 'name', 'product_name', 'title']), 'sku' => (string) $pick($line, ['part_number', 'sku', 'offer_id', 'ean', 'code', 'product_id']), 'quantity' => (int) $pick($line, ['quantity', 'qty', 'amount'], 1), 'price' => OrderNormalizer::decimal($pick($line, ['sale_price_brutto', 'price_gross', 'price', 'unit_price', 'priceGross'], 0)), 'image_url' => (string) $pick($line, ['image_url', 'thumbnail_url'], ''), 'offer_id' => (string) $pick($line, ['offer_id', 'product_id', 'id'], ''), 'offer_url' => (string) $pick($line, ['product_url', 'offer_url', 'url', 'link'], '')];
         }
         $map = static function (array $a, string $prefix = '') use ($pick): array {
             $name = trim((string) $pick($a, [$prefix.'name', 'name']));

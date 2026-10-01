@@ -233,9 +233,9 @@
   const columnsBackdrop = document.querySelector('[data-columns-backdrop]');
   const storageKey = 'altreo-orders-list-v2';
   const columnDefaults = [
-    ['order', 170, true], ['buyer', 190, true], ['products', 300, true], ['amount', 130, true],
-    ['status', 145, true], ['payment', 130, false], ['delivery', 170, false], ['fulfillment', 180, false],
-    ['source', 135, false], ['tags', 160, false], ['date', 110, true]
+    ['summary', 170, true], ['deadline', 95, true], ['order', 170, false], ['buyer', 190, true], ['products', 300, true], ['amount', 130, true],
+    ['status', 145, false], ['payment', 130, false], ['delivery', 170, false], ['fulfillment', 180, false],
+    ['source', 135, false], ['tags', 160, true], ['date', 110, false]
   ];
   const defaultView = () => ({
     order: columnDefaults.map(column => column[0]),
@@ -249,7 +249,19 @@
       const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
       const keys = fallback.order;
       const order = [...new Set([...(Array.isArray(saved.order) ? saved.order : []), ...keys])].filter(key => keys.includes(key));
-      const visible = Array.isArray(saved.visible) ? saved.visible.filter(key => keys.includes(key)) : fallback.visible;
+      let visible = Array.isArray(saved.visible) ? saved.visible.filter(key => keys.includes(key)) : fallback.visible;
+      // Widok zapisany przed kolumną „Zamówienie”: zastąp nią numer, status i datę, wstawiając ją w miejsce numeru.
+      if (Array.isArray(saved.order) && !saved.order.includes('summary')) {
+        visible = [...visible.filter(key => !['order', 'status', 'date'].includes(key)), 'summary'];
+        order.splice(order.indexOf('summary'), 1);
+        order.splice(Math.max(0, order.indexOf('order')), 0, 'summary');
+      }
+      // Nowa kolumna „Realizacja do” pojawia się zaraz za kolumną „Zamówienie”.
+      if (Array.isArray(saved.order) && !saved.order.includes('deadline')) {
+        if (!visible.includes('deadline')) visible.push('deadline');
+        order.splice(order.indexOf('deadline'), 1);
+        order.splice(order.indexOf('summary') + 1, 0, 'deadline');
+      }
       return { order, visible: visible.length ? visible : ['order'], widths: { ...fallback.widths, ...(saved.widths || {}) }, roomy: Boolean(saved.roomy) };
     } catch (_) { return fallback; }
   };
@@ -272,7 +284,7 @@
       const visible = view.visible.includes(key);
       table.querySelectorAll(`[data-col="${key}"]`).forEach(cell => {
         cell.hidden = !visible;
-        const width = Math.max(90, Math.min(420, Number(view.widths[key]) || 140));
+        const width = Math.max(40, Math.min(420, Number(view.widths[key]) || 140));
         cell.style.setProperty('--om-col-width', `${width}px`);
       });
       const toggle = columnList.querySelector(`[data-column-toggle="${key}"]`);
@@ -801,5 +813,109 @@
     loadServices();
   });
   applyView();
+
+  // Układ karty zamówienia: kolejność bloków i kart danych (przeciągnij i upuść), zapisywana na koncie użytkownika.
+  (() => {
+    const root = document.querySelector('[data-order-layout]');
+    const toggle = root?.querySelector('[data-layout-toggle]');
+    if (!root || !toggle) return;
+    const MAIN = ['om-notes', 'om-inline-data', 'om-messages', 'om-shipping', 'om-documents', 'om-payment-info', 'om-automation', 'om-history', 'om-raw-debug'];
+    const grid = root.querySelector('#om-data-grid');
+    const groups = {
+      main: { container: root, items: () => [...root.children].filter(el => MAIN.includes(el.id)), key: el => el.id },
+      cards: { container: grid, items: () => grid ? [...grid.querySelectorAll(':scope > [data-layout-card]')] : [], key: el => el.dataset.layoutCard }
+    };
+    const defaults = { main: groups.main.items(), cards: groups.cards.items() };
+    let saved = {};
+    try { saved = JSON.parse(root.dataset.orderLayout || '{}') || {}; } catch (_) { saved = {}; }
+    const apply = (name, order) => {
+      const group = groups[name];
+      const present = defaults[name].filter(el => el.isConnected);
+      if (!group.container || present.length < 2) return;
+      const byKey = new Map(present.map(el => [group.key(el), el]));
+      const final = (Array.isArray(order) ? order : []).map(key => byKey.get(key)).filter(Boolean);
+      // Bloki spoza zapisanego układu (np. nowe) trafiają za swojego domyślnego poprzednika.
+      present.forEach((el, index) => {
+        if (final.includes(el)) return;
+        const before = present.slice(0, index).reverse().find(prev => final.includes(prev));
+        final.splice(before ? final.indexOf(before) + 1 : 0, 0, el);
+      });
+      const marker = document.createComment('order-layout');
+      group.container.insertBefore(marker, group.items()[0] || null);
+      final.forEach(el => group.container.insertBefore(el, marker));
+      marker.remove();
+    };
+    apply('main', saved.main); apply('cards', saved.cards);
+
+    let bar = null; let dragged = null; let saveTimer = null;
+    const current = name => groups[name].items().map(groups[name].key);
+    const save = (extra = {}) => {
+      clearTimeout(saveTimer);
+      if (bar) bar.querySelector('[data-layout-status]').textContent = 'Zapisywanie…';
+      saveTimer = setTimeout(async () => {
+        try {
+          await request('orderlayout', { main: current('main').join(','), cards: current('cards').join(','), ...extra });
+          if (bar) bar.querySelector('[data-layout-status]').textContent = 'Zapisano na Twoim koncie';
+        } catch (error) {
+          if (bar) bar.querySelector('[data-layout-status]').textContent = error.message || 'Nie udało się zapisać układu.';
+        }
+      }, 250);
+    };
+    const groupOf = el => (el.matches('[data-layout-card]') ? 'cards' : 'main');
+    const movable = () => [...groups.main.items(), ...groups.cards.items()];
+    const onDragStart = event => {
+      event.stopPropagation();
+      dragged = event.currentTarget;
+      dragged.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      try { event.dataTransfer.setData('text/plain', ''); } catch (_) { /* Starsze przeglądarki. */ }
+    };
+    const onDragOver = event => {
+      if (!dragged) return;
+      const target = event.currentTarget;
+      if (groupOf(target) !== groupOf(dragged)) return;
+      event.preventDefault(); event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      if (target === dragged || target.contains(dragged)) return;
+      const rect = target.getBoundingClientRect();
+      const after = groupOf(target) === 'cards'
+        ? (event.clientY > rect.bottom - 8 || (event.clientY >= rect.top && event.clientX > rect.left + rect.width / 2))
+        : event.clientY > rect.top + rect.height / 2;
+      const parent = target.parentNode;
+      if (after) { if (target.nextSibling !== dragged) parent.insertBefore(dragged, target.nextSibling); }
+      else if (target.previousSibling !== dragged) parent.insertBefore(dragged, target);
+    };
+    const onDragEnd = event => {
+      event.stopPropagation();
+      if (!dragged) return;
+      dragged.classList.remove('is-dragging');
+      dragged = null;
+      save();
+    };
+    const stopToggle = event => { if (root.classList.contains('oc-layout-editing')) event.preventDefault(); };
+    const setEditing = on => {
+      root.classList.toggle('oc-layout-editing', on);
+      toggle.classList.toggle('is-active', on);
+      movable().forEach(el => {
+        el.draggable = on;
+        ['dragstart', 'dragover', 'dragend'].forEach((type, i) => el[on ? 'addEventListener' : 'removeEventListener'](type, [onDragStart, onDragOver, onDragEnd][i]));
+      });
+      root.querySelectorAll('.oc-disclosure > summary').forEach(summary => summary[on ? 'addEventListener' : 'removeEventListener']('click', stopToggle));
+      if (on && !bar) {
+        bar = document.createElement('div');
+        bar.className = 'oc-layout-bar';
+        bar.innerHTML = '<i class="bi bi-arrows-move"></i><span><strong>Tryb układu</strong> Przeciągnij bloki i karty danych w wybrane miejsce.</span><em data-layout-status></em><button type="button" class="om-btn om-small" data-layout-reset><i class="bi bi-arrow-counterclockwise"></i> Domyślny</button><button type="button" class="om-btn om-primary om-small" data-layout-done><i class="bi bi-check2"></i> Gotowe</button>';
+        bar.querySelector('[data-layout-done]').addEventListener('click', () => setEditing(false));
+        bar.querySelector('[data-layout-reset]').addEventListener('click', () => {
+          apply('main', defaults.main.map(groups.main.key)); apply('cards', defaults.cards.map(groups.cards.key));
+          save({ reset: '1' });
+        });
+        root.querySelector('.oc-header')?.after(bar);
+      }
+      if (bar) bar.hidden = !on;
+    };
+    toggle.addEventListener('click', () => setEditing(!root.classList.contains('oc-layout-editing')));
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && root.classList.contains('oc-layout-editing')) setEditing(false); });
+  })();
 
 })();

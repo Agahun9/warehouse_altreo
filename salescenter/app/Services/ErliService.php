@@ -65,22 +65,29 @@ final class ErliService extends MarketplaceIntegration
         return $orders;
     }
 
-    /** @var array<string,string> */
+    /** @var array<string,array{image:string,url:string}> */
     private $imageCache = [];
 
-    /** Zdjęcia pozycji z karty produktu ERLI (GET /products/{externalId}). */
+    /** Zdjęcia i publiczny link pozycji z karty produktu ERLI (GET /products/{externalId}). */
     public function enrichOrderImages(array $account, array $order): array
     {
         foreach ($order['items'] ?? [] as $index => $line) {
-            if (!is_array($line) || Images::first($line, "", false) !== '') { continue; }
+            if (!is_array($line)) { continue; }
+            $hasImage = Images::first($line, "", false) !== '';
+            if ($hasImage && trim((string) ($line['productUrl'] ?? '')) !== '') { continue; }
             $externalId = trim((string) ($line['productExternalId'] ?? $line['externalId'] ?? $line['product']['externalId'] ?? ''));
             if ($externalId === '') { continue; }
             $key = ($account['connection_id'] ?? 0).'|'.$externalId;
             if (!array_key_exists($key, $this->imageCache)) {
-                try { $this->imageCache[$key] = Images::first($this->api($account, 'GET', '/products/'.rawurlencode($externalId)), '', false); }
-                catch (\Throwable $e) { $this->imageCache[$key] = ''; }
+                try {
+                    $product = $this->api($account, 'GET', '/products/'.rawurlencode($externalId));
+                    $url = trim((string) ($product['url'] ?? $product['productUrl'] ?? ''));
+                    $this->imageCache[$key] = ['image' => Images::first($product, '', false), 'url' => preg_match('#^https?://#i', $url) ? $url : ''];
+                }
+                catch (\Throwable $e) { $this->imageCache[$key] = ['image' => '', 'url' => '']; }
             }
-            if ($this->imageCache[$key] !== '') { $order['items'][$index]['imageUrl'] = $this->imageCache[$key]; }
+            if (!$hasImage && $this->imageCache[$key]['image'] !== '') { $order['items'][$index]['imageUrl'] = $this->imageCache[$key]['image']; }
+            if ($this->imageCache[$key]['url'] !== '') { $order['items'][$index]['productUrl'] = $this->imageCache[$key]['url']; }
         }
         return $order;
     }
