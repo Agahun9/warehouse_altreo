@@ -8,11 +8,13 @@ use App\Core\SmartyFactory;
 use App\Models\OrderRepository;
 use App\Models\SaasRepository;
 use App\Models\PrintAgentRepository;
+use App\Models\PrintTemplateRepository;
 use App\Services\OrderSyncService;
 use App\Services\OrderDocumentService;
 use App\Services\KsefService;
 use App\Services\OrderMarketplaceShipmentService;
 use App\Services\OrderShipmentService;
+use App\Services\OrderPrintTemplateService;
 use App\Services\Shipping\ShippingProviders;
 use InvalidArgumentException;
 
@@ -29,6 +31,18 @@ final class OrdersController extends Controller
         $ksef=new KsefService($repo); $ksef->ensureSchema(); return $ksef;
     }
     /** Auto-send to KSeF after issuing an invoice; failures never block the issued document. */
+    /** Pola dokumentu edytowalne w formularzu „Edytuj dokument” (nabywca, dostawa, pozycje). */
+    private static function documentEditFields(array $snap): array
+    {
+        return [
+            'buyer'=>(string)($snap['buyer']??''),
+            'recipient'=>(string)($snap['recipient']??''),
+            'additional_info'=>(string)($snap['additional_info']??''),
+            'items'=>array_map(static function ($it) {
+                return ['name'=>(string)($it['name']??''),'sku'=>(string)($it['sku']??''),'ean'=>(string)($it['ean']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
+            },(array)($snap['items']??[])),
+        ];
+    }
     private function ksefAutoSend(OrderRepository $repo,int $documentId,string $actor): void
     {
         $this->ksef($repo)->autoSend($documentId,$actor);
@@ -51,7 +65,7 @@ final class OrdersController extends Controller
         $user=$this->requireModule('orders'); $csrf=$this->token(); $repo=$this->repository();
         $printAgents=new PrintAgentRepository($this->db()); $printAgents->ensureSchema();
         $tab=(string)$this->input('tab','list');
-        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments','payments','printing','general'],true)) { $tab='list'; }
+        if (!in_array($tab,['list','new','accounts','statuses','rules','documents','shipments','payments','printing','templates','general'],true)) { $tab='list'; }
         $filters=[
             'q'=>(string)$this->input('q',''),
             'status_id'=>$this->input('status_id',''),
@@ -86,6 +100,14 @@ final class OrdersController extends Controller
             $detail['source_order_url']=$this->sourceOrderUrl((string)$detail['platform'],(string)$detail['external_id'],$sellerId);
             $detail['raw_debug']=json_encode($detail['details']['raw']??[],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $detail['notes']=$repo->notes((int)$detail['id']);
+            // Rabat/dopłata nieprzysłane jako pozycja (np. kupon altreo.pl) — ta sama różnica, którą dokument wyrównuje osobną linią.
+            $linesCents=(int)($detail['details']['shipping_cents']??0);
+            foreach ((array)($detail['details']['items']??[]) as $lineItem) { $linesCents+=max(0,(int)($lineItem['quantity']??0))*(int)($lineItem['unit_cents']??0); }
+            $detail['balance_cents']=(int)$detail['total_cents']-$linesCents;
+            $detail['balance_label']=$detail['balance_cents']<0?'Rabat':'Pozostałe opłaty';
+            if ($detail['balance_cents']<0 && preg_match('/Rabat [\d.,]+ zł \(kod ([^)"]+)\)|Kod rabatowy: ([^\s"]+)/u',(string)json_encode($detail['details']['raw']??[],JSON_UNESCAPED_UNICODE),$couponMatch)) {
+                $detail['balance_label'].=' (kod '.($couponMatch[1]!==''?$couponMatch[1]:$couponMatch[2]).')';
+            }
             $orderMessages=$this->orderMessages($detail);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
             $orderDocs=$this->db()->fetchAll('SELECT id,number,kind,created_at FROM om_documents WHERE order_id=:id ORDER BY id DESC',['id'=>$detail['id']]);
@@ -137,15 +159,10 @@ final class OrdersController extends Controller
         $documents=[];
         foreach ($this->db()->fetchAll($documentsSql,$documentsParams) as $docRow) {
             $snap=json_decode($docRow['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
-            $docRow['buyer']=(string)($snap['buyer']??'');
-            $docRow['recipient']=(string)($snap['recipient']??'');
-            $docRow['additional_info']=(string)($snap['additional_info']??'');
+            $docRow=array_merge($docRow,self::documentEditFields($snap));
             $docRow['gross_cents']=(int)($snap['gross_cents']??0);
             $docRow['currency']=(string)($snap['currency']??'PLN');
             $docRow['has_correction']=isset($correctionParents[$docRow['id']]);
-            $docRow['items']=array_map(static function ($it) {
-                return ['name'=>(string)($it['name']??''),'sku'=>(string)($it['sku']??''),'ean'=>(string)($it['ean']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
-            },(array)($snap['items']??[]));
             $documents[]=$docRow;
         }
         $seriesById=array_column($series,null,'id');
@@ -167,9 +184,16 @@ final class OrdersController extends Controller
         $ksef=$this->ksef($repo);
         $ksefDocumentIds=array_merge(array_column($documents,'id'),array_column($orderDocs,'id'));
         $ksefSubmissions=$ksef->latest($ksefDocumentIds);
+        foreach ($issuedDocuments as &$issuedDocument) {
+            if ($issuedDocument===null) { continue; }
+            $issuedSnapshot=json_decode((string)$this->db()->fetchColumn('SELECT snapshot_json FROM om_documents WHERE id=:id',['id'=>$issuedDocument['id']]),true)?:[];
+            $issuedDocument=array_merge($issuedDocument,self::documentEditFields($issuedSnapshot));
+            $issuedDocument['edit_lock']=$ksef->lockReason((int)$issuedDocument['id'])??($issuedDocument['kind']==='receipt'?$printAgents->receiptLockReason((int)$detail['id']):null);
+        }
+        unset($issuedDocument);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
         $printStations=$printAgents->stations();
-        $labelActionPrinterDefault=$repo->setting('label_printer_action')+['target'=>''];
+        $labelActionPrinterDefault=$repo->setting('label_printer_action')+['target'=>'','width'=>100,'height'=>150];
         $labelPrinterDefault=$repo->setting('label_printer_user_'.(int)($user['id']??0))+['target'=>$labelActionPrinterDefault['target'],'width'=>100,'height'=>150];
         if ($labelActionPrinterDefault['target']!=='') { $labelPrinterDefault['target']=$labelActionPrinterDefault['target']; }
         $automation=$repo->automation();
@@ -213,8 +237,24 @@ final class OrdersController extends Controller
                 'selected'=>(int)$this->input('connection',0),'add'=>preg_replace('/[^a-z]/','',(string)$this->input('add','')),'backfill'=>(int)$this->input('backfill',0),'manual'=>(string)$this->input('manual','')==='1','today'=>(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format('Y-m-d'),
                 'callbackHttps'=>stripos(\App\Controllers\IntegrationsController::appUrl('x'),'https://')===0];
         }
+        $printTemplates=new PrintTemplateRepository($this->db()); $printTemplates->ensureSchema();
+        $printTemplateList=$printTemplates->all();
+        $printTemplateView=['edit'=>null,'catalog'=>[],'previewOrders'=>[],'formats'=>PrintTemplateRepository::FORMATS,'pageSizes'=>PrintTemplateRepository::PAGE_SIZES];
+        if ($tab==='templates') {
+            $templateParam=(string)$this->input('template','');
+            if ($templateParam==='new') {
+                $format=(string)$this->input('format','pdf'); if (!isset(PrintTemplateRepository::FORMATS[$format])) { $format='pdf'; }
+                $printTemplateView['edit']=['id'=>0,'active'=>true,'name'=>'','format'=>$format,'description'=>'','content'=>PrintTemplateRepository::normalizeContent($format,$format==='csv'?['columns'=>[['header'=>'Numer','value'=>'{{order.number}}'],['header'=>'Klient','value'=>'{{buyer.name}}'],['header'=>'Kwota','value'=>'{{order.total}}']],'header_row'=>1,'bom'=>1]:['page_break'=>1,'body'=>"<h1>Zamówienie {{order.number}}</h1>\n<p>{{buyer.name}} · {{order.total}} {{order.currency}}</p>\n"])];
+            } elseif ((int)$templateParam>0) {
+                $printTemplateView['edit']=$printTemplates->find((int)$templateParam);
+            }
+            if ($printTemplateView['edit']) {
+                $printTemplateView['catalog']=OrderPrintTemplateService::catalog();
+                $printTemplateView['previewOrders']=$this->db()->fetchAll('SELECT id,external_id,buyer_name FROM om_orders ORDER BY id DESC LIMIT 25');
+            }
+        }
         $this->renderOrders($accountData+[
-            'integrations'=>$integrationsView,
+            'integrations'=>$integrationsView,'printTemplates'=>$printTemplateList,'printTemplatesActive'=>array_values(array_filter($printTemplateList,static function (array $template): bool { return $template['active']; })),'printTemplateView'=>$printTemplateView,
             'pageTitle'=>'Centrum zamówień','tab'=>$tab,'csrf'=>$csrf,'canWrite'=>$settingsAccess,
             'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$dashboard,'statusGroups'=>$statusGroups,
             'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderMessages'=>$orderMessages,'orderLayout'=>$detail?$this->savedOrderLayout($repo,(int)($user['id']??0)):[],'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,'autoRefreshShipmentId'=>(int)$this->input('auto_refresh_shipment',0),'autoRefreshAttempt'=>max(1,(int)$this->input('auto_attempt',1)),
@@ -600,7 +640,10 @@ final class OrdersController extends Controller
                         if (!$station || !(int)$station['enabled'] || !is_array($printers) || !in_array($printerName,$printers,true)) { throw new InvalidArgumentException('Wybierz drukarkę etykiet z aktywnego stanowiska.'); }
                         $target=$stationId.'|'.$printerName;
                     }
-                    $repo->saveSetting('label_printer_action',['target'=>$target]);
+                    $labelWidth=(float)str_replace(',','.',(string)($_POST['label_width_mm']??'100'));
+                    $labelHeight=(float)str_replace(',','.',(string)($_POST['label_height_mm']??'150'));
+                    if ($labelWidth<30 || $labelWidth>500 || $labelHeight<30 || $labelHeight>500) { throw new InvalidArgumentException('Rozmiar etykiety musi mieścić się w zakresie 30–500 mm.'); }
+                    $repo->saveSetting('label_printer_action',['target'=>$target,'width'=>$labelWidth,'height'=>$labelHeight]);
                     $successMessage=$target!==''?'Przypisano domyślną drukarkę do etykiety kurierskiej.':'Usunięto domyślne przypisanie drukarki do etykiety kurierskiej.';
                     $tab='printing';
                     break;
@@ -799,8 +842,10 @@ final class OrdersController extends Controller
                 case 'queue_label':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                     [$stationId,$printerName]=array_pad(explode('|',(string)($_POST['printer_target']??''),2),2,'');
-                    $width=(float)str_replace(',','.',(string)($_POST['label_width_mm']??'100'));
-                    $height=(float)str_replace(',','.',(string)($_POST['label_height_mm']??'150'));
+                    // Format etykiety ustawiany wyłącznie w zakładce Drukowanie (Etykieta kurierska).
+                    $labelAction=$repo->setting('label_printer_action')+['width'=>100,'height'=>150];
+                    $width=(float)$labelAction['width'];
+                    $height=(float)$labelAction['height'];
                     $scope=(string)($_POST['label_scope']??'shipment');
                     if ($scope==='shipment') {
                         $shipmentId=(int)($_POST['shipment_id']??0);
@@ -811,7 +856,7 @@ final class OrdersController extends Controller
                         $jobIds=$printAgents->queueOrderLabels($orderId,$scope,(int)$stationId,$printerName,$width,$height,$actor,$this->printAgentApiBase());
                     }
                     // Ostatnio użyta drukarka etykiet i format – podpowiadane temu użytkownikowi przy kolejnych zamówieniach.
-                    $repo->saveSetting('label_printer_user_'.(int)$user['id'],['target'=>(int)$stationId.'|'.$printerName,'width'=>$width,'height'=>$height]);
+                    $repo->saveSetting('label_printer_user_'.(int)$user['id'],['target'=>(int)$stationId.'|'.$printerName]);
                     if ($orderId>0) { $repo->event($orderId,'Dodano '.count($jobIds).' etykiet do kolejki druku ('.implode(', ',$jobIds).').',$actor); $id=$orderId; }
                     $successMessage=count($jobIds)===1?'Etykieta trafiła do kolejki wybranej drukarki.':'Dodano '.count($jobIds).' etykiet do kolejki wybranej drukarki.';
                     break;
@@ -923,6 +968,30 @@ final class OrdersController extends Controller
                     OrderShipmentService::saveDeliveryMapping($repo,preg_replace('/[^a-z_]/','',(string)($_POST['platform']??''))??'',(string)($_POST['delivery']??''),$carrierId,(string)($_POST['service']??''));
                     $successMessage=$carrierId===0?'Metoda dostawy będzie dobierana automatycznie.':($carrierId<0?'Metoda dostawy nie będzie nadawana automatycznie.':'Zapisano mapowanie metody dostawy.');
                     $redirectQuery='#om-delivery-mapping';
+                    break;
+                case 'print_template_save':
+                    $templates=new PrintTemplateRepository($db); $templates->ensureSchema();
+                    $templateId=$templates->save((int)($_POST['template_id']??0),(string)($_POST['name']??''),(string)($_POST['format']??''),(string)($_POST['description']??''),$this->printTemplateContentInput(),!empty($_POST['active']));
+                    $tab='templates'; $redirectQuery='&template='.$templateId; $successMessage='Zapisano szablon druku.';
+                    break;
+                case 'print_template_duplicate':
+                    $templates=new PrintTemplateRepository($db); $templates->ensureSchema();
+                    $tab='templates'; $redirectQuery='&template='.$templates->duplicate((int)($_POST['template_id']??0)); $successMessage='Utworzono kopię szablonu.';
+                    break;
+                case 'print_template_active':
+                    $templates=new PrintTemplateRepository($db); $templates->ensureSchema();
+                    $templates->setActive((int)($_POST['template_id']??0),!empty($_POST['active']));
+                    $tab='templates'; $successMessage=!empty($_POST['active'])?'Szablon jest aktywny — widać go w eksporcie zamówień.':'Szablon jest nieaktywny — zniknął z menu eksportu.';
+                    break;
+                case 'print_template_delete':
+                    $templates=new PrintTemplateRepository($db); $templates->ensureSchema();
+                    $templates->delete((int)($_POST['template_id']??0));
+                    $tab='templates'; $successMessage='Usunięto szablon druku.';
+                    break;
+                case 'print_template_restore':
+                    $templates=new PrintTemplateRepository($db); $templates->ensureSchema();
+                    $added=$templates->restoreExamples();
+                    $tab='templates'; $successMessage=$added?'Dodano przykładowe szablony: '.$added.'.':'Wszystkie przykładowe szablony już istnieją.';
                     break;
                 case 'rule_shipping_buttons':
                     $created=$repo->automation()->createShippingButtons();
@@ -1215,6 +1284,87 @@ final class OrdersController extends Controller
     private function shipmentSuggestion(array $order,array $accounts,array $defaults): array
     {
         return OrderShipmentService::suggestion($this->repository(),$order,$accounts,$defaults);
+    }
+    /** Treść szablonu z formularza edytora (pola HTML/PDF albo kolumny CSV). */
+    private function printTemplateContentInput(): array
+    {
+        if ((string)($_POST['format']??'')==='csv') {
+            $headers=array_values((array)($_POST['csv_header']??[])); $values=array_values((array)($_POST['csv_value']??[]));
+            $columns=[];
+            foreach ($headers as $index=>$header) { $columns[]=['header'=>(string)$header,'value'=>(string)($values[$index]??'')]; }
+            return ['columns'=>$columns,'rows'=>(string)($_POST['rows']??'order'),'separator'=>(string)($_POST['separator']??';'),'header_row'=>!empty($_POST['header_row']),'bom'=>!empty($_POST['bom'])];
+        }
+        return ['mode'=>(string)($_POST['mode']??'per_order'),'page_size'=>(string)($_POST['page_size']??'A4'),'orientation'=>(string)($_POST['orientation']??'portrait'),'margin'=>(string)($_POST['margin']??'12'),'page_break'=>!empty($_POST['page_break']),'body'=>(string)($_POST['body']??''),'css'=>(string)($_POST['css']??'')];
+    }
+    private function printActor(): string
+    {
+        $user=$this->currentUser();
+        return (string)($user['name']??$user['email']??('użytkownik #'.($user['id']??0)));
+    }
+    /** Eksport zaznaczonych zamówień wg szablonu: PDF (okno druku), plik HTML albo CSV. */
+    public function printexport(): void
+    {
+        $this->requireModule('orders');
+        if ($this->isPost() && !hash_equals($this->token(),(string)($_POST['csrf']??''))) { http_response_code(403); exit('Sesja formularza wygasła. Odśwież stronę.'); }
+        $this->releaseSessionLock();
+        $repo=$this->repository();
+        $templates=new PrintTemplateRepository($this->db()); $templates->ensureSchema();
+        try {
+            $template=$templates->find((int)($_POST['print_template_id']??$this->input('template_id',0)));
+            if (!$template) { throw new InvalidArgumentException('Wybierz szablon druku.'); }
+            if (!$template['active']) { throw new InvalidArgumentException('Szablon „'.$template['name'].'” jest nieaktywny. Włącz go w zakładce Szablony druku.'); }
+            $ids=$this->isPost()?(array)($_POST['ids']??[]):array_map('intval',explode(',',(string)$this->input('ids','')));
+            $service=new OrderPrintTemplateService($repo);
+            $contexts=$service->contexts($ids);
+            $globals=$service->globals($contexts,$this->printActor(),(string)$template['name']);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(422); header('Content-Type: text/html; charset=utf-8');
+            echo '<!doctype html><meta charset="utf-8"><title>Eksport</title><p style="font:15px Arial;padding:30px">'.htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8').' <a href="orders.php">Wróć do zamówień</a></p>';
+            return;
+        }
+        $slug=trim((string)preg_replace('/[^a-z0-9]+/','-',strtolower(function_exists('iconv')?(string)@iconv('UTF-8','ASCII//TRANSLIT//IGNORE',(string)$template['name']):(string)$template['name'])),'-')?:'szablon';
+        $filename=$slug.'-'.(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format('Y-m-d-His');
+        header('Cache-Control: no-store, private');
+        header('X-Content-Type-Options: nosniff');
+        if ($template['format']==='csv') {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="'.$filename.'.csv"');
+            echo $service->csv($template,$contexts,$globals);
+            return;
+        }
+        if ($template['format']==='html') {
+            header('Content-Type: text/html; charset=utf-8');
+            header('Content-Disposition: attachment; filename="'.$filename.'.html"');
+            echo $service->renderDocument($template,$contexts,$globals,'file');
+            return;
+        }
+        // PDF: dokument do druku z automatycznym oknem „Zapisz jako PDF”. Skrypty z treści szablonu blokuje CSP.
+        $nonce=base64_encode(random_bytes(16));
+        header('Content-Type: text/html; charset=utf-8');
+        header("Content-Security-Policy: default-src 'none'; script-src 'nonce-".$nonce."'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src * data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+        echo $service->renderDocument($template,$contexts,$globals,'print',$nonce);
+    }
+    /** Podgląd szablonu z edytora (bez zapisu): HTML do ramki z sandboxem albo wiersze CSV. */
+    public function printtemplatepreview(): void
+    {
+        try {
+            if (!$this->apiUser(false)) { return; }
+            if (!$this->isPost()) { $this->jsonResponse(['error'=>'Wymagany POST.','code'=>'METHOD_NOT_ALLOWED'],405); return; }
+            if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { $this->jsonResponse(['error'=>'Token formularza wymaga odświeżenia.','code'=>'CSRF_EXPIRED'],419); return; }
+            $this->releaseSessionLock();
+            $format=(string)($_POST['format']??'pdf');
+            if (!isset(PrintTemplateRepository::FORMATS[$format])) { throw new InvalidArgumentException('Nieznany format.'); }
+            $template=['name'=>trim((string)($_POST['name']??''))?:'Podgląd','format'=>$format,'content'=>PrintTemplateRepository::normalizeContent($format,$this->printTemplateContentInput())];
+            $repo=$this->repository(); $service=new OrderPrintTemplateService($repo);
+            $source=(string)($_POST['preview_order']??'sample');
+            if ($source==='recent') { $ids=array_column($this->db()->fetchAll('SELECT id FROM om_orders ORDER BY id DESC LIMIT 5'),'id'); $contexts=$ids?$service->contexts($ids):$service->sampleContexts(); }
+            elseif ((int)$source>0) { $contexts=$service->contexts([(int)$source]); }
+            else { $contexts=$service->sampleContexts(); }
+            $globals=$service->globals($contexts,$this->printActor(),$template['name']);
+            if ($format==='csv') { $this->jsonResponse(['rows'=>array_slice($service->csvRows($template,$contexts,$globals),0,60)]); return; }
+            $this->jsonResponse(['html'=>$service->renderDocument($template,$contexts,$globals,'preview')]);
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
     }
     public function printdocument(): void
     {

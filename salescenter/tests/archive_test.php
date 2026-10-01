@@ -166,4 +166,22 @@ $html=$smarty->fetch('archive/document.tpl');
 check(strpos($html,'Faktura FV/7/2023')!==false && strpos($html,'NIP: 8221990318')!==false && strpos($html,'24.60 PLN')!==false,'Document print renders');
 array_map('unlink',glob($compile.'/*')?:[]); @rmdir($compile);
 
+// Kurier bez tracking_number: nr nadania z pickup_code (nie dla paczkomatów); stare rekordy uzupełnia ensureSchema.
+$courier=['id'=>52123,'is_parcel_locker'=>false,'tracking_number'=>'','shipment'=>['name'=>'Furgonetka Kurier Inpost','pickup_code'=>'GD-602735-C6-90'],'pickup_point'=>['code'=>'GD-602735-C6-90']];
+check(SellasistArchiveRepository::orderRow($courier)['tracking']==='GD-602735-C6-90','Courier pickup_code is tracking');
+check(SellasistArchiveRepository::orderRow(['is_parcel_locker'=>true,'shipment'=>['pickup_code'=>'WAW01M']])['tracking']==='','Parcel locker code is not tracking');
+$repo->upsertOrder($courier,true);
+$db->update('om_archive_orders',['tracking'=>''],'sellasist_id=:id',['id'=>52123]);
+$db->delete('om_settings','setting_key=:k',['k'=>'sellasist_archive_tracking_v1']);
+$repo->ensureSchema();
+check($repo->orders(['q'=>'GD-602735-C6-90'])['rows'][0]['tracking']==='GD-602735-C6-90','Backfill fills tracking from stored detail');
+
+// Paragon: właściwy numer (PA/…) pochodzi z document_number zamówienia, chyba że zamówienie ma fakturę.
+$db->update('om_archive_orders',['document_number'=>'PA/946/08/2026'],'sellasist_id=:id',['id'=>201]);
+$db->update('om_archive_orders',['document_number'=>'FV/202/2023'],'sellasist_id=:id',['id'=>202]);
+$repo->upsertDocument('invoice',['id'=>9202,'number'=>'FV/202/2023','order_id'=>202],true);
+check($repo->syncReceiptNumbers()===1 && $repo->syncReceiptNumbers()===0,'Receipt numbers synced once');
+check($repo->documents(['kind'=>'receipt','q'=>'PA/946/08/2026'])['rows'][0]['remote_id']==1 && $repo->documents(['kind'=>'receipt','q'=>'PAR/1'])['total']===1,'Receipt takes order number and keeps Sellasist number searchable');
+check($repo->documents(['kind'=>'receipt','q'=>'PAR/2'])['rows'][0]['number']==='PAR/2','Receipt of invoiced order keeps its number');
+
 echo "OK archive_test: $checks checks\n";

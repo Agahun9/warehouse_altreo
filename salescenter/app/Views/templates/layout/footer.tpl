@@ -166,7 +166,9 @@
           return;
         }
 
-        var target = (form.getAttribute('target') || '').toLowerCase();
+        // Przycisk z formtarget (np. eksport do nowej karty) nie przeładowuje bieżącej strony.
+        var submitter = event.submitter;
+        var target = ((submitter && submitter.getAttribute('formtarget')) || form.getAttribute('target') || '').toLowerCase();
         if (target !== '' && target !== '_self') {
           return;
         }

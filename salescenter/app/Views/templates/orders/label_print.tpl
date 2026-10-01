@@ -1,4 +1,4 @@
-<form method="post" action="index.php?controller=orders&action=save">
+<form class="om-label-print" method="post" title="Format etykiety: {$labelActionPrinterDefault.width|default:100}×{$labelActionPrinterDefault.height|default:150} mm (ustawienia → Drukowanie)" action="index.php?controller=orders&action=save">
   <input type="hidden" name="csrf" value="{$csrf|escape}">
   <input type="hidden" name="operation" value="queue_label">
   <input type="hidden" name="order_id" value="{$detail.id}">
@@ -14,7 +14,5 @@
       {/if}
     {/foreach}
   </select>
-  <label class="om-label-size">Szer. <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.width|default:100}" required aria-label="Szerokość etykiety w mm"> mm</label>
-  <label class="om-label-size">Wys. <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.height|default:150}" required aria-label="Wysokość etykiety w mm"> mm</label>
   <button class="om-btn om-small om-primary"><i class="bi bi-printer-fill"></i> Drukuj</button>
 </form>

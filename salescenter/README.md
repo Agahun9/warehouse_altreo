@@ -66,7 +66,7 @@ Zmiana hasła wylogowuje pozostałe sesje użytkownika.
 | WooCommerce | logowanie do WordPressa (wc-auth) albo klucze REST | tak | notatka dla klienta |
 | Altreo.pl | adres sklepu + token z panelu sklepu (Ustawienia → SalesCenter) | tak | tak (status „Wysłane” + e-mail do klienta) |
 | Temu | App Key + App Secret + Access Token | beta | nie (API wymaga ręcznego nadania) |
-| Morele | Client ID + Client Secret | beta – brak publicznej specyfikacji zamówień | nie |
+| Morele | Client ID + Client Secret | beta – brak publicznej specyfikacji zamówień | tak (`POST /order/waybill` z `waybill_number` i polami rozpoznanymi przez API, potem `POST /order` – status 3 „wysłane”; potwierdzenie w `GET /orders`) |
 | Własny sklep | token API, sklep wysyła zamówienia (`api.php/v1`) | w czasie rzeczywistym | odczyt statusu i numeru przez API |
 
 Każda karta w module ma instrukcję krok po kroku i linki do paneli. Dane dostępowe są szyfrowane

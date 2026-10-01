@@ -42,7 +42,7 @@
                 <li class="{if $sp.capabilities.cancel}is-on{/if}"><i class="bi bi-x-octagon"></i> Anulowanie z panelu</li>
                 <li class="{if $sp.capabilities.valuation}is-on{/if}"><i class="bi bi-calculator"></i> Wycena na żywo</li>
                 <li class="{if $sp.capabilities.cod ne 'none'}is-on{/if}"><i class="bi bi-cash-coin"></i> {if $sp.capabilities.cod eq 'form'}Pobranie ustawiane w formularzu{elseif $sp.capabilities.cod eq 'order'}Pobranie wg zamówienia{else}Bez pobrania{/if}</li>
-                <li class="{if $sp.capabilities.source_tracking eq 'auto'}is-on{/if}"><i class="bi bi-cloud-check"></i> {if $sp.capabilities.source_tracking eq 'auto'}Numer trafia do źródła automatycznie{else}Numer do źródła przyciskiem w zamówieniu{/if}</li>
+                <li class="{if $sp.capabilities.source_tracking eq 'auto' or $sp.capabilities.source_tracking eq 'manual'}is-on{/if}"><i class="bi bi-cloud-check"></i> {if $sp.capabilities.source_tracking eq 'auto'}Numer trafia do źródła automatycznie{else}Numer do źródła przyciskiem w zamówieniu{/if}</li>
                 {if $sp.capabilities.pickup_protocol}<li class="is-on"><i class="bi bi-clipboard-check"></i> Protokół odbioru przez kuriera</li>{/if}
               </ul>
             </section>

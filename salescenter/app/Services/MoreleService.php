@@ -122,6 +122,90 @@ final class MoreleService extends MarketplaceIntegration
         return $order;
     }
 
+    /** Statusy zamówienia Morele: 1 nowe, 2 w realizacji, 3 wysłane, 4 zrealizowane, 5 kosz. */
+    private const STATUS_SENT = 3;
+    private const STATUS_TRASH = 5;
+
+    /** Linki śledzenia według kodów z OrderMarketplaceShipmentService::carrierOptions(). */
+    private const TRACKING_URLS = ['inpost' => 'https://inpost.pl/sledzenie-przesylek?number=', 'dpd' => 'https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1=', 'gls' => 'https://gls-group.com/PL/pl/sledzenie-paczek?match=', 'dhl' => 'https://www.dhl.com/pl-pl/home/sledzenie-przesylek.html?tracking-id=', 'ups' => 'https://www.ups.com/track?tracknum=', 'fedex' => 'https://www.fedex.com/fedextrack/?trknbr=', 'orlen' => 'https://www.orlenpaczka.pl/sledz-paczke/?numer=', 'pocztex' => 'https://emonitoring.poczta-polska.pl/?numer='];
+
+    /**
+     * Numer przesyłki: POST /order/waybill, potem status „wysłane”: POST /order {order_id, status}.
+     * Przykłady ze specyfikacji GET /v1/docs nie działają: serwer zamienia klucze na camelCase i odrzuca nieznane
+     * pola („Field waybill not found!”, „Field trackingNumber not found!” – także tracking_number w POST /order).
+     * W /order/waybill rozpoznaje waybill_number (jak GET /orders), ale sam numer kończy się „Wrong input data!”.
+     * Dlatego dokładamy kolejne pola-kandydatów (link śledzenia, przewoźnik, status): „Field … not found!” = pola
+     * nie ma, więc je pomijamy; inna odpowiedź = pole istnieje, zostaje w treści. Odrzucone żądania nic nie zapisują.
+     * Przyjęcie potwierdzamy odczytem waybill_number z GET /orders. Statusu zrealizowanego (4) nie obniżamy.
+     */
+    public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
+    {
+        $orderId = trim($orderId); $tracking = trim($tracking);
+        if ($orderId === '' || $tracking === '') { throw new RuntimeException('Morele: brak numeru zamówienia albo przesyłki.'); }
+        $id = ctype_digit($orderId) ? (int) $orderId : $orderId;
+        $before = $this->orderState($account, $id);
+        if ($before !== null && $before['status'] >= self::STATUS_TRASH) { throw new RuntimeException('Morele: zamówienie '.$orderId.' jest w koszu – nie można przekazać numeru przesyłki.'); }
+        $status = max(self::STATUS_SENT, $before['status'] ?? 0);
+        if ($before !== null && $before['waybill'] === $tracking && $before['status'] >= self::STATUS_SENT) { return; }
+
+        $error = $this->sendWaybill($account, $id, $tracking, $carrierCode, $carrierName, $status);
+        $response = $this->send($account, '/order', ['order_id' => $id, 'status' => $status]);
+        if ($error !== null) { throw new RuntimeException('Morele nie przyjęło numeru przesyłki (POST /order/waybill) – '.$error.($response['ok'] ? '. Status „wysłane” ustawiony.' : '')); }
+        if (!$response['ok']) { throw new RuntimeException('Morele zapisało numer przesyłki '.$tracking.', ale nie zmieniło statusu na „wysłane” (POST /order): '.$response['message']); }
+    }
+
+    /** Zapis listu przewozowego; null po potwierdzonym przyjęciu, inaczej opis odpowiedzi Morele. */
+    private function sendWaybill(array $account, $id, string $tracking, string $carrierCode, string $carrierName, int $status): ?string
+    {
+        $link = isset(self::TRACKING_URLS[$carrierCode]) ? self::TRACKING_URLS[$carrierCode].rawurlencode($tracking) : '';
+        $carrierName = trim($carrierName);
+        $candidates = ['waybill_tracking_link' => $link, 'tracking_link' => $link, 'waybill_url' => $link, 'tracking_url' => $link, 'courier' => $carrierName, 'courier_name' => $carrierName, 'carrier' => $carrierName, 'carrier_name' => $carrierName, 'delivery_company' => $carrierName, 'status' => $status];
+        $body = ['order_id' => $id, 'waybill_number' => $tracking];
+        $response = $this->send($account, '/order/waybill', $body);
+        $unknown = [];
+        foreach ($candidates as $key => $value) {
+            if ($response['ok'] || $response['status'] !== 400) { break; }
+            if ($value === '') { continue; }
+            $trial = $body + [$key => $value];
+            $result = $this->send($account, '/order/waybill', $trial);
+            if (!$result['ok'] && preg_match('/Field \S+ not found/i', $result['message'])) { $unknown[] = $key; continue; }
+            $body = $trial; $response = $result;
+        }
+        if ($response['ok']) {
+            $after = $this->orderState($account, $id);
+            if ($after === null || $after['waybill'] === $tracking) { return null; }
+            return 'odpowiedź OK, ale Morele pokazuje list „'.$after['waybill'].'” (pola: '.implode(', ', array_keys($body)).')';
+        }
+        return $response['message'].' (pola rozpoznane przez Morele: '.implode(', ', array_keys($body)).($unknown ? '; nieznane: '.implode(', ', $unknown) : '').')';
+    }
+
+    /** Status i waybill_number zamówienia z GET /orders; null, gdy odczyt się nie udał. */
+    private function orderState(array $account, $id): ?array
+    {
+        try {
+            foreach (self::list($this->api($account, 'GET', '/orders', ['order_id' => $id])) as $order) {
+                if ((string) ($order['order_id'] ?? '') !== (string) $id) { continue; }
+                return ['status' => (int) ($order['status'] ?? 0), 'waybill' => trim((string) ($order['waybill_number'] ?? $order['waybill'] ?? ''))];
+            }
+        } catch (RuntimeException $e) { /* bez odczytu działamy na statusie „wysłane” i odpowiedzi OK */ }
+        return null;
+    }
+
+    /** POST JSON bez wyjątku: ['ok', 'status', 'message']; {"status":"FAILED"} przy 200 też jest błędem. Po 401 token jest odświeżany raz. */
+    private function send(array $account, string $path, array $body): array
+    {
+        $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $request = function (bool $force) use (&$account, $path, $payload): array {
+            return Http::request('Morele', 'POST', self::BASE.$path, ['Accept: application/json', 'Content-Type: application/json', 'Authorization: Bearer '.$this->token($account, $force)], $payload);
+        };
+        $response = $request(false);
+        if ((int) $response['status'] === 401) { $response = $request(true); }
+        $text = trim((string) $response['body']); $decoded = json_decode($text, true);
+        $failed = is_array($decoded) && strtoupper((string) ($decoded['status'] ?? '')) === 'FAILED';
+        $ok = $response['status'] >= 200 && $response['status'] < 300 && !$failed;
+        return ['ok' => $ok, 'status' => (int) $response['status'], 'message' => $ok ? '' : 'HTTP '.$response['status'].': '.mb_substr(Http::reason($decoded, $text), 0, 200, 'UTF-8')];
+    }
+
     /**
      * $multipart: części multipart (Http::multipart); $json: treść wysyłana jako application/json –
      * tego oczekuje centrum wiadomości (POST /communication-center/message).

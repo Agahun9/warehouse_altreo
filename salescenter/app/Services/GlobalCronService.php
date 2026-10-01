@@ -43,7 +43,10 @@ final class GlobalCronService
                         foreach ($repo->accounts() as $account) { if (!empty($account['enabled'])) { $report['accounts']++; } }
                         $sync = new OrderSyncService($repo);
                         foreach ($sync->sync() as $result) {
-                            if (!empty($result['error'])) { $report['errors']++; }
+                            if (!empty($result['error'])) {
+                                $report['errors']++;
+                                $report['failed'][] = ['tenant_id' => (int) $tenant['id'], 'account' => (string) ($result['account'] ?? ''), 'code' => (string) ($result['code'] ?? ''), 'reference' => (string) ($result['reference'] ?? '')];
+                            }
                             $report['new_orders'] += (int) ($result['added'] ?? 0);
                         }
                         try { $sync->repairImages(40); } catch (\Throwable $ignored) {}
@@ -67,6 +70,8 @@ final class GlobalCronService
                     }
                 } catch (\Throwable $error) {
                     $report['errors']++;
+                    // Awaria całego przebiegu firmy (np. schemat/baza) – w odróżnieniu od błędu pojedynczego konta.
+                    $report['fatal'] = ($report['fatal'] ?? 0) + 1;
                     OrderSyncError::log($error, ['stage' => $task.'_cron', 'tenant_id' => (int) $tenant['id']]);
                 } finally {
                     Tenant::clear();

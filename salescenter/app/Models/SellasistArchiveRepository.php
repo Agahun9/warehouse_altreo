@@ -52,6 +52,29 @@ final class SellasistArchiveRepository
                 }
             }
         }
+        $this->backfillPickupTracking();
+        if (!$this->settingValue('sellasist_archive_receipts_v1')) {
+            $this->syncReceiptNumbers();
+            $this->saveSettingValue('sellasist_archive_receipts_v1', ['done' => gmdate('Y-m-d H:i:s')]);
+        }
+    }
+
+    /** Jednorazowo uzupełnia nr nadania z pickup_code w już zaimportowanych zamówieniach (z zapisanych szczegółów). */
+    private function backfillPickupTracking(): void
+    {
+        if ($this->settingValue('sellasist_archive_tracking_v1')) { return; }
+        $lastId = 0;
+        do {
+            $rows = $this->db->fetchAll("SELECT id,detail_json FROM om_archive_orders WHERE id>:last AND tracking='' AND detail_state=1 AND detail_json LIKE '%pickup_code%' ORDER BY id LIMIT 500", ['last' => $lastId]);
+            foreach ($rows as $r) {
+                $lastId = (int) $r['id'];
+                $order = json_decode((string) $r['detail_json'], true);
+                if (!is_array($order)) { continue; }
+                $row = self::orderRow($order);
+                if ($row['tracking'] !== '') { $this->db->update('om_archive_orders', ['tracking' => $row['tracking'], 'search_text' => $row['search_text']], 'id=:id', ['id' => $r['id']]); }
+            }
+        } while (count($rows) === 500);
+        $this->saveSettingValue('sellasist_archive_tracking_v1', ['done' => gmdate('Y-m-d H:i:s')]);
     }
 
     // ---- ustawienia i stan importu -------------------------------------------------------
@@ -120,6 +143,22 @@ final class SellasistArchiveRepository
         }
     }
 
+    /**
+     * Sellasist zwraca w paragonie własny numer (np. P21299/10/2025); właściwy numer paragonu (PA/946/08/2026)
+     * jest w document_number zamówienia. Pomijamy zamówienia z fakturą – tam document_number to numer faktury.
+     */
+    public function syncReceiptNumbers(): int
+    {
+        $rows = $this->db->fetchAll("SELECT d.id,d.search_text,o.document_number FROM om_archive_documents d JOIN om_archive_orders o ON o.sellasist_id=d.order_remote_id
+            WHERE d.kind='receipt' AND d.order_remote_id>0 AND o.document_number<>'' AND o.document_number<>d.number
+            AND NOT EXISTS (SELECT 1 FROM om_archive_documents i WHERE i.order_remote_id=d.order_remote_id AND i.kind IN ('invoice','correct'))");
+        foreach ($rows as $r) {
+            $number = self::cut((string) $r['document_number'], 190);
+            $this->db->update('om_archive_documents', ['number' => $number, 'search_text' => mb_substr($r['search_text'].' | '.mb_strtolower($number, 'UTF-8'), 0, 20000, 'UTF-8')], 'id=:id', ['id' => $r['id']]);
+        }
+        return count($rows);
+    }
+
     public function markDocumentDetail(string $kind, int $remoteId, int $state): void
     {
         $this->db->update('om_archive_documents', ['detail_state' => $state, 'updated_at' => gmdate('Y-m-d H:i:s')], 'kind=:k AND remote_id=:r', ['k' => $kind, 'r' => $remoteId]);
@@ -173,6 +212,11 @@ final class SellasistArchiveRepository
             if (is_array($sent['tracking_numbers'] ?? null)) { $tracking[] = self::str($sent['tracking_numbers']['trackingNumber'] ?? ''); }
         }
         $tracking = array_values(array_unique(array_filter($tracking, 'strlen')));
+        // Przesyłki kurierskie (np. Furgonetka InPost Kurier): Sellasist zapisuje nr nadania w pickup_code, a tracking_number zostaje pusty.
+        if (!$tracking && empty($o['is_parcel_locker'])) {
+            $code = self::str($shipment['pickup_code'] ?? '') ?: (is_array($o['pickup_point'] ?? null) ? self::str($o['pickup_point']['code'] ?? '') : '');
+            if ($code !== '') { $tracking[] = $code; }
+        }
         $items = []; $search = []; $count = 0;
         foreach ($carts as $cart) {
             $qty = (int) ($cart['quantity'] ?? 1);

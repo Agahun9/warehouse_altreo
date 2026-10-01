@@ -119,7 +119,7 @@ final class OrderMarketplaceShipmentService
         $tracking=trim((string)$shipment['tracking']);
         if ($tracking==='' || strpos($tracking,'PENDING:')===0) { return null; }
         $order=$this->repo->order((int)$shipment['order_id']);
-        if (!in_array((string)$order['platform'],['allegro','empik','mediamarkt','erli','prestashop','woocommerce','altreo'],true)) { return null; }
+        if (!in_array((string)$order['platform'],['allegro','empik','mediamarkt','erli','morele','prestashop','woocommerce','altreo'],true)) { return null; }
         $presentation=OrderShipmentService::presentation($shipment,$order);
         if ($presentation['cancelled'] || $presentation['source_tracking_auto'] || (string)($presentation['source_publication']['state']??'')!=='') { return null; }
         [$code,$other]=self::guessCarrier($shipment,$order);
@@ -138,8 +138,8 @@ final class OrderMarketplaceShipmentService
     {
         $platform=(string)($order['platform']??'');
         if ($platform==='manual') { throw new InvalidArgumentException('Zamówienie własne nie ma marketplace’u źródłowego.'); }
-        if (in_array($platform,['morele','temu','api'],true)) { throw new RuntimeException($this->platformLabel($platform).': przekazywanie numeru przesyłki nie jest obsługiwane – wpisz go w panelu platformy.'); }
-        if (!in_array($platform,['allegro','empik','mediamarkt','erli','prestashop','woocommerce','altreo'],true)) { throw new RuntimeException('Brak obsługi przekazania przesyłki do źródła '.$platform.'.'); }
+        if (in_array($platform,['temu','api'],true)) { throw new RuntimeException($this->platformLabel($platform).': przekazywanie numeru przesyłki nie jest obsługiwane – wpisz go w panelu platformy.'); }
+        if (!in_array($platform,['allegro','empik','mediamarkt','erli','morele','prestashop','woocommerce','altreo'],true)) { throw new RuntimeException('Brak obsługi przekazania przesyłki do źródła '.$platform.'.'); }
         $service=$this->service($platform);
         $account=$this->sourceAccount($service,(int)($order['account_source_id']??0),$platform);
         return ['platform'=>$platform,'service'=>$service,'account'=>$account];

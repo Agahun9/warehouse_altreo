@@ -84,6 +84,8 @@
     if (!window.confirm(button.dataset.confirmClick || 'Potwierdzić operację?')) event.preventDefault();
   }));
   document.querySelectorAll('[data-series-filter-form] select').forEach(select => select.addEventListener('change', () => select.form.submit()));
+  document.querySelectorAll('[data-dialog-open]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.dialogOpen)?.showModal()));
+  document.querySelectorAll('dialog [data-dialog-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
   document.querySelectorAll('[data-doc-items]').forEach(container => {
     const money = value => { const n = Number(String(value ?? '').trim().replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
     const reindex = () => container.querySelectorAll('.om-doc-item-row').forEach((row, index) => row.querySelectorAll('[name]').forEach(field => { field.name = field.name.replace(/items\[\d+\]/, `items[${index}]`); }));
@@ -690,6 +692,8 @@
       const option = preset?.selectedOptions[0];
       if (!option || option.value === 'custom') return;
       Object.keys(fields).forEach(key => { if (option.dataset[key]) fields[key].value = option.dataset[key]; });
+      // Programowa zmiana wartości nie wywołuje zdarzenia input, więc wycenę trzeba odświeżyć ręcznie.
+      scheduleValuation();
     };
     preset?.addEventListener('change', applyPreset);
     Object.values(fields).forEach(field => field.addEventListener('input', () => { if (preset) preset.value = 'custom'; }));

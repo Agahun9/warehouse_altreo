@@ -12,7 +12,10 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders' or $currentController eq 'index' or $currentController eq 'messages'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20261001-8">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20261001-11">
+  {/if}
+  {if $currentController eq 'orders' and ($tab|default:'') eq 'documents'}
+    <link rel="stylesheet" href="{$assetBase}/css/orders-documents.css?v=20261001-1">
   {/if}
   {if $currentController eq 'messages'}
     <link rel="stylesheet" href="{$assetBase}/css/messages.css?v=20260918-1">
@@ -399,6 +402,7 @@
             <li class="nav-item"><a href="orders.php?tab=statuses" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'statuses'} active{/if}" title="Statusy"><i class="nav-icon bi bi-diagram-3"></i><p>Statusy</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=payments" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'payments'} active{/if}" title="Płatności"><i class="nav-icon bi bi-credit-card"></i><p>Płatności</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=printing" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'printing'} active{/if}" title="Drukarki"><i class="nav-icon bi bi-printer"></i><p>Drukarki</p></a></li>
+            <li class="nav-item"><a href="orders.php?tab=templates" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'templates'} active{/if}" title="Szablony druku"><i class="nav-icon bi bi-file-earmark-ruled"></i><p>Szablony druku</p></a></li>
             <li class="nav-item"><a href="orders.php?tab=general" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'general'} active{/if}" title="Ustawienia ogólne"><i class="nav-icon bi bi-sliders"></i><p>Ustawienia ogólne</p></a></li>
             {if $currentUser.is_headmaster}
             <li class="nav-header sc-nav-header">Administracja SalesCenter</li>

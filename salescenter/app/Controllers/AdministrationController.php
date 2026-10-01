@@ -155,7 +155,8 @@ final class AdministrationController extends Controller
         Tenant::clear();
         try {
             $report = GlobalCronService::run($task);
-            http_response_code(!empty($report['errors']) ? 500 : 200);
+            // Błędy pojedynczych kont są zapisane w om_accounts.last_error i ponawiane – 500 tylko przy awarii przebiegu.
+            http_response_code(!empty($report['fatal']) ? 500 : 200);
             echo json_encode($report, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         } catch (\Throwable $error) {
             error_log('[global-cron] '.get_class($error));

@@ -12,8 +12,6 @@
       {/if}
     {/foreach}
   </select>
-  <label>Szerokość <input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.width|default:100}" required> mm</label>
-  <label>Wysokość <input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="{$labelPrinterDefault.height|default:150}" required> mm</label>
   <button class="om-btn om-small om-primary" name="label_scope" value="newest"><i class="bi bi-printer"></i> Drukuj najnowszą</button>
   <button class="om-btn om-small" name="label_scope" value="all"><i class="bi bi-printers"></i> Drukuj wszystkie</button>
 </form>

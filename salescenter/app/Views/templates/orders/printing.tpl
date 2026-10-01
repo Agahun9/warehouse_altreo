@@ -1,15 +1,35 @@
-<div class="om-section-heading"><div><h2>Automatyczny druk etykiet</h2><p>Stanowiska pobierają zadania w tle, a każda etykieta trafia na drukarkę wybraną przy przesyłce.</p></div><span class="om-chip">{$printStations|count} stanowisk</span></div>
-<section class="om-panel om-pad om-top">
+<div class="sc-printing">
+<div class="sc-printing-hero">
+  <div class="sc-printing-hero-copy"><span class="sc-printing-eyebrow"><i class="bi bi-grid-1x2-fill"></i> CENTRUM DRUKU</span><h2>Druk i urządzenia</h2><p>Zarządzaj stanowiskami, drukarkami i sprawdzaj historię zadań w jednym miejscu.</p></div>
+  <div class="sc-printing-hero-mark"><i class="bi bi-printer-fill"></i><span>Panel drukowania</span></div>
+</div>
+<div class="sc-printing-overview" aria-label="Podsumowanie drukowania">
+  <article><span class="sc-printing-overview-icon is-blue"><i class="bi bi-pc-display"></i></span><div><small>Stanowiska</small><strong>{$printStations|count}</strong></div></article>
+  <article><span class="sc-printing-overview-icon is-violet"><i class="bi bi-receipt-cutoff"></i></span><div><small>Drukarki fiskalne</small><strong>{$printFiscalPrinters|count}</strong></div></article>
+  <article><span class="sc-printing-overview-icon is-green"><i class="bi bi-upc-scan"></i></span><div><small>Zadania etykiet</small><strong>{$printJobs|count}</strong></div></article>
+  <article><span class="sc-printing-overview-icon is-amber"><i class="bi bi-receipt"></i></span><div><small>Zadania fiskalne</small><strong>{$printFiscalJobs|count}</strong></div></article>
+</div>
+<nav class="sc-printing-tabs" aria-label="Sekcje panelu drukowania">
+  <a href="#sc-printing-labels"><i class="bi bi-upc-scan"></i> Etykiety</a>
+  <a href="#sc-printing-stations"><i class="bi bi-pc-display"></i> Stanowiska</a>
+  <a href="#sc-printing-fiscal"><i class="bi bi-receipt-cutoff"></i> Druk fiskalny</a>
+  <a href="#sc-printing-label-history"><i class="bi bi-clock-history"></i> Historia etykiet</a>
+  <a href="#sc-printing-fiscal-history"><i class="bi bi-journal-text"></i> Historia fiskalna</a>
+</nav>
+<div class="om-section-heading sc-printing-section-title" id="sc-printing-labels"><div><span class="sc-printing-eyebrow">ETYKIETY WYSYŁKOWE</span><h2>Ustawienia etykiet</h2><p>Wybierz domyślną drukarkę i format etykiety używany przy wydruku przesyłek.</p></div><span class="om-chip">{$printStations|count} stanowisk</span></div>
+<section class="om-panel om-pad om-top sc-printing-defaults">
   <h3>Przypisanie drukarki do czynności</h3>
-  <p class="om-muted">Etykieta kurierska będzie domyślnie kierowana na przypisaną drukarkę. Przy zamówieniu nadal możesz wybrać inną.</p>
+  <p class="om-muted">Etykieta kurierska będzie domyślnie kierowana na przypisaną drukarkę. Przy zamówieniu nadal możesz wybrać inną. Format etykiety (szerokość × wysokość) obowiązuje dla każdego wydruku etykiety z zamówienia.</p>
   {if $canWrite}<form class="om-form" method="post" action="?controller=orders&action=save">
     <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="label_printer_action"><input type="hidden" name="tab" value="printing">
     <label>Etykieta kurierska<select name="printer_target"><option value="">Nie przypisuj — wybór przy wydruku</option>{foreach $printStations as $station}{if $station.enabled and $station.printers}<optgroup label="{$station.name|escape}{if not $station.online} — offline{/if}">{foreach $station.printers as $printer}<option value="{$station.id}|{$printer|escape}" {if ($labelActionPrinterDefault.target|default:'') eq ($station.id|cat:'|'|cat:$printer)}selected{/if}>{$printer|escape}</option>{/foreach}</optgroup>{/if}{/foreach}</select></label>
+    <label>Szerokość etykiety <span>mm</span><input name="label_width_mm" type="number" min="30" max="500" step="0.1" value="{$labelActionPrinterDefault.width|default:100}" required></label>
+    <label>Wysokość etykiety <span>mm</span><input name="label_height_mm" type="number" min="30" max="500" step="0.1" value="{$labelActionPrinterDefault.height|default:150}" required></label>
     <button class="om-btn om-primary"><i class="bi bi-check2"></i> Zapisz przypisanie</button>
   </form>{/if}
 </section>
-<div class="om-two-col">
-  <section class="om-panel om-pad">
+<div class="om-two-col sc-printing-columns" id="sc-printing-stations">
+  <section class="om-panel om-pad sc-printing-card">
     <h3>Stanowiska i drukarki</h3>
     {foreach $printStations as $station}
       <article class="om-rule">
@@ -23,7 +43,7 @@
       </article>
     {foreachelse}<div class="om-empty"><i class="bi bi-printer"></i><h3>Dodaj pierwsze stanowisko</h3><p>Po wpisaniu tokenu agent sam zgłosi zainstalowane drukarki.</p></div>{/foreach}
   </section>
-  <section class="om-panel om-pad">
+  <section class="om-panel om-pad sc-printing-card">
     <h3>Podłącz agent</h3>
     <div class="sc-agent-download">
       <p><strong>1. Pobierz aplikację agenta druku</strong> na komputer przy drukarce:</p>
@@ -41,7 +61,7 @@
     <p class="om-muted">Stanowisko jest online, gdy kontaktowało się z serwerem w ciągu ostatnich 3 minut. Token jest przechowywany wyłącznie jako skrót SHA-256.</p>
   </section>
 </div>
-<section class="om-panel om-pad om-top">
+<section class="om-panel om-pad om-top sc-printing-fiscal" id="sc-printing-fiscal">
   <div class="om-fiscal-heading"><div><span class="om-eyebrow">PARAGONY</span><h3>Drukarki fiskalne Posnet</h3><p>Urządzenia połączone z agentem. Ustawienia paragonów znajdziesz w zakładce <a href="?controller=orders&tab=documents">Dokumenty</a>.</p></div><span class="om-chip">{$printFiscalPrinters|count} {if $printFiscalPrinters|count eq 1}drukarka{elseif $printFiscalPrinters|count >= 2 and $printFiscalPrinters|count <= 4}drukarki{else}drukarek{/if}</span></div>
   <div class="om-fiscal-help"><i class="bi bi-info-circle"></i><span>Test Posnet uruchomisz w aplikacji agenta druku. Przy błędzie „No route to host” sprawdź adres IP, port Interfejsu PC (zwykle 6666) i uprawnienie agenta w macOS: Ustawienia systemowe → Prywatność i ochrona → Sieć lokalna.</span></div>
   <div class="om-fiscal-list">
@@ -62,13 +82,16 @@
   </div>
   {if $canWrite}<details class="om-fiscal-add"><summary><i class="bi bi-plus-circle"></i> Dodaj drukarkę ręcznie</summary><p>Użyj tej opcji, gdy agent nie zgłosił urządzenia automatycznie.</p><form class="om-form" method="post" action="?controller=orders&action=save"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="fiscal_printer_add"><input type="hidden" name="tab" value="printing"><label>Stanowisko<select name="station_id" required><option value="">Wybierz stanowisko</option>{foreach $printStations as $station}{if $station.enabled}<option value="{$station.id}">{$station.name|escape}</option>{/if}{/foreach}</select></label><label>Nazwa<input name="fiscal_printer_name" value="Posnet Trio" maxlength="150" required></label><label>IP / host<input name="fiscal_printer_host" placeholder="192.168.1.45" maxlength="255" required></label><label>Port Interfejsu PC<input name="fiscal_printer_port" type="number" min="1" max="65535" value="6666" required></label><button class="om-btn om-primary">Dodaj drukarkę</button></form></details>{/if}
 </section>
-<section class="om-panel om-top">
+<div class="om-section-heading sc-printing-history-title" id="sc-printing-label-history"><div><span class="sc-printing-eyebrow">ETYKIETY WYSYŁKOWE</span><h2>Historia zadań etykiet</h2><p>Ostatnie zadania przekazane do stanowisk druku.</p></div><span class="om-chip">{$printJobs|count} zadań</span></div>
+<section class="om-panel om-top sc-printing-history">
   <table class="om-table"><thead><tr><th>Utworzono (UTC)</th><th>Stanowisko</th><th>Drukarka</th><th>Przesyłka</th><th>Status</th><th>Komunikat</th></tr></thead><tbody>
   {foreach $printJobs as $job}<tr><td>{$job.created_at|escape}</td><td>{$job.station_name|escape}</td><td>{$job.printer_name|escape}</td><td>{if $job.order_id}<a href="?controller=orders&id={$job.order_id}">#{$job.shipment_id}</a>{else}#{$job.shipment_id}{/if}</td><td><span class="om-chip">{if $job.status eq 'queued'}w kolejce{elseif $job.status eq 'processing'}drukowanie{elseif $job.status eq 'printed'}wydrukowano{elseif $job.status eq 'printer_offline'}drukarka offline{else}błąd{/if}</span></td><td>{$job.status_message|default:'—'|escape}</td></tr>{foreachelse}<tr><td colspan="6"><div class="om-empty"><i class="bi bi-clock-history"></i><h3>Kolejka jest pusta</h3><p>Przycisk „Drukuj” pojawia się przy gotowej etykiecie przesyłki.</p></div></td></tr>{/foreach}
   </tbody></table>
 </section>
-<section class="om-panel om-top">
+<div class="om-section-heading sc-printing-history-title" id="sc-printing-fiscal-history"><div><span class="sc-printing-eyebrow">PARAGONY</span><h2>Historia fiskalna</h2><p>Potwierdzenia i statusy zadań wysłanych do drukarek Posnet.</p></div><span class="om-chip">{$printFiscalJobs|count} zadań</span></div>
+<section class="om-panel om-top sc-printing-history">
   <table class="om-table"><thead><tr><th>Utworzono (UTC)</th><th>Drukarka fiskalna</th><th>Zamówienie</th><th>Seria lokalna</th><th>Tryb</th><th>Status</th><th>Numer fiskalny / komunikat</th></tr></thead><tbody>
   {foreach $printFiscalJobs as $job}<tr><td>{$job.created_at|escape}</td><td>{$job.printer_name|escape}{if $job.printer_deleted_at} · usunięta drukarka{elseif !$job.printer_enabled} · wyłączona{/if}</td><td><a href="?controller=orders&id={$job.order_id}">#{$job.order_id}</a></td><td>{$job.local_number|escape}</td><td>{if $job.environment eq 'production'}PRODUKCJA{else}sandbox{/if}</td><td>{$job.status|escape}</td><td>{if $job.fiscal_number}{$job.fiscal_number|escape} · {/if}{$job.status_message|escape}</td></tr>{foreachelse}<tr><td colspan="7"><div class="om-empty"><i class="bi bi-receipt"></i><h3>Brak zadań fiskalnych</h3></div></td></tr>{/foreach}
   </tbody></table>
 </section>
+</div>

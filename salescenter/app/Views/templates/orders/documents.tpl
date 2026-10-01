@@ -1,61 +1,34 @@
 {assign var=documentKindLabels value=['invoice'=>'Faktura','receipt'=>'Paragon','invoice_correction'=>'Korekta faktury','receipt_correction'=>'Korekta paragonu']}
-<div class="om-section-heading om-docs-intro"><div><span class="om-eyebrow">SPRZEDAŻ · DOKUMENTY</span><h2>Dokumenty sprzedaży</h2><p>Zarządzaj seriami i danymi sprzedawcy. Wystawione dokumenty znajdziesz poniżej.</p></div><span class="om-chip">A4 · podgląd i wydruk</span></div>
-<section class="om-docs-guide">
-  <div class="om-docs-guide-icon"><i class="bi bi-printer"></i></div>
-  <div><strong>Druk paragonów</strong><p>Drukarkę przypisujesz do serii paragonów. Faktury i korekty nie trafiają do kolejki Posnet.</p></div>
-  <div class="om-docs-guide-modes"><span><b>PRODUKCJA</b> fiskalizuje sprzedaż</span><span><b>SANDBOX</b> drukuje niefiskalnie</span></div>
-  <a class="om-btn om-small" href="?controller=orders&tab=printing">Ustawienia drukarek <i class="bi bi-arrow-right"></i></a>
-</section>
-<div class="om-docs-workspace">
-<section class="om-panel om-pad om-docs-series-panel">
-  <div class="om-docs-panel-title"><div><span class="om-eyebrow">01 · NUMERACJA</span><h3>Serie dokumentów</h3><p>Każda seria ma własny licznik i przypisanie drukarki.</p></div><span class="om-chip">{$series|count} {if $series|count eq 1}seria{elseif $series|count >= 2 and $series|count <= 4}serie{else}serii{/if}</span></div>
-  <div class="om-series-list">
-  {foreach $series as $s}
-    <details class="om-series-item" id="om-series-{$s.id}">
-      <summary>
-        <span class="om-series-summary-main"><span class="om-series-badge om-series-badge-{$s.kind}">{$documentKindLabels[$s.kind]|default:$s.kind}</span><strong>{if !empty($s.numbering.color)}<span class="om-series-color" style="background:{$s.numbering.color|escape}" aria-hidden="true"></span>{/if}{$s.name|escape}</strong><span class="om-series-pattern">{$s.pattern|escape}</span></span>
-        <span class="om-series-summary-meta"><span class="om-series-next">Następny numer <b>{$s.next_number}</b></span>{if $s.document_count}<span class="om-chip">{$s.document_count} dok.</span>{else}<span class="om-chip om-chip-idle">nieużywana</span>{/if}<i class="bi bi-chevron-down oc-chevron"></i></span>
-      </summary>
-      <div class="om-series-body">
-        <form class="om-form" method="post" action="?controller=orders&action=save">
-          <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_update"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
-          <label>Nazwa serii<input name="name" value="{$s.name|escape}" maxlength="100" required {if !$canWrite}disabled{/if}></label>
-          <label>Typ<select name="kind" {if !$canWrite}disabled{/if}><option value="invoice" {if $s.kind eq 'invoice'}selected{/if}>Faktura</option><option value="receipt" {if $s.kind eq 'receipt'}selected{/if}>Paragon</option><option value="invoice_correction" {if $s.kind eq 'invoice_correction'}selected{/if}>Korekta faktury</option><option value="receipt_correction" {if $s.kind eq 'receipt_correction'}selected{/if}>Korekta paragonu</option></select></label>
-          <label>Wzór numeru<input name="pattern" value="{$s.pattern|escape}" maxlength="100" required {if !$canWrite}disabled{/if}></label>
-          {include file='orders/series_numbering.tpl' numbering=$s.numbering|default:[]}
-          {include file='orders/series_document_settings.tpl' documentSettings=$s.document_settings|default:[]}
-          <label>Następny numer<input name="next_number" type="number" min="1" max="100000000" value="{$s.next_number}" required {if !$canWrite}disabled{/if}></label>
-          {if $s.kind eq 'receipt'}<label>Drukarka fiskalna<select name="fiscal_printer_id" {if !$canWrite}disabled{/if}><option value="0" {if !$s.effective_printer_id}selected{/if}>Bez automatycznego druku</option>{foreach $printFiscalPrinters as $printer}{if $printer.enabled or $printer.id eq $s.effective_printer_id}<option value="{$printer.id}" {if $printer.id eq $s.effective_printer_id}selected{/if}>{$printer.name|escape} · {$printer.host|escape}:{$printer.port} · {if $printer.enabled}{if $printer.environment eq 'production'}PRODUKCJA{else}SANDBOX{/if}{else}nieaktywna — wybierz inną{/if}</option>{/if}{/foreach}</select></label>{/if}
-          {if $s.document_count}<small class="om-muted">Seria ma wystawione dokumenty — nie można zmienić typu ani cofnąć licznika.</small>{/if}
-          {if $canWrite}<button class="om-btn om-small">Zapisz serię</button>{/if}
-        </form>
-        {if $canWrite}
-        <form class="om-series-delete" method="post" action="?controller=orders&action=save" {if !$s.document_count}data-confirm-action="Usunąć serię „{$s.name|escape}”? Tej operacji nie można cofnąć."{/if}>
-          <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_delete"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
-          {if $s.document_count}<button class="om-btn om-small" type="button" disabled title="Seria ma wystawione dokumenty — nie można jej usunąć"><i class="bi bi-trash"></i> Usuń serię</button>
-          {else}<button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń serię</button>{/if}
-        </form>
-        {/if}
-      </div>
-    </details>
-  {foreachelse}<p class="om-muted">Dodaj osobne serie dla faktur, paragonów i korekt.</p>{/foreach}
+<div class="sc-docs" data-documents-panel>
+  <header class="sc-docs-heading"><div><span class="sc-docs-kicker"><i class="bi bi-file-earmark-text"></i> DOKUMENTY SPRZEDAŻY</span><h2>Dokumenty pod kontrolą</h2><p>Historia sprzedaży, numeracja i dane firmy w jednym panelu.</p></div>{if $canWrite}<button class="om-btn om-primary" type="button" data-docs-add-series><i class="bi bi-plus-lg"></i> Nowa seria</button>{/if}</header>
+  <div class="sc-docs-overview" aria-label="Podsumowanie dokumentów">
+    <article class="sc-docs-metric"><span class="sc-docs-metric-icon"><i class="bi bi-files"></i></span><div><strong>{$documents|count}</strong><span>Dokumenty w widoku</span><small>Ostatnie dokumenty z wybranej serii</small></div></article>
+    <article class="sc-docs-metric"><span class="sc-docs-metric-icon"><i class="bi bi-collection"></i></span><div><strong>{$series|count}</strong><span>Serie dokumentów</span><small>Oddzielne formaty i liczniki</small></div></article>
+    <article class="sc-docs-metric"><span class="sc-docs-metric-icon"><i class="bi bi-printer"></i></span><div><strong>{$printFiscalPrinters|count}</strong><span>Drukarki paragonów</span><small>Urządzenia przypisywane do serii</small></div></article>
   </div>
-  {if $canWrite}<details class="om-fiscal-add om-docs-add-series"><summary><i class="bi bi-plus-lg"></i> Dodaj nową serię</summary><form class="om-form om-top" method="post" action="?controller=orders&action=save"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series"><input type="hidden" name="tab" value="documents"><label>Nazwa serii<input name="name" placeholder="Faktury — sklep główny" required></label><label>Typ<select name="kind"><option value="invoice">Faktura</option><option value="receipt">Paragon</option><option value="invoice_correction">Korekta faktury</option><option value="receipt_correction">Korekta paragonu</option></select></label><label>Wzór numeru<input name="pattern" value="FV/{literal}{YYYY}/{MM}/{N}{/literal}" required></label>{include file='orders/series_numbering.tpl' numbering=[]}{include file='orders/series_document_settings.tpl' documentSettings=[]}<label>Pierwszy / kolejny numer<input name="next_number" type="number" min="1" value="1" required></label><label>Drukarka dla serii paragonów<select name="fiscal_printer_id"><option value="0">Bez automatycznego druku</option>{foreach $printFiscalPrinters as $printer}{if $printer.enabled}<option value="{$printer.id}">{$printer.name|escape} · {$printer.host|escape}:{$printer.port}</option>{/if}{/foreach}</select></label><small class="om-muted">Dla faktur i korekt pozostaw „Bez automatycznego druku”. {literal}{N} — kolejny numer · {YYYY} — rok · {MM} — miesiąc.{/literal}</small><button class="om-btn om-primary">Dodaj serię</button></form></details>{/if}
-</section>
-</div>
-<section class="om-panel om-top">
-  <div class="om-panel-heading om-doc-heading">
-    <div><span class="om-eyebrow">02 · HISTORIA</span><h3>Ostatnie dokumenty</h3><p>Podgląd A4, edycja i powiązane zamówienie w jednym miejscu.</p></div>
+  <nav class="sc-docs-tabs" role="tablist" aria-label="Panel dokumentów"><a href="#sc-docs-history" id="sc-docs-history-tab" class="is-active" role="tab" aria-controls="sc-docs-history" aria-selected="true" data-docs-tab="history"><i class="bi bi-journal-text"></i> Wystawione dokumenty <b>{$documents|count}</b></a><a href="#sc-docs-series" id="sc-docs-series-tab" role="tab" aria-controls="sc-docs-series" aria-selected="false" data-docs-tab="series"><i class="bi bi-sliders"></i> Serie i ustawienia <b>{$series|count}</b></a></nav>
+  <div id="sc-docs-history" class="sc-docs-panel" role="tabpanel" aria-labelledby="sc-docs-history-tab" data-docs-panel="history">
+<section class="om-panel">
+  <div class="sc-docs-panel-head">
+    <div><h3>Wystawione dokumenty</h3><p>Ostatnie 100 dokumentów. Rozwiń wiersz, aby zobaczyć szczegóły i dostępne czynności.</p></div>
     <form method="get" class="om-doc-filter" data-series-filter-form><input type="hidden" name="controller" value="orders"><input type="hidden" name="tab" value="documents"><label>Seria<select name="series_id"><option value="0">Wszystkie serie</option>{foreach $series as $s}<option value="{$s.id}" {if $documentSeriesFilter eq $s.id}selected{/if}>{$s.name|escape}</option>{/foreach}</select></label><button class="om-btn om-small" type="submit">Filtruj</button></form>
-    <span class="om-chip">{$documents|count} z ostatnich 100</span>
+  </div>
+  <div class="sc-docs-toolbar">
+    <label class="sc-docs-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Numer dokumentu, seria lub zamówienie…" aria-label="Szukaj w widocznych dokumentach" data-docs-search></label>
+    <div class="sc-docs-kind" aria-label="Rodzaj dokumentów"><button type="button" class="is-active" data-docs-kind="all" aria-pressed="true">Wszystkie</button><button type="button" data-docs-kind="invoice" aria-pressed="false">Faktury</button><button type="button" data-docs-kind="receipt" aria-pressed="false">Paragony</button><button type="button" data-docs-kind="correction" aria-pressed="false">Korekty</button></div>
+    <span class="sc-docs-results" data-docs-result aria-live="polite">{$documents|count} / {$documents|count}</span>
   </div>
   <div class="om-doc-list">
   {foreach $documents as $d}
-    <details class="om-doc-item">
+    <details class="om-doc-item" data-document-row data-document-kind="{$d.kind|escape}" data-document-search="{$d.number|escape} {$d.series_name|default:''|escape} {$d.order_id}">
       <summary>
-        <span class="om-doc-summary-main"><strong>{$d.number|escape}</strong><span class="om-series-badge om-series-badge-{$d.kind}">{$documentKindLabels[$d.kind]|default:$d.kind}</span>{if $d.has_correction}<span class="om-chip om-chip-idle">skorygowany</span>{/if}</span>
-        <span class="om-doc-summary-meta"><span><a href="?controller=orders&id={$d.order_id}">Zam. #{$d.order_id}</a> · {$d.series_name|default:'—'|escape}</span><span>{$d.created_at|escape} UTC</span><strong>{($d.gross_cents/100)|string_format:'%.2f'} {$d.currency|escape}</strong></span>
-        <i class="bi bi-chevron-down oc-chevron"></i>
+        <span class="om-doc-summary-main"><strong>{$d.number|escape}</strong><span class="sc-docs-document-tags"><span class="om-series-badge om-series-badge-{$d.kind}">{$documentKindLabels[$d.kind]|default:$d.kind}</span>{if $d.has_correction}<span class="sc-docs-state">Skorygowany</span>{/if}
+          {if $d.kind eq 'receipt' and !empty($d.fiscal_job)}<span class="sc-docs-state {if $d.fiscal_job.status eq 'printed'}is-success{elseif $d.fiscal_job.status eq 'error' or $d.fiscal_job.status eq 'printer_offline'}is-error{/if}">Posnet · {if $d.fiscal_job.status eq 'printed'}wydrukowano{elseif $d.fiscal_job.status eq 'queued'}w kolejce{elseif $d.fiscal_job.status eq 'processing'}drukowanie{else}błąd druku{/if}</span>{/if}
+          {assign var=documentSubmission value=$ksefSubmissions[$d.id]|default:null}{if $documentSubmission and $documentSubmission.state eq 'accepted'}<span class="sc-docs-state is-success">KSeF · przyjęto</span>{/if}
+        </span></span>
+        <span class="om-doc-summary-meta"><span><a href="?controller=orders&id={$d.order_id}">Zamówienie #{$d.order_id}</a> · {$d.series_name|default:'—'|escape}</span><time>{$d.created_at|escape} UTC</time></span>
+        <span class="sc-docs-doc-amount">{($d.gross_cents/100)|string_format:'%.2f'} <small>{$d.currency|escape}</small></span>
+        <span class="sc-docs-doc-actions"><a class="sc-docs-preview" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener" aria-label="Podgląd dokumentu {$d.number|escape} w nowej karcie" title="Podgląd A4"><i class="bi bi-file-earmark-text"></i></a><i class="bi bi-chevron-down oc-chevron"></i></span>
       </summary>
       <div class="om-doc-body">
         <div class="om-actions"><a class="om-btn om-small" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Podgląd A4 ↗</a>{if $canWrite}<a class="om-btn om-small" href="?controller=orders&action=correctdocument&id={$d.id}"><i class="bi bi-arrow-counterclockwise"></i> Wystaw korektę</a>{/if}</div>
@@ -102,15 +75,66 @@
             <button class="om-btn om-primary om-small">Zapisz zmiany w dokumencie</button>
           </form>
         </details>
-        <form method="post" action="?controller=orders&action=save" class="om-doc-delete" {if !$d.has_correction}data-double-confirm="Usunąć dokument {$d.number|escape}? Tej operacji nie można cofnąć.||Potwierdź jeszcze raz: dokument {$d.number|escape} zostanie trwale usunięty."{/if}>
+        {if !$d.has_correction}<form method="post" action="?controller=orders&action=save" class="om-doc-delete" {if !$d.has_correction}data-double-confirm="Usunąć dokument {$d.number|escape}? Tej operacji nie można cofnąć.||Potwierdź jeszcze raz: dokument {$d.number|escape} zostanie trwale usunięty."{/if}>
           <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_delete"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
-          {if $d.has_correction}<button class="om-btn om-small" type="button" disabled title="Do tego dokumentu wystawiono korektę — usuń najpierw korektę"><i class="bi bi-trash"></i> Usuń dokument</button>
-          {else}<button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń dokument</button>{/if}
-        </form>
+          <button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń dokument</button>
+        </form>{/if}
         {/if}
         {/if}
       </div>
     </details>
   {foreachelse}<div class="om-empty"><i class="bi bi-file-earmark-text"></i><h3>Brak dokumentów w tym widoku</h3><p>{if $documentSeriesFilter}Wybierz „Wszystkie serie”, aby zobaczyć pozostałe dokumenty.{else}Dokument wystawisz w szczegółach zamówienia.{/if}</p></div>{/foreach}
+    <div class="sc-docs-no-match" data-docs-no-match hidden><i class="bi bi-search"></i>Brak dokumentów pasujących do wybranych filtrów.</div>
   </div>
 </section>
+  </div>
+  <div id="sc-docs-series" class="sc-docs-panel" role="tabpanel" aria-labelledby="sc-docs-series-tab" data-docs-panel="series">
+<section class="om-panel om-pad om-docs-series-panel">
+  <div class="om-docs-panel-title"><div><h3>Serie dokumentów</h3><p>Rozwiń serię, aby zmienić jej ustawienia. Dane i licznik są przypisane osobno do każdej serii.</p></div><span class="om-chip">{$series|count} {if $series|count eq 1}seria{elseif $series|count >= 2 and $series|count <= 4}serie{else}serii{/if}</span></div>
+  <div class="om-series-list">
+  {foreach $series as $s}
+    <details class="om-series-item" id="om-series-{$s.id}">
+      <summary>
+        <span class="om-series-summary-main"><span class="om-series-badge om-series-badge-{$s.kind}">{$documentKindLabels[$s.kind]|default:$s.kind}</span><strong>{if !empty($s.numbering.color)}<span class="om-series-color" style="background:{$s.numbering.color|escape}" aria-hidden="true"></span>{/if}{$s.name|escape}</strong><span class="om-series-pattern">{$s.pattern|escape}</span></span>
+        <span class="om-series-summary-meta"><span class="om-series-next">Kolejny numer <b>{$s.next_number}</b></span><span class="sc-docs-series-count">{$s.document_count|default:0} dok.</span><i class="bi bi-chevron-down oc-chevron"></i></span>
+      </summary>
+      <div class="om-series-body">
+        <form class="om-form" method="post" action="?controller=orders&action=save" data-docs-series-form>
+          <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_update"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
+          <label>Nazwa serii<input name="name" value="{$s.name|escape}" maxlength="100" required {if !$canWrite}disabled{/if}></label>
+          {if $s.document_count}<label>Rodzaj dokumentu<input type="text" value="{$documentKindLabels[$s.kind]|default:$s.kind|escape}" readonly><input type="hidden" name="kind" value="{$s.kind|escape}"></label>
+          {else}<label>Rodzaj dokumentu<select name="kind" {if !$canWrite}disabled{/if}><option value="invoice" {if $s.kind eq 'invoice'}selected{/if}>Faktura</option><option value="receipt" {if $s.kind eq 'receipt'}selected{/if}>Paragon</option><option value="invoice_correction" {if $s.kind eq 'invoice_correction'}selected{/if}>Korekta faktury</option><option value="receipt_correction" {if $s.kind eq 'receipt_correction'}selected{/if}>Korekta paragonu</option></select></label>{/if}
+          <label>Kolejny numer dokumentu<input name="next_number" type="number" min="1" max="100000000" value="{$s.next_number}" required {if !$canWrite}disabled{/if}></label>
+          <label data-series-for="receipt">Drukarka paragonów<select name="fiscal_printer_id" {if !$canWrite}disabled{/if}><option value="0" {if !$s.effective_printer_id}selected{/if}>Bez automatycznego druku</option>{foreach $printFiscalPrinters as $printer}{if $printer.enabled or $printer.id eq $s.effective_printer_id}<option value="{$printer.id}" {if $printer.id eq $s.effective_printer_id}selected{/if}>{$printer.name|escape} · {$printer.host|escape}:{$printer.port} · {if $printer.enabled}{if $printer.environment eq 'production'}PRODUKCJA{else}SANDBOX{/if}{else}nieaktywna — wybierz inną{/if}</option>{/if}{/foreach}</select></label>
+          {include file='orders/series_numbering.tpl' numbering=$s.numbering|default:[] numberingPattern=$s.pattern newSeries=false}
+          {include file='orders/series_document_settings.tpl' documentSettings=$s.document_settings|default:[]}
+          {if $s.document_count}<small class="om-muted sc-docs-series-note">Wystawiono już dokumenty w tej serii. Jej rodzaj oraz wcześniejsze numery są zachowane.</small>{/if}
+          <div class="sc-docs-series-footer"><span>Ustawienia dotyczą nowych dokumentów.</span>{if $canWrite}<button class="om-btn om-primary" type="submit"><i class="bi bi-check2"></i> Zapisz ustawienia serii</button>{/if}</div>
+        </form>
+        {if $canWrite and !$s.document_count}
+        <form class="om-series-delete" method="post" action="?controller=orders&action=save" {if !$s.document_count}data-confirm-action="Usunąć serię „{$s.name|escape}”? Tej operacji nie można cofnąć."{/if}>
+          <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_delete"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
+          <button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń pustą serię</button>
+        </form>
+        {/if}
+      </div>
+    </details>
+  {foreachelse}<p class="om-muted">Dodaj osobne serie dla faktur, paragonów i korekt.</p>{/foreach}
+  </div>
+  {if $canWrite}<details class="om-fiscal-add om-docs-add-series" data-docs-new-series><summary><i class="bi bi-plus-circle"></i> Dodaj nową serię dokumentów</summary>
+    <form class="om-form sc-docs-new-form" method="post" action="?controller=orders&action=save" data-docs-series-form data-new-series-form>
+      <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series"><input type="hidden" name="tab" value="documents">
+      <label>Nazwa serii<input name="name" maxlength="100" placeholder="np. Faktury — sklep główny" required></label>
+      <label>Rodzaj dokumentu<select name="kind"><option value="invoice">Faktura</option><option value="receipt">Paragon</option><option value="invoice_correction">Korekta faktury</option><option value="receipt_correction">Korekta paragonu</option></select></label>
+      <label>Pierwszy numer dokumentu<input name="next_number" type="number" min="1" max="100000000" value="1" required></label>
+      <label data-series-for="receipt">Drukarka paragonów<select name="fiscal_printer_id"><option value="0">Bez automatycznego druku</option>{foreach $printFiscalPrinters as $printer}{if $printer.enabled}<option value="{$printer.id}">{$printer.name|escape} · {if $printer.environment eq 'production'}PRODUKCJA{else}SANDBOX{/if}</option>{/if}{/foreach}</select></label>
+      {include file='orders/series_numbering.tpl' numbering=[] newSeries=true}
+      {include file='orders/series_document_settings.tpl' documentSettings=[]}
+      <div class="sc-docs-series-footer"><span>Seria otrzyma oddzielny licznik dokumentów.</span><button class="om-btn om-primary" type="submit"><i class="bi bi-plus-lg"></i> Utwórz serię</button></div>
+    </form>
+  </details>{/if}
+  <div class="sc-docs-series-help"><i class="bi bi-printer"></i><div><strong>Automatyczny druk paragonów</strong><p>Przypisz drukarkę do serii paragonów. Tryb produkcyjny wystawia paragon fiskalny, a sandbox służy do wydruków niefiskalnych.</p></div><a class="om-btn om-small" href="?controller=orders&tab=printing">Drukarki i stanowiska <i class="bi bi-arrow-up-right"></i></a></div>
+</section>
+  </div>
+</div>
+<script src="dist/js/orders-documents.js?v=20261001-1" defer></script>

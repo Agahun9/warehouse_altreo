@@ -131,6 +131,7 @@ final class SellasistArchiveService
                     $this->listPhase($host, $apiKey, $phase, $path, $state, $report, $deadline, $manual);
                 }
                 $this->detailPhase($host, $apiKey, $state, $report, $deadline);
+                $this->repo->syncReceiptNumbers();
             } catch (ArchiveStopException $stop) {
                 $state['last_error'] = $stop->getMessage();
                 $state['backoff_until'] = time() + $stop->backoff;
