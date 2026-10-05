@@ -190,7 +190,7 @@ final class OrderShipmentService
             $mapping=$delivery!==''?($mappings[self::deliveryKey((string)$order['platform'],$delivery)]??$mappings[self::deliveryKey('',$delivery)]??null):null;
             if ($mapping && (int)$mapping['carrier_account_id']===$carrierAccountId && $mapping['service']!=='') { $preferred=(string)$mapping['service']; }
         }
-        return ['provider'=>$definition['key'],'options'=>$provider->cachedServices($carrier,$order),'automatic'=>$provider->automaticService($carrier,$order),'preferred'=>$preferred,'valuation'=>!empty($definition['capabilities']['valuation']),'cod'=>(string)$definition['capabilities']['cod']];
+        return ['provider'=>$definition['key'],'options'=>$provider->cachedServices($carrier,$order),'automatic'=>$provider->automaticService($carrier,$order),'preferred'=>$preferred,'valuation'=>!empty($definition['capabilities']['valuation']),'cod'=>(string)$definition['capabilities']['cod'],'pickup'=>!empty($definition['capabilities']['pickup_order'])];
     }
 
     public function create(int $orderId,int $carrierAccountId,array $input,string $actor): int
@@ -211,7 +211,7 @@ final class OrderShipmentService
         $tracked=!array_key_exists('tracked',$result) || $result['tracked'];
         $meta=array_replace(['delivery_method'=>trim((string)($order['details']['delivery']??'')),'service_code'=>(string)($result['service_code']??''),'service_name'=>(string)($result['service_name']??''),'carrier_name'=>(string)($result['carrier_name']??''),'tracking_status'=>$tracked?$state:'','tracking_updated_at'=>$tracked?gmdate('c'):''],(array)($result['meta']??[]));
         $key=(string)$carrier['provider'];
-        $id=(int)$db->insert('om_shipments',['order_id'=>$orderId,'carrier_account_id'=>$carrierAccountId,'carrier'=>$carrier['name'],'tracking'=>$tracking,'weight'=>(string)$weight,'state'=>$state,'external_id'=>$external,'command_id'=>$requestKey,'payload_json'=>$this->payload($key,(array)($result['response']??[]),$meta),'cod_amount_cents'=>$codAmountCents,'shipment_currency'=>(string)$order['currency'],'created_at'=>gmdate('Y-m-d H:i:s')]);
+        $id=(int)$db->insert('om_shipments',['order_id'=>$orderId,'carrier_account_id'=>$carrierAccountId,'carrier'=>$carrier['name'],'tracking'=>$tracking,'weight'=>(string)$weight,'state'=>$state,'external_id'=>$external,'command_id'=>$requestKey,'payload_json'=>$this->payload($key,(array)($result['response']??[]),$meta),'cod_amount_cents'=>$codAmountCents,'shipment_currency'=>(string)$order['currency'],'created_at'=>gmdate('Y-m-d H:i:s'),'refresh_due_at'=>gmdate('Y-m-d H:i:s',time()+self::AFTER_CREATE_MINUTES[0]*60),'refresh_step'=>0]);
         $this->repo->event($orderId,'Utworzono przesyłkę przez '.$carrier['name'].'; status: '.$state,$actor);
         $this->repo->automationEvent($orderId,'shipment_created',['shipment_id'=>$id,'carrier_account_id'=>$carrierAccountId]);
         $this->publishToSource($id,$actor);
@@ -225,7 +225,45 @@ final class OrderShipmentService
         return $provider->valuation($carrier,$order,$input);
     }
 
-    public function refresh(int $shipmentId,string $actor): void
+    public function pickupSlots(int $orderId,int $carrierAccountId,array $input): array
+    {
+        $order=$this->repo->order($orderId);
+        [$carrier,$provider]=$this->carrier($carrierAccountId,true);
+        return $provider->pickupSlots($carrier,$order,$input);
+    }
+
+    /** Cron: po utworzeniu odświeża po 5/10/15/20 min, potem co 8 h (3× dziennie) aż do doręczenia/zwrotu, maks. 30 dni. */
+    private const AFTER_CREATE_MINUTES=[5,10,15,20];
+    public function refreshDue(int $limit=20,int $seconds=20): array
+    {
+        $db=$this->repo->db(); $started=microtime(true); $report=['refreshed'=>0,'errors'=>0];
+        $rows=$db->fetchAll('SELECT id FROM om_shipments WHERE refresh_due_at IS NOT NULL AND refresh_due_at<=:now ORDER BY refresh_due_at LIMIT '.max(1,$limit),['now'=>gmdate('Y-m-d H:i:s')]);
+        foreach ($rows as $row) {
+            if (microtime(true)-$started>$seconds) { break; }
+            $id=(int)$row['id'];
+            try { $this->refresh($id,'Automat',true); $report['refreshed']++; }
+            catch (\Throwable $e) { $report['errors']++; OrderSyncError::log($e,['stage'=>'shipment_auto_refresh','shipment_id'=>$id]); }
+            $shipment=$db->fetch('SELECT s.*,ca.provider carrier_provider FROM om_shipments s LEFT JOIN om_carrier_accounts ca ON ca.id=s.carrier_account_id WHERE s.id=:id',['id'=>$id]);
+            if ($shipment) { $db->update('om_shipments',self::nextRefresh($shipment),'id=:id',['id'=>$id]); }
+        }
+        return $report;
+    }
+    private static function nextRefresh(array $shipment): array
+    {
+        $step=(int)($shipment['refresh_step']??0)+1; $now=time();
+        $created=strtotime((string)$shipment['created_at'].' UTC') ?: $now;
+        $state=strtoupper((string)$shipment['state']);
+        $stored=json_decode((string)($shipment['payload_json']??''),true); $meta=is_array($stored['meta']??null)?$stored['meta']:[];
+        $provider=(string)($shipment['carrier_provider']??'');
+        $remote=trim((string)($meta['tracking_status']??'')); if ($remote==='' && $provider!=='allegro_wza') { $remote=$state; }
+        $finished=self::isCancelled($state) || $state==='ERROR' || in_array(self::statusLabel($remote,$provider)[1],['delivered','returned','cancelled'],true);
+        if ($finished || $provider==='' || $now-$created>30*86400) { return ['refresh_due_at'=>null,'refresh_step'=>$step]; }
+        if ($step<count(self::AFTER_CREATE_MINUTES)) { $due=max($now+60,$created+self::AFTER_CREATE_MINUTES[$step]*60); }
+        else { $due=$now+(strpos((string)$shipment['tracking'],'PENDING:')===0?3600:8*3600); }
+        return ['refresh_due_at'=>gmdate('Y-m-d H:i:s',$due),'refresh_step'=>$step];
+    }
+
+    public function refresh(int $shipmentId,string $actor,bool $quiet=false): void
     {
         $db=$this->repo->db(); [$shipment,$carrier,$provider]=$this->shipment($shipmentId);
         $stored=json_decode((string)($shipment['payload_json']??''),true); $meta=is_array($stored['meta']??null)?$stored['meta']:[];
@@ -233,7 +271,8 @@ final class OrderShipmentService
         $result=$provider->refresh($carrier,$shipment,$meta);
         $state=(string)$result['state']; $meta=(array)$result['meta'];
         $db->update('om_shipments',['state'=>$state,'external_id'=>(string)$result['external_id'],'tracking'=>(string)$result['tracking'],'payload_json'=>$this->payload((string)$carrier['provider'],(array)$result['response'],$meta)],'id=:id',['id'=>$shipmentId]);
-        $this->repo->event((int)$shipment['order_id'],'Odświeżono przesyłkę '.$carrier['name'].'; status: '.$state,$actor);
+        $changed=$state!==(string)$shipment['state'] || (string)$result['tracking']!==(string)$shipment['tracking'] || (string)($meta['tracking_status']??'')!==$previousTrackingStatus;
+        if (!$quiet || $changed) { $this->repo->event((int)$shipment['order_id'],'Odświeżono przesyłkę '.$carrier['name'].'; status: '.$state,$actor); }
         if ($state!==(string)$shipment['state'] || (string)($meta['tracking_status']??'')!==$previousTrackingStatus) {
             $this->repo->automationEvent((int)$shipment['order_id'],'shipment_status',['shipment_id'=>$shipmentId,'shipment_state'=>$state]);
         }
@@ -287,6 +326,21 @@ final class OrderShipmentService
 
     public static function isCancelled(string $state): bool { return in_array(strtoupper($state),['CANCELLED','CANCELED','ANULOWANO'],true); }
 
+    /** Grupa do filtra listy zamówień: error|created|sent|delivered|cancelled. */
+    public static function filterGroup(array $shipment): string
+    {
+        $state=strtoupper(trim((string)($shipment['state']??'')));
+        if (self::isCancelled($state)) { return 'cancelled'; }
+        $stored=json_decode((string)($shipment['payload_json']??''),true); $meta=is_array($stored['meta']??null)?$stored['meta']:[];
+        $provider=(string)($shipment['carrier_provider']??$stored['provider']??'');
+        $remote=trim((string)($meta['tracking_status']??'')); if ($remote==='' && $provider!=='allegro_wza') { $remote=$state; }
+        if ($state==='ERROR' || strtoupper($remote)==='ERROR') { return 'error'; }
+        $tone=self::statusLabel($remote,$provider)[1];
+        if ($tone==='delivered') { return 'delivered'; }
+        if (in_array($tone,['transit','delivery','pickup','issue','returned'],true)) { return 'sent'; }
+        return 'created';
+    }
+
     public static function presentation(array $shipment,array $order): array
     {
         $stored=json_decode((string)($shipment['payload_json']??''),true); $meta=is_array($stored['meta']??null)?$stored['meta']:[];
@@ -301,7 +355,7 @@ final class OrderShipmentService
         if ($remote==='' && $provider!=='allegro_wza') { $remote=(string)($shipment['state']??''); }
         [$label,$tone]=self::statusLabel($remote,$provider);
         $updatedAt=trim((string)($meta['tracking_updated_at']??'')); $updatedTimestamp=$updatedAt!==''?strtotime($updatedAt):false;
-        if ($updatedTimestamp!==false) { $updatedAt=gmdate('Y-m-d H:i',$updatedTimestamp).' UTC'; }
+        if ($updatedTimestamp!==false) { $updatedAt=(new \DateTimeImmutable('@'.$updatedTimestamp))->setTimezone(new \DateTimeZone('Europe/Warsaw'))->format('Y-m-d H:i'); }
         $publication=is_array($meta['source_publication']??null)?$meta['source_publication']:[];
         if (($publication['state']??'')!=='received' && empty($publication['attempted_at']) && !empty($publication['sent_at'])) {
             $publication['attempted_at']=$publication['sent_at'];
@@ -314,8 +368,10 @@ final class OrderShipmentService
         }
         $cancelled=self::isCancelled((string)($shipment['state']??''));
         $capabilities=(array)$definition['capabilities'];
+        $pickup=is_array($meta['pickup']??null)?$meta['pickup']:[];
+        $pickupLabel=($pickup['type']??'')==='COURIER'?'Podjazd kuriera: '.trim((string)($pickup['date']??'').' '.(string)($pickup['hours_from']??'').'–'.(string)($pickup['hours_to']??''),' –'):(($pickup['type']??'')==='SELF'?'Bez podjazdu – nadanie w punkcie':'');
         return ['delivery_method'=>$delivery!==''?$delivery:'Brak danych','carrier'=>$carrier,'service'=>$service,'service_code'=>(string)($meta['service_code']??''),'remote_status'=>$remote,'status_label'=>$label,'status_tone'=>$tone,'status_description'=>self::statusDescription((string)($meta['status_description']??''),$remote),'status_updated_at'=>$updatedAt,'technical_status'=>(string)($shipment['state']??''),'source_publication'=>$publication,
-            'provider_label'=>(string)$definition['label'],'tracking_pending'=>strpos((string)($shipment['tracking']??''),'PENDING:')===0,'cancelled'=>$cancelled,'can_cancel'=>!$cancelled && !empty($capabilities['cancel']),'can_label'=>!$cancelled && !empty($capabilities['label']),'source_tracking_auto'=>($capabilities['source_tracking']??'')==='auto','pickup_protocol'=>!$cancelled && !empty($capabilities['pickup_protocol']) && !empty($meta['documents']['pickup_protocol'])];
+            'provider_label'=>(string)$definition['label'],'tracking_pending'=>strpos((string)($shipment['tracking']??''),'PENDING:')===0,'cancelled'=>$cancelled,'can_cancel'=>!$cancelled && !empty($capabilities['cancel']),'can_label'=>!$cancelled && !empty($capabilities['label']),'source_tracking_auto'=>($capabilities['source_tracking']??'')==='auto','pickup_protocol'=>!$cancelled && !empty($capabilities['pickup_protocol']) && !empty($meta['documents']['pickup_protocol']),'pickup_label'=>$pickupLabel,'pickup_courier'=>($pickup['type']??'')==='COURIER'];
     }
 
     /** @return array{0:array,1:ShippingProvider} */

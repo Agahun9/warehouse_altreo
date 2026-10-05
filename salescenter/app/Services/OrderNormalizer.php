@@ -220,10 +220,17 @@ final class OrderNormalizer
             }
             $shipping = self::money($raw['shipping_price'] ?? '0');
             $pickup = $address['additional_info'] ?? '';
-            if ($platform === 'empik' && preg_match('/paczkomat|inpost|automat paczkowy/iu',$delivery)) {
+            // Empik: kod punktu odbioru (np. ORLEN Paczka "GD-602735-C6-90") przychodzi w polu "delivery-point-name"
+            // i jest powielany w imieniu/nazwisku adresu dostawy.
+            $pointCode=trim((string)($raw['shipping_pudo_id']??''));
+            foreach ((array)($raw['order_additional_fields']??[]) as $field) {
+                if (is_array($field) && ($field['code']??'')==='delivery-point-name' && trim((string)($field['value']??''))!=='') { $pointCode=trim((string)$field['value']); break; }
+            }
+            if ($platform === 'empik' && ($pointCode!=='' || preg_match('/paczkomat|inpost|automat paczkowy/iu',$delivery))) {
+                if ($pointCode!=='') { $pickup=$pointCode; }
                 foreach (['firstName','lastName'] as $nameField) {
                     $value=trim((string)($address[$nameField]??''));
-                    if (preg_match('/^[A-Z]{3}\d{2,3}[A-Z0-9]{0,2}$/iD',$value)) {
+                    if (($pointCode!=='' && strcasecmp($value,$pointCode)===0) || preg_match('/^[A-Z]{3}\d{2,3}[A-Z0-9]{0,2}$/iD',$value)) {
                         $pickup=$value;
                         $address[$nameField]='';
                     }
@@ -232,7 +239,7 @@ final class OrderNormalizer
                 $buyerName=trim($address['firstName'].' '.$address['lastName']);
                 if ($buyerName==='') { $buyerName=trim($billingName['firstName'].' '.$billingName['lastName']); }
                 if ($buyerName==='') { $buyerName=trim((string)($buyer['firstname']??$buyer['first_name']??'').' '.(string)($buyer['lastname']??$buyer['last_name']??'')); }
-                if (preg_match('/^[A-Z]{3}\d{2,3}[A-Z0-9]{0,2}$/iD',$buyerName)) { $buyerName=''; }
+                if (preg_match('/^[A-Z]{3}\d{2,3}[A-Z0-9]{0,2}$/iD',$buyerName) || ($pointCode!=='' && strcasecmp($buyerName,$pointCode)===0)) { $buyerName=''; }
                 if ($buyerName==='') { $buyerName='Klient Empik'; }
             }
             $phone = $address['phoneNumber'] ?? '';

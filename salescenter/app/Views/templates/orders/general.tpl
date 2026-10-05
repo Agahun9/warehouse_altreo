@@ -1,7 +1,7 @@
 <div class="om-section-heading"><div><h2>Ustawienia ogólne</h2><p>Dane firmy, zespół, Twoje hasło oraz konta KSeF.</p></div></div>
 <div class="om-two-col sc-general-grid">
   <section id="sc-company" class="om-panel om-pad">
-    <div class="om-docs-panel-title"><div><span class="om-eyebrow">KONTO</span><h3>Firma</h3><p>Identyfikator firmy: {$tenant.id|default:''} · utworzona {$tenant.created_at|default:''|escape} UTC. Dane sprzedawcy na dokumentach ustawisz w zakładce Dokumenty.</p></div></div>
+    <div class="om-docs-panel-title"><div><span class="om-eyebrow">KONTO</span><h3>Firma</h3><p>Identyfikator firmy: {$tenant.id|default:''} · utworzona {$tenant.created_at|default:''|pl_time|escape}. Dane sprzedawcy na dokumentach ustawisz w zakładce Dokumenty.</p></div></div>
     <form class="om-form" method="post" action="index.php?controller=account&action=company">
       <input type="hidden" name="csrf" value="{$csrf|escape}">
       <label>Nazwa firmy<input name="name" maxlength="200" value="{$tenant.name|default:''|escape}" required {if !$canManageTenant}disabled{/if}></label>
@@ -36,7 +36,7 @@
         <td>{if $protectedOwner}Edycja{else}<select form="user-{$u.id}" name="access" aria-label="Dostęp {$u.name|escape}"><option value="edit" {if $u.access eq 'edit'}selected{/if}>Edycja</option><option value="read" {if $u.access eq 'read'}selected{/if}>Tylko podgląd</option></select>{/if}</td>
         <td>{if $protectedOwner}Nie{else}<input type="checkbox" form="user-{$u.id}" name="is_blocked" value="1" aria-label="Zablokuj {$u.name|escape}" {if $u.is_blocked}checked{/if} {if $isSelf}disabled{/if}>{/if}</td>
         <td>{if $protectedOwner}—{else}<input type="password" form="user-{$u.id}" name="new_password" minlength="10" autocomplete="new-password" aria-label="Nowe hasło {$u.name|escape}" placeholder="bez zmian">{/if}</td>
-        <td><small>{$u.last_login_at|default:'—'|escape}</small></td>
+        <td><small>{$u.last_login_at|pl_time|default:'—'|escape}</small></td>
         <td class="sc-team-actions">{if not $protectedOwner}<button class="om-btn om-small om-primary" form="user-{$u.id}" type="submit">Zapisz</button>
           {if not $isSelf}<form method="post" action="index.php?controller=account&action=saveuser" onsubmit="return confirm('Usunąć użytkownika?')"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="delete"><input type="hidden" name="user_id" value="{$u.id}"><button class="om-btn om-small om-danger-outline" type="submit" aria-label="Usuń {$u.name|escape}"><i class="bi bi-trash"></i></button></form>{/if}{/if}</td>
       </tr>

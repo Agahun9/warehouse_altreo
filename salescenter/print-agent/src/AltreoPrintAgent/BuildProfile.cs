@@ -8,5 +8,6 @@ public static class BuildProfile
     public static string Name => "production";
 #endif
     public static string DisplayName => Name=="sandbox"?"Altreo Print Agent Sandbox":"Altreo Print Agent";
+    public static string Version => typeof(BuildProfile).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     public static string Identifier => Name=="sandbox"?"pl.altreo.printagent.sandbox":"pl.altreo.printagent";
 }

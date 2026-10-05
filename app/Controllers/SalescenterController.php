@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Core\SmartyFactory;
 use App\Models\SettingRepository;
 use App\Services\ComputerSpecificationService;
 use App\Services\SellasistService;
@@ -60,6 +61,17 @@ class SalescenterController extends Controller
             $this->setFlash('error', $exception->getMessage());
             $this->redirect('./index.php?controller=salescenter&action=zbieranie');
         }
+    }
+
+    private function renderTemplateOnly(string $template, array $data = array()): void
+    {
+        $smarty = SmartyFactory::create();
+
+        foreach ($data as $key => $value) {
+            $smarty->assign($key, $value);
+        }
+
+        $smarty->display($template . '.tpl');
     }
 
     private function prepareSalescenterOrder(array $order): array

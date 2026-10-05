@@ -80,7 +80,7 @@
           <footer class="oa-rule-foot">
             <span><i class="bi bi-activity"></i>{$r.runs_total} wykonań</span>
             {if $r.runs_errors}<span class="is-error"><i class="bi bi-exclamation-triangle"></i>{$r.runs_errors} z błędami</span>{/if}
-            <span><i class="bi bi-clock-history"></i>{if $r.last_run_at}Ostatnio {$r.last_run_at|escape} UTC{else}Jeszcze nie uruchomiono{/if}</span>
+            <span><i class="bi bi-clock-history"></i>{if $r.last_run_at}Ostatnio {$r.last_run_at|pl_time|escape}{else}Jeszcze nie uruchomiono{/if}</span>
           </footer>
         </article>
       {foreachelse}
@@ -115,7 +115,7 @@
               <span class="oa-log-dot" title="{$run.result_label|escape}"></span>
               <div>
                 <strong>{$run.rule_name|escape}</strong> <a href="?controller=orders&id={$run.order_id}#om-automation">#{$run.order_id}</a>
-                <small>{$run.created_at|escape} UTC · {$run.trigger_label|escape} · <b>{$run.result_label|escape}</b></small>
+                <small>{$run.created_at|pl_time|escape} · {$run.trigger_label|escape} · <b>{$run.result_label|escape}</b></small>
                 {if $run.message}<p title="{$run.message|escape}">{$run.message|escape}</p>{/if}
               </div>
             </article>

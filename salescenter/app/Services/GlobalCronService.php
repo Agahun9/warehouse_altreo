@@ -53,6 +53,11 @@ final class GlobalCronService
                         try { $sync->repairErliPayments(); } catch (\Throwable $ignored) {}
                         try { $repo->automation()->runScheduled(); }
                         catch (\Throwable $error) { $report['errors']++; OrderSyncError::log($error, ['stage' => 'automation_schedule']); }
+                        // Statusy i numery przesyłek w tle – porcja na przebieg, harmonogram w om_shipments.refresh_due_at.
+                        try {
+                            $shipments = (new OrderShipmentService($repo))->refreshDue(20, 20);
+                            $report['shipments_refreshed'] = ($report['shipments_refreshed'] ?? 0) + $shipments['refreshed'];
+                        } catch (\Throwable $error) { $report['errors']++; OrderSyncError::log($error, ['stage' => 'shipment_auto_refresh']); }
                         // Wiadomości marketplace – każde połączenie według własnego interwału z ustawień.
                         try {
                             $messages = new \App\Models\MessageRepository($db);

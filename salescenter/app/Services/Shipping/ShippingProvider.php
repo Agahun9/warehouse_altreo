@@ -44,6 +44,9 @@ abstract class ShippingProvider
 
     public function valuation(array $carrier,array $order,array $input): array { throw new InvalidArgumentException(static::definition()['label'].': wycena na żywo nie jest dostępna.'); }
 
+    /** Terminy podjazdu kuriera do wyboru w formularzu (capability pickup_order): ['slots'=>[['date','hours_from','hours_to'],…]]. */
+    public function pickupSlots(array $carrier,array $order,array $input): array { throw new InvalidArgumentException(static::definition()['label'].': zamawianie podjazdu kuriera z panelu nie jest obsługiwane.'); }
+
     /** Czas cache listy usług w sekundach; 0 = bez cache. */
     public function servicesTtl(): int { return 3600; }
 

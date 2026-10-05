@@ -17,6 +17,7 @@ wynik. Windows używa osadzonego SumatraPDF, macOS korzysta z systemowego CUPS.
 - ręczna konfiguracja adresu IP i portu Posnet bez instalowania jej jako drukarki systemowej,
 - kontrolowany wydruk testowy niefiskalny bezpośrednio z okna ustawień,
 - obsługa paragonów fiskalnych Posnet 1.01 przez TCP/IP z kontrolą CRC, stanu urządzenia, papieru i stawek VAT,
+- druga, niezależna drukarka fiskalna **Novitus Deon Online** (protokół XML Novitus 1.08, TCP/IP, zwykle port 6001) z kontrolą gotowości, papieru, stawek PTU A–G i potwierdzeniem zamknięcia paragonu,
 - rozdzielone profile `sandbox` i `production` z osobnymi katalogami konfiguracji,
 - pobieranie wyłącznie przez HTTPS (HTTP jest opcją tylko do testów),
 - limit PDF 100 MB i kontrola sygnatury `%PDF-`,
@@ -65,6 +66,15 @@ bez konieczności instalowania go jako zwykłej drukarki systemowej. Przycisk
 testowe bez rejestrowania sprzedaży.
 Z terminala `--test-posnet-receipt 192.168.1.15 6666` drukuje syntetyczny paragon
 sandboxowy o kwocie 1,00 PLN, wyraźnie oznaczony jako niefiskalny.
+Novitus Deon Online wpisuje się w osobnej sekcji okna agenta (adres IP i port TCP,
+zwykle 6001). Obie drukarki mogą działać jednocześnie w tej samej sieci; w panelu
+SalesCenter pojawiają się jako dwa osobne urządzenia z własną serią i trybem.
+Rozkazy XML Novitus nie mają odpowiedzi, więc agent po każdym paragonie pyta drukarkę
+o stan (`enq_pl`, `informacja akcja="ostatnia_transakcja"`, `blad akcja="odczytaj"`).
+Paragon, którego drukarka nie zamknęła, jest anulowany; po wysłaniu zamknięcia agent
+nigdy nie ponawia ani nie anuluje transakcji. Przycisk `Drukuj test niefiskalny Novitus`
+oraz `--test-novitus 192.168.1.16 6001` / `--test-novitus-receipt 192.168.1.16 6001`
+działają tak samo jak testy Posnet (zawsze niefiskalnie).
 Numer widoczny w panelu jest
 lokalnym numerem serii przypisanym do urządzenia; właściwy numer paragonu fiskalnego
 nadaje wyłącznie drukarka.

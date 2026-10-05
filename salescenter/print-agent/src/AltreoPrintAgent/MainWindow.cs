@@ -17,6 +17,8 @@ public sealed class MainWindow : Window
     private readonly TextBox _sumatraPath = new() { Watermark = "Opcjonalnie, np. C:\\Program Files\\SumatraPDF\\SumatraPDF.exe" };
     private readonly TextBox _fiscalHost = new() { Watermark = "Np. 192.168.1.15" };
     private readonly NumericUpDown _fiscalPort = new() { Minimum = 1, Maximum = 65535, Increment = 1 };
+    private readonly TextBox _novitusHost = new() { Watermark = "Np. 192.168.1.16 — puste, jeśli nie używasz Novitus" };
+    private readonly NumericUpDown _novitusPort = new() { Minimum = 1, Maximum = 65535, Increment = 1 };
     private readonly TextBlock _state = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
     private readonly TextBox _log = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Height = 150 };
     private bool _allowClose;
@@ -24,9 +26,9 @@ public sealed class MainWindow : Window
     public MainWindow(AgentController controller)
     {
         _controller = controller;
-        Title = BuildProfile.DisplayName;
+        Title = $"{BuildProfile.DisplayName} {BuildProfile.Version}";
         Width = 590;
-        Height = 700;
+        Height = 860;
         MinWidth = 500;
         MinHeight = 600;
         Icon = IconFactory.Create();
@@ -49,7 +51,9 @@ public sealed class MainWindow : Window
         var test = new Button { Content = "Testuj połączenie" };
         test.Click += async (_, _) => await TestAsync();
         var testFiscal = new Button { Content = "Drukuj test niefiskalny Posnet" };
-        testFiscal.Click += async (_, _) => await TestFiscalAsync();
+        testFiscal.Click += async (_, _) => await TestFiscalAsync(FiscalProtocols.Posnet);
+        var testNovitus = new Button { Content = "Drukuj test niefiskalny Novitus" };
+        testNovitus.Click += async (_, _) => await TestFiscalAsync(FiscalProtocols.Novitus);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { save, test } };
         var panel = new StackPanel
@@ -59,7 +63,7 @@ public sealed class MainWindow : Window
             Children =
             {
                 new TextBlock { Text = "Altreo Print Agent", FontSize = 26, FontWeight = Avalonia.Media.FontWeight.SemiBold },
-                new TextBlock { Text = "Automatyczne drukowanie z magazyn.altreo.pl · " + BuildProfile.Name.ToUpperInvariant(), Opacity = 0.7, Margin = new Thickness(0, 0, 0, 12) },
+                new TextBlock { Text = $"Wersja {BuildProfile.Version} · automatyczne drukowanie z magazyn.altreo.pl · " + BuildProfile.Name.ToUpperInvariant(), Opacity = 0.7, Margin = new Thickness(0, 0, 0, 12) },
                 Label("Adres API serwera"), _serverUrl,
                 Label("Token stanowiska"), _token,
                 Label("Nazwa stanowiska"), _stationName,
@@ -74,6 +78,12 @@ public sealed class MainWindow : Window
                 Label("Adres IP / host Posnet"), _fiscalHost,
                 Label("Port Posnet"), _fiscalPort,
                 testFiscal,
+                new Border { Height = 1, Background = Avalonia.Media.Brushes.LightGray, Margin = new Thickness(0, 10) },
+                new TextBlock { Text = "Drukarka fiskalna Novitus Deon Online", FontSize = 18, FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                new TextBlock { Text = "Druga, niezależna drukarka w tej samej sieci (protokół XML Novitus, zwykle port 6001). Zostaw adres pusty, jeśli jej nie używasz. Test jest zawsze niefiskalny.", Opacity = 0.7, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                Label("Adres IP / host Novitus"), _novitusHost,
+                Label("Port Novitus (TCP)"), _novitusPort,
+                testNovitus,
                 new Border { Height = 1, Background = Avalonia.Media.Brushes.LightGray, Margin = new Thickness(0, 10) },
                 new TextBlock { Text = "Stan", FontWeight = Avalonia.Media.FontWeight.SemiBold },
                 _state,
@@ -99,6 +109,8 @@ public sealed class MainWindow : Window
         _sumatraPath.Text = settings.SumatraPath;
         _fiscalHost.Text = settings.FiscalPrinterHost;
         _fiscalPort.Value = settings.FiscalPrinterPort;
+        _novitusHost.Text = settings.NovitusPrinterHost;
+        _novitusPort.Value = settings.NovitusPrinterPort;
         _state.Text = settings.IsConfigured ? "Konfiguracja wczytana. Agent łączy się z serwerem." : "Uzupełnij adres serwera i token.";
     }
 
@@ -112,7 +124,9 @@ public sealed class MainWindow : Window
         AllowInsecureHttp = _allowHttp.IsChecked == true,
         SumatraPath = string.IsNullOrWhiteSpace(_sumatraPath.Text) ? null : _sumatraPath.Text.Trim(),
         FiscalPrinterHost = (_fiscalHost.Text ?? "").Trim(),
-        FiscalPrinterPort = Convert.ToInt32(_fiscalPort.Value ?? 6666)
+        FiscalPrinterPort = Convert.ToInt32(_fiscalPort.Value ?? 6666),
+        NovitusPrinterHost = (_novitusHost.Text ?? "").Trim(),
+        NovitusPrinterPort = Convert.ToInt32(_novitusPort.Value ?? NovitusClient.DefaultPort)
     };
 
     private async Task SaveAsync()
@@ -144,20 +158,21 @@ public sealed class MainWindow : Window
         }
     }
 
-    private async Task TestFiscalAsync()
+    private async Task TestFiscalAsync(string protocol)
     {
+        var label = FiscalProtocols.Label(protocol);
         try
         {
-            _state.Text = "Łączenie z Posnet i wykonywanie testu niefiskalnego…";
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            _state.Text = $"Łączenie z {label} i wykonywanie testu niefiskalnego…";
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var settings = ReadSettings();
-            var result = await _controller.TestFiscalPrinterAsync(settings, cancellation.Token);
+            var result = await _controller.TestFiscalPrinterAsync(settings, cancellation.Token, protocol);
             if (result.Status != JobStatuses.Printed) throw new InvalidOperationException(result.Message);
             _state.Text = result.Message;
         }
         catch (Exception exception)
         {
-            _state.Text = "Test Posnet nieudany: " + exception.Message;
+            _state.Text = $"Test {label} nieudany: " + exception.Message;
         }
     }
 

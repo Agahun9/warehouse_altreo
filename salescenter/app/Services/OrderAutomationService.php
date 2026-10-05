@@ -204,7 +204,7 @@ final class OrderAutomationService
         $fiscal=[['0','Drukarka przypisana do serii paragonu']]; $labels=[];
         try {
             $printAgents=new PrintAgentRepository($this->db); $printAgents->ensureSchema();
-            foreach ($printAgents->fiscalPrinters() as $printer) { $fiscal[]=[(string)$printer['id'],$printer['name'].' ('.($printer['environment']==='production'?'produkcja':'sandbox').')']; }
+            foreach ($printAgents->fiscalPrinters() as $printer) { if (!empty($printer['enabled']) && !empty($printer['station_enabled'])) { $fiscal[]=[(string)$printer['id'],$printer['name'].' ('.($printer['environment']==='production'?'produkcja':'sandbox').')']; } }
             foreach ($printAgents->stations() as $station) {
                 if (!(int)$station['enabled']) { continue; }
                 foreach ($station['printers'] as $printer) { $labels[]=[$station['id'].'|'.$printer,$printer,(string)$station['name']]; }
@@ -1166,7 +1166,8 @@ final class OrderAutomationService
 
     private function activeShipments(array &$ctx): array
     {
-        return array_values(array_filter($this->shipments($ctx),static function (array $shipment): bool { return !in_array(strtoupper((string)$shipment['state']),self::CANCELLED,true); }));
+        // Przesyłka odrzucona przez operatora (ERROR) nie blokuje ponownego nadania.
+        return array_values(array_filter($this->shipments($ctx),static function (array $shipment): bool { return !in_array(strtoupper((string)$shipment['state']),array_merge(self::CANCELLED,['ERROR']),true); }));
     }
 
     public static function splitList(string $value): array

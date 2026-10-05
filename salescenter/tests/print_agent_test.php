@@ -106,6 +106,23 @@ foreach (['23','8','7','5','0','zw'] as $vat) {
     printCheck($testJob['receipt']['items'][0]['vat']===$vat && $testJob['receipt']['totalCents']===100,'Receipt preserves VAT '.$vat);
     $repository->reportFiscal((int)$station['id'],$testJob['id'],'error','Synthetic test ended',null);
 }
+printCheck(($testJob['protocol']??null)==='posnet','Existing Posnet printers keep the posnet protocol');
+// Novitus Deon Online: druga, osobna drukarka tej samej stacji, zgłoszona przez agenta z protokołem novitus.
+$repository->heartbeat((int)$station['id'],['printers'=>['Zebra ZD421'],'fiscalPrinters'=>[['deviceKey'=>'tcp:192.168.1.45:9100','name'=>'Posnet Trio','host'=>'192.168.1.45','port'=>9100],['deviceKey'=>'novitus:192.168.1.46:6001','name'=>'Novitus Deon Online','host'=>'192.168.1.46','port'=>6001,'protocol'=>'novitus']]],'HOST-1');
+$novitusPrinter=null; foreach ($repository->fiscalPrinters() as $candidate) { if ($candidate['device_key']==='novitus:192.168.1.46:6001') { $novitusPrinter=$candidate; } }
+printCheck(is_array($novitusPrinter) && $novitusPrinter['protocol']==='novitus' && count($repository->fiscalPrinters())===2,'Heartbeat registers Novitus as a second, separate fiscal printer');
+$repository->configureFiscalPrinter((int)$novitusPrinter['id'],'NOV','sandbox',true);
+$order=$baseOrder; $order['external_id']='NOVITUS-1'; $order['total_cents']=100;
+$order['details_json']=json_encode(['payment_method'=>'Przelew','items'=>[['name'=>'Novitus test','quantity'=>1,'unit_cents'=>100,'vat'=>'23']]]);
+$novitusOrderId=(int)$db->insert('om_orders',$order);
+$repository->queueFiscalReceipt($novitusOrderId,(int)$novitusPrinter['id'],'tester');
+$novitusJob=$repository->nextFiscalJob((int)$station['id'],'sandbox');
+printCheck(($novitusJob['protocol']??null)==='novitus' && $novitusJob['host']==='192.168.1.46' && $novitusJob['port']===6001 && $novitusJob['localNumber']==='NOV/'.gmdate('Y').'/1','Novitus job carries its protocol, address and own series');
+$repository->reportFiscal((int)$station['id'],$novitusJob['id'],'error','Synthetic test ended',null);
+$manualNovitus=$repository->addFiscalPrinter((int)$station['id'],'Novitus zaplecze','192.168.1.47',6001,'novitus');
+printCheck($db->fetchColumn('SELECT protocol FROM print_fiscal_printers WHERE id=:id',['id'=>$manualNovitus])==='novitus','Manually added Novitus keeps its protocol');
+printCheck(PrintAgentRepository::fiscalProtocol('cokolwiek')==='posnet' && PrintAgentRepository::fiscalProtocolLabel('novitus')==='Novitus','Unknown protocols fall back to Posnet');
+$repository->deleteFiscalPrinter($manualNovitus); $repository->deleteFiscalPrinter((int)$novitusPrinter['id']);
 foreach (['currency','sum','negative','zero_quantity','np','empty_name'] as $invalid) {
     $order=$baseOrder; $order['external_id']='INVALID-'.$invalid; $order['total_cents']=100;
     $item=['name'=>'Towar','quantity'=>1,'unit_cents'=>100,'vat'=>'23'];
@@ -149,7 +166,7 @@ foreach (PrintAgentRepository::DEFAULT_VAT_RATES as $letter=>$vat) { printCheck(
 $historyDoc=['id'=>7,'number'=>'P/2026/10/1','kind'=>'receipt','order_id'=>252,'series_name'=>'Paragon ACCRA','created_at'=>'2026-10-01 09:12:36','gross_cents'=>1167000,'currency'=>'PLN','has_correction'=>false,'buyer'=>'Test','recipient'=>'','additional_info'=>'','items'=>[],'fiscal_job'=>null,'effective_printer_id'=>(int)$fiscalPrinter['id'],'non_fiscal'=>false];
 $smarty->assign(['series'=>[],'documents'=>[$historyDoc],'documentSeriesFilter'=>0]);
 $historyHtml=$smarty->fetch('orders/documents.tpl');
-printCheck(strpos($historyHtml,'Drukuj zdalnie na Posnet')!==false && strpos($historyHtml,'name="operation" value="document_remote_print"')!==false && strpos($historyHtml,'name="document_id" value="7"')!==false,'Existing receipt has a remote print action with document id and CSRF');
+printCheck(strpos($historyHtml,'Drukuj zdalnie na drukarce fiskalnej')!==false && strpos($historyHtml,'name="operation" value="document_remote_print"')!==false && strpos($historyHtml,'name="document_id" value="7"')!==false,'Existing receipt has a remote print action with document id and CSRF');
 foreach (['queued','processing','printed','error','printer_offline'] as $status) {
     $doc=$historyDoc; $doc['fiscal_job']=['status'=>$status,'status_message'=>'Test statusu <script>','fiscal_number'=>'','printer_name'=>'Posnet'];
     $smarty->assign('documents',[$doc]); $html=$smarty->fetch('orders/documents.tpl');
@@ -171,7 +188,7 @@ $smarty->assign('documents',[$nonFiscalDoc]); $html=$smarty->fetch('orders/docum
 printCheck(strpos($html,'PRODUKCJA — fiskalny · seria niefiskalna')!==false && strpos($html,'wyłącz „Dokument niefiskalny”')!==false,'Production printer remains visible with reason and instructions for non-fiscal series');
 printCheck(strpos($html,'value="'.$productionPrinter['id'].'" disabled')!==false,'Non-fiscal series cannot silently start production receipt');
 $smarty->assign(['documents'=>[$historyDoc],'printFiscalPrinters'=>[]]); $html=$smarty->fetch('orders/documents.tpl');
-printCheck(strpos($html,'nie ma zarejestrowanej drukarki Posnet')!==false,'Missing printer has explicit setup instructions');
+printCheck(strpos($html,'nie ma zarejestrowanej drukarki fiskalnej')!==false,'Missing printer has explicit setup instructions');
 $productionPrinter['enabled']=0;
 $smarty->assign('printFiscalPrinters',[$productionPrinter]); $html=$smarty->fetch('orders/documents.tpl');
 printCheck(strpos($html,'drukarka wyłączona')!==false && strpos($html,'value="'.$productionPrinter['id'].'" disabled')!==false,'Disabled printer is visible but cannot be submitted');
@@ -207,7 +224,7 @@ $smarty->assign(['canWrite'=>true,'documents'=>[$retryHistory]]); $html=$smarty-
 printCheck(strpos($html,'document_remote_retry')!==false && strpos($html,'Nie wystawiła paragonu na drukarce')!==false && strpos($html,'paragon mógł zostać zapisany')===false,'Safe pre-transaction error exposes retry and accurate explanation');
 $retryHistory['fiscal_job']=['status'=>'printed','status_message'=>'Posnet confirmed','fiscal_number'=>'123','printer_name'=>'Posnet','retry_allowed'=>false,'reported_at'=>'2026-10-01 10:00:00'];
 $smarty->assign('documents',[$retryHistory]);$html=$smarty->fetch('orders/documents.tpl');
-printCheck(strpos($html,'document_remote_retry')===false && strpos($html,'Numer fiskalny: 123')!==false && strpos($html,'Potwierdzenie: 2026-10-01 10:00:00 UTC')!==false,'History shows printer confirmation and number without reissuing a receipt');
+printCheck(strpos($html,'document_remote_retry')===false && strpos($html,'Numer fiskalny: 123')!==false && strpos($html,'Potwierdzenie: 2026-10-01 12:00:00')!==false,'History shows printer confirmation and number without reissuing a receipt');
 
 $newToken=$repository->regenerateToken((int)$station['id']);
 printCheck($repository->authenticate($token)===null && $repository->authenticate($newToken)!==null,'Token rotation invalidates the old token');

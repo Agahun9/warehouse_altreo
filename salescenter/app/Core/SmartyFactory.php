@@ -25,7 +25,22 @@ class SmartyFactory
         $smarty->setCacheDir(BASE_PATH . '/app/Views/cache');
         $smarty->setConfigDir(BASE_PATH . '/app/Views/configs');
         $smarty->assign('baseUrl', './index.php');
+        $smarty->registerPlugin('modifier', 'pl_time', [self::class, 'plTime']);
 
         return $smarty;
+    }
+
+    /** Czas zapisany w bazie w UTC (gmdate) pokazany w strefie Europe/Warsaw, z uwzględnieniem czasu letniego. */
+    public static function plTime($value, string $format = 'Y-m-d H:i:s'): string
+    {
+        $value = trim((string) $value);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/', $value)) {
+            return $value;
+        }
+        try {
+            return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('Europe/Warsaw'))->format($format);
+        } catch (\Throwable $e) {
+            return $value;
+        }
     }
 }

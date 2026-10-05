@@ -59,7 +59,7 @@ public sealed partial class App : Application
         _trayIcon = new TrayIcon
         {
             Icon = IconFactory.Create(),
-            ToolTipText = BuildProfile.DisplayName,
+            ToolTipText = $"{BuildProfile.DisplayName} {BuildProfile.Version}",
             Menu = menu,
             Command = new ActionCommand(ShowWindow),
             IsVisible = true

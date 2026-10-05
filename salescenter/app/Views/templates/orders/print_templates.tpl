@@ -19,7 +19,7 @@
     </div>
     <h3>{if $canWrite}<a href="?controller=orders&tab=templates&template={$pt.id}">{$pt.name|escape}</a>{else}{$pt.name|escape}{/if}</h3>
     <p>{$pt.description|default:'Bez opisu.'|escape}</p>
-    <div class="pt-card-foot"><small>Zmieniono {$pt.updated_at|escape} UTC</small>
+    <div class="pt-card-foot"><small>Zmieniono {$pt.updated_at|pl_time|escape}</small>
       {if $canWrite}<div class="pt-card-actions">
         <a class="om-btn om-small" href="?controller=orders&tab=templates&template={$pt.id}"><i class="bi bi-pencil"></i> Edytuj</a>
         <form method="post" action="?controller=orders&action=save"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="print_template_duplicate"><input type="hidden" name="tab" value="templates"><input type="hidden" name="template_id" value="{$pt.id}"><button class="om-icon-btn" title="Duplikuj" aria-label="Duplikuj {$pt.name|escape}"><i class="bi bi-copy"></i></button></form>

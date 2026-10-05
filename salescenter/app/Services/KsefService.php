@@ -137,7 +137,7 @@ final class KsefService
         if (!$account) { throw new InvalidArgumentException('Nie znaleziono konta KSeF.'); }
         $access=$this->access($account,(string)$account['environment'],true);
         $until=strtotime((string)$access['valid_until']);
-        return 'Połączenie z KSeF działa — '.$account['name'].' ('.self::LABELS[$account['environment']].'). Token dostępowy ważny do '.($until?date('H:i',$until):'—').'.';
+        return 'Połączenie z KSeF działa — '.$account['name'].' ('.self::LABELS[$account['environment']].'). Token dostępowy ważny do '.($until?(new \DateTimeImmutable('@'.$until))->setTimezone(new \DateTimeZone('Europe/Warsaw'))->format('H:i'):'—').'.';
     }
 
     public static function normalizeNip(string $nip): string

@@ -38,7 +38,7 @@
             {/if}
           </div>
           <div class="sc-conn-kpi"><strong>{$c.order_count}</strong><span>zamówień</span></div>
-          <div class="sc-conn-kpi"><strong>{if $acc && $acc.last_sync}{$acc.last_sync|date_format:'%d.%m %H:%M'}{else}—{/if}</strong><span>ostatni import (UTC)</span></div>
+          <div class="sc-conn-kpi"><strong>{if $acc && $acc.last_sync}{$acc.last_sync|pl_time:'d.m H:i'|escape}{else}—{/if}</strong><span>ostatni import</span></div>
           <div class="sc-conn-actions">
             {if $canWrite && $acc && $c.platform neq 'api' && $c.status eq 'active'}<form method="post" action="index.php?controller=integrations&action=fetchnow"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="connection_id" value="{$c.id}"><button class="sc-btn sc-btn-primary"><i class="bi bi-arrow-clockwise"></i> Pobierz zamówienia teraz</button></form>{/if}
             <button type="button" class="sc-btn sc-btn-ghost" data-toggle-conn aria-expanded="{if $ig.selected eq $c.id}true{else}false{/if}"><i class="bi bi-sliders"></i> Ustawienia</button>
@@ -100,7 +100,7 @@
                 <form method="post" action="index.php?controller=integrations&action=disconnect" onsubmit="return confirm('Odłączyć „{$c.name|escape:'javascript'|escape}”? Pobrane zamówienia zostaną w SalesCenter.')"><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="connection_id" value="{$c.id}"><button class="sc-btn sc-btn-danger"><i class="bi bi-x-circle"></i> Odłącz</button></form>
               </div>
               {/if}
-              <p class="sc-note">Sprawdzono: {$c.last_check_at|default:'—'|escape} UTC · dodano {$c.created_at|escape} UTC</p>
+              <p class="sc-note">Sprawdzono: {$c.last_check_at|pl_time|default:'—'|escape} · dodano {$c.created_at|pl_time|escape}</p>
             </section>
           </div>
         </div>

@@ -13,12 +13,29 @@ public sealed record AgentSettings
     public string? SumatraPath { get; init; }
     public string FiscalPrinterHost { get; init; } = "192.168.1.15";
     public int FiscalPrinterPort { get; init; } = 6666;
+    public string NovitusPrinterHost { get; init; } = "";
+    public int NovitusPrinterPort { get; init; } = NovitusClient.DefaultPort;
 
     [JsonIgnore]
     public bool IsConfigured => Uri.TryCreate(ServerUrl, UriKind.Absolute, out _) && !string.IsNullOrWhiteSpace(StationToken);
 
     [JsonIgnore]
     public bool IsFiscalPrinterConfigured => !string.IsNullOrWhiteSpace(FiscalPrinterHost) && FiscalPrinterPort is >= 1 and <= 65535;
+
+    [JsonIgnore]
+    public bool IsNovitusPrinterConfigured => !string.IsNullOrWhiteSpace(NovitusPrinterHost) && NovitusPrinterPort is >= 1 and <= 65535;
+}
+
+public static class FiscalProtocols
+{
+    public const string Posnet = "posnet";
+    public const string Novitus = "novitus";
+
+    /// <summary>Brak protokołu w zadaniu oznacza starszy serwer, który znał wyłącznie Posnet.</summary>
+    public static string Normalize(string? protocol) =>
+        string.Equals(protocol?.Trim(), Novitus, StringComparison.OrdinalIgnoreCase) ? Novitus : Posnet;
+
+    public static string Label(string? protocol) => Normalize(protocol) == Novitus ? "Novitus" : "Posnet";
 }
 
 public sealed record PrintJob(
@@ -53,7 +70,8 @@ public sealed record FiscalJob(
     [property: JsonPropertyName("host")] string Host,
     [property: JsonPropertyName("port")] int Port,
     [property: JsonPropertyName("serialNumber")] string? SerialNumber,
-    [property: JsonPropertyName("receipt")] FiscalReceiptPayload Receipt);
+    [property: JsonPropertyName("receipt")] FiscalReceiptPayload Receipt,
+    [property: JsonPropertyName("protocol")] string? Protocol = null);
 
 public static class JobStatuses
 {

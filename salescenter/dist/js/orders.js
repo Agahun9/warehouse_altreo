@@ -57,7 +57,9 @@
     while (details) { details.open = true; details = details.parentElement?.closest('details'); }
   }, true);
   document.querySelectorAll('[data-confirm-shipment]').forEach(form => form.addEventListener('submit', event => {
-    if (!window.confirm('Utworzyć przesyłkę u wybranego operatora? Ta operacja może naliczyć opłatę.')) event.preventDefault();
+    const slot = form.querySelector('[data-pickup-options]:not([hidden]) [data-pickup-slot-field]:not([hidden]) [data-pickup-slot]');
+    const pickup = slot?.value ? `\n\nPodjazd kuriera: ${slot.selectedOptions[0]?.textContent || slot.value}` : '';
+    if (!window.confirm(`Utworzyć przesyłkę u wybranego operatora? Ta operacja może naliczyć opłatę.${pickup}`)) event.preventDefault();
   }));
   document.querySelectorAll('[data-source-shipment]').forEach(form => {
     const carrier = form.querySelector('select[name="source_carrier"]');
@@ -235,8 +237,8 @@
   const columnsBackdrop = document.querySelector('[data-columns-backdrop]');
   const storageKey = 'altreo-orders-list-v2';
   const columnDefaults = [
-    ['summary', 170, true], ['deadline', 95, true], ['order', 170, false], ['buyer', 190, true], ['products', 300, true], ['amount', 130, true],
-    ['status', 145, false], ['payment', 130, false], ['delivery', 170, false], ['fulfillment', 180, false],
+    ['summary', 170, true], ['deadline', 95, false], ['order', 170, false], ['buyer', 190, false], ['deadline_buyer', 230, true], ['products', 300, true], ['amount', 130, false],
+    ['status', 145, false], ['payment', 130, false], ['delivery', 170, false], ['fulfillment', 180, false], ['checkout', 200, true],
     ['source', 135, false], ['tags', 160, true], ['date', 110, false]
   ];
   const defaultView = () => ({
@@ -245,27 +247,42 @@
     widths: Object.fromEntries(columnDefaults.map(column => [column[0], column[1]])),
     roomy: false
   });
-  const loadView = () => {
+  const normalizeView = saved => {
     const fallback = defaultView();
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-      const keys = fallback.order;
-      const order = [...new Set([...(Array.isArray(saved.order) ? saved.order : []), ...keys])].filter(key => keys.includes(key));
-      let visible = Array.isArray(saved.visible) ? saved.visible.filter(key => keys.includes(key)) : fallback.visible;
-      // Widok zapisany przed kolumną „Zamówienie”: zastąp nią numer, status i datę, wstawiając ją w miejsce numeru.
-      if (Array.isArray(saved.order) && !saved.order.includes('summary')) {
-        visible = [...visible.filter(key => !['order', 'status', 'date'].includes(key)), 'summary'];
-        order.splice(order.indexOf('summary'), 1);
-        order.splice(Math.max(0, order.indexOf('order')), 0, 'summary');
-      }
-      // Nowa kolumna „Realizacja do” pojawia się zaraz za kolumną „Zamówienie”.
-      if (Array.isArray(saved.order) && !saved.order.includes('deadline')) {
-        if (!visible.includes('deadline')) visible.push('deadline');
-        order.splice(order.indexOf('deadline'), 1);
-        order.splice(order.indexOf('summary') + 1, 0, 'deadline');
-      }
-      return { order, visible: visible.length ? visible : ['order'], widths: { ...fallback.widths, ...(saved.widths || {}) }, roomy: Boolean(saved.roomy) };
-    } catch (_) { return fallback; }
+    if (!saved || typeof saved !== 'object') return fallback;
+    const keys = fallback.order;
+    const order = [...new Set([...(Array.isArray(saved.order) ? saved.order : []), ...keys])].filter(key => keys.includes(key));
+    let visible = Array.isArray(saved.visible) ? saved.visible.filter(key => keys.includes(key)) : fallback.visible;
+    // Widok zapisany przed kolumną „Zamówienie”: zastąp nią numer, status i datę, wstawiając ją w miejsce numeru.
+    if (Array.isArray(saved.order) && !saved.order.includes('summary')) {
+      visible = [...visible.filter(key => !['order', 'status', 'date'].includes(key)), 'summary'];
+      order.splice(order.indexOf('summary'), 1);
+      order.splice(Math.max(0, order.indexOf('order')), 0, 'summary');
+    }
+    // Nowa kolumna „Realizacja do” pojawia się zaraz za kolumną „Zamówienie”.
+    if (Array.isArray(saved.order) && !saved.order.includes('deadline')) {
+      if (!visible.includes('deadline')) visible.push('deadline');
+      order.splice(order.indexOf('deadline'), 1);
+      order.splice(order.indexOf('summary') + 1, 0, 'deadline');
+    }
+    // Połączone kolumny: „Realizacja do + Klient” zastępuje obie składowe, a „Kwota + dostawa + płatność” kwotę i dostawę/płatność.
+    const merge = (key, parts) => {
+      if (!Array.isArray(saved.order) || saved.order.includes(key)) return;
+      const anchor = order.find(item => parts.includes(item) && visible.includes(item)) || parts.find(item => order.includes(item));
+      order.splice(order.indexOf(key), 1);
+      order.splice(anchor ? order.indexOf(anchor) : order.length, 0, key);
+      visible = [...visible.filter(item => !parts.includes(item)), key];
+    };
+    merge('deadline_buyer', ['deadline', 'buyer']);
+    merge('checkout', ['amount', 'fulfillment', 'payment', 'delivery']);
+    const widths = { ...fallback.widths };
+    Object.entries(saved.widths && typeof saved.widths === 'object' ? saved.widths : {}).forEach(([key, value]) => {
+      if (keys.includes(key) && Number.isFinite(Number(value))) widths[key] = Math.max(40, Math.min(420, Number(value)));
+    });
+    return { order, visible: visible.length ? visible : ['order'], widths, roomy: Boolean(saved.roomy) };
+  };
+  const loadView = () => {
+    try { return normalizeView(JSON.parse(localStorage.getItem(storageKey) || '{}')); } catch (_) { return defaultView(); }
   };
   let view = loadView();
   const saveView = () => {
@@ -297,6 +314,13 @@
         const output = range.closest('[data-column-option]')?.querySelector('output');
         if (output) output.textContent = `${range.value}px`;
       }
+    });
+    // Zaokrąglone krawędzie wiersza-karty trafiają na pierwszą i ostatnią widoczną komórkę (ukryte kolumny zostają w DOM).
+    table.querySelectorAll('tbody tr').forEach(row => {
+      const cells = [...row.children].filter(cell => !cell.hidden);
+      [...row.children].forEach(cell => cell.classList.remove('is-edge-first', 'is-edge-last'));
+      cells[0]?.classList.add('is-edge-first');
+      cells[cells.length - 1]?.classList.add('is-edge-last');
     });
     table.classList.toggle('is-roomy', view.roomy);
     const emptyCell = table.querySelector('.om-empty-row td');
@@ -349,6 +373,42 @@
   columnsBackdrop?.addEventListener('click', closeColumns);
   document.addEventListener('keydown', event => { if (event.key === 'Escape') closeColumns(); });
   document.querySelector('[data-columns-reset]')?.addEventListener('click', () => { view = defaultView(); applyView(); saveView(); });
+  // Formularz „Dodaj drukarkę ręcznie”: model podpowiada domyślną nazwę i port (Posnet 6666, Novitus 6001), o ile nie zostały zmienione.
+  document.querySelectorAll('[data-fiscal-protocol]').forEach(select => select.addEventListener('change', () => {
+    const form = select.closest('form');
+    const option = select.selectedOptions[0];
+    const name = form?.querySelector('[data-fiscal-name]');
+    const port = form?.querySelector('[data-fiscal-port]');
+    const options = [...select.options];
+    if (name && (!name.value.trim() || options.some(item => item.dataset.name === name.value))) name.value = option.dataset.name;
+    if (port && (!port.value || options.some(item => item.dataset.port === port.value))) port.value = option.dataset.port;
+  }));
+  document.querySelector('[data-columns-export]')?.addEventListener('click', () => {
+    const payload = { type: 'altreo-orders-columns', version: 1, exported_at: new Date().toISOString(), view };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kolumny-zamowien-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  document.querySelector('[data-columns-import]')?.addEventListener('change', async event => {
+    const input = event.target;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const saved = data && data.type === 'altreo-orders-columns' ? data.view : data;
+      if (!saved || typeof saved !== 'object' || !Array.isArray(saved.order) || !Array.isArray(saved.visible)) throw new Error('Plik nie zawiera ustawień kolumn listy zamówień.');
+      view = normalizeView(saved);
+      applyView(); saveView();
+    } catch (error) {
+      window.alert(error instanceof SyntaxError ? 'Nieprawidłowy plik JSON.' : (error.message || 'Nie udało się wczytać ustawień kolumn.'));
+    }
+  });
   document.querySelector('[data-density-toggle]')?.addEventListener('click', () => { view.roomy = !view.roomy; applyView(); saveView(); });
   const paintStar = (orderId, starred) => {
     document.querySelectorAll(`.om-star[data-star-order="${orderId}"]`).forEach(star => {
@@ -401,6 +461,17 @@
       if (label) label.textContent = 'Nie udało się';
       window.setTimeout(() => { if (label) label.textContent = original; }, 1600);
     }
+  }));
+  document.querySelectorAll('[data-copy-target]').forEach(button => button.addEventListener('click', async () => {
+    const label = button.querySelector('span');
+    const original = label?.textContent || '';
+    try {
+      await copyText(document.querySelector(button.dataset.copyTarget)?.textContent || '');
+      if (label) label.textContent = 'Skopiowano';
+    } catch (_) {
+      if (label) label.textContent = 'Nie udało się';
+    }
+    window.setTimeout(() => { if (label) label.textContent = original; }, 1600);
   }));
   const rowIgnores = event => event.target.closest('.om-select-cell, .om-star, [data-copy-order], a, button, input, select, textarea, label');
   document.querySelectorAll('tr[data-order-url]').forEach(row => {
@@ -707,6 +778,43 @@
     const serviceCache = new Map();
     let serviceRequest = 0;
     let valuationRequest = 0, valuationTimer = 0, lastPrices = null;
+    const pickupBox = form.querySelector('[data-pickup-options]');
+    const pickupMode = form.querySelector('[data-pickup-mode]');
+    const pickupSlot = form.querySelector('[data-pickup-slot]');
+    const pickupSlotField = form.querySelector('[data-pickup-slot-field]');
+    const pickupStatus = form.querySelector('[data-pickup-status]');
+    const pickupDay = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
+    let pickupRequest = 0, pickupSupported = false;
+    const pickupNote = text => { if (pickupStatus) pickupStatus.textContent = text; };
+    // Apaczka: termin podjazdu wybierany przy tworzeniu przesyłki (API nie pozwala zamówić kuriera później).
+    const loadPickup = async () => {
+      if (!pickupBox || !pickupSlot) return;
+      const requestId = ++pickupRequest;
+      pickupBox.hidden = !pickupSupported;
+      if (pickupMode) pickupMode.disabled = !pickupSupported;
+      const courier = pickupSupported && pickupMode?.value === 'COURIER';
+      if (pickupSlotField) pickupSlotField.hidden = !courier;
+      pickupSlot.disabled = true; pickupSlot.required = false;
+      if (!courier) { pickupNote(pickupMode?.value === 'SELF' ? 'Kurier nie przyjedzie – paczkę zaniesiesz do punktu.' : 'Kurier tylko dla usług, które go wymagają (najbliższy termin).'); return; }
+      if (!service?.value) { pickupSlot.replaceChildren(new Option('Najpierw wybierz usługę', '')); pickupNote('Terminy pobiorę po wyborze usługi.'); return; }
+      pickupSlot.replaceChildren(new Option('Pobieram terminy…', '')); pickupNote('Pobieram wolne terminy z Apaczki…');
+      try {
+        const data = await request('shippingpickup', { order_id: orderId, carrier_account_id: carrier?.value || '', shipping_service: service.value });
+        if (requestId !== pickupRequest) return;
+        const slots = data.slots || [];
+        pickupSlot.replaceChildren(...(slots.length ? slots.map(slot => {
+          const day = new Date(`${slot.date}T12:00:00`);
+          return new Option(`${Number.isNaN(day.getTime()) ? slot.date : pickupDay.format(day)} · ${slot.hours_from}–${slot.hours_to}`, `${slot.date}|${slot.hours_from}|${slot.hours_to}`);
+        }) : [new Option('Brak wolnych terminów', '')]));
+        pickupNote(slots.length ? `${slots.length} ${slots.length === 1 ? 'termin' : 'terminy'} do wyboru` : 'Apaczka nie zwróciła terminów dla tej usługi.');
+      } catch (error) {
+        if (requestId !== pickupRequest) return;
+        pickupSlot.replaceChildren(new Option('Nie udało się pobrać terminów', ''));
+        pickupNote(error.message);
+      }
+      // Pusty wybór blokuje wysłanie formularza, żeby nie utworzyć przesyłki bez zamówionego podjazdu.
+      pickupSlot.disabled = false; pickupSlot.required = true;
+    };
     const serviceMessage = (message, icon = 'bi-info-circle') => {
       if (!serviceStatus) return;
       const symbol = document.createElement('i'); symbol.className = `bi ${icon}`;
@@ -749,6 +857,8 @@
       serviceMessage((data.automatic ? `${options.length} metod konta · automatyczna metoda zamówienia jest zalecana` : !valuation ? `${options.length} dostępnych usług` : prices !== null ? `${options.length} usług dostępnych dla kodu ${postcode}` : `${options.length} usług — sprawdzam dostępność i ceny`) + codNote, prices !== null || !valuation ? 'bi-check2-circle' : 'bi-arrow-repeat');
       if (valuation && prices === null) scheduleValuation();
       if (!valuation && shippingPrice) shippingPrice.textContent = 'Ten operator nie udostępnia wyceny na żywo';
+      pickupSupported = !!data.pickup;
+      if (pickupBox && (pickupBox.hidden === pickupSupported || (pickupMode?.value === 'COURIER' && service.value !== pickupSlot?.dataset.service))) { if (pickupSlot) pickupSlot.dataset.service = service.value; loadPickup(); }
     };
     const loadServices = async () => {
       if (!service) return;
@@ -771,6 +881,7 @@
       const provider = carrier?.selectedOptions[0]?.dataset.provider || '';
       form.dataset.provider = provider;
       form.dataset.valuation = '';
+      pickupSupported = false; loadPickup();
       if (shippingPrice) shippingPrice.textContent = provider ? 'Pobieram usługi operatora…' : 'Wybierz konto i usługę';
     };
     const updateCod = () => {
@@ -808,6 +919,8 @@
     carrier?.addEventListener('change', () => { lastPrices = null; valuationRequest++; clearTimeout(valuationTimer); updateProvider(); loadServices(); });
     // Wycena nie zależy od wybranej usługi (zwraca ceny wszystkich), więc przy zmianie usługi tylko pokazujemy cenę.
     service?.addEventListener('change', showSelectedPrice);
+    service?.addEventListener('change', () => { if (pickupSlot) pickupSlot.dataset.service = service.value; loadPickup(); });
+    pickupMode?.addEventListener('change', () => { if (pickupSlot) pickupSlot.dataset.service = service?.value || ''; loadPickup(); });
     codToggle?.addEventListener('change', updateCod);
     codAmount?.addEventListener('input', scheduleValuation);
     Object.values(fields).forEach(field => field.addEventListener('input', scheduleValuation));

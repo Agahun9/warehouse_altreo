@@ -84,10 +84,12 @@ final class OrderRepository
             }
         }
         $shipmentColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(om_shipments)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM om_shipments'),'Field');
-        foreach (['carrier_account_id'=>'BIGINT NULL','external_id'=>'VARCHAR(190) NULL','command_id'=>'VARCHAR(190) NULL','payload_json'=>'LONGTEXT NULL','cod_amount_cents'=>'BIGINT NULL','shipment_currency'=>'VARCHAR(3) NULL'] as $column=>$definition) {
+        foreach (['carrier_account_id'=>'BIGINT NULL','external_id'=>'VARCHAR(190) NULL','command_id'=>'VARCHAR(190) NULL','payload_json'=>'LONGTEXT NULL','cod_amount_cents'=>'BIGINT NULL','shipment_currency'=>'VARCHAR(3) NULL','refresh_step'=>'INT NOT NULL DEFAULT 0','refresh_due_at'=>'VARCHAR(30) NULL'] as $column=>$definition) {
             if (!in_array($column,$shipmentColumns,true)) {
                 try { $this->db->query("ALTER TABLE om_shipments ADD COLUMN $column $definition"); }
                 catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+                // Istniejące przesyłki z ostatnich 30 dni wchodzą od razu w cykliczne odświeżanie w cronie.
+                if ($column==='refresh_due_at') { $this->db->query("UPDATE om_shipments SET refresh_due_at=:now,refresh_step=4 WHERE carrier_account_id IS NOT NULL AND created_at>=:since AND UPPER(state) NOT IN ('CANCELLED','CANCELED','ANULOWANO','ERROR')",['now'=>gmdate('Y-m-d H:i:s'),'since'=>gmdate('Y-m-d',time()-30*86400)]); }
             }
         }
         foreach ([
@@ -95,7 +97,7 @@ final class OrderRepository
             'om_events' => ['om_event_order'=>'order_id,id'],
             'om_order_notes' => ['om_order_note_order'=>'order_id,id'],
             'om_documents' => ['om_document_order'=>'order_id,id','om_document_parent'=>'parent_id,id'],
-            'om_shipments' => ['om_shipment_order'=>'order_id,id'],
+            'om_shipments' => ['om_shipment_order'=>'order_id,id','om_shipment_refresh'=>'refresh_due_at'],
             'om_rule_runs' => ['om_rule_run_order'=>'order_id,id','om_rule_run_date'=>'created_at'],
         ] as $table=>$indexes) {
             foreach ($indexes as $name=>$columns) {
@@ -240,6 +242,18 @@ final class OrderRepository
             if ($source===$sourceMethod) { $ids[]=(int)$row['id']; }
         }
         return $ids;
+    }
+    private function shipmentGroupOrderIds(string $group): array
+    {
+        $ids=[]; $created=[];
+        foreach ($this->db->fetchAll("SELECT sh.order_id,sh.state,sh.payload_json,ca.provider carrier_provider FROM om_shipments sh LEFT JOIN om_carrier_accounts ca ON ca.id=sh.carrier_account_id WHERE UPPER(sh.state) NOT IN ('CANCELLED','CANCELED','ANULOWANO')") as $row) {
+            $rowGroup=OrderShipmentService::filterGroup($row);
+            if ($rowGroup===$group) { $ids[(int)$row['order_id']]=true; }
+            if ($rowGroup!=='error') { $created[(int)$row['order_id']]=true; }
+        }
+        // Błąd liczy się tylko wtedy, gdy zamówienie nie ma żadnej poprawnie utworzonej przesyłki.
+        if ($group==='error') { $ids=array_diff_key($ids,$created); }
+        return array_keys($ids);
     }
     private function mappedPayment(string $platform,string $sourceMethod): ?array
     {
@@ -716,7 +730,7 @@ final class OrderRepository
     }
     private static function shortDate(string $value): string
     {
-        return preg_match('/^\d{2}(\d{2})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/',$value,$m) ? "$m[3].$m[2].$m[1] $m[4]" : $value;
+        return \App\Core\SmartyFactory::plTime($value,'d.m.y H:i');
     }
 
     private function tableExists(string $table): bool
@@ -763,6 +777,13 @@ final class OrderRepository
         }
         if (($filters['payment_source']??'')!=='' && !empty($filters['platform'])) {
             $ids=$this->paymentSourceOrderIds((string)$filters['platform'],$filters['payment_source']==='__empty__'?'':(string)$filters['payment_source']);
+            $where[]=$ids?'o.id IN ('.implode(',',$ids).')':'1=0';
+        }
+        $shipmentFilter=(string)($filters['shipment']??'');
+        if ($shipmentFilter==='none') {
+            $where[]="NOT EXISTS (SELECT 1 FROM om_shipments sh WHERE sh.order_id=o.id AND UPPER(sh.state) NOT IN ('CANCELLED','CANCELED','ANULOWANO'))";
+        } elseif (in_array($shipmentFilter,['created','sent','delivered','error'],true)) {
+            $ids=$this->shipmentGroupOrderIds($shipmentFilter);
             $where[]=$ids?'o.id IN ('.implode(',',$ids).')':'1=0';
         }
         foreach (['date_from'=>'>=','date_to'=>'<'] as $field=>$operator) {

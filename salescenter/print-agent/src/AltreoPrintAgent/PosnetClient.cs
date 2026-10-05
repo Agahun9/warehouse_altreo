@@ -4,8 +4,10 @@ using System.Text;
 
 namespace AltreoPrintAgent;
 
-public sealed class PosnetClient : IAsyncDisposable
+public sealed class PosnetClient : IFiscalPrinterClient
 {
+    public string DeviceLabel => "Posnet";
+
     private const byte Stx = 0x02;
     private const byte Etx = 0x03;
     private const byte Tab = 0x09;
@@ -327,7 +329,7 @@ public sealed class PosnetClient : IAsyncDisposable
         return _encoding.GetString(body);
     }
 
-    private static string NormalizeVat(string vat)
+    internal static string NormalizeVat(string vat)
     {
         var value = vat.Trim().ToLowerInvariant().Replace(',', '.');
         if (value is "101" or "101.00" or "nieaktywna") return "nieaktywna";

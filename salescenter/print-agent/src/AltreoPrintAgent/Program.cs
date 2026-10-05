@@ -17,6 +17,16 @@ internal static class Program
             Environment.ExitCode = RunPosnetReceiptTest(args);
             return;
         }
+        if (args.Length >= 1 && string.Equals(args[0], "--test-novitus", StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = RunPosnetTest(args, FiscalProtocols.Novitus);
+            return;
+        }
+        if (args.Length >= 1 && string.Equals(args[0], "--test-novitus-receipt", StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.ExitCode = RunPosnetReceiptTest(args, FiscalProtocols.Novitus);
+            return;
+        }
         using var mutex = new Mutex(true, "AltreoPrintAgent.Singleton."+BuildProfile.Name, out var isFirstInstance);
         if (!isFirstInstance) return;
 
@@ -24,14 +34,14 @@ internal static class Program
         GC.KeepAlive(mutex);
     }
 
-    private static int RunPosnetTest(string[] args)
+    private static int RunPosnetTest(string[] args, string protocol = FiscalProtocols.Posnet)
     {
         try
         {
             var host = args.Length >= 2 ? args[1] : "192.168.1.15";
-            var port = args.Length >= 3 && int.TryParse(args[2], out var parsedPort) ? parsedPort : 6666;
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var result = new FiscalReceiptService().TestNonFiscalAsync(host, port, cancellation.Token).GetAwaiter().GetResult();
+            var port = args.Length >= 3 && int.TryParse(args[2], out var parsedPort) ? parsedPort : DefaultPort(protocol);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var result = new FiscalReceiptService().TestNonFiscalAsync(host, port, cancellation.Token, protocol).GetAwaiter().GetResult();
             Console.WriteLine(result.Message);
             return result.Status == JobStatuses.Printed ? 0 : 1;
         }
@@ -42,15 +52,19 @@ internal static class Program
         }
     }
 
-    private static int RunPosnetReceiptTest(string[] args)
+    private static int DefaultPort(string protocol) =>
+        FiscalProtocols.Normalize(protocol) == FiscalProtocols.Novitus ? NovitusClient.DefaultPort : 6666;
+
+    private static int RunPosnetReceiptTest(string[] args, string protocol = FiscalProtocols.Posnet)
     {
         try
         {
             var host = args.Length >= 2 ? args[1] : "192.168.1.15";
-            var port = args.Length >= 3 && int.TryParse(args[2], out var parsedPort) ? parsedPort : 6666;
+            var port = args.Length >= 3 && int.TryParse(args[2], out var parsedPort) ? parsedPort : DefaultPort(protocol);
             var receipt = new FiscalReceiptPayload(0,"TEST-NIEFISKALNY","PLN",100,
                 [new FiscalReceiptItem("Test polaczenia ALTREO",1,100,"23")]);
-            var job = new FiscalJob("test","test","sandbox","test","Posnet Trio",host,port,null,receipt);
+            var name = FiscalProtocols.Normalize(protocol) == FiscalProtocols.Novitus ? "Novitus Deon Online" : "Posnet Trio";
+            var job = new FiscalJob("test","test","sandbox","test",name,host,port,null,receipt,protocol);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var result = new FiscalReceiptService().PrintAsync(job,cancellation.Token).GetAwaiter().GetResult();
             Console.WriteLine(result.Message);

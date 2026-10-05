@@ -106,8 +106,29 @@ $responses=[['#GET .*/shipping/parcels/501$#',200,['id'=>501,'type'=>'internal',
 $service->refresh($shipmentId,'test');
 $row=$db->fetch('SELECT s.*,ca.provider carrier_provider FROM om_shipments s JOIN om_carrier_accounts ca ON ca.id=s.carrier_account_id WHERE s.id=:id',['id'=>$shipmentId]);
 $presentation=OrderShipmentService::presentation($row,$order);
-check($row['tracking']==='6200000000001' && $presentation['status_label']==='Gotowa do nadania' && $presentation['status_updated_at']==='2026-09-18 08:05 UTC','Erli refresh updates tracking and camelCase status');
+check($row['tracking']==='6200000000001' && $presentation['status_label']==='Gotowa do nadania' && $presentation['status_updated_at']==='2026-09-18 10:05','Erli refresh updates tracking and camelCase status');
 check($presentation['provider_label']==='Wysyłam z Erli' && $presentation['source_tracking_auto'] && $presentation['can_cancel'] && $presentation['pickup_protocol'] && !$presentation['tracking_pending'],'Erli capabilities exposed in presentation');
+
+// Harmonogram odświeżania w cronie: 5/10/15/20 min po utworzeniu, potem co 8 h, koniec po doręczeniu.
+$row=$db->fetch('SELECT * FROM om_shipments WHERE id=:id',['id'=>$shipmentId]);
+check((int)$row['refresh_step']===0 && abs(strtotime($row['refresh_due_at'].' UTC')-(strtotime($row['created_at'].' UTC')+300))<5,'New shipment scheduled 5 min after creation');
+$parcel=['id'=>501,'type'=>'internal','orderId'=>'260918x0001','status'=>'readyToSend','statusHistory'=>[['status'=>'readyToSend','changed'=>'2026-09-18T08:05:00Z']],'trackingNumber'=>'6200000000001','shipping'=>['typeId'=>'erliKurier24InPost15kg']];
+$responses=[['#GET .*/shipping/parcels/501$#',200,$parcel]];
+$db->update('om_shipments',['refresh_due_at'=>gmdate('Y-m-d H:i:s',time()-1)],'id=:id',['id'=>$shipmentId]);
+$events=(int)$db->fetchColumn('SELECT COUNT(*) FROM om_events WHERE order_id=:o',['o'=>$orderId]);
+check($service->refreshDue()===['refreshed'=>1,'errors'=>0],'Due shipment refreshed by cron');
+$row=$db->fetch('SELECT * FROM om_shipments WHERE id=:id',['id'=>$shipmentId]);
+check((int)$row['refresh_step']===1 && strtotime($row['refresh_due_at'].' UTC')>=time()+59,'Second refresh scheduled 10 min after creation');
+check((int)$db->fetchColumn('SELECT COUNT(*) FROM om_events WHERE order_id=:o',['o'=>$orderId])===$events,'Unchanged background refresh does not spam order history');
+check($service->refreshDue()===['refreshed'=>0,'errors'=>0],'Not-due shipment skipped');
+$db->update('om_shipments',['refresh_due_at'=>gmdate('Y-m-d H:i:s',time()-1),'refresh_step'=>3],'id=:id',['id'=>$shipmentId]);
+$service->refreshDue();
+$row=$db->fetch('SELECT * FROM om_shipments WHERE id=:id',['id'=>$shipmentId]);
+check((int)$row['refresh_step']===4 && abs(strtotime($row['refresh_due_at'].' UTC')-(time()+8*3600))<5,'After 20 min refresh switches to every 8 h');
+$responses=[['#GET .*/shipping/parcels/501$#',200,['status'=>'delivered','statusHistory'=>[['status'=>'delivered','changed'=>'2026-09-19T08:05:00Z']]]+$parcel]];
+$db->update('om_shipments',['refresh_due_at'=>gmdate('Y-m-d H:i:s',time()-1)],'id=:id',['id'=>$shipmentId]);
+$service->refreshDue();
+check($db->fetchColumn('SELECT refresh_due_at FROM om_shipments WHERE id=:id',['id'=>$shipmentId])===null,'Delivered shipment leaves the refresh schedule');
 
 // Błąd ERLI trafia do użytkownika czytelnie.
 $responses=[['#POST .*/shipping/parcels/$#',400,[['errorCode'=>1211,'errorMessage'=>'Nieprawidłowa waga bądź wymiary paczki dla wybranej metody dostawy']]]];

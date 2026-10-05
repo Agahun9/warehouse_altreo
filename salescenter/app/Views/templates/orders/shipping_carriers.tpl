@@ -26,7 +26,7 @@
             {if $sp.capabilities.source_tracking eq 'auto'}<span class="sc-pill on"><i class="bi bi-cloud-check"></i> Numer do źródła sam</span>{/if}
           </div>
           <div class="sc-conn-kpi"><strong>{$c.shipment_count|default:0}</strong><span>przesyłek</span></div>
-          <div class="sc-conn-kpi"><strong>{if !empty($c.last_shipment_at)}{$c.last_shipment_at|date_format:'%d.%m %H:%M'}{else}—{/if}</strong><span>ostatnie nadanie (UTC)</span></div>
+          <div class="sc-conn-kpi"><strong>{if !empty($c.last_shipment_at)}{$c.last_shipment_at|pl_time:'d.m H:i'|escape}{else}—{/if}</strong><span>ostatnie nadanie</span></div>
           <div class="sc-conn-actions">
             <button type="button" class="sc-btn sc-btn-ghost" data-toggle-conn aria-expanded="{if $sv.selected eq $c.id}true{else}false{/if}"><i class="bi bi-sliders"></i> Ustawienia</button>
           </div>
@@ -72,7 +72,7 @@
                 </div>
                 {if $c.shipment_count}<p class="sc-note"><i class="bi bi-info-circle"></i> Konto ma przesyłki, więc można je tylko wyłączyć – statusy i etykiety pozostaną dostępne.</p>{/if}
               {/if}
-              <p class="sc-note">Zaktualizowano: {$c.updated_at|escape} UTC</p>
+              <p class="sc-note">Zaktualizowano: {$c.updated_at|pl_time|escape}</p>
             </section>
           </div>
         </div>

@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+// Najkrótszy zapis liczb w JSON (0.3 zamiast 0.29999999999999998…) – serwer ma serialize_precision=17,
+// a API przewoźników (np. Wysyłam z Allegro) odrzucają tak długie wartości.
+ini_set('serialize_precision', '-1');
+
 spl_autoload_register(static function (string $className): void {
     $prefix = 'App\\';
 

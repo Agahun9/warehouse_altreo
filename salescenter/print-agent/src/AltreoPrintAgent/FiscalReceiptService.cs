@@ -22,16 +22,16 @@ public sealed class FiscalReceiptService
             return PrintResult.Error($"Suma pozycji ({calculated}) nie zgadza się z kwotą zamówienia ({job.Receipt.TotalCents}).");
         try
         {
-            await using var client = new PosnetClient();
+            await using var client = CreateClient(job.Protocol);
             await client.ConnectAsync(job.Host, job.Port, cancellationToken);
             if (job.Environment=="sandbox")
             {
                 await client.PrintNonFiscalReceiptAsync(job, cancellationToken);
-                return PrintResult.Printed("Posnet potwierdził wydruk paragonu niefiskalnego (sandbox); sprzedaż nie została zafiskalizowana.");
+                return PrintResult.Printed($"{client.DeviceLabel} potwierdził wydruk paragonu niefiskalnego (sandbox); sprzedaż nie została zafiskalizowana.");
             }
             var fiscalNumber = await client.PrintFiscalReceiptAsync(job, cancellationToken);
             var suffix = string.IsNullOrWhiteSpace(fiscalNumber) ? "" : $" Numer urządzenia: {fiscalNumber}.";
-            return PrintResult.Printed("Drukarka Posnet potwierdziła zakończenie paragonu fiskalnego." + suffix, fiscalNumber);
+            return PrintResult.Printed($"Drukarka {client.DeviceLabel} potwierdziła zakończenie paragonu fiskalnego." + suffix, fiscalNumber);
         }
         catch (InvalidOperationException exception)
         {
@@ -49,18 +49,26 @@ public sealed class FiscalReceiptService
         {
             return PrintResult.Error(exception.Message);
         }
+        catch (InvalidDataException exception)
+        {
+            return PrintResult.Error(exception.Message);
+        }
     }
 
-    public async Task<PrintResult> TestNonFiscalAsync(string host,int port,CancellationToken cancellationToken)
+    public static IFiscalPrinterClient CreateClient(string? protocol) =>
+        FiscalProtocols.Normalize(protocol)==FiscalProtocols.Novitus ? new NovitusClient() : new PosnetClient();
+
+    public async Task<PrintResult> TestNonFiscalAsync(string host,int port,CancellationToken cancellationToken,string? protocol=null)
     {
         try
         {
-            await using var client=new PosnetClient();
+            await using var client=CreateClient(protocol);
             await client.ConnectAsync(host,port,cancellationToken);
             return PrintResult.Printed(await client.TestNonFiscalAsync(cancellationToken));
         }
         catch (SocketException exception) { return PrintResult.Offline(exception.Message); }
         catch (TimeoutException exception) { return PrintResult.Offline(exception.Message); }
         catch (IOException exception) { return PrintResult.Error(exception.Message); }
+        catch (InvalidDataException exception) { return PrintResult.Error(exception.Message); }
     }
 }

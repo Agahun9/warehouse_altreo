@@ -15,12 +15,13 @@ final class ApaczkaProvider extends ShippingProvider
             'key'=>'apaczka','label'=>'Apaczka / Alsendo','description'=>'Broker wielu przewoźników (DPD, DHL, InPost, UPS, Pocztex…) przez Web API v2.',
             'badge'=>['text'=>'AP','tone'=>'apaczka'],'color'=>'#1462ba','ink'=>'#fff','group'=>'Przewoźnicy i brokerzy',
             'steps'=>['Zaloguj się do panelu Apaczka.pl.','Moje konto → Web API: utwórz aplikację i skopiuj App ID oraz App Secret.','Wklej klucze i zapisz.','Uzupełnij dane nadawcy i rachunek do pobrań w sekcji „Domyślne nadawanie” poniżej.'],'source_platform'=>'',
-            'capabilities'=>['valuation'=>true,'cancel'=>true,'label'=>true,'tracking'=>true,'cod'=>'form','source_tracking'=>'manual','pickup_protocol'=>false],
+            'capabilities'=>['valuation'=>true,'cancel'=>true,'label'=>true,'tracking'=>true,'cod'=>'form','source_tracking'=>'manual','pickup_protocol'=>false,'pickup_order'=>true],
             'info'=>[
                 'App ID i App Secret wygenerujesz w panelu Apaczki → Moje konto → Web API.',
                 'Wymaga uzupełnionych danych nadawcy i – dla pobrań – numeru konta bankowego w ustawieniach poniżej.',
                 'W zamówieniu pokazujemy wycenę na żywo i tylko usługi dostępne dla adresu odbiorcy.',
                 'Anulowanie przesyłki działa bezpośrednio z panelu zamówienia.',
+                'Podjazd kuriera zamawiasz przy tworzeniu przesyłki: „Zamów podjazd kuriera” i wybór dnia oraz godzin odbioru (Apaczka nie pozwala dodać podjazdu do już utworzonej przesyłki).',
             ],
             'docs'=>'https://panel.apaczka.pl/dokumentacja_api_v2.php',
             'fields'=>[
@@ -40,13 +41,16 @@ final class ApaczkaProvider extends ShippingProvider
         foreach ((array)($response['response']['services']??[]) as $serviceKey=>$service) {
             if (!is_array($service)) { continue; }
             $id=(int)($service['id']??$service['service_id']??$serviceKey); if ($id<1) { continue; }
-            $options[]=['value'=>(string)$id,'name'=>(string)($service['name']??('Usługa '.$id)),'carrier'=>(string)($service['supplier']??'Apaczka')];
+            // Flagi sposobu nadania/doręczenia: pickup_courier 0=bez kuriera, 1=opcjonalny, 2=wymagany; door_to_point itd. = 0/1.
+            $flags=[]; foreach (self::SERVICE_FLAGS as $flag) { $flags[$flag]=(string)($service[$flag]??''); }
+            $options[]=['value'=>(string)$id,'name'=>(string)($service['name']??('Usługa '.$id)),'carrier'=>(string)($service['supplier']??'Apaczka')]+$flags;
         }
         return $options;
     }
 
     /** Przewoźnicy rozpoznawani w nazwie metody dostawy: klucz => wzorzec w metodzie dostawy i w nazwie/dostawcy usługi Apaczki. */
     private const CARRIERS=['inpost'=>'/inpost|paczkomat/iu','dpd'=>'/\\bdpd\\b/iu','dhl'=>'/\\bdhl\\b/iu','pocztex'=>'/pocztex|poczta polska/iu','ups'=>'/\\bups\\b/iu','fedex'=>'/fedex/iu','gls'=>'/\\bgls\\b/iu','orlen'=>'/orlen/iu'];
+    private const SERVICE_FLAGS=['pickup_courier','door_to_door','door_to_point','point_to_point','point_to_door'];
     private const POINT_PATTERN='/paczkomat|automat|punkt|point|pickup|\\bbox\\b|\\bpop\\b|odbi[oó]r w/iu';
 
     public function preferredService(array $carrier,array $order,array $defaults): string
@@ -96,9 +100,23 @@ final class ApaczkaProvider extends ShippingProvider
     {
         $serviceId=(int)($input['shipping_service']??$input['apaczka_service_id']??0); if ($serviceId<1) throw new InvalidArgumentException('Wybierz usługę Apaczka.');
         $serviceMeta=$this->serviceMeta($carrier,$order,(string)$serviceId,trim((string)($order['details']['delivery']??'')),'Apaczka');
-        $response=$this->api($carrier,'order_send',['order'=>$this->orderData($carrier,$order,$input,$serviceId)]);
+        $data=$this->orderData($carrier,$order,$input,$serviceId);
+        $service=$this->serviceInfo($carrier,$order,$serviceId);
+        $data['pickup']=$this->pickup($carrier,$service,$serviceId,(string)$data['pickup']['type'],$input);
+        if (self::flag($service,'door_to_point')||self::flag($service,'point_to_point')) {
+            if ((string)($data['address']['receiver']['foreign_address_id']??'')==='' && !self::flag($service,'door_to_door') && !self::flag($service,'point_to_door')) { throw new InvalidArgumentException('Usługa „'.$serviceMeta['service_name'].'” doręcza do punktu – podaj kod punktu odbioru w sekcji „Sprawdź odbiorcę i dane zaawansowane”.'); }
+        }
+        $response=$this->api($carrier,'order_send',['order'=>$data]);
         $remote=$response['response']['order']??[];
-        return ['external_id'=>(string)($remote['id']??''),'tracking'=>(string)($remote['waybill_number']??''),'state'=>(string)($remote['status']??'created'),'service_code'=>(string)$serviceId,'service_name'=>$serviceMeta['service_name'],'carrier_name'=>$serviceMeta['carrier_name'],'response'=>$response];
+        return ['external_id'=>(string)($remote['id']??''),'tracking'=>(string)($remote['waybill_number']??''),'state'=>(string)($remote['status']??'created'),'service_code'=>(string)$serviceId,'service_name'=>$serviceMeta['service_name'],'carrier_name'=>$serviceMeta['carrier_name'],'meta'=>['pickup'=>$data['pickup']],'response'=>$response];
+    }
+
+    /** Terminy podjazdu kuriera (dzień + okno godzin) dla usługi i kodu pocztowego nadawcy. */
+    public function pickupSlots(array $carrier,array $order,array $input): array
+    {
+        $serviceId=(int)($input['shipping_service']??0); if ($serviceId<1) throw new InvalidArgumentException('Wybierz usługę Apaczka, aby pobrać terminy podjazdu.');
+        if (self::forcedPickup($this->serviceInfo($carrier,$order,$serviceId))==='SELF') { throw new InvalidArgumentException('Ta usługa nie obsługuje podjazdu kuriera – paczkę nadajesz w punkcie.'); }
+        return ['slots'=>$this->pickupWindows($carrier,$serviceId)];
     }
 
     public function valuation(array $carrier,array $order,array $input): array
@@ -143,11 +161,78 @@ final class ApaczkaProvider extends ShippingProvider
         $package=ShipmentInput::package($input); $defaults=$this->defaults();
         // is_zebra=1: etykieta 10x15 pod drukarkę etykiet zamiast strony A4 (bez tego Apaczka bierze format z ustawień konta).
         $data=['is_zebra'=>1,'service_id'=>$serviceId,'address'=>['sender'=>$this->address($this->sender()),'receiver'=>$this->receiver($input)],'shipment_value'=>(int)$order['total_cents'],'shipment_currency'=>$order['currency'],'pickup'=>['type'=>(string)($defaults['pickup_type']??'SELF'),'date'=>'','hours_from'=>'','hours_to'=>''],'shipment'=>[['dimension1'=>$package['length'],'dimension2'=>$package['width'],'dimension3'=>$package['height'],'weight'=>$package['weight'],'is_nstd'=>0,'shipment_type_code'=>'PACZKA']],'content'=>ShipmentInput::content((int)$order['id'],$input,$defaults)];
-        // Dostawa do punktu (np. Paczkomat z Allegro): kod punktu odbiorcy z zamówienia.
-        $pickup=trim((string)($order['details']['pickup']??''));
-        if ($pickup!=='' && $serviceId>0 && preg_match(self::POINT_PATTERN,$this->serviceMeta($carrier,$order,(string)$serviceId,'','')['service_name'])) { $data['address']['receiver']['foreign_address_id']=$pickup; }
+        // Dostawa do punktu (np. Paczkomat z Allegro): kod punktu z formularza albo z zamówienia.
+        $pickup=trim((string)($input['receiver_point']??$order['details']['pickup']??''));
+        if ($pickup!=='' && $serviceId>0) {
+            $service=$this->serviceInfo($carrier,$order,$serviceId);
+            $toPoint=isset($service['door_to_point'])&&$service['door_to_point']!==''?(self::flag($service,'door_to_point')||self::flag($service,'point_to_point')):(bool)preg_match(self::POINT_PATTERN,(string)($service['name']??''));
+            if ($toPoint) { $data['address']['receiver']['foreign_address_id']=mb_substr($pickup,0,100,'UTF-8'); }
+        }
         $this->applyCod($data,$input,(string)$order['currency']);
         return $data;
+    }
+    /** Wpis usługi z listy kont (z flagami nadania); stary cache bez flag jest odświeżany raz. */
+    private function serviceInfo(array $carrier,array $order,int $serviceId): array
+    {
+        $find=function (array $options) use ($serviceId): array { foreach ($options as $option) { if ((string)($option['value']??'')===(string)$serviceId) { return (array)$option; } } return []; };
+        try {
+            $service=$find($this->cachedServices($carrier,$order));
+            if ($service && !array_key_exists('pickup_courier',$service)) {
+                $this->repo->saveSetting('carrier_services_'.(int)$carrier['id'],['fetched_at'=>0,'options'=>[]]);
+                $service=$find($this->cachedServices($carrier,$order));
+            }
+            return $service;
+        } catch (\Throwable $error) { return []; }
+    }
+    private static function flag(array $service,string $flag): bool { return (string)($service[$flag]??'')==='1'; }
+
+    /** Sposób nadania wymuszony przez usługę: kurier wymagany (pickup_courier=2) albo tylko „od drzwi” => COURIER; bez kuriera albo tylko „z punktu” => SELF; inaczej ''. */
+    private static function forcedPickup(array $service): string
+    {
+        $courier=(string)($service['pickup_courier']??'');
+        $fromDoor=self::flag($service,'door_to_door')||self::flag($service,'door_to_point'); $fromPoint=self::flag($service,'point_to_point')||self::flag($service,'point_to_door');
+        if ($courier==='2' || ($fromDoor && !$fromPoint)) { return 'COURIER'; }
+        if ($courier==='0' || ($fromPoint && !$fromDoor)) { return 'SELF'; }
+        return '';
+    }
+
+    /**
+     * Sposób nadania: wybór z formularza (pickup_mode COURIER/SELF + pickup_slot „data|od|do”), a bez wyboru (np. automatyzacje)
+     * wymóg usługi albo ustawienie domyślne. COURIER bez wybranego terminu => najbliższe okno z pickup_hours.
+     */
+    private function pickup(array $carrier,array $service,int $serviceId,string $defaultType,array $input): array
+    {
+        $forced=self::forcedPickup($service);
+        $type=$forced!==''?$forced:($defaultType==='COURIER'?'COURIER':'SELF');
+        $mode=strtoupper(trim((string)($input['pickup_mode']??'')));
+        if ($mode==='COURIER' || $mode==='SELF') {
+            if ($forced!=='' && $forced!==$mode) { throw new InvalidArgumentException($forced==='COURIER'?'Ta usługa wymaga podjazdu kuriera – wybierz „Zamów podjazd kuriera” i termin.':'Ta usługa nie obsługuje podjazdu kuriera – paczkę nadajesz w punkcie.'); }
+            $type=$mode;
+        }
+        if ($type!=='COURIER') { return ['type'=>'SELF','date'=>'','hours_from'=>'','hours_to'=>'']; }
+        $slots=$this->pickupWindows($carrier,$serviceId);
+        $chosen=trim((string)($input['pickup_slot']??''));
+        if ($chosen!=='') {
+            foreach ($slots as $slot) { if (implode('|',$slot)===$chosen) { return ['type'=>'COURIER']+$slot; } }
+            throw new InvalidArgumentException('Wybrany termin podjazdu kuriera nie jest już dostępny – wybierz inny termin.');
+        }
+        if ($slots) { return ['type'=>'COURIER']+$slots[0]; }
+        throw new RuntimeException('Apaczka nie zwróciła wolnego terminu odbioru przez kuriera dla tej usługi i kodu pocztowego nadawcy.');
+    }
+
+    /** Okna odbioru z pickup_hours (dziś + kolejne dni robocze), najpierw dla wybranej usługi, rosnąco wg daty. */
+    private function pickupWindows(array $carrier,int $serviceId): array
+    {
+        $hours=(array)($this->api($carrier,'pickup_hours',['postal_code'=>$this->sender()['postal_code'],'service_id'=>$serviceId,'remove_index'=>false])['response']['hours']??[]);
+        ksort($hours); $own=[]; $other=[];
+        foreach ($hours as $date=>$day) {
+            foreach ((array)($day['services']??[]) as $window) {
+                if ((string)($window['timefrom']??'')==='' || (string)($window['timeto']??'')==='') { continue; }
+                $slot=['date'=>(string)($day['date']??$date),'hours_from'=>(string)$window['timefrom'],'hours_to'=>(string)$window['timeto']];
+                if ((string)($window['service']??'')===(string)$serviceId) { $own[implode('|',$slot)]=$slot; } else { $other[implode('|',$slot)]=$slot; }
+            }
+        }
+        return array_values($own?:$other);
     }
     private function applyCod(array &$orderData,array $input,string $currency): void
     {
@@ -159,11 +244,18 @@ final class ApaczkaProvider extends ShippingProvider
         if ($currency==='PLN' && !preg_match('/^\d{26}$/D',$bankAccount)) { throw new InvalidArgumentException('Uzupełnij poprawny numer konta pobrania w zakładce Przesyłki i presety.'); }
         $orderData['cod']=['amount'=>$amount,'currency'=>$currency,'bankaccount'=>$bankAccount];
     }
-    private function address(array $sender): array { return ['name'=>$sender['name'],'contact_person'=>$sender['name'],'email'=>$sender['email'],'phone'=>$sender['phone'],'line1'=>$sender['street'],'line2'=>$sender['building'],'postal_code'=>$sender['postal_code'],'city'=>$sender['city'],'country_code'=>'PL','is_residential'=>0]; }
+    private function address(array $sender): array { return ['name'=>$sender['name'],'contact_person'=>self::contactPerson($sender['name']),'email'=>$sender['email'],'phone'=>$sender['phone'],'line1'=>$sender['street'],'line2'=>$sender['building'],'postal_code'=>$sender['postal_code'],'city'=>$sender['city'],'country_code'=>'PL','is_residential'=>0]; }
     private function receiver(array $input): array
     {
         $name=ShipmentInput::required($input,'receiver_name',150);
-        return ['name'=>$name,'contact_person'=>$name,'email'=>ShipmentInput::email($input,'receiver_email'),'phone'=>ShipmentInput::phone($input,'receiver_phone'),'line1'=>ShipmentInput::required($input,'receiver_street',150),'line2'=>ShipmentInput::required($input,'receiver_building',30),'postal_code'=>ShipmentInput::required($input,'receiver_postal_code',20),'city'=>ShipmentInput::required($input,'receiver_city',100),'country_code'=>ShipmentInput::country($input['receiver_country']??'PL'),'is_residential'=>0];
+        return ['name'=>$name,'contact_person'=>self::contactPerson($name),'email'=>ShipmentInput::email($input,'receiver_email'),'phone'=>ShipmentInput::phone($input,'receiver_phone'),'line1'=>ShipmentInput::required($input,'receiver_street',150),'line2'=>ShipmentInput::required($input,'receiver_building',30),'postal_code'=>ShipmentInput::required($input,'receiver_postal_code',20),'city'=>ShipmentInput::required($input,'receiver_city',100),'country_code'=>ShipmentInput::country($input['receiver_country']??'PL'),'is_residential'=>0];
+    }
+    /** Osoba kontaktowa max 30 znaków (np. ORLEN Paczka dzieli ją na imię/nazwisko z limitem 30) – ucięta na granicy słowa. */
+    private static function contactPerson(string $name): string
+    {
+        $name=trim((string)preg_replace('/\s+/u',' ',$name)); if (mb_strlen($name,'UTF-8')<=30) { return $name; }
+        $short=mb_substr($name,0,30,'UTF-8'); $space=mb_strrpos($short,' ',0,'UTF-8');
+        return rtrim($space!==false && $space>=10?mb_substr($short,0,$space,'UTF-8'):$short,' ,.-');
     }
     private function api(array $carrier,string $route,array $data): array
     {

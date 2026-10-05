@@ -36,7 +36,7 @@
   <div class="card mb-4" id="allegro-app"><div class="card-body">
     <h2 class="h5">Aplikacja Allegro</h2>
     {if $allegroApp.configured}
-      <p class="mb-2"><span class="badge text-bg-success">Włączona</span> Client ID <code>{$allegroApp.client_id_hint|escape}</code>{if $allegroApp.source eq 'file'} (z pliku <code>app/Config/app.php</code>){elseif $allegroApp.saved_by} · zapisał {$allegroApp.saved_by|escape}{if $allegroApp.saved_at}, {$allegroApp.saved_at|escape}{/if}{/if}</p>
+      <p class="mb-2"><span class="badge text-bg-success">Włączona</span> Client ID <code>{$allegroApp.client_id_hint|escape}</code>{if $allegroApp.source eq 'file'} (z pliku <code>app/Config/app.php</code>){elseif $allegroApp.saved_by} · zapisał {$allegroApp.saved_by|escape}{if $allegroApp.saved_at}, {$allegroApp.saved_at|pl_time|escape}{/if}{/if}</p>
       <p class="text-secondary small">Każda firma łączy konto Allegro samym logowaniem: Konta i import → Dodaj kanał → Allegro → „Zaloguj przez Allegro”.</p>
     {else}
       <p class="mb-2"><span class="badge text-bg-warning">Nie skonfigurowana</span> Firmy nie mogą jeszcze łączyć kont Allegro.</p>

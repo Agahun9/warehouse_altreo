@@ -17,7 +17,7 @@
       <small>Szczegóły pobrane</small>
       <strong><span data-arc-details-done>{$progress.details_done}</span> / <span data-arc-details-total>{$progress.details_total}</span></strong>
       <div class="arc-bar"><span data-arc-bar style="width:{$progress.details_percent}%"></span></div>
-      <em data-arc-status>{if $progress.last_error}{$progress.last_error|escape}{elseif $progress.last_run}Ostatnia porcja: {$progress.last_run|escape} UTC{else}Czeka na pierwsze uruchomienie{/if}</em>
+      <em data-arc-status>{if $progress.last_error}{$progress.last_error|escape}{elseif $progress.last_run}Ostatnia porcja: {$progress.last_run|pl_time|escape}{else}Czeka na pierwsze uruchomienie{/if}</em>
     </div>
     {foreach $progress.phases as $phase}
     <div class="arc-phase {if $phase.done}is-done{/if} {if $phase.error}has-error{/if}" data-arc-phase="{$phase.key}">
@@ -201,7 +201,7 @@
           <dl class="arc-meta">
             <dt>Zakres dat</dt><dd>{if $progress.stats.oldest}{$progress.stats.oldest|escape} – {$progress.stats.newest|escape}{else}—{/if}</dd>
             <dt>Zapytania API</dt><dd>{$progress.requests}</dd>
-            <dt>Ostatnia porcja</dt><dd>{$progress.last_run|default:'—'|escape}{if $progress.last_run} UTC{/if}</dd>
+            <dt>Ostatnia porcja</dt><dd>{$progress.last_run|pl_time|default:'—'|escape}</dd>
           </dl>
           {if $progress.last_error}<div class="arc-error"><i class="bi bi-exclamation-triangle-fill"></i><div><strong>Ostatni błąd:</strong> {$progress.last_error|escape}{if $progress.backoff} (ponowienie za {$progress.backoff} s){/if}</div></div>{/if}
         </div>
@@ -233,6 +233,13 @@
   var csrf = {$csrf|json_encode nofilter};
   var canRun = {if $canWrite && $progress.configured}true{else}false{/if};
   {literal}
+  // Serwer podaje czas w UTC („Y-m-d H:i:s”); pokazujemy go w strefie Europe/Warsaw.
+  function plTime(value) {
+    var date = new Date(String(value).replace(' ', 'T') + 'Z');
+    if (isNaN(date.getTime())) return value;
+    var p = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date);
+    return p.replace(',', '');
+  }
   document.querySelectorAll('[data-arc-filters]').forEach(function (b) {
     b.addEventListener('click', function () { var d = b.closest('form').querySelector('[data-arc-drawer]'); if (d) { d.classList.toggle('is-open'); b.setAttribute('aria-expanded', d.classList.contains('is-open') ? 'true' : 'false'); } });
   });
@@ -253,7 +260,7 @@
     box.querySelector('[data-arc-details-done]').textContent = p.details_done;
     box.querySelector('[data-arc-details-total]').textContent = p.details_total;
     box.querySelector('[data-arc-bar]').style.width = p.details_percent + '%';
-    box.querySelector('[data-arc-status]').textContent = p.last_error ? p.last_error + (p.backoff ? ' (ponowienie za ' + p.backoff + ' s)' : '') : (p.last_run ? 'Ostatnia porcja: ' + p.last_run + ' UTC' : 'Czeka na pierwsze uruchomienie');
+    box.querySelector('[data-arc-status]').textContent = p.last_error ? p.last_error + (p.backoff ? ' (ponowienie za ' + p.backoff + ' s)' : '') : (p.last_run ? 'Ostatnia porcja: ' + plTime(p.last_run) : 'Czeka na pierwsze uruchomienie');
     (p.phases || []).forEach(function (ph) {
       var el = box.querySelector('[data-arc-phase="' + ph.key + '"]'); if (!el) return;
       el.classList.toggle('is-done', ph.done); el.classList.toggle('has-error', !!ph.error);

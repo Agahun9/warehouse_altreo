@@ -18,7 +18,7 @@ final class AllegroWzaProvider extends ShippingProvider
             'capabilities'=>['valuation'=>false,'cancel'=>false,'label'=>true,'tracking'=>true,'cod'=>'order','source_tracking'=>'manual','pickup_protocol'=>false],
             'info'=>[
                 'Działa tylko dla zamówień z tego samego konta Allegro, które wybierzesz przy podłączeniu.',
-                'Metoda dostawy i dane odbiorcy pochodzą z propozycji nadania Allegro; możesz zmienić usługę i gabaryty.',
+                'Metoda dostawy i dane odbiorcy pochodzą z propozycji nadania Allegro; możesz zmienić usługę, gabaryty i poprawić adres odbiorcy.',
                 'Przesyłka powstaje asynchronicznie – po utworzeniu odśwież status, aby pobrać numer i etykietę.',
                 'Pobranie ustawia Allegro na podstawie zamówienia.',
             ],
@@ -82,20 +82,25 @@ final class AllegroWzaProvider extends ShippingProvider
             $shipmentInput['deliveryMethodId']=$deliveryMethodId;
             if ($credentialsId!=='') { $shipmentInput['credentialsId']=$credentialsId; } else { unset($shipmentInput['credentialsId']); }
         }
-        $shipmentInput['referenceNumber']=$order['external_id'];
+        $shipmentInput['receiver']=$this->editedReceiver(is_array($shipmentInput['receiver']??null)?$shipmentInput['receiver']:[],$order,$input);
+        $referenceNumber=(string)($order['external_id']??'');
+        if (mb_strlen($referenceNumber,'UTF-8')>35) { $referenceNumber='CRM-'.(int)$order['id']; }
+        $shipmentInput['referenceNumber']=$referenceNumber;
         $parcel=is_array($shipmentInput['packages'][0]??null)?$shipmentInput['packages'][0]:[];
         $parcel['type']=in_array((string)($parcel['type']??''),['DOX','PACKAGE','PALLET','OTHER'],true)?$parcel['type']:'PACKAGE';
-        $parcel['length']=['value'=>$package['length'],'unit'=>'CENTIMETER'];
-        $parcel['width']=['value'=>$package['width'],'unit'=>'CENTIMETER'];
-        $parcel['height']=['value'=>$package['height'],'unit'=>'CENTIMETER'];
-        $parcel['weight']=['value'=>$package['weight'],'unit'=>'KILOGRAMS'];
+        $parcel['length']=['value'=>round($package['length'],1),'unit'=>'CENTIMETER'];
+        $parcel['width']=['value'=>round($package['width'],1),'unit'=>'CENTIMETER'];
+        $parcel['height']=['value'=>round($package['height'],1),'unit'=>'CENTIMETER'];
+        $parcel['weight']=['value'=>round($package['weight'],3),'unit'=>'KILOGRAMS'];
         $shipmentInput['packages']=[$parcel];
         $shipmentInput=$this->normalizeInput($shipmentInput);
         $serviceCode=trim((string)($shipmentInput['deliveryMethodId']??''));
         $serviceMeta=$this->serviceMeta($carrier,$order,$selectedService!==''?$selectedService:$serviceCode,trim((string)($order['details']['delivery']??'')),'Allegro');
         $commandId=$this->uuidFromKey((string)$input['request_key']);
         $response=$allegro->createShipmentCommand($source,$commandId,$shipmentInput);
-        return ['external_id'=>(string)($response['commandId']??$commandId),'state'=>(string)($response['status']??'IN_PROGRESS'),'service_code'=>$serviceCode,'service_name'=>$serviceMeta['service_name'],'carrier_name'=>$serviceMeta['carrier_name'],'response'=>$response,'tracked'=>false];
+        // Wysłane parametry paczki zostają w meta – widać je w diagnostyce, gdy Allegro odrzuci nadanie.
+        $sent=$shipmentInput;
+        return ['external_id'=>(string)($response['commandId']??$commandId),'state'=>(string)($response['status']??'IN_PROGRESS'),'service_code'=>$serviceCode,'service_name'=>$serviceMeta['service_name'],'carrier_name'=>$serviceMeta['carrier_name'],'response'=>$response,'tracked'=>false,'meta'=>['sent_input'=>$sent]];
     }
 
     public function refresh(array $carrier,array $shipment,array $meta): array
@@ -108,6 +113,21 @@ final class AllegroWzaProvider extends ShippingProvider
             if ($state==='SUCCESS'&&!empty($response['shipmentId'])) {
                 $external=(string)$response['shipmentId']; $details=$allegro->shipmentDetails($account,$external);
                 $tracking=(string)($details['packages'][0]['waybill']??$tracking);
+            }
+            elseif ($state!=='SUCCESS') {
+                // Komenda w toku albo odrzucona – bez tego UI pokazuje wiecznie „Odśwież, aby pobrać status”, a błąd Allegro ginie.
+                $meta['tracking_status']=$state; $meta['tracking_updated_at']=gmdate('c');
+                $errors=[]; $rawErrors=[];
+                foreach ((array)($response['errors']??[]) as $error) {
+                    if (!is_array($error)) { continue; }
+                    $text=trim((string)($error['userMessage']??'')) ?: trim((string)($error['message']??'')) ?: trim((string)($error['code']??''));
+                    $path=trim((string)($error['path']??''));
+                    $code=trim((string)($error['code']??'')); $info=is_scalar($error['details']??null)?trim((string)$error['details']):'';
+                    if ($text!=='') { $errors[]=$text.($code!==''&&$code!==$text?' ['.$code.']':'').($info!==''&&$info!==$text?' – '.$info:'').($path!==''?' ('.$path.')':''); }
+                    $rawErrors[]=array_map(static function ($value) { return is_scalar($value)?mb_substr((string)$value,0,500,'UTF-8'):$value; },array_intersect_key($error,array_flip(['code','message','userMessage','details','path','metadata'])));
+                }
+                if ($rawErrors) { $meta['allegro_errors']=$rawErrors; }
+                $meta['status_description']=$errors?'Allegro odrzuciło nadanie: '.implode('; ',array_unique($errors)).' Utwórz przesyłkę ponownie po poprawieniu danych.':'';
             }
         }
         if ($details) {
@@ -125,6 +145,8 @@ final class AllegroWzaProvider extends ShippingProvider
                 $latest=$this->latestTracking($allegro->shipmentTracking($account,$carrierId,$tracking),$tracking);
                 if ($latest) { $meta=array_replace($meta,$latest); }
             }
+            // Numer już jest, ale przewoźnik nie ma jeszcze zdarzeń – zamiast „Odśwież, aby pobrać status”.
+            if (trim((string)($meta['tracking_status']??''))==='' || in_array((string)$meta['tracking_status'],['IN_PROGRESS','ERROR'],true)) { $meta['tracking_status']='SUCCESS'; $meta['tracking_updated_at']=gmdate('c'); $meta['status_description']=''; }
         }
         return ['state'=>$state,'external_id'=>$external,'tracking'=>$tracking,'response'=>$response,'meta'=>$meta];
     }
@@ -138,6 +160,24 @@ final class AllegroWzaProvider extends ShippingProvider
     private function assertOrder(array $carrier,array $order): void
     {
         if (!$this->supportsOrder($order,$carrier['public'])) { throw new InvalidArgumentException('Wysyłam z Allegro wymaga zamówienia z tego samego konta Allegro.'); }
+    }
+    /** Odbiorca z propozycji Allegro; pola poprawione ręcznie w formularzu (inne niż adres zamówienia) mają pierwszeństwo. */
+    private function editedReceiver(array $receiver,array $order,array $input): array
+    {
+        $address=is_array($order['shipping_address']??null)?$order['shipping_address']:[];
+        $edited=static function (string $field) use ($address,$input): ?string {
+            if (!array_key_exists('receiver_'.$field,$input)) { return null; }
+            $value=trim((string)$input['receiver_'.$field]);
+            return $value!==trim((string)($address[$field]??''))?$value:null;
+        };
+        foreach (['name'=>'name','email'=>'email','phone'=>'phone','postal_code'=>'postalCode','city'=>'city','country'=>'countryCode'] as $field=>$key) {
+            $value=$edited($field); if ($value!==null && $value!=='') { $receiver[$key]=$value; }
+        }
+        if ($edited('street')!==null || $edited('building')!==null) {
+            $street=trim(trim((string)($input['receiver_street']??'')).' '.trim((string)($input['receiver_building']??'')));
+            if ($street!=='') { $receiver['street']=$street; }
+        }
+        return $receiver;
     }
     private function account(array $carrier): array { return $this->sourceAccount('allegro',(int)($carrier['public']['order_account_id']??0)); }
     private function latestTracking(array $response,string $waybill): array

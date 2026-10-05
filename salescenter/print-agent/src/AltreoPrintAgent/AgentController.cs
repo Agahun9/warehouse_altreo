@@ -35,6 +35,8 @@ public sealed class AgentController : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(settings.StationName)) throw new InvalidOperationException("Nazwa stanowiska jest pusta.");
         if (settings.PollSeconds is < 2 or > 300) throw new InvalidOperationException("Interwał pollingu musi mieścić się między 2 a 300 sekund.");
         PosnetClient.ValidateEndpoint(settings.FiscalPrinterHost, settings.FiscalPrinterPort);
+        if (!string.IsNullOrWhiteSpace(settings.NovitusPrinterHost))
+            PosnetClient.ValidateEndpoint(settings.NovitusPrinterHost, settings.NovitusPrinterPort);
 
         using (var cancellation=new CancellationTokenSource(TimeSpan.FromSeconds(20)))
         {
@@ -54,10 +56,13 @@ public sealed class AgentController : IAsyncDisposable
         await api.TestAsync(cancellationToken);
     }
 
-    public async Task<PrintResult> TestFiscalPrinterAsync(AgentSettings settings, CancellationToken cancellationToken)
+    public async Task<PrintResult> TestFiscalPrinterAsync(AgentSettings settings, CancellationToken cancellationToken, string protocol = FiscalProtocols.Posnet)
     {
-        PosnetClient.ValidateEndpoint(settings.FiscalPrinterHost, settings.FiscalPrinterPort);
-        return await new FiscalReceiptService().TestNonFiscalAsync(settings.FiscalPrinterHost, settings.FiscalPrinterPort, cancellationToken);
+        var novitus = FiscalProtocols.Normalize(protocol) == FiscalProtocols.Novitus;
+        var host = novitus ? settings.NovitusPrinterHost : settings.FiscalPrinterHost;
+        var port = novitus ? settings.NovitusPrinterPort : settings.FiscalPrinterPort;
+        PosnetClient.ValidateEndpoint(host, port);
+        return await new FiscalReceiptService().TestNonFiscalAsync(host, port, cancellationToken, protocol);
     }
 
     private async Task RestartWorkerAsync()

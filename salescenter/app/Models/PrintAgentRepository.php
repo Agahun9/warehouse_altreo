@@ -13,6 +13,16 @@ use InvalidArgumentException;
 
 final class PrintAgentRepository
 {
+    /** Wersja agenta w paczkach downloads/PrintAgent-*.zip — zmieniaj razem z <Version> w AltreoPrintAgent.csproj. */
+    public const AGENT_VERSION='1.2.1';
+    public const AGENT_RELEASED='2026-10-02';
+
+    public static function agentOutdated(?string $version): bool
+    {
+        $version=trim((string)$version);
+        return $version!=='' && version_compare($version,self::AGENT_VERSION,'<');
+    }
+
     public const DEFAULT_VAT_RATES=['A'=>'23','B'=>'8','C'=>'7','D'=>'5','E'=>'0','F'=>'0','G'=>'zw'];
 
     private $db;
@@ -34,6 +44,11 @@ final class PrintAgentRepository
         $stationId=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
         $suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin';
         $this->db->query("CREATE TABLE IF NOT EXISTS print_agent_stations (id $stationId, name VARCHAR(150) NOT NULL, token_hash CHAR(64) NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, printers_json LONGTEXT NOT NULL, default_printer VARCHAR(300) NULL, agent_version VARCHAR(50) NULL, last_seen_at VARCHAR(30) NULL, created_at VARCHAR(30) NOT NULL)$suffix");
+        $stationColumns=$sqlite ? array_column($this->db->fetchAll('PRAGMA table_info(print_agent_stations)'),'name') : array_column($this->db->fetchAll('SHOW COLUMNS FROM print_agent_stations'),'Field');
+        if (!in_array('disabled_printers_json',$stationColumns,true)) {
+            try { $this->db->query("ALTER TABLE print_agent_stations ADD COLUMN disabled_printers_json LONGTEXT NULL"); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+        }
         $this->db->query("CREATE TABLE IF NOT EXISTS print_agent_jobs (id CHAR(36) PRIMARY KEY, station_id BIGINT NOT NULL, shipment_id BIGINT NOT NULL, pdf_url LONGTEXT NOT NULL, download_token_hash CHAR(64) NOT NULL, download_expires_at VARCHAR(30) NOT NULL, printer_name VARCHAR(300) NOT NULL, print_settings VARCHAR(300) NULL, status VARCHAR(30) NOT NULL DEFAULT 'queued', status_message VARCHAR(1000) NULL, created_by VARCHAR(150) NOT NULL, created_at VARCHAR(30) NOT NULL, claimed_at VARCHAR(30) NULL, reported_at VARCHAR(30) NULL)$suffix");
         $this->db->query("CREATE TABLE IF NOT EXISTS print_fiscal_printers (id $stationId, station_id BIGINT NOT NULL, device_key VARCHAR(190) NOT NULL, name VARCHAR(150) NOT NULL, host VARCHAR(255) NOT NULL, port INTEGER NOT NULL, serial_number VARCHAR(100) NULL, receipt_series VARCHAR(40) NOT NULL DEFAULT 'POS', next_number BIGINT NOT NULL DEFAULT 1, environment VARCHAR(20) NOT NULL DEFAULT 'sandbox', enabled INTEGER NOT NULL DEFAULT 0, last_seen_at VARCHAR(30) NULL, created_at VARCHAR(30) NOT NULL, deleted_at VARCHAR(30) NULL, UNIQUE(station_id,device_key))$suffix");
         $this->db->query("CREATE TABLE IF NOT EXISTS print_fiscal_jobs (id CHAR(36) PRIMARY KEY, printer_id BIGINT NOT NULL, order_id BIGINT NOT NULL, local_number VARCHAR(100) NOT NULL, payload_json LONGTEXT NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'queued', status_message VARCHAR(1000) NULL, fiscal_number VARCHAR(100) NULL, created_by VARCHAR(150) NOT NULL, created_at VARCHAR(30) NOT NULL, claimed_at VARCHAR(30) NULL, reported_at VARCHAR(30) NULL, UNIQUE(printer_id,order_id))$suffix");
@@ -44,6 +59,15 @@ final class PrintAgentRepository
         }
         if (!in_array('vat_rates_json',$printerColumns,true)) {
             try { $this->db->query('ALTER TABLE print_fiscal_printers ADD COLUMN vat_rates_json LONGTEXT NULL'); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+        }
+        // Protokół urządzenia: posnet (dotychczasowe drukarki) albo novitus (Deon Online, protokół XML).
+        if (!in_array('protocol',$printerColumns,true)) {
+            try { $this->db->query("ALTER TABLE print_fiscal_printers ADD COLUMN protocol VARCHAR(20) NOT NULL DEFAULT 'posnet'"); }
+            catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
+        }
+        if (!in_array('custom_name',$printerColumns,true)) {
+            try { $this->db->query('ALTER TABLE print_fiscal_printers ADD COLUMN custom_name VARCHAR(150) NULL'); }
             catch (\PDOException $e) { if ((int)($e->errorInfo[1]??0)!==1060) { throw $e; } }
         }
         foreach (['print_agent_job_next'=>'station_id,status,created_at','print_agent_job_shipment'=>'shipment_id,created_at'] as $name=>$columns) {
@@ -60,7 +84,11 @@ final class PrintAgentRepository
         $rows=$this->db->fetchAll('SELECT * FROM print_agent_stations ORDER BY enabled DESC,name,id');
         foreach ($rows as &$row) {
             $printers=json_decode((string)$row['printers_json'],true);
-            $row['printers']=is_array($printers)?array_values(array_filter($printers,'is_string')):[];
+            $printers=is_array($printers)?array_values(array_filter($printers,'is_string')):[];
+            $disabled=json_decode((string)($row['disabled_printers_json']??''),true);
+            $disabled=is_array($disabled)?array_values(array_filter($disabled,'is_string')):[];
+            $row['all_printers']=array_map(static function (string $printer) use ($disabled): array { return ['name'=>$printer,'enabled'=>!in_array($printer,$disabled,true)]; },$printers);
+            $row['printers']=array_values(array_diff($printers,$disabled));
             $row['online']=!empty($row['last_seen_at']) && strtotime((string)$row['last_seen_at'].' UTC')>=time()-180;
         }
         unset($row);
@@ -76,7 +104,7 @@ final class PrintAgentRepository
     public function fiscalPrinters(): array
     {
         $rows=$this->db->fetchAll('SELECT p.*,s.name station_name,s.enabled station_enabled,s.last_seen_at station_last_seen_at FROM print_fiscal_printers p JOIN print_agent_stations s ON s.id=p.station_id WHERE p.deleted_at IS NULL ORDER BY p.enabled DESC,p.name,p.id');
-        foreach ($rows as &$row) { $row['vat_rates']=json_decode((string)($row['vat_rates_json']??''),true)?:self::DEFAULT_VAT_RATES; $row['station_online']=$row['station_enabled'] && !empty($row['station_last_seen_at']) && strtotime((string)$row['station_last_seen_at'].' UTC')>=time()-180; }
+        foreach ($rows as &$row) { $row['reported_name']=$row['name']; $row['name']=trim((string)($row['custom_name']??''))!==''?$row['custom_name']:$row['name']; $row['vat_rates']=json_decode((string)($row['vat_rates_json']??''),true)?:self::DEFAULT_VAT_RATES; $row['station_online']=$row['station_enabled'] && !empty($row['station_last_seen_at']) && strtotime((string)$row['station_last_seen_at'].' UTC')>=time()-180; }
         unset($row);
         return $rows;
     }
@@ -84,7 +112,7 @@ final class PrintAgentRepository
     public function fiscalJobs(int $limit=100): array
     {
         $limit=max(1,min(250,$limit));
-        return $this->db->fetchAll('SELECT j.*,p.name printer_name,p.environment,p.enabled printer_enabled,p.deleted_at printer_deleted_at,p.station_id printer_station_id FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id ORDER BY j.created_at DESC LIMIT '.$limit);
+        return $this->db->fetchAll("SELECT j.*,COALESCE(NULLIF(p.custom_name,''),p.name) printer_name,p.protocol printer_protocol,p.environment,p.enabled printer_enabled,p.deleted_at printer_deleted_at,p.station_id printer_station_id FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id ORDER BY j.created_at DESC LIMIT ".$limit);
     }
 
     public function createStation(string $name): string
@@ -109,6 +137,18 @@ final class PrintAgentRepository
     {
         $this->requireStation($stationId);
         $this->db->update('print_agent_stations',['enabled'=>$enabled?1:0],'id=:id',['id'=>$stationId]);
+    }
+
+    public function setPrinterEnabled(int $stationId,string $printer,bool $enabled): void
+    {
+        $station=$this->requireStation($stationId);
+        $printer=mb_substr(trim($printer),0,300,'UTF-8');
+        $printers=json_decode((string)$station['printers_json'],true);
+        if ($printer==='' || !is_array($printers) || !in_array($printer,$printers,true)) { throw new InvalidArgumentException('Nie znaleziono drukarki na tym stanowisku.'); }
+        $disabled=json_decode((string)($station['disabled_printers_json']??''),true);
+        $disabled=is_array($disabled)?array_values(array_filter($disabled,'is_string')):[];
+        $disabled=$enabled?array_values(array_diff($disabled,[$printer])):array_values(array_unique(array_merge($disabled,[$printer])));
+        $this->db->update('print_agent_stations',['disabled_printers_json'=>json_encode($disabled,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)],'id=:id',['id'=>$stationId]);
     }
 
     public function deleteStation(int $stationId): void
@@ -165,7 +205,7 @@ final class PrintAgentRepository
         return ['ok'=>true,'station'=>(string)$this->db->fetchColumn('SELECT name FROM print_agent_stations WHERE id=:id',['id'=>$stationId]),'reportedName'=>$reportedName,'printers'=>count($printers),'fiscalPrinters'=>$fiscalCount];
     }
 
-    public function configureFiscalPrinter(int $printerId,string $series,string $environment,bool $enabled,?array $vatRates=null): void
+    public function configureFiscalPrinter(int $printerId,string $series,string $environment,bool $enabled,?array $vatRates=null,?string $customName=null): void
     {
         $printer=$this->db->fetch('SELECT id,environment,vat_rates_json FROM print_fiscal_printers WHERE id=:id AND deleted_at IS NULL',['id'=>$printerId]);
         if (!$printer) { throw new InvalidArgumentException('Nie znaleziono drukarki fiskalnej.'); }
@@ -181,7 +221,9 @@ final class PrintAgentRepository
         if (($environment!==$printer['environment'] || $vatRates!==$currentRates) && (int)$this->db->fetchColumn("SELECT COUNT(*) FROM print_fiscal_jobs WHERE printer_id=:id AND status IN ('queued','processing')",['id'=>$printerId])>0) {
             throw new InvalidArgumentException('Najpierw rozstrzygnij oczekujące zadania drukarki; nie można zmienić ich trybu ani stawek w kolejce.');
         }
-        $this->db->update('print_fiscal_printers',['receipt_series'=>$series,'environment'=>$environment,'enabled'=>$enabled?1:0,'vat_rates_json'=>json_encode($vatRates,JSON_THROW_ON_ERROR)],'id=:id',['id'=>$printerId]);
+        $values=['receipt_series'=>$series,'environment'=>$environment,'enabled'=>$enabled?1:0,'vat_rates_json'=>json_encode($vatRates,JSON_THROW_ON_ERROR)];
+        if ($customName!==null) { $customName=mb_substr(trim($customName),0,150,'UTF-8'); $values['custom_name']=$customName!==''?$customName:null; }
+        $this->db->update('print_fiscal_printers',$values,'id=:id',['id'=>$printerId]);
     }
 
     public function deleteFiscalPrinter(int $printerId): void
@@ -204,8 +246,19 @@ final class PrintAgentRepository
         });
     }
 
-    public function addFiscalPrinter(int $stationId,string $name,string $host,int $port): int
+    public static function fiscalProtocol(string $protocol): string
     {
+        return strtolower(trim($protocol))==='novitus'?'novitus':'posnet';
+    }
+
+    public static function fiscalProtocolLabel(string $protocol): string
+    {
+        return self::fiscalProtocol($protocol)==='novitus'?'Novitus':'Posnet';
+    }
+
+    public function addFiscalPrinter(int $stationId,string $name,string $host,int $port,string $protocol='posnet'): int
+    {
+        $protocol=self::fiscalProtocol($protocol);
         $this->requireStation($stationId,true);
         $name=mb_substr(trim($name),0,150,'UTF-8'); $host=mb_substr(trim($host),0,255,'UTF-8');
         if ($name==='') { throw new InvalidArgumentException('Podaj nazwę drukarki fiskalnej.'); }
@@ -215,10 +268,10 @@ final class PrintAgentRepository
         $existing=$this->db->fetch('SELECT id,deleted_at FROM print_fiscal_printers WHERE station_id=:station AND device_key=:key',['station'=>$stationId,'key'=>$key]);
         if ($existing && $existing['deleted_at']===null) { throw new InvalidArgumentException('Ta drukarka jest już dodana do stanowiska.'); }
         if ($existing) {
-            $this->db->update('print_fiscal_printers',['name'=>$name,'host'=>$host,'port'=>$port,'enabled'=>0,'deleted_at'=>null],'id=:id',['id'=>$existing['id']]);
+            $this->db->update('print_fiscal_printers',['name'=>$name,'host'=>$host,'port'=>$port,'protocol'=>$protocol,'enabled'=>0,'deleted_at'=>null],'id=:id',['id'=>$existing['id']]);
             return (int)$existing['id'];
         }
-        return (int)$this->db->insert('print_fiscal_printers',['station_id'=>$stationId,'device_key'=>$key,'name'=>$name,'host'=>$host,'port'=>$port,'serial_number'=>null,'receipt_series'=>'POS','next_number'=>1,'environment'=>'sandbox','enabled'=>0,'last_seen_at'=>null,'created_at'=>gmdate('Y-m-d H:i:s')]);
+        return (int)$this->db->insert('print_fiscal_printers',['station_id'=>$stationId,'device_key'=>$key,'name'=>$name,'host'=>$host,'port'=>$port,'protocol'=>$protocol,'serial_number'=>null,'receipt_series'=>'POS','next_number'=>1,'environment'=>'sandbox','enabled'=>0,'last_seen_at'=>null,'created_at'=>gmdate('Y-m-d H:i:s')]);
     }
 
     public function queueFiscalReceipt(int $orderId,int $printerId,string $createdBy,int $documentId=0): string
@@ -265,7 +318,7 @@ final class PrintAgentRepository
             if (strtoupper((string)$order['currency'])!=='PLN') { throw new InvalidArgumentException('Automatyczna fiskalizacja obsługuje wyłącznie walutę PLN.'); }
             foreach ($items as $item) { if (!in_array($item['vat'],$vatRates,true)) { throw new InvalidArgumentException('Drukarka nie ma skonfigurowanej stawki VAT '.$item['vat'].'.'); } }
             $reference=(string)($document['number']??$order['external_id']).' zam:#'.$orderId;
-            if ($printer['environment']==='production' && mb_strlen($reference,'UTF-8')>30) { throw new InvalidArgumentException('Numer dokumentu i zamówienia przekracza 30 znaków pola Posnet.'); }
+            if ($printer['environment']==='production' && mb_strlen($reference,'UTF-8')>30) { throw new InvalidArgumentException('Numer dokumentu i zamówienia przekracza 30 znaków numeru paragonu w drukarce fiskalnej.'); }
             $number=(int)$printer['next_number'];
             $localNumber=$printer['receipt_series'].'/'.gmdate('Y').'/'.$number;
             $id=$this->uuid();
@@ -286,13 +339,13 @@ final class PrintAgentRepository
         $environment=$environment==='production'?'production':'sandbox';
         for ($attempt=0;$attempt<3;$attempt++) {
             $job=$this->db->transaction(function () use ($stationId,$environment) {
-                $candidate=$this->db->fetch("SELECT j.*,p.device_key,p.name printer_name,p.host,p.port,p.serial_number,p.environment FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id WHERE p.station_id=:station AND p.enabled=1 AND p.environment=:environment AND j.status='queued' ORDER BY j.created_at,j.id LIMIT 1",['station'=>$stationId,'environment'=>$environment]);
+                $candidate=$this->db->fetch("SELECT j.*,p.device_key,COALESCE(NULLIF(p.custom_name,''),p.name) printer_name,p.host,p.port,p.serial_number,p.environment,p.protocol FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id WHERE p.station_id=:station AND p.enabled=1 AND p.environment=:environment AND j.status='queued' ORDER BY j.created_at,j.id LIMIT 1",['station'=>$stationId,'environment'=>$environment]);
                 if (!$candidate) { return null; }
                 $updated=$this->db->query("UPDATE print_fiscal_jobs SET status='processing',status_message='Agent odebrał zadanie.',claimed_at=:now WHERE id=:id AND status='queued'",['now'=>gmdate('Y-m-d H:i:s'),'id'=>$candidate['id']])->rowCount();
                 return $updated===1?$candidate:false;
             });
             if ($job===null) { return null; }
-            if (is_array($job)) { return ['id'=>$job['id'],'localNumber'=>$job['local_number'],'environment'=>$job['environment'],'deviceKey'=>$job['device_key'],'printerName'=>$job['printer_name'],'host'=>$job['host'],'port'=>(int)$job['port'],'serialNumber'=>$job['serial_number'],'receipt'=>json_decode((string)$job['payload_json'],true,512,JSON_THROW_ON_ERROR)]; }
+            if (is_array($job)) { return ['id'=>$job['id'],'localNumber'=>$job['local_number'],'environment'=>$job['environment'],'deviceKey'=>$job['device_key'],'printerName'=>$job['printer_name'],'host'=>$job['host'],'port'=>(int)$job['port'],'serialNumber'=>$job['serial_number'],'protocol'=>self::fiscalProtocol((string)($job['protocol']??'posnet')),'receipt'=>json_decode((string)$job['payload_json'],true,512,JSON_THROW_ON_ERROR)]; }
         }
         return null;
     }
@@ -328,7 +381,7 @@ final class PrintAgentRepository
             // Rotate the ID so delayed reports from the old attempt cannot overwrite this attempt.
             $updated=$this->db->query("UPDATE print_fiscal_jobs SET id=:new_id,payload_json=:payload,status='queued',status_message=:message,created_by=:actor,created_at=:now,claimed_at=NULL,reported_at=NULL WHERE id=:old_id AND status='error' AND (fiscal_number IS NULL OR fiscal_number='') AND status_message=:previous_message",['new_id'=>$newId,'payload'=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'message'=>'Ponowienie po poprawieniu stawek VAT. Oczekuje na agenta.','actor'=>mb_substr($actor,0,150,'UTF-8'),'now'=>gmdate('Y-m-d H:i:s'),'old_id'=>$job['id'],'previous_message'=>$job['status_message']])->rowCount();
             if ($updated!==1) { throw new InvalidArgumentException('Status zadania zmienił się. Odśwież historię dokumentów.'); }
-            (new OrderRepository($this->db))->event((int)$document['order_id'],'Ponowiono zadanie Posnet '.$job['id'].' jako '.$newId.' po błędzie przed transakcją: '.$job['status_message'],$actor);
+            (new OrderRepository($this->db))->event((int)$document['order_id'],'Ponowiono zadanie fiskalne '.$job['id'].' jako '.$newId.' po błędzie przed transakcją: '.$job['status_message'],$actor);
             return $newId;
         });
     }
@@ -336,7 +389,7 @@ final class PrintAgentRepository
     public function receiptLockReason(int $orderId): ?string
     {
         if ($this->db->fetchColumn('SELECT id FROM print_fiscal_jobs WHERE order_id=:order',['order'=>$orderId])) {
-            return 'Paragon przekazano do kolejki Posnet. Nie można zmieniać ani usuwać jego danych; najpierw sprawdź wynik fiskalizacji.';
+            return 'Paragon przekazano do kolejki drukarki fiskalnej. Nie można zmieniać ani usuwać jego danych; najpierw sprawdź wynik fiskalizacji.';
         }
         return null;
     }
@@ -361,8 +414,10 @@ final class PrintAgentRepository
         $station=$this->requireStation($stationId,true);
         $printers=json_decode((string)$station['printers_json'],true);
         $printers=is_array($printers)?$printers:[];
+        $disabled=json_decode((string)($station['disabled_printers_json']??''),true);
+        $disabled=is_array($disabled)?$disabled:[];
         $printer=trim($printer);
-        if ($printer==='' || !in_array($printer,$printers,true)) { throw new InvalidArgumentException('Wybierz drukarkę zgłoszoną przez aktywnego agenta.'); }
+        if ($printer==='' || !in_array($printer,$printers,true) || in_array($printer,$disabled,true)) { throw new InvalidArgumentException('Wybierz aktywną drukarkę zgłoszoną przez agenta.'); }
         if (!$this->db->fetchColumn('SELECT id FROM om_shipments WHERE id=:id',['id'=>$shipmentId])) { throw new InvalidArgumentException('Nie znaleziono przesyłki.'); }
         $widthMm=$this->dimension($widthMm); $heightMm=$this->dimension($heightMm);
         $id=$this->uuid();
@@ -450,7 +505,7 @@ final class PrintAgentRepository
             if ($key==='' || $name==='' || $host==='' || $port<1 || $port>65535) { continue; }
             $serial=mb_substr(trim((string)($device['serialNumber']??'')),0,100,'UTF-8')?:null;
             $existing=$this->db->fetch('SELECT id FROM print_fiscal_printers WHERE station_id=:station AND device_key=:key',['station'=>$stationId,'key'=>$key]);
-            $data=['name'=>$name,'host'=>$host,'port'=>$port,'serial_number'=>$serial,'last_seen_at'=>gmdate('Y-m-d H:i:s')];
+            $data=['name'=>$name,'host'=>$host,'port'=>$port,'serial_number'=>$serial,'protocol'=>self::fiscalProtocol((string)($device['protocol']??'posnet')),'last_seen_at'=>gmdate('Y-m-d H:i:s')];
             if ($existing) { $this->db->update('print_fiscal_printers',$data,'id=:id AND deleted_at IS NULL',['id'=>$existing['id']]); }
             else { $this->db->insert('print_fiscal_printers',$data+['station_id'=>$stationId,'device_key'=>$key,'receipt_series'=>'POS','next_number'=>1,'environment'=>$environment,'enabled'=>1,'created_at'=>gmdate('Y-m-d H:i:s')]); }
             $count++;

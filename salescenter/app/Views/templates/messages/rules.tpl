@@ -73,10 +73,10 @@
 <section class="om-panel ms-pad om-top">
   <div class="ms-panel-title"><div><span class="om-eyebrow">DZIENNIK</span><h3>Ostatnie autoodpowiedzi</h3></div></div>
   <div class="om-table-wrap"><table class="om-table">
-    <thead><tr><th>Data (UTC)</th><th>Reguła</th><th>Wątek</th><th>Wynik</th></tr></thead>
+    <thead><tr><th>Data</th><th>Reguła</th><th>Wątek</th><th>Wynik</th></tr></thead>
     <tbody>
     {foreach $runLog as $run}
-      <tr><td>{$run.created_at|escape}</td><td>{$run.rule_name|default:'(usunięta)'|escape}</td><td><a href="index.php?controller=messages&id={$run.thread_id}">{if $run.platform}{$platformLabels[$run.platform]|default:$run.platform|escape} · {/if}{$run.customer_name|default:$run.customer_login|default:''|escape} – {$run.subject|default:''|escape|truncate:60:'…'}</a></td><td>{if $run.result eq 'sent'}<span class="ms-status" style="--ms-c:#10b981">wysłano</span>{else}<span class="ms-status" style="--ms-c:#ef4444">błąd</span> <small>{$run.message|escape}</small>{/if}</td></tr>
+      <tr><td>{$run.created_at|pl_time|escape}</td><td>{$run.rule_name|default:'(usunięta)'|escape}</td><td><a href="index.php?controller=messages&id={$run.thread_id}">{if $run.platform}{$platformLabels[$run.platform]|default:$run.platform|escape} · {/if}{$run.customer_name|default:$run.customer_login|default:''|escape} – {$run.subject|default:''|escape|truncate:60:'…'}</a></td><td>{if $run.result eq 'sent'}<span class="ms-status" style="--ms-c:#10b981">wysłano</span>{else}<span class="ms-status" style="--ms-c:#ef4444">błąd</span> <small>{$run.message|escape}</small>{/if}</td></tr>
     {foreachelse}
       <tr><td colspan="4" class="ms-muted">Jeszcze nie wysłano żadnej autoodpowiedzi.</td></tr>
     {/foreach}

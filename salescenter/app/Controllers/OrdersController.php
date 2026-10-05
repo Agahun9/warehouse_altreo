@@ -73,6 +73,7 @@ final class OrdersController extends Controller
             'account_id'=>$this->input('account_id',''),
             'platform'=>(string)$this->input('platform',''),
             'paid'=>$this->input('paid',''),
+            'shipment'=>in_array((string)$this->input('shipment',''),['none','created','sent','delivered','error'],true)?(string)$this->input('shipment',''):'',
             'payment_source'=>mb_substr((string)$this->input('payment_source',''),0,190),
             'date_from'=>(string)$this->input('date_from',''),
             'date_to'=>(string)$this->input('date_to',''),
@@ -123,6 +124,7 @@ final class OrdersController extends Controller
             }
             unset($shipment);
             $detail['payment_info']=$this->paymentInfo($detail,$events);
+            $detail['full_debug']=$this->fullDebug($detail,$orderShipments,$events);
         }
         $carrierAccounts=$repo->carrierAccounts();
         $shippingDefaults=$this->shippingDefaults($repo);
@@ -169,7 +171,7 @@ final class OrdersController extends Controller
         $fiscalByOrder=[];
         $documentOrderIds=array_values(array_unique(array_map('intval',array_column($documents,'order_id'))));
         if ($documentOrderIds) {
-            foreach ($this->db()->fetchAll('SELECT j.order_id,j.status,j.status_message,j.fiscal_number,j.reported_at,p.name AS printer_name FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id WHERE j.order_id IN ('.implode(',',$documentOrderIds).') ORDER BY j.created_at DESC,j.id DESC') as $jobRow) {
+            foreach ($this->db()->fetchAll("SELECT j.order_id,j.status,j.status_message,j.fiscal_number,j.reported_at,COALESCE(NULLIF(p.custom_name,''),p.name) AS printer_name,p.protocol AS printer_protocol FROM print_fiscal_jobs j JOIN print_fiscal_printers p ON p.id=j.printer_id WHERE j.order_id IN (".implode(',',$documentOrderIds).') ORDER BY j.created_at DESC,j.id DESC') as $jobRow) {
                 $jobRow['retry_allowed']=PrintAgentRepository::fiscalRetryAllowed($jobRow);
                 if (!isset($fiscalByOrder[$jobRow['order_id']])) { $fiscalByOrder[$jobRow['order_id']]=$jobRow; }
             }
@@ -193,6 +195,11 @@ final class OrdersController extends Controller
         unset($issuedDocument);
         $settingsAccess=$this->moduleAccessLevel($user,'orders')==='edit';
         $printStations=$printAgents->stations();
+        $activeLabelPrinterCount=0;
+        foreach ($printStations as $printStation) { if (!empty($printStation['enabled'])) { $activeLabelPrinterCount+=count($printStation['printers']); } }
+        $activeFiscalPrinterCount=count(array_filter($printAgents->fiscalPrinters(),static function (array $printer): bool { return !empty($printer['enabled']) && !empty($printer['station_enabled']); }));
+        foreach ($printStations as &$printStation) { $printStation['agent_outdated']=PrintAgentRepository::agentOutdated($printStation['agent_version']??null); }
+        unset($printStation);
         $labelActionPrinterDefault=$repo->setting('label_printer_action')+['target'=>'','width'=>100,'height'=>150];
         $labelPrinterDefault=$repo->setting('label_printer_user_'.(int)($user['id']??0))+['target'=>$labelActionPrinterDefault['target'],'width'=>100,'height'=>150];
         if ($labelActionPrinterDefault['target']!=='') { $labelPrinterDefault['target']=$labelActionPrinterDefault['target']; }
@@ -269,7 +276,7 @@ final class OrdersController extends Controller
             'shippingView'=>['selected'=>(int)$this->input('carrier',0),'add'=>preg_replace('/[^a-z_]/','',(string)$this->input('add',''))],
             'carrierAccounts'=>$carrierAccounts,'shippingDefaults'=>$shippingDefaults,'shipmentSuggestion'=>$shipmentSuggestion,'documentDefaults'=>$documentDefaults,'receiptPrinterSettings'=>$receiptPrinterSettings,'sourceCarrierOptions'=>OrderMarketplaceShipmentService::carrierOptions(),
             'labelPrinterDefault'=>$labelPrinterDefault,'labelActionPrinterDefault'=>$labelActionPrinterDefault,
-            'printStations'=>$printStations,'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
+            'printStations'=>$printStations,'activeLabelPrinterCount'=>$activeLabelPrinterCount,'activeFiscalPrinterCount'=>$activeFiscalPrinterCount,'printAgentVersion'=>PrintAgentRepository::AGENT_VERSION,'printAgentReleased'=>PrintAgentRepository::AGENT_RELEASED,'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
     }
@@ -333,6 +340,19 @@ final class OrdersController extends Controller
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
     }
+    public function shippingpickup(): void
+    {
+        try {
+            if (!$this->apiUser(false)) { return; }
+            if (!$this->isPost()) { $this->jsonResponse(['error'=>'Wymagany POST.','code'=>'METHOD_NOT_ALLOWED'],405); return; }
+            if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { $this->jsonResponse(['error'=>'Token formularza wymaga odświeżenia.','code'=>'CSRF_EXPIRED'],419); return; }
+            $orderId=(int)($_POST['order_id']??0); $carrierAccountId=(int)($_POST['carrier_account_id']??0);
+            if ($orderId<1 || $carrierAccountId<1) { throw new InvalidArgumentException('Wybierz zamówienie i konto nadawcze.'); }
+            $this->releaseSessionLock();
+            $this->jsonResponse((new OrderShipmentService($this->repository()))->pickupSlots($orderId,$carrierAccountId,$_POST));
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
+    }
     public function orderautosave(): void
     {
         try {
@@ -355,7 +375,7 @@ final class OrdersController extends Controller
                 });
             } catch (\Throwable $e) { $repo->discardAutomations(); throw $e; }
             $repo->flushAutomations();
-            $this->jsonResponse(['ok'=>true,'saved_at'=>date('H:i:s')]);
+            $this->jsonResponse(['ok'=>true,'saved_at'=>(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format('H:i:s')]);
         } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'INVALID_INPUT'],422); }
         catch (\Throwable $e) { $this->apiFailure($e); }
     }
@@ -635,9 +655,10 @@ final class OrdersController extends Controller
                     if ($target!=='') {
                         [$stationId,$printerName]=array_pad(explode('|',$target,2),2,'');
                         $stationId=(int)$stationId;
-                        $station=$db->fetch('SELECT id,enabled,printers_json FROM print_agent_stations WHERE id=:id',['id'=>$stationId]);
+                        $station=$db->fetch('SELECT id,enabled,printers_json,disabled_printers_json FROM print_agent_stations WHERE id=:id',['id'=>$stationId]);
                         $printers=$station?json_decode((string)$station['printers_json'],true):[];
-                        if (!$station || !(int)$station['enabled'] || !is_array($printers) || !in_array($printerName,$printers,true)) { throw new InvalidArgumentException('Wybierz drukarkę etykiet z aktywnego stanowiska.'); }
+                        $disabled=$station?json_decode((string)($station['disabled_printers_json']??'[]'),true):[];
+                        if (!$station || !(int)$station['enabled'] || !is_array($printers) || !in_array($printerName,$printers,true) || (is_array($disabled) && in_array($printerName,$disabled,true))) { throw new InvalidArgumentException('Wybierz aktywną drukarkę etykiet z aktywnego stanowiska.'); }
                         $target=$stationId.'|'.$printerName;
                     }
                     $labelWidth=(float)str_replace(',','.',(string)($_POST['label_width_mm']??'100'));
@@ -688,13 +709,14 @@ final class OrdersController extends Controller
                     if (!$document || $document['kind']!=='receipt') { throw new InvalidArgumentException('Zdalny druk Posnet wymaga wystawionego paragonu.'); }
                     $printerId=(int)($_POST['fiscal_printer_id']??0);
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
-                    $printer=$db->fetch('SELECT name,environment FROM print_fiscal_printers WHERE id=:id AND enabled=1 AND deleted_at IS NULL',['id'=>$printerId]);
-                    if (!$printer) { throw new InvalidArgumentException('Wybierz aktywną drukarkę Posnet.'); }
+                    $printer=$db->fetch('SELECT name,environment,protocol FROM print_fiscal_printers WHERE id=:id AND enabled=1 AND deleted_at IS NULL',['id'=>$printerId]);
+                    if (!$printer) { throw new InvalidArgumentException('Wybierz aktywną drukarkę fiskalną.'); }
+                    $printerLabel=PrintAgentRepository::fiscalProtocolLabel((string)($printer['protocol']??'posnet'));
                     $documentSettings=json_decode((string)($document['document_settings_json']??''),true)?:[];
                     if (!empty($documentSettings['non_fiscal']) && $printer['environment']==='production') { throw new InvalidArgumentException('Seria niefiskalna może być drukowana wyłącznie w trybie SANDBOX.'); }
                     $jobId=$printAgents->queueFiscalReceipt((int)$document['order_id'],$printerId,$actor,$documentId);
-                    $repo->event((int)$document['order_id'],'Zdalnie przekazano paragon '.$document['number'].' do Posnet '.$printer['name'].' (zadanie '.$jobId.').',$actor);
-                    $successMessage='Paragon '.$document['number'].' przekazano do agenta Posnet '.$printer['name'].'. Wynik będzie widoczny przy dokumencie i w zakładce Drukowanie.';
+                    $repo->event((int)$document['order_id'],'Zdalnie przekazano paragon '.$document['number'].' do '.$printerLabel.' '.$printer['name'].' (zadanie '.$jobId.').',$actor);
+                    $successMessage='Paragon '.$document['number'].' przekazano do agenta '.$printerLabel.' '.$printer['name'].'. Wynik będzie widoczny przy dokumencie i w zakładce Drukowanie.';
                     $tab='documents';
                     break;
                 case 'document_update':
@@ -873,6 +895,12 @@ final class OrdersController extends Controller
                     $successMessage=!empty($_POST['enabled'])?'Włączono stanowisko druku.':'Wyłączono stanowisko druku.';
                     $tab='printing';
                     break;
+                case 'print_printer_toggle':
+                    $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
+                    $printAgents->setPrinterEnabled((int)($_POST['station_id']??0),(string)($_POST['printer_name']??''),!empty($_POST['enabled']));
+                    $successMessage=!empty($_POST['enabled'])?'Włączono drukarkę etykiet.':'Wyłączono drukarkę etykiet.';
+                    $tab='printing';
+                    break;
                 case 'print_station_token':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                     $plainToken=$printAgents->regenerateToken((int)($_POST['station_id']??0));
@@ -888,12 +916,13 @@ final class OrdersController extends Controller
                     break;
                 case 'fiscal_printer_configure':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
-                    $printAgents->configureFiscalPrinter((int)($_POST['fiscal_printer_id']??0),(string)($_POST['receipt_series']??''),(string)($_POST['environment']??'sandbox'),!empty($_POST['enabled']),isset($_POST['vat_rates'])?(array)$_POST['vat_rates']:null);
+                    $printAgents->configureFiscalPrinter((int)($_POST['fiscal_printer_id']??0),(string)($_POST['receipt_series']??''),(string)($_POST['environment']??'sandbox'),!empty($_POST['enabled']),isset($_POST['vat_rates'])?(array)$_POST['vat_rates']:null,isset($_POST['custom_name'])?(string)$_POST['custom_name']:null);
                     $successMessage='Zapisano ustawienia drukarki fiskalnej.'; $tab='printing';
                     break;
                 case 'fiscal_printer_add':
                     $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
-                    $printAgents->addFiscalPrinter((int)($_POST['station_id']??0),$this->required('fiscal_printer_name',150),$this->required('fiscal_printer_host',255),(int)($_POST['fiscal_printer_port']??6666));
+                    $fiscalProtocol=PrintAgentRepository::fiscalProtocol((string)($_POST['fiscal_printer_protocol']??'posnet'));
+                    $printAgents->addFiscalPrinter((int)($_POST['station_id']??0),$this->required('fiscal_printer_name',150),$this->required('fiscal_printer_host',255),(int)($_POST['fiscal_printer_port']??($fiscalProtocol==='novitus'?6001:6666)),$fiscalProtocol);
                     $successMessage='Dodano drukarkę fiskalną. Ustaw serię, tryb i włącz urządzenie.'; $tab='printing';
                     break;
                 case 'fiscal_printer_delete':
@@ -1018,11 +1047,37 @@ final class OrdersController extends Controller
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'shipment','order_id'=>$id]);
                 $reason=$e instanceof InvalidArgumentException ? $e->getMessage() : $diagnostic['message'];
                 $safeMessage='Nie udało się obsłużyć przesyłki. '.$reason.' [ID: '.$diagnostic['reference'].']';
+                // Ślad w historii zamówienia, żeby błąd był widoczny w diagnostyce JSON.
+                if ($id>0) { try { $repo->event($id,'Błąd przesyłki ('.$op.', '.$diagnostic['code'].', '.basename($e->getFile()).':'.$e->getLine().'): '.$reason.' [ID: '.$diagnostic['reference'].']',$actor); } catch (\Throwable $ignored) {} }
             }
             $this->setFlash('error',$safeMessage);
         }
         if ($op==='document_correction' && !empty($_POST['parent_id'])) { $this->redirect('./index.php?controller=orders&action=correctdocument&id='.(int)$_POST['parent_id']); }
         $this->redirect('./index.php?controller=orders&tab='.rawurlencode($tab).($id?'&id='.$id:'').$redirectQuery);
+    }
+    /** Pełny zrzut zamówienia do diagnostyki (bez danych dostępowych kont). */
+    private function fullDebug(array $detail,array $shipments,array $events): string
+    {
+        $db=$this->db(); $id=(int)$detail['id'];
+        $decode=static function ($value) { $decoded=json_decode((string)$value,true); return json_last_error()===JSON_ERROR_NONE?$decoded:$value; };
+        $order=$detail; unset($order['raw_debug'],$order['details_json']);
+        foreach ($shipments as &$shipment) { $shipment['payload_json']=$decode($shipment['payload_json']??''); }
+        unset($shipment);
+        $section=static function (callable $load) { try { return $load(); } catch (\Throwable $e) { return ['error'=>get_class($e).': '.$e->getMessage()]; } };
+        $documents=$section(function () use ($db,$id,$decode) {
+            $rows=$db->fetchAll('SELECT * FROM om_documents WHERE order_id=:id ORDER BY id',['id'=>$id]);
+            foreach ($rows as &$row) { $row['snapshot_json']=$decode($row['snapshot_json']??''); } unset($row);
+            return $rows;
+        });
+        $fiscalJobs=$section(function () use ($db,$id,$decode) {
+            $rows=$db->fetchAll('SELECT * FROM print_fiscal_jobs WHERE order_id=:id ORDER BY created_at',['id'=>$id]);
+            foreach ($rows as &$row) { $row['payload_json']=$decode($row['payload_json']??''); } unset($row);
+            return $rows;
+        });
+        $ruleRuns=$section(function () use ($db,$id) { return $db->fetchAll('SELECT rr.*,r.name rule_name,r.trigger_name FROM om_rule_runs rr LEFT JOIN om_rules r ON r.id=rr.rule_id WHERE rr.order_id=:id ORDER BY rr.id',['id'=>$id]); });
+        $carriers=$section(function () use ($db) { return $db->fetchAll('SELECT id,provider,name,enabled FROM om_carrier_accounts ORDER BY id'); });
+        $dump=['generated_at'=>gmdate('c'),'order'=>$order,'shipments'=>$shipments,'documents'=>$documents,'fiscal_jobs'=>$fiscalJobs,'rule_runs'=>$ruleRuns,'events'=>$events,'carrier_accounts'=>$carriers];
+        return (string)json_encode($dump,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PARTIAL_OUTPUT_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
     }
     private function required(string $key,int $limit): string
     {
