@@ -869,7 +869,15 @@
                           </td>
                           <td><span class="badge text-bg-info">{$change.action_label|escape}</span></td>
                           <td>{$change.actor_display|escape}</td>
-                          <td class="small">{$change.summary|default:'Zapisano zmiany.'|escape}</td>
+                          <td class="small">
+                            {if $change.salescenter_order|default:false}
+                              <div class="mb-1">
+                                <a href="{$change.salescenter_order.url|escape}" target="_blank" rel="noopener" class="fw-semibold"><i class="bi bi-box-arrow-up-right me-1"></i>Zamowienie SalesCenter #{$change.salescenter_order.id}</a>
+                                {if $change.salescenter_order.external_id}<span class="text-secondary ms-1">({$change.salescenter_order.external_id|escape})</span>{/if}
+                              </div>
+                            {/if}
+                            {$change.summary|default:'Zapisano zmiany.'|escape}
+                          </td>
                           <td class="text-nowrap">{$change.created_at|default:'-'|escape}</td>
                         </tr>
                       {/foreach}

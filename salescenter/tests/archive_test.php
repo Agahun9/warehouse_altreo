@@ -60,6 +60,20 @@ Http::$transport=function (string $method,string $url,array $headers,?string $bo
     if ($path==='/receipts') { return $json($page(array_map(function ($i) { return ['id'=>$i,'date'=>'2023-04-0'.$i.'T10:00:00.000Z','printed'=>1]; },range(1,5)))); }
     if (preg_match('#^/receipts/(\d+)$#',$path,$m)) { return $json(['id'=>(int)$m[1],'number'=>'PAR/'.$m[1],'order_id'=>200+(int)$m[1],'issue_date'=>'2023-04-01','total'=>30,'buyer'=>['name'=>'Paragonowy']]); }
     if ($path==='/receiptcorrects') { return $json(['message'=>'Brak modułu'],400); }
+    // Dokumenty operacyjne: ID kolidują ze starymi paragonami/fakturami; WZ (release) ma zostać pominięte.
+    if ($path==='/operationdocuments') {
+        $all=($q['type']??'')==='sale' ? [['id'=>1,'type'=>'sale','subtype'=>'receipt','number'=>'PA/2/10/2026'],['id'=>2,'type'=>'sale','subtype'=>'invoice','number'=>'OSS/5/09/2026'],['id'=>4,'type'=>'stock','subtype'=>'release','number'=>'WZ/1']]
+            : (($q['type']??'')==='correct' ? [['id'=>3,'type'=>'correct','subtype'=>'correction','number'=>'KPA/1/10/2026']] : []);
+        return ($rows=$page($all)) ? $json($rows) : $json(['message'=>'Nie znaleziono'],404);
+    }
+    if (preg_match('#^/operationdocuments/(\d+)$#',$path,$m)) {
+        $id=(int)$m[1];
+        $base=['id'=>$id,'issue_date'=>'2026-10-01','currency'=>'PLN','email'=>'musial@example.com','buyer_address'=>['name'=>'Natalia','surname'=>'Musiał','company_nip'=>'0','city'=>'Dopiewo','street'=>'Leśna','home_number'=>'76','postcode'=>'62-070'],
+            'seller_data'=>['name'=>'ALTREO','nip'=>'1234567890','city'=>'Kraków'],'products'=>[['name'=>'Kalendarz A5','quantity'=>2,'price_gross'=>100,'price_gross_unit'=>50,'price_net_unit'=>40.65,'vat'=>23]]];
+        $docs=[1=>['type'=>'sale','subtype'=>'receipt','number'=>'PA/2/10/2026','order_id'=>206,'total'=>100],2=>['type'=>'sale','subtype'=>'invoice','number'=>'OSS/5/09/2026','order_id'=>207,'total'=>100],
+            3=>['type'=>'correct','subtype'=>'correction','number'=>'KPA/1/10/2026','order_id'=>206,'main_document_id'=>1,'total'=>-50]];
+        return isset($docs[$id]) ? $json($docs[$id]+$base) : $json(['message'=>'gone'],404);
+    }
     return $json(['message'=>'not mocked'],404);
 };
 SellasistArchiveService::$pauseMicro=0;
@@ -90,11 +104,13 @@ check(!empty($report['done']),'Import finishes in batches');
 $stats=$repo->stats();
 check($stats['orders']===230,'All orders stored once ('.$stats['orders'].')');
 check($stats['orders_detailed']===229 && $stats['orders_failed']===1,'Details fetched; a missing order is marked failed');
-check($stats['kinds']===['correct'=>3,'invoice'=>120,'receipt'=>5],'All available documents stored');
-check($stats['documents_detailed']===128,'Document details fetched');
+check($stats['kinds']===['correct'=>3,'invoice'=>121,'receipt'=>6,'receipt_correct'=>1],'All available documents stored ('.json_encode($stats['kinds']).')');
+check($stats['raw_kinds']['op_receipt']===1 && $stats['raw_kinds']['op_receipt_correct']===1 && !isset($stats['raw_kinds']['op_stock']),'Operation documents keep their own IDs; stock documents skipped');
+check($stats['documents_detailed']===131,'Document details fetched');
 $progress=$service->progress();
 check($progress['completed'] && $progress['lists_done'] && strpos($progress['phases'][4]['error'],'Brak modułu')!==false,'Unavailable endpoint is reported without blocking the rest');
 check($progress['details_percent']===100,'Progress is 100%');
+check($progress['phases'][5]['stored']===2 && $progress['phases'][6]['stored']===1,'Operation document phases show their counts');
 
 // Wyszukiwanie i filtry.
 $found=$repo->orders(['q'=>'laptop dell']);
@@ -111,12 +127,16 @@ check($repo->orders(['source'=>'allegro'])['total']===115,'Source filter');
 check($repo->orders(['payment_status'=>'unpaid'])['total']===46,'Payment filter');
 check($repo->orders(['amount_from'=>'2000','amount_to'=>'2100,50'])['total']===10,'Amount filter');
 check($repo->orders(['date_from'=>'2023-01-01','date_to'=>'2023-01-31'])['total']===19,'Date filter');
-check($repo->orders(['document'=>'1'])['total']===125 && $repo->orders(['document'=>'0'])['total']===105,'Document filter');
+check($repo->orders(['document'=>'1'])['total']===127 && $repo->orders(['document'=>'0'])['total']===103,'Document filter');
 $page=$repo->orders(['sort'=>'amount_desc','page'=>2]);
 check($page['pages']===5 && $page['page']===2 && count($page['rows'])===50 && (int)$page['rows'][0]['sellasist_id']===180,'Pagination and sorting');
 check(count($repo->order((int)$repo->orders(['q'=>'5'])['rows'][0]['id'])['documents'])===4,'Order shows its invoice and corrections');
 check($repo->documents(['q'=>'8221990318'])['total']===1,'Document search by NIP');
 check($repo->documents(['kind'=>'correct'])['total']===3 && $repo->documents(['kind'=>'receipt','q'=>'paragonowy'])['total']===5,'Document filters');
+$opReceipt=$repo->documents(['kind'=>'receipt','q'=>'PA/2/10/2026'])['rows'];
+check(count($opReceipt)===1 && $opReceipt[0]['kind']==='receipt' && $opReceipt[0]['buyer_name']==='Natalia Musiał' && $opReceipt[0]['total_cents']==10000 && (int)$opReceipt[0]['archive_order_id']>0,'Receipt from operation documents is filtered as a receipt and linked to its order');
+$orderDocs=$repo->order((int)$opReceipt[0]['archive_order_id'])['documents'];
+check(in_array('PA/2/10/2026',array_column($orderDocs,'number'),true) && in_array('receipt_correct',array_column($orderDocs,'kind'),true),'Order shows the receipt and its correction');
 $receipt=$repo->documents(['kind'=>'receipt','sort'=>'oldest'])['rows'][0];
 check((int)$receipt['archive_order_id']>0 && $receipt['number']==='PAR/1','Receipt detail fills its number and links to the order');
 
@@ -140,7 +160,7 @@ check($service->run(10)['skipped']==='disabled','Paused import does not run from
 // Reset nie dubluje danych.
 $service->reset(); $guard=0;
 do { $report=$service->run(30,true); $guard++; } while (empty($report['done']) && $guard<40);
-check($repo->stats()['orders']===230 && $repo->stats()['documents']===128,'Restart does not duplicate records');
+check($repo->stats()['orders']===230 && $repo->stats()['documents']===131,'Restart does not duplicate records');
 
 // Render widoków.
 $smarty=App\Core\SmartyFactory::create();
@@ -164,6 +184,9 @@ $smarty->clearAllAssign();
 $smarty->assign(['document'=>$doc,'detail'=>array_filter($doc['detail'],'is_scalar'),'lines'=>[['name'=>'Produkt 7','quantity'=>2,'price_gross'=>12.3,'price_net'=>10.0,'vat'=>'23','discount'=>'','net'=>20.0,'gross'=>24.6]],'vatSummary'=>[['vat'=>'23','net'=>20.0,'gross'=>24.6]],'sum'=>['net'=>20,'gross'=>24.6],'kindLabel'=>'Faktura','seller'=>array_filter($doc['detail']['seller'],'is_scalar'),'buyer'=>array_filter($doc['detail']['buyer'],'is_scalar'),'raw'=>'{}']);
 $html=$smarty->fetch('archive/document.tpl');
 check(strpos($html,'Faktura FV/7/2023')!==false && strpos($html,'NIP: 8221990318')!==false && strpos($html,'24.60 PLN')!==false,'Document print renders');
+$op=$repo->document((int)$opReceipt[0]['id']);
+$opDetail=$controller->getMethod('operationDetail')->invoke(null,$op['detail']);
+check($opDetail['lines'][0]['price_gross']===50.0 && $opDetail['lines'][0]['quantity']===2.0 && $opDetail['buyer']['name']==='Natalia Musiał' && !isset($opDetail['buyer']['nip']) && $opDetail['seller']['nip']==='1234567890','Operation document maps to the print layout');
 array_map('unlink',glob($compile.'/*')?:[]); @rmdir($compile);
 
 // Kurier bez tracking_number: nr nadania z pickup_code (nie dla paczkomatów); stare rekordy uzupełnia ensureSchema.
@@ -176,12 +199,10 @@ $db->delete('om_settings','setting_key=:k',['k'=>'sellasist_archive_tracking_v1'
 $repo->ensureSchema();
 check($repo->orders(['q'=>'GD-602735-C6-90'])['rows'][0]['tracking']==='GD-602735-C6-90','Backfill fills tracking from stored detail');
 
-// Paragon: właściwy numer (PA/…) pochodzi z document_number zamówienia, chyba że zamówienie ma fakturę.
-$db->update('om_archive_orders',['document_number'=>'PA/946/08/2026'],'sellasist_id=:id',['id'=>201]);
-$db->update('om_archive_orders',['document_number'=>'FV/202/2023'],'sellasist_id=:id',['id'=>202]);
-$repo->upsertDocument('invoice',['id'=>9202,'number'=>'FV/202/2023','order_id'=>202],true);
-check($repo->syncReceiptNumbers()===1 && $repo->syncReceiptNumbers()===0,'Receipt numbers synced once');
-check($repo->documents(['kind'=>'receipt','q'=>'PA/946/08/2026'])['rows'][0]['remote_id']==1 && $repo->documents(['kind'=>'receipt','q'=>'PAR/1'])['total']===1,'Receipt takes order number and keeps Sellasist number searchable');
-check($repo->documents(['kind'=>'receipt','q'=>'PAR/2'])['rows'][0]['number']==='PAR/2','Receipt of invoiced order keeps its number');
+// Numery paragonów nadpisane przez starą synchronizację (numer z zamówienia) wracają z zapisanych szczegółów.
+$db->update('om_archive_documents',['number'=>'PA/946/08/2026'],"kind='receipt' AND remote_id=1");
+$db->delete('om_settings','setting_key=:k',['k'=>'sellasist_archive_receipts_v2']);
+$repo->ensureSchema();
+check($repo->documents(['kind'=>'receipt','q'=>'PAR/1'])['rows'][0]['number']==='PAR/1' && $repo->documents(['q'=>'PA/946/08/2026'])['total']===0,'Overwritten receipt numbers are restored');
 
 echo "OK archive_test: $checks checks\n";

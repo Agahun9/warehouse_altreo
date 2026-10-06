@@ -1035,4 +1035,40 @@
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && root.classList.contains('oc-layout-editing')) setEditing(false); });
   })();
 
+  // Czytnik kodów kreskowych (klawiatura): naklejka z „Zbierania” ma kod ESP:o:<id> — skan otwiera zamówienie.
+  (() => {
+    const pattern = /ESP\W?o\W?(\d+)$/i;
+    let buffer = '', first = 0, last = 0, target = null, idleTimer = null;
+    const reset = () => { buffer = ''; first = 0; target = null; clearTimeout(idleTimer); };
+    const tryOpen = () => {
+      const match = buffer.match(pattern);
+      // Skaner wpisuje cały kod w ułamku sekundy; ręczne pisanie jest dużo wolniejsze.
+      const fast = buffer.length >= 6 && (last - first) / (buffer.length - 1) < 45;
+      if (!match || !fast) return false;
+      if (target && 'value' in target && typeof target.value === 'string') {
+        const index = target.value.lastIndexOf(buffer);
+        if (index >= 0) target.value = target.value.slice(0, index) + target.value.slice(index + buffer.length);
+      }
+      reset();
+      window.location.href = `?controller=orders&id=${match[1]}`;
+      return true;
+    };
+    document.addEventListener('keydown', event => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const now = performance.now();
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (buffer && tryOpen()) { event.preventDefault(); event.stopPropagation(); }
+        reset();
+        return;
+      }
+      if (event.key.length !== 1) return;
+      if (buffer && now - last > 100) reset();
+      if (!buffer) { first = now; target = event.target; }
+      buffer += event.key; last = now;
+      // Skanery bez sufiksu Enter: otwórz po krótkiej przerwie od ostatniego znaku.
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { if (!tryOpen()) reset(); }, 150);
+    }, true);
+  })();
+
 })();

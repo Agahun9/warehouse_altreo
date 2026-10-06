@@ -13,3 +13,25 @@
 .om-status-order-bar{position:sticky;top:8px;z-index:5;display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid #c7cbf5;border-radius:10px;background:#f3f3ff;box-shadow:0 8px 20px -16px #3b37a8}
 .om-status-order-bar[hidden]{display:none}
 .om-status-order-bar span{flex:1;color:#3f3aa8;font-size:12px;font-weight:700}
+.om-statusmap-platform{border:1px solid #e6eaf2;border-radius:10px;margin-top:16px;overflow:hidden}
+.om-statusmap-platform>header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fafbfd;border-bottom:1px solid #edf0f5}
+.om-statusmap-platform>header strong{font-size:14px;color:#18223a}
+.om-statusmap-platform>header small{margin-left:auto;color:#8994a8;font-size:11px}
+.om-statusmap-dot{width:10px;height:10px;border-radius:50%;background:var(--platform);flex-shrink:0}
+.om-statusmap-platform .om-table th{border-top:0;padding:9px 16px;text-align:left}
+.om-statusmap-platform .om-table td{padding:10px 16px}
+.om-statusmap-platform .om-table td:last-child{width:46%}
+.om-statusmap-platform .om-table td:last-child select{width:100%}
+.om-statusmap-platform .om-table td code{font-size:10px;color:#8994a8;background:#f3f5f9;border-radius:4px;padding:1px 5px;margin-left:4px}
+.om-statusmap-platform .om-table td small{display:block;color:#8994a8;font-size:10px;margin-top:3px;line-height:1.4}
+.om-statusmap-platform .om-table td small.om-statusmap-count{display:inline-block;color:#5954e8;background:#efeefe;border-radius:4px;padding:1px 6px}
+.om-statusmap-platform tr.is-unmapped select{color:#8994a8}
+.om-statusmap-platform>footer{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;flex-wrap:wrap}
+.om-statusmap-platform>footer details{font-size:11px;color:#7b879d;flex:1;min-width:220px}
+.om-statusmap-platform>footer summary{cursor:pointer;font-weight:600;padding:8px 0}
+.om-statusmap-custom{display:flex;gap:8px;flex-wrap:wrap}
+.om-statusmap-custom input,.om-statusmap-custom select{flex:1;min-width:140px}
+@media(max-width:600px){.om-statusmap-platform .om-table td:last-child{width:auto}.om-statusmap-platform .om-table thead{display:none}.om-statusmap-platform .om-table tr{display:flex;flex-direction:column}.om-statusmap-platform .om-table td{border-bottom:0}.om-statusmap-platform .om-table tr{border-bottom:1px solid #eef1f6}}
+.om-statusmap-note{display:flex;gap:8px;align-items:flex-start;margin:0!important;padding:10px 16px;font-size:11px!important;color:#5f6b82;background:#f7f7fe;border-bottom:1px solid #edf0f5}
+.om-statusmap-note i{color:#5954e8;margin-top:1px}
+.om-statusmap-platform .om-table+.om-statusmap-note{border-top:1px solid #edf0f5}

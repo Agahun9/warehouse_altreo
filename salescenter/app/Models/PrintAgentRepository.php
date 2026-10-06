@@ -14,8 +14,8 @@ use InvalidArgumentException;
 final class PrintAgentRepository
 {
     /** Wersja agenta w paczkach downloads/PrintAgent-*.zip — zmieniaj razem z <Version> w AltreoPrintAgent.csproj. */
-    public const AGENT_VERSION='1.2.1';
-    public const AGENT_RELEASED='2026-10-02';
+    public const AGENT_VERSION='1.2.3';
+    public const AGENT_RELEASED='2026-10-06';
 
     public static function agentOutdated(?string $version): bool
     {
@@ -353,8 +353,11 @@ final class PrintAgentRepository
     /** Legacy VAT mismatch is raised before trinit; no fiscal transaction was attempted. */
     public static function fiscalRetryAllowed(array $job): bool
     {
-        return ($job['status']??'')==='error' && empty($job['fiscal_number'])
-            && preg_match('/^Stawka VAT [A-G] w drukarce różni się od ustawień SalesCenter\. Sprawdź stawki A–G\.$/uD',(string)($job['status_message']??''))===1;
+        // Tylko błędy zgłaszane przez agenta przed rozpoczęciem paragonu — wtedy sprzedaż na pewno nie została zarejestrowana.
+        $message=(string)($job['status_message']??'');
+        $beforeTransaction=preg_match('/^Stawka VAT [A-G] w drukarce różni się od ustawień SalesCenter\. Sprawdź stawki A–G\.(?: Drukarka: [^\r\n]*)?$/uD',$message)===1
+            || in_array($message,['Drukarka Novitus nie jest gotowa (menu, komunikat lub raport w toku).','W drukarce Novitus brakuje papieru.','Drukarka Novitus zgłasza błąd mechanizmu drukującego (pokrywa, papier lub obcinacz).','Drukarka Novitus nie zwróciła stawek PTU.'],true);
+        return ($job['status']??'')==='error' && empty($job['fiscal_number']) && $beforeTransaction;
     }
 
     public function retryFiscalReceipt(int $documentId,string $actor): string
@@ -366,7 +369,7 @@ final class PrintAgentRepository
             if (!empty($documentSettings['non_fiscal'])) { throw new InvalidArgumentException('Seria niefiskalna nie może ponowić fiskalizacji. Sprawdź ustawienia serii.'); }
             $lock=$this->db->pdo()->getAttribute(\PDO::ATTR_DRIVER_NAME)==='sqlite'?'':' FOR UPDATE';
             $job=$this->db->fetch('SELECT * FROM print_fiscal_jobs WHERE order_id=:order'.$lock,['order'=>$document['order_id']]);
-            if (!$job || !self::fiscalRetryAllowed($job)) { throw new InvalidArgumentException('Ponowienie jest dozwolone tylko po błędzie stawek VAT przed rozpoczęciem transakcji. Przy niepewnym wyniku najpierw sprawdź kopię paragonu w urządzeniu.'); }
+            if (!$job || !self::fiscalRetryAllowed($job)) { throw new InvalidArgumentException('Ponowienie jest dozwolone tylko po błędzie zgłoszonym przed rozpoczęciem transakcji (stawki VAT, gotowość drukarki). Przy niepewnym wyniku najpierw sprawdź kopię paragonu w urządzeniu.'); }
             $printer=$this->db->fetch('SELECT * FROM print_fiscal_printers WHERE id=:id AND enabled=1 AND deleted_at IS NULL'.$lock,['id'=>$job['printer_id']]);
             if (!$printer || $printer['environment']!=='production') { throw new InvalidArgumentException('Włącz tę samą drukarkę w trybie PRODUKCJA. Ponowienie nie zmienia drukarki ani trybu.'); }
             $this->requireStation((int)$printer['station_id'],true);
@@ -379,7 +382,7 @@ final class PrintAgentRepository
             $payload['vatRates']=$rates;
             $newId=$this->uuid();
             // Rotate the ID so delayed reports from the old attempt cannot overwrite this attempt.
-            $updated=$this->db->query("UPDATE print_fiscal_jobs SET id=:new_id,payload_json=:payload,status='queued',status_message=:message,created_by=:actor,created_at=:now,claimed_at=NULL,reported_at=NULL WHERE id=:old_id AND status='error' AND (fiscal_number IS NULL OR fiscal_number='') AND status_message=:previous_message",['new_id'=>$newId,'payload'=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'message'=>'Ponowienie po poprawieniu stawek VAT. Oczekuje na agenta.','actor'=>mb_substr($actor,0,150,'UTF-8'),'now'=>gmdate('Y-m-d H:i:s'),'old_id'=>$job['id'],'previous_message'=>$job['status_message']])->rowCount();
+            $updated=$this->db->query("UPDATE print_fiscal_jobs SET id=:new_id,payload_json=:payload,status='queued',status_message=:message,created_by=:actor,created_at=:now,claimed_at=NULL,reported_at=NULL WHERE id=:old_id AND status='error' AND (fiscal_number IS NULL OR fiscal_number='') AND status_message=:previous_message",['new_id'=>$newId,'payload'=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'message'=>'Ponowienie po błędzie przed transakcją. Oczekuje na agenta.','actor'=>mb_substr($actor,0,150,'UTF-8'),'now'=>gmdate('Y-m-d H:i:s'),'old_id'=>$job['id'],'previous_message'=>$job['status_message']])->rowCount();
             if ($updated!==1) { throw new InvalidArgumentException('Status zadania zmienił się. Odśwież historię dokumentów.'); }
             (new OrderRepository($this->db))->event((int)$document['order_id'],'Ponowiono zadanie fiskalne '.$job['id'].' jako '.$newId.' po błędzie przed transakcją: '.$job['status_message'],$actor);
             return $newId;

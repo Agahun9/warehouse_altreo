@@ -88,6 +88,29 @@ final class PrestaShopService extends MarketplaceIntegration
         ];
     }
 
+    /** Stany zamówień sklepu: [id => nazwa] – te same nazwy trafiają do statusu źródłowego. */
+    public function orderStates(array $account): array
+    {
+        $states = [];
+        foreach ((array) ($this->get($account, 'order_states', ['display' => '[id,name]'])['order_states'] ?? []) as $state) {
+            $name = $this->text($state['name'] ?? '');
+            if ($name !== '' && (int) ($state['id'] ?? 0) > 0) { $states[(int) $state['id']] = $name; }
+        }
+        return $states;
+    }
+
+    /** Zmiana stanu przez order_histories – PrestaShop wykona też akcje stanu (np. e-mail do klienta). */
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        $stateId = array_search($status, $this->orderStates($account), true);
+        if ($stateId === false) { throw new RuntimeException('PrestaShop: sklep nie ma stanu „'.$status.'”.'); }
+        $xml = new \SimpleXMLElement('<prestashop/>');
+        $history = $xml->addChild('order_history');
+        $history->addChild('id_order', (string) (int) $orderId);
+        $history->addChild('id_order_state', (string) (int) $stateId);
+        $this->webserviceCreate($account, 'order_histories', (string) $xml->asXML());
+    }
+
     private function text($value): string
     {
         if (is_array($value)) { $value = $value[0]['value'] ?? reset($value); if (is_array($value)) { $value = $value['value'] ?? ''; } }

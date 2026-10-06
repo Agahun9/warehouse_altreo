@@ -1,5 +1,5 @@
 {assign var=autoOn value=false}
-{assign var=kindHints value=['message'=>'Allegro, Empik, MediaMarkt, Morele, PrestaShop','dispute'=>'Allegro','claim'=>'Allegro','incident'=>'Empik, MediaMarkt','return'=>'ERLI – bez odpowiedzi','note'=>'odpowiedź: Allegro, Empik, MediaMarkt, WooCommerce']}
+{assign var=kindHints value=['message'=>'Allegro, Empik, MediaMarkt, Morele, PrestaShop','dispute'=>'Allegro','claim'=>'Allegro','incident'=>'Empik, MediaMarkt','return'=>'ERLI – bez odpowiedzi']}
 {foreach $platforms as $code=>$platform}{if $platform.settings.autoresponder}{assign var=autoOn value=true}{/if}{/foreach}
 <div class="ms-rules{if $editRule} has-editor{/if}">
   <section class="om-panel ms-pad">

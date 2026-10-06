@@ -16,6 +16,7 @@ final class OrderRepository
     private $db;
     private $automation;
     private $pendingAutomation = [];
+    private $pendingStatusPush = [];
     private $suppressAutomation = false;
     public function __construct(Database $db) { $this->db = $db; }
     public function db(): Database { return $this->db; }
@@ -30,6 +31,8 @@ final class OrderRepository
             'om_accounts' => "id $id, platform VARCHAR(20) NOT NULL, source_id INTEGER NOT NULL, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, last_sync VARCHAR(30) NULL, last_error TEXT NULL, synced_until VARCHAR(30) NULL, next_attempt BIGINT NOT NULL DEFAULT 0, cursor_json TEXT NULL, UNIQUE(platform, source_id)",
             'om_orders' => "id $id, account_id BIGINT NOT NULL, external_id VARCHAR(190) NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, status_manual INTEGER NOT NULL DEFAULT 0, ordered_at VARCHAR(30) NOT NULL, buyer_name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL, phone VARCHAR(80) NOT NULL, total_cents BIGINT NOT NULL, currency VARCHAR(3) NOT NULL, paid INTEGER NOT NULL DEFAULT 0, details_json LONGTEXT NOT NULL, note TEXT NULL, tags VARCHAR(1000) NOT NULL DEFAULT '', imported_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL, UNIQUE(account_id, external_id)",
             'om_mappings' => "id $id, account_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(account_id, remote_status)",
+            'om_status_mappings' => "id $id, platform VARCHAR(20) NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(platform, remote_status)",
+            'om_status_push' => "id $id, platform VARCHAR(20) NOT NULL, status_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, UNIQUE(platform, status_id)",
             'om_events' => "id $id, order_id BIGINT NOT NULL, actor VARCHAR(150) NOT NULL, message TEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
             'om_order_notes' => "id $id, order_id BIGINT NOT NULL, body TEXT NOT NULL, author VARCHAR(150) NOT NULL DEFAULT '', source VARCHAR(40) NOT NULL DEFAULT 'user', created_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL",
             'om_rule_groups' => "id $id, name VARCHAR(100) NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at VARCHAR(30) NULL",
@@ -115,6 +118,25 @@ final class OrderRepository
                 $this->insertIgnore('om_statuses', ['id'=>$key,'name'=>$status[0],'color'=>$status[1],'position'=>$key,'group_name'=>$groupName]);
             }
         }
+        // Dawne mapowania per konto przechodzą na wspólne mapowanie platformy (pierwsze wygrywa przy konflikcie).
+        if ((int)$this->db->fetchColumn('SELECT COUNT(*) FROM om_mappings')) {
+            foreach ($this->db->fetchAll('SELECT a.platform,m.remote_status,m.status_id FROM om_mappings m JOIN om_accounts a ON a.id=m.account_id ORDER BY m.id') as $legacy) {
+                $this->insertIgnore('om_status_mappings',['platform'=>$legacy['platform'],'remote_status'=>$legacy['remote_status'],'status_id'=>(int)$legacy['status_id']]);
+            }
+            $this->db->query('DELETE FROM om_mappings');
+        }
+        // Allegro przeszło z READY_FOR_PROCESSING na statusy realizacji: dotychczasowe mapowanie przechodzi na „Nowe” (NEW).
+        if (!$this->db->fetchColumn('SELECT setting_key FROM om_settings WHERE setting_key=:k',['k'=>'status_mapping_allegro_fulfillment'])) {
+            $legacy=$this->db->fetchColumn('SELECT status_id FROM om_status_mappings WHERE platform=:p AND remote_status=:s',['p'=>'allegro','s'=>'READY_FOR_PROCESSING']);
+            if ($legacy) { $this->insertIgnore('om_status_mappings',['platform'=>'allegro','remote_status'=>'NEW','status_id'=>(int)$legacy]); }
+            $this->insertIgnore('om_settings',['setting_key'=>'status_mapping_allegro_fulfillment','value_json'=>'{"done":1}']);
+        }
+        // ERLI: opłacone zamówienia mają teraz status u sprzedawcy (sellerStatus) – mapowanie „purchased” obejmuje też „Nowe” (created).
+        if (!$this->db->fetchColumn('SELECT setting_key FROM om_settings WHERE setting_key=:k',['k'=>'status_mapping_erli_seller'])) {
+            $legacy=$this->db->fetchColumn('SELECT status_id FROM om_status_mappings WHERE platform=:p AND remote_status=:s',['p'=>'erli','s'=>'purchased']);
+            if ($legacy) { $this->insertIgnore('om_status_mappings',['platform'=>'erli','remote_status'=>'created','status_id'=>(int)$legacy]); }
+            $this->insertIgnore('om_settings',['setting_key'=>'status_mapping_erli_seller','value_json'=>'{"done":1}']);
+        }
         foreach ([1=>['Przelew',0],2=>['Płatność przy odbiorze',1]] as $key=>$method) {
             $this->insertIgnore('om_payment_methods',['id'=>$key,'name'=>$method[0],'is_cod'=>$method[1],'position'=>$key,'enabled'=>1]);
         }
@@ -137,6 +159,78 @@ final class OrderRepository
         });
     }
     public function accounts(): array { return $this->db->fetchAll('SELECT * FROM om_accounts ORDER BY platform,name'); }
+    /** Platformy z podłączonymi kontami: znane statusy + statusy widziane w zamówieniach, z bieżącym mapowaniem. */
+    public function statusMappingView(): array
+    {
+        $catalog=\App\Services\Integrations\Catalog::all();
+        $platforms=[];
+        foreach ($this->db->fetchAll('SELECT platform,COUNT(*) accounts FROM om_accounts GROUP BY platform ORDER BY platform') as $row) {
+            $platform=(string)$row['platform'];
+            $rows=[];
+            foreach (\App\Services\RemoteStatusCatalog::known($platform) as $code=>$meta) { $rows[(string)$code]=['code'=>(string)$code,'label'=>$meta[0],'hint'=>$meta[1],'orders'=>0,'status_id'=>0]; }
+            $platforms[$platform]=['platform'=>$platform,'label'=>(string)($catalog[$platform]['label']??ucfirst($platform)),'color'=>(string)($catalog[$platform]['color']??'#64748b'),'accounts'=>(int)$row['accounts'],'statuses'=>$rows];
+        }
+        foreach ($this->db->fetchAll('SELECT a.platform,o.remote_status,COUNT(*) orders FROM om_orders o JOIN om_accounts a ON a.id=o.account_id GROUP BY a.platform,o.remote_status') as $row) {
+            $platform=(string)$row['platform']; $code=(string)$row['remote_status'];
+            if (!isset($platforms[$platform]) || $code==='' || $code==='Własne') { continue; }
+            if (!isset($platforms[$platform]['statuses'][$code])) { $platforms[$platform]['statuses'][$code]=['code'=>$code,'label'=>\App\Services\RemoteStatusCatalog::label($platform,$code),'hint'=>'Status spoza listy – pobrany z zamówień.','orders'=>0,'status_id'=>0]; }
+            $platforms[$platform]['statuses'][$code]['orders']=(int)$row['orders'];
+        }
+        foreach ($this->db->fetchAll('SELECT platform,remote_status,status_id FROM om_status_mappings') as $row) {
+            $platform=(string)$row['platform']; $code=(string)$row['remote_status'];
+            if (!isset($platforms[$platform])) { continue; }
+            if (!isset($platforms[$platform]['statuses'][$code])) { $platforms[$platform]['statuses'][$code]=['code'=>$code,'label'=>\App\Services\RemoteStatusCatalog::label($platform,$code),'hint'=>'Status dodany ręcznie.','orders'=>0,'status_id'=>0]; }
+            $platforms[$platform]['statuses'][$code]['status_id']=(int)$row['status_id'];
+        }
+        $push=[];
+        foreach ($this->db->fetchAll('SELECT platform,status_id,remote_status FROM om_status_push') as $row) { $push[(string)$row['platform']][(int)$row['status_id']]=(string)$row['remote_status']; }
+        $internal=$this->statuses();
+        foreach ($platforms as $key=>&$platform) {
+            $settable=$this->settableStatuses($key);
+            $platform['push']=[]; $platform['push_options']=[]; $platform['can_push']=in_array($key,\App\Services\RemoteStatusCatalog::pushPlatforms(),true);
+            if ($settable) {
+                foreach ($settable as $code) { $platform['push_options'][$code]=\App\Services\RemoteStatusCatalog::pushLabel($key,$code); }
+                foreach ($internal as $status) { $platform['push'][]=['status_id'=>(int)$status['id'],'name'=>(string)$status['name'],'color'=>(string)$status['color'],'remote'=>$push[$key][(int)$status['id']]??'']; }
+                // Statusy, które marketplace ustawia sam (np. nieopłacone, zwrócone) – mapowanie tylko przy imporcie.
+                // Mirakl wykonuje akcje, a nie ustawia stanów, więc tam import pokazuje wszystkie stany.
+                if (!in_array($key,['empik','mediamarkt'],true)) $platform['statuses']=array_filter($platform['statuses'],static function (array $s) use ($settable): bool { return $s['status_id']>0 || !in_array($s['code'],$settable,true); });
+            }
+            $platform['statuses']=array_values($platform['statuses']);
+            $platform['mapped']=count(array_filter($platform['statuses'],static function (array $s): bool { return $s['status_id']>0; }));
+            $platform['pushed']=count(array_filter($platform['push'],static function (array $s): bool { return $s['remote']!==''; }));
+        }
+        unset($platform);
+        return array_values($platforms);
+    }
+    /** Statusy do ustawienia w marketplace; PrestaShop – stany pobrane ze sklepu (zapamiętane w ustawieniach). */
+    public function settableStatuses(string $platform): array
+    {
+        if ($platform==='prestashop') { return array_values(array_map('strval',(array)($this->setting('remote_states_prestashop')['names']??[]))); }
+        return \App\Services\RemoteStatusCatalog::settable($platform);
+    }
+    /** @param array<string,int> $map kod statusu źródłowego => ID statusu wewnętrznego (0 = bez mapowania) */
+    public function saveStatusMappings(string $platform,array $map,array $push=[]): int
+    {
+        if (!$this->db->fetchColumn('SELECT id FROM om_accounts WHERE platform=:p',['p'=>$platform])) { throw new InvalidArgumentException('Nieznana platforma.'); }
+        $saved=0;
+        $this->db->transaction(function () use ($platform,$map,$push,&$saved) {
+            foreach ($map as $code=>$statusId) {
+                $code=mb_substr(trim((string)$code),0,100,'UTF-8'); $statusId=(int)$statusId;
+                if ($code==='') { continue; }
+                $this->db->delete('om_status_mappings','platform=:p AND remote_status=:s',['p'=>$platform,'s'=>$code]);
+                if ($statusId>0) { $this->requireStatus($statusId); $this->db->insert('om_status_mappings',['platform'=>$platform,'remote_status'=>$code,'status_id'=>$statusId]); $saved++; }
+            }
+            $settable=$this->settableStatuses($platform);
+            foreach ($push as $statusId=>$code) {
+                $statusId=(int)$statusId; $code=(string)$code;
+                if ($statusId<=0 || !$settable) { continue; }
+                if ($code!=='' && !in_array($code,$settable,true)) { throw new InvalidArgumentException('Nieznany status platformy: '.$code); }
+                $this->db->delete('om_status_push','platform=:p AND status_id=:s',['p'=>$platform,'s'=>$statusId]);
+                if ($code!=='') { $this->requireStatus($statusId); $this->db->insert('om_status_push',['platform'=>$platform,'status_id'=>$statusId,'remote_status'=>$code]); $saved++; }
+            }
+        });
+        return $saved;
+    }
     public function carrierAccounts(): array
     {
         return $this->db->fetchAll('SELECT id,provider,name,enabled,public_config_json,updated_at FROM om_carrier_accounts ORDER BY provider,name');
@@ -607,7 +701,9 @@ final class OrderRepository
     }
     public function flushAutomations(): void
     {
-        if (!$this->pendingAutomation || $this->db->pdo()->inTransaction()) { return; }
+        if ($this->db->pdo()->inTransaction()) { return; }
+        $this->flushStatusPush();
+        if (!$this->pendingAutomation) { return; }
         $pending=$this->pendingAutomation; $this->pendingAutomation=[];
         foreach ($pending as [$orderId,$trigger,$context]) {
             try { $this->automation()->dispatch((int)$orderId,(string)$trigger,$context); }
@@ -617,7 +713,18 @@ final class OrderRepository
     /** Events of a rolled-back transaction must never run. */
     public function discardAutomations(): void
     {
-        if (!$this->db->pdo()->inTransaction()) { $this->pendingAutomation=[]; }
+        if (!$this->db->pdo()->inTransaction()) { $this->pendingAutomation=[]; $this->pendingStatusPush=[]; }
+    }
+    /** Status w marketplace ustawiamy dopiero po commicie – wywołanie API nie trzyma blokad wierszy. */
+    private function flushStatusPush(): void
+    {
+        if (!$this->pendingStatusPush || $this->db->pdo()->inTransaction()) { return; }
+        $pending=$this->pendingStatusPush; $this->pendingStatusPush=[];
+        $service=new \App\Services\OrderMarketplaceStatusService($this);
+        foreach ($pending as $orderId=>$actor) {
+            try { $service->push((int)$orderId,(string)$actor); }
+            catch (\Throwable $error) { OrderSyncError::log($error,['stage'=>'status_push','order_id'=>$orderId]); }
+        }
     }
     private function transactional(callable $callback)
     {
@@ -875,6 +982,7 @@ final class OrderRepository
             }
             $row['ordered_short']=self::shortDate((string)$row['ordered_at']);
             $row['status_changed_short']=self::shortDate((string)($row['status_changed_at']??''));
+            $row['remote_status_label']=\App\Services\RemoteStatusCatalog::label((string)$row['platform'],(string)$row['remote_status']);
             $row['external_short']=(function (string $id): string { return mb_strlen($id,'UTF-8')>10?mb_substr($id,0,10,'UTF-8').'…':$id; })((string)$row['external_id']);
             unset($row['details_json']);
         }
@@ -1076,14 +1184,16 @@ final class OrderRepository
             }
             $order['details_json'] = self::json($details);
             $order['updated_at'] = gmdate('Y-m-d H:i:s');
-            $mapping = $this->db->fetchColumn('SELECT status_id FROM om_mappings WHERE account_id=:a AND remote_status=:s',['a'=>$accountId,'s'=>$order['remote_status']]);
+            $mapping = $this->db->fetchColumn('SELECT m.status_id FROM om_status_mappings m JOIN om_accounts a ON a.platform=m.platform WHERE a.id=:a AND m.remote_status=:s',['a'=>$accountId,'s'=>$order['remote_status']]);
+            // Bez mapowania importu działa odwrotność „status SalesCenter → status platformy” (pierwszy status wg kolejności).
+            if (!$mapping) { $mapping = $this->db->fetchColumn('SELECT p.status_id FROM om_status_push p JOIN om_accounts a ON a.platform=p.platform JOIN om_statuses s ON s.id=p.status_id WHERE a.id=:a AND p.remote_status=:s ORDER BY s.position,s.id LIMIT 1',['a'=>$accountId,'s'=>$order['remote_status']]); }
             if ($old) {
                 $oldId=(int)$old['id'];
                 if (!(int)$old['status_manual'] && $mapping) { $order['status_id'] = (int)$mapping; }
                 $statusChanged=isset($order['status_id']) && (int)$old['status_id'] !== $order['status_id'];
                 if ($statusChanged) { $order['status_changed_at']=gmdate('Y-m-d H:i:s'); }
                 $this->db->update('om_orders',$order,'id=:id',['id'=>$oldId]);
-                if ($old['remote_status'] !== $order['remote_status']) { $this->event($oldId,'Status źródłowy: '.$order['remote_status'],'synchronizacja'); }
+                if ($old['remote_status'] !== $order['remote_status']) { $this->event($oldId,'Status w marketplace: '.\App\Services\RemoteStatusCatalog::label((string)$this->db->fetchColumn('SELECT platform FROM om_accounts WHERE id=:id',['id'=>$accountId]),(string)$order['remote_status']).' ('.$order['remote_status'].')','synchronizacja'); }
                 if ((int)$old['paid'] !== (int)$order['paid']) { $this->event($oldId,(int)$order['paid'] ? 'Płatność potwierdzona w źródle.' : 'Źródło nie potwierdza już płatności.','synchronizacja'); }
                 if ($statusChanged) { $this->event($oldId,'Mapowanie statusu na #'.$order['status_id'],'synchronizacja'); }
                 // Import automations can also become eligible after payment/data arrives.
@@ -1129,6 +1239,10 @@ final class OrderRepository
         $this->db->update('om_orders',['status_id'=>$status,'status_manual'=>1,'status_changed_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
         $this->event($id,'Status wewnętrzny: '.$old['status_name'].' → #'.$status,$actor);
         if ($rules) { $this->automationEvent($id,'status',['previous_status_id'=>(int)$old['status_id'],'status_source'=>strpos($actor,'automat')===0?'automation':'user']); }
+        if ($this->db->fetchColumn('SELECT p.id FROM om_status_push p JOIN om_accounts a ON a.platform=p.platform WHERE a.id=:a AND p.status_id=:s',['a'=>(int)$old['account_id'],'s'=>$status])) {
+            $this->pendingStatusPush[$id]=$actor;
+            $this->flushStatusPush();
+        }
     }
     /** Kept for callers of the former rule engine; preview only reports matching rule names. */
     public function runRules(int $id,string $trigger,string $eventKey,bool $preview=false): array

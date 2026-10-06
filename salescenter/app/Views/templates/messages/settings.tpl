@@ -2,12 +2,8 @@
   'allegro'=>['Centrum wiadomości oraz Dyskusje i reklamacje (Post Purchase Issues): czat, decyzje w reklamacjach (uznanie / odrzucenie / częściowy zwrot), decyzje o odesłaniu produktu i prośba o zakończenie dyskusji.','Aplikacja Allegro musi mieć uprawnienia allegro:api:messaging i allegro:api:disputes. Po ich włączeniu zaloguj konto Allegro ponownie.'],
   'empik'=>['Wiadomości Mirakl (wątki klienta i operatora EmpikPlace) oraz incydenty zgłaszane przez klientów na pozycjach zamówień – z oznaczaniem jako rozwiązane.','Odpowiedź na incydent trafia do wątku zamówienia; gdy go nie ma, SalesCenter zakłada nowy wątek do klienta.'],
   'mediamarkt'=>['Wiadomości Mirakl (klient i operator MediaMarkt Saturn) oraz incydenty na pozycjach zamówień – z oznaczaniem jako rozwiązane.','Przy kilku sklepach (krajach) każde połączenie synchronizuje się osobno.'],
-  'erli'=>['Uwagi kupujących do zamówień i zwroty zgłaszane w ERLI (powód, pozycje, komentarz kupującego, konto do zwrotu).','ERLI nie udostępnia w API rozmów z kupującymi ani odpowiedzi na zwroty – wątki są do odczytu, odpowiadasz w panelu ERLI i ustawiasz tu status.'],
-  'temu'=>['Uwagi kupujących zapisane w zamówieniach Temu.','Temu nie udostępnia publicznego API wiadomości – wątki są do odczytu.'],
+  'erli'=>['Zwroty zgłaszane w ERLI (powód, pozycje, komentarz kupującego, konto do zwrotu).','ERLI nie udostępnia w API rozmów z kupującymi ani odpowiedzi na zwroty – wątki są do odczytu, odpowiadasz w panelu ERLI i ustawiasz tu status.'],
   'prestashop'=>['Obsługa klienta PrestaShop: wiadomości z formularza kontaktowego i do zamówień (wątki klientów) z odpowiedzią ze SalesCenter.','Klucz webservice potrzebuje uprawnień GET: customer_threads, customer_messages, customers oraz POST: customer_messages. Odpowiedź z API trafia do wątku klienta, ale PrestaShop nie wysyła wtedy e-maila.'],
-  'woocommerce'=>['Uwagi klientów wpisane przy składaniu zamówienia.','Odpowiedź zapisuje się jako „notatka dla klienta” w zamówieniu – WooCommerce wysyła ją klientowi e-mailem.'],
-  'altreo'=>['Uwagi klientów wpisane przy składaniu zamówienia w sklepie altreo.pl.','Sklep nie ma kanału odpowiedzi – wątki są do odczytu.'],
-  'api'=>['Uwagi klientów przesłane przez API własnego sklepu (pole note zamówienia).','Własny sklep nie ma kanału odpowiedzi – wątki są do odczytu.'],
   'morele'=>['Centrum komunikacji Morele: pytania o zamówienie i produkt, reklamacje, zwroty 14-dniowe i inne wiadomości.','Beta: Morele nie publikuje specyfikacji tego API – SalesCenter korzysta z tych samych zasobów co panel sprzedawcy. Jeśli klucz API nie ma do nich dostępu, zobaczysz błąd przy koncie.']
 ]}
 {assign var=dayNames value=[1=>'Pn',2=>'Wt',3=>'Śr',4=>'Cz',5=>'Pt',6=>'So',7=>'Nd']}
@@ -85,7 +81,6 @@
       <div class="ms-toggles">
         <input type="hidden" name="enabled" value="0"><label class="om-check"><input type="checkbox" name="enabled" value="1" {if $s.enabled}checked{/if}> Synchronizuj wiadomości z {$platform.label|escape}</label>
         {if $code eq 'allegro' or $code eq 'empik' or $code eq 'mediamarkt' or $code eq 'morele' or $code eq 'prestashop'}<input type="hidden" name="sync_messages" value="0"><label class="om-check"><input type="checkbox" name="sync_messages" value="1" {if $s.sync_messages}checked{/if}> Wiadomości</label>{/if}
-        {if isset($s.sync_notes)}<input type="hidden" name="sync_notes" value="0"><label class="om-check"><input type="checkbox" name="sync_notes" value="1" {if $s.sync_notes}checked{/if}> Uwagi do zamówień</label>{/if}
         {if isset($s.debug_log)}<input type="hidden" name="debug_log" value="0"><label class="om-check"><input type="checkbox" name="debug_log" value="1" {if $s.debug_log}checked{/if}> Log diagnostyczny</label>{/if}
         {if $code eq 'erli'}<input type="hidden" name="sync_returns" value="0"><label class="om-check"><input type="checkbox" name="sync_returns" value="1" {if $s.sync_returns}checked{/if}> Zwroty</label>{/if}
         {if $code eq 'allegro'}

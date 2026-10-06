@@ -136,6 +136,7 @@
 .sc-docs-series-footer { display:flex; align-items:center; justify-content:space-between; gap:15px; padding-top:15px; border-top:1px solid var(--doc-line); }
 .sc-docs-series-footer span { color:#8794a9; font-size:10px; }
 .sc-docs .om-series-delete { margin-top:17px; padding-top:14px; border-top:1px solid #edf0f5; }
+.sc-docs .sc-docs-series-actions { gap:8px; flex-wrap:wrap; }
 .sc-docs .om-docs-add-series { margin-top:17px; padding:0; border:1px dashed #c9cde8; border-radius:11px; background:#f8f9ff; scroll-margin-top:20px; }
 .sc-docs .om-docs-add-series>summary { padding:15px 17px; color:#6a60bd; font-size:12px; font-weight:700; cursor:pointer; }
 .sc-docs .sc-docs-new-form { padding:20px; border-top:1px solid #e3e5f4; background:#fcfdff; }

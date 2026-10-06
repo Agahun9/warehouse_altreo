@@ -123,20 +123,20 @@ final class MoreleService extends MarketplaceIntegration
     }
 
     /** Statusy zamówienia Morele: 1 nowe, 2 w realizacji, 3 wysłane, 4 zrealizowane, 5 kosz. */
-    private const STATUS_SENT = 3;
+    private const STATUS_COMPLETED = 4;
     private const STATUS_TRASH = 5;
 
     /** Linki śledzenia według kodów z OrderMarketplaceShipmentService::carrierOptions(). */
     private const TRACKING_URLS = ['inpost' => 'https://inpost.pl/sledzenie-przesylek?number=', 'dpd' => 'https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1=', 'gls' => 'https://gls-group.com/PL/pl/sledzenie-paczek?match=', 'dhl' => 'https://www.dhl.com/pl-pl/home/sledzenie-przesylek.html?tracking-id=', 'ups' => 'https://www.ups.com/track?tracknum=', 'fedex' => 'https://www.fedex.com/fedextrack/?trknbr=', 'orlen' => 'https://www.orlenpaczka.pl/sledz-paczke/?numer=', 'pocztex' => 'https://emonitoring.poczta-polska.pl/?numer='];
 
     /**
-     * Numer przesyłki: POST /order/waybill, potem status „wysłane”: POST /order {order_id, status}.
+     * Numer przesyłki: POST /order/waybill, potem status „zrealizowane”: POST /order {order_id, status}.
      * Przykłady ze specyfikacji GET /v1/docs nie działają: serwer zamienia klucze na camelCase i odrzuca nieznane
      * pola („Field waybill not found!”, „Field trackingNumber not found!” – także tracking_number w POST /order).
      * W /order/waybill rozpoznaje waybill_number (jak GET /orders), ale sam numer kończy się „Wrong input data!”.
      * Dlatego dokładamy kolejne pola-kandydatów (link śledzenia, przewoźnik, status): „Field … not found!” = pola
      * nie ma, więc je pomijamy; inna odpowiedź = pole istnieje, zostaje w treści. Odrzucone żądania nic nie zapisują.
-     * Przyjęcie potwierdzamy odczytem waybill_number z GET /orders. Statusu zrealizowanego (4) nie obniżamy.
+     * Przyjęcie potwierdzamy odczytem waybill_number z GET /orders. Zamówienia już zrealizowanego (4) nie przestawiamy.
      */
     public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
     {
@@ -145,13 +145,14 @@ final class MoreleService extends MarketplaceIntegration
         $id = ctype_digit($orderId) ? (int) $orderId : $orderId;
         $before = $this->orderState($account, $id);
         if ($before !== null && $before['status'] >= self::STATUS_TRASH) { throw new RuntimeException('Morele: zamówienie '.$orderId.' jest w koszu – nie można przekazać numeru przesyłki.'); }
-        $status = max(self::STATUS_SENT, $before['status'] ?? 0);
-        if ($before !== null && $before['waybill'] === $tracking && $before['status'] >= self::STATUS_SENT) { return; }
+        $status = self::STATUS_COMPLETED;
+        $completed = $before !== null && $before['status'] >= self::STATUS_COMPLETED;
+        if ($completed && $before['waybill'] === $tracking) { return; }
 
         $error = $this->sendWaybill($account, $id, $tracking, $carrierCode, $carrierName, $status);
-        $response = $this->send($account, '/order', ['order_id' => $id, 'status' => $status]);
-        if ($error !== null) { throw new RuntimeException('Morele nie przyjęło numeru przesyłki (POST /order/waybill) – '.$error.($response['ok'] ? '. Status „wysłane” ustawiony.' : '')); }
-        if (!$response['ok']) { throw new RuntimeException('Morele zapisało numer przesyłki '.$tracking.', ale nie zmieniło statusu na „wysłane” (POST /order): '.$response['message']); }
+        $response = $completed ? ['ok' => true, 'message' => ''] : $this->send($account, '/order', ['order_id' => $id, 'status' => $status]);
+        if ($error !== null) { throw new RuntimeException('Morele nie przyjęło numeru przesyłki (POST /order/waybill) – '.$error.($response['ok'] ? '. Status „zrealizowane” ustawiony.' : '')); }
+        if (!$response['ok']) { throw new RuntimeException('Morele zapisało numer przesyłki '.$tracking.', ale nie zmieniło statusu na „zrealizowane” (POST /order): '.$response['message']); }
     }
 
     /** Zapis listu przewozowego; null po potwierdzonym przyjęciu, inaczej opis odpowiedzi Morele. */
@@ -189,6 +190,14 @@ final class MoreleService extends MarketplaceIntegration
             }
         } catch (RuntimeException $e) { /* bez odczytu działamy na statusie „wysłane” i odpowiedzi OK */ }
         return null;
+    }
+
+    /** Statusy Morele: 1 nowe, 2 w realizacji, 3 wysłane, 4 zrealizowane (POST /order). */
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        $orderId = trim($orderId);
+        $response = $this->send($account, '/order', ['order_id' => ctype_digit($orderId) ? (int) $orderId : $orderId, 'status' => (int) $status]);
+        if (!$response['ok']) { throw new RuntimeException('Morele nie zmieniło statusu (POST /order): '.$response['message']); }
     }
 
     /** POST JSON bez wyjątku: ['ok', 'status', 'message']; {"status":"FAILED"} przy 200 też jest błędem. Po 401 token jest odświeżany raz. */

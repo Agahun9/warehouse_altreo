@@ -287,9 +287,32 @@ class ProductChangeLogRepository
             $rows[$index]['summary'] = isset($row['summary']) ? (string) $row['summary'] : '';
             $rows[$index]['actor_display'] = $this->actorDisplay($row);
             $rows[$index]['action_label'] = $this->actionLabel((string) ($row['action'] ?? 'update'));
+            $rows[$index]['salescenter_order'] = $this->salescenterOrder($rows[$index]);
         }
 
         return $rows;
+    }
+
+    /** Zamowienie SalesCenter (webhook subtractstock/addstock) z linkiem do jego karty. */
+    private function salescenterOrder(array $row): array
+    {
+        if (!preg_match('/przez SalesCenter dla zamowienia #(\d+)/', (string) $row['summary'], $matches)) {
+            return array();
+        }
+
+        $orderId = (int) $matches[1];
+        $externalId = '';
+        foreach ($row['changes'] as $change) {
+            if (is_array($change) && ($change['field'] ?? '') === 'sellasist_order') {
+                $externalId = trim((string) ($change['external_id'] ?? ''));
+            }
+        }
+
+        return array(
+            'id' => $orderId,
+            'external_id' => $externalId,
+            'url' => 'salescenter/index.php?controller=orders&id=' . $orderId,
+        );
     }
 
     private function actorDisplay(array $row): string

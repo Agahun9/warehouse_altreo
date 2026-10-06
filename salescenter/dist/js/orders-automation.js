@@ -46,6 +46,33 @@
     if (!window.confirm(`Uruchomić „${option?.textContent || ''}” dla zaznaczonych zamówień (${checked})?${warning}`)) event.preventDefault();
   }));
 
+  /* Multi-select on the rules list: copy several automations at once (copies start paused). */
+  const ruleBulk = document.querySelector('[data-oa-rule-bulk]');
+  if (ruleBulk) {
+    const checks = () => [...document.querySelectorAll('[data-oa-rule-check]')];
+    const visibleChecks = () => checks().filter(box => !box.closest('[hidden]'));
+    const selectAll = ruleBulk.querySelector('[data-oa-rule-select-all]');
+    const counter = ruleBulk.querySelector('[data-oa-rule-selected]');
+    const copyButton = ruleBulk.querySelector('[data-oa-rule-bulk-copy]');
+    const refresh = () => {
+      const selected = checks().filter(box => box.checked).length;
+      const visible = visibleChecks();
+      counter.textContent = selected ? `Zaznaczono: ${selected}` : 'Nic nie zaznaczono';
+      copyButton.disabled = selected === 0;
+      selectAll.checked = visible.length > 0 && visible.every(box => box.checked);
+      selectAll.indeterminate = !selectAll.checked && visible.some(box => box.checked);
+      checks().forEach(box => box.closest('.oa-rule')?.classList.toggle('is-selected', box.checked));
+    };
+    selectAll.addEventListener('change', () => { visibleChecks().forEach(box => { box.checked = selectAll.checked; }); refresh(); });
+    document.addEventListener('change', event => { if (event.target.matches?.('[data-oa-rule-check]')) refresh(); });
+    document.addEventListener('click', event => { if (event.target.closest?.('[data-oa-group-filter] button')) requestAnimationFrame(refresh); });
+    ruleBulk.addEventListener('submit', event => {
+      const selected = checks().filter(box => box.checked).length;
+      if (!selected || !window.confirm(`Skopiować zaznaczone automatyzacje (${selected})? Kopie zostaną utworzone jako wstrzymane.`)) event.preventDefault();
+    });
+    refresh();
+  }
+
   /* User-defined groups only affect presentation; execution order stays visible on every rule. */
   const rulesList = document.querySelector('.oa-rules');
   if (rulesList) {
@@ -223,6 +250,7 @@
     ship_ready: () => ({ name: 'Gotowe do wysyłki → nadaj i drukuj', triggers: ['status'], conditions: [{ field: 'status', op: 'in', value: [statusByName('gotowe', 'wysył')] }, { field: 'has_shipment', op: 'is', value: 'no' }], actions: [{ type: 'create_shipment', params: { carrier_account_id: '0', package: 'auto' } }, { type: 'print_label', params: {} }, { type: 'publish_tracking', params: { carrier: 'auto' } }], options: { stop_on_error: true } }),
     tracking_shipped: () => ({ name: 'Numer w marketplace → Wysłane', triggers: ['tracking_sent'], conditions: [], actions: [{ type: 'set_status', params: { status_id: statusByName('wysłane') } }] }),
     delivered_done: () => ({ name: 'Doręczone → Zakończone', triggers: ['shipment_status'], conditions: [{ field: 'shipment_stage', op: 'in', value: ['delivered'] }], actions: [{ type: 'set_status', params: { status_id: statusByName('zakończ') } }] }),
+    source_cancelled: () => ({ name: 'Anulowane w marketplace → Anulowane', triggers: ['remote_status', 'order_created'], conditions: [{ field: 'remote_status', op: 'contains', value: 'cancel' }, { field: 'remote_status', op: 'contains', value: 'anulow', join: 'or' }], actions: [{ type: 'set_status', params: { status_id: String((catalog.conditions.status?.options || []).find(option => String(option[1]).toLowerCase().includes('anul'))?.[0] ?? '') } }, { type: 'add_tags', params: { tags: 'anulowane' } }, { type: 'add_event', params: { text: 'Zamówienie anulowane w marketplace — nie wysyłać.' } }] }),
     unpaid_reminder: () => ({ name: 'Nieopłacone 48 h → przypomnienie', triggers: ['scheduled'], conditions: [{ field: 'payment_state', op: 'in', value: ['unpaid'] }, { field: 'status', op: 'in', value: [statusByName('nowe')] }], actions: [{ type: 'email_customer', params: { subject: 'Przypomnienie o płatności za zamówienie {numer_zamowienia}', body: 'Dzień dobry {kupujacy},\n\nnie odnotowaliśmy jeszcze płatności {kwota} {waluta} za zamówienie {numer_zamowienia}. Jeśli płatność została już wykonana, prosimy zignorować tę wiadomość.\n\nPozdrawiamy' } }, { type: 'add_tags', params: { tags: 'przypomnienie o płatności' } }], options: { delay: { value: 48, unit: 'hours', from: 'ordered' } } }),
     abroad: () => ({ name: 'Wysyłka za granicę', triggers: ['order_created'], conditions: [{ field: 'country', op: 'not_in', value: ['PL'] }], actions: [{ type: 'add_tags', params: { tags: 'zagranica' } }, { type: 'add_event', params: { text: 'Wysyłka zagraniczna: sprawdź przewoźnika i dokumenty.' } }], options: { run_limit: 'once' } }),
     manual_packed: () => ({ name: 'Spakowane', triggers: ['manual'], conditions: [], actions: [{ type: 'set_status', params: { status_id: statusByName('gotowe', 'wysył') } }, { type: 'add_tags', params: { tags: 'spakowane' } }], options: { button_order: true, button_list: true } }),

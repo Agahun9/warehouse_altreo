@@ -75,6 +75,30 @@ abstract class MiraklIntegration extends MarketplaceIntegration
         $this->api($account, 'PUT', '/api/orders/'.rawurlencode($orderId).'/accept', [], ['order_lines' => $lines]);
     }
 
+    /**
+     * Zmiana stanu zamówienia akcją Mirakl: WAITING_DEBIT = akceptacja (OR21), REFUSED = odrzucenie (OR21),
+     * SHIPPED = potwierdzenie wysyłki (OR24), CANCELED = anulowanie (OR29).
+     */
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        if ($status === 'WAITING_DEBIT') { $this->acceptOrder($account, $raw + ['order_id' => $orderId]); return; }
+        if ($status === 'REFUSED') {
+            $lines = [];
+            foreach ($raw['order_lines'] ?? [] as $line) {
+                $lineId = trim((string) ($line['order_line_id'] ?? $line['id'] ?? ''));
+                if ($lineId !== '') { $lines[] = ['id' => $lineId, 'accepted' => false]; }
+            }
+            if (!$lines) { throw new RuntimeException($this->label().': zamówienie bez pozycji do odrzucenia.'); }
+            $this->api($account, 'PUT', '/api/orders/'.rawurlencode($orderId).'/accept', [], ['order_lines' => $lines]);
+            return;
+        }
+        $actions = ['SHIPPED' => 'ship', 'CANCELED' => 'cancel'];
+        if (!isset($actions[$status])) { throw new RuntimeException($this->label().': nie można ustawić stanu '.$status.'.'); }
+        // OR24/OR29 wymagają pustej treści z Content-Length: 0.
+        [$url, $headers] = $this->endpoint($account, '/api/orders/'.rawurlencode($orderId).'/'.$actions[$status], []);
+        Http::json($this->label(), 'PUT', $url, $headers, '');
+    }
+
     /** OR23 – numer przesyłki z dopasowaniem przewoźnika z listy Mirakl (SH21). */
     public function publishOrderShipment(array $account, string $orderId, string $tracking, string $carrierCode, string $carrierName): void
     {

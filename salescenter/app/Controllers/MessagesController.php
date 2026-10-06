@@ -48,6 +48,7 @@ final class MessagesController extends Controller
         if ($tab === 'inbox' && $threadId > 0) {
             try {
                 $thread = $repo->findThread($threadId);
+                if ($thread['kind'] === 'note') { throw new InvalidArgumentException('Nie znaleziono wątku.'); }
                 if ($canWrite) { $center->opened($thread); $thread = $repo->findThread($threadId); }
                 $messages = array_map(static function (array $message): array { $message['time_label'] = self::local((string) $message['created_at']); return $message; }, $repo->messages($threadId));
                 $thread = self::decorate($thread);
@@ -57,6 +58,7 @@ final class MessagesController extends Controller
         $settings = $repo->settings();
         $platforms = [];
         foreach (MessageRepository::PLATFORMS as $platform => $label) {
+            if (!MessageRepository::KINDS[$platform]) { continue; }
             $connected = array_values(array_filter($accounts, static function (array $account) use ($platform): bool { return $account['platform'] === $platform; }));
             $platforms[$platform] = ['label' => $label, 'kinds' => MessageRepository::KINDS[$platform], 'accounts' => $connected, 'settings' => $settings[$platform]];
         }

@@ -36,7 +36,7 @@
         {assign var=fiscalJob value=$d.fiscal_job|default:null}
         {if $fiscalJob}
           <div class="om-fiscal-help"><i class="bi bi-printer"></i><div><strong>{if $fiscalJob.printer_protocol|default:'' eq 'novitus'}Novitus{else}Posnet{/if} · {$fiscalJob.printer_name|escape} · {if $fiscalJob.status eq 'queued'}Oczekuje na agenta{elseif $fiscalJob.status eq 'processing'}Drukowanie / oczekiwanie na wynik{elseif $fiscalJob.status eq 'printed'}Wydruk potwierdzony przez drukarkę{elseif $fiscalJob.status eq 'printer_offline'}Drukarka offline{else}Błąd druku{/if}</strong><p>{$fiscalJob.status_message|escape}{if $fiscalJob.fiscal_number} · Numer fiskalny: {$fiscalJob.fiscal_number|escape}{/if}{if $fiscalJob.status eq 'printed' && !empty($fiscalJob.reported_at)} · Potwierdzenie: {$fiscalJob.reported_at|pl_time|escape}{/if}</p><a href="?controller=orders&tab=printing">Sprawdź stanowisko i kolejkę druku</a>{if !empty($fiscalJob.retry_allowed)}<p>Ta próba zatrzymała się przed rozpoczęciem transakcji fiskalnej. Nie wystawiła paragonu na drukarce. Popraw stawki A–G przed ponowieniem.</p>{elseif $fiscalJob.status eq 'error' or $fiscalJob.status eq 'printer_offline' or $fiscalJob.status eq 'processing'}<p>Przed ponownym drukiem sprawdź urządzenie — paragon mógł zostać zapisany mimo braku potwierdzenia. Ponowne wysłanie jest zablokowane.</p>{/if}</div></div>
-          {if $canWrite && !empty($fiscalJob.retry_allowed)}<form class="om-top" method="post" action="?controller=orders&action=save" data-confirm-action="Ponowić fiskalny wydruk tego paragonu na tej samej drukarce po poprawieniu stawek VAT? Poprzednia próba zakończyła się przed rozpoczęciem transakcji."><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_remote_retry"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}"><button class="om-btn om-primary om-small" type="submit"><i class="bi bi-arrow-repeat"></i> Ponów druk po poprawieniu stawek</button></form>{/if}
+          {if $canWrite && !empty($fiscalJob.retry_allowed)}<form class="om-top" method="post" action="?controller=orders&action=save" data-confirm-action="Ponowić fiskalny wydruk tego paragonu na tej samej drukarce? Usuń najpierw przyczynę błędu (stawki VAT, menu lub komunikat na drukarce). Poprzednia próba zakończyła się przed rozpoczęciem transakcji."><input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_remote_retry"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}"><button class="om-btn om-primary om-small" type="submit"><i class="bi bi-arrow-repeat"></i> Ponów druk</button></form>{/if}
         {elseif $canWrite}
           <form class="om-form om-top" method="post" action="?controller=orders&action=save" data-confirm-action="Wysłać paragon {$d.number|escape} do wybranej drukarki fiskalnej? Tryb PRODUKCJA fiskalizuje sprzedaż, SANDBOX drukuje niefiskalnie.">
             <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_remote_print"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
@@ -52,28 +52,7 @@
         {if $canWrite}
         {if $d.kind ne 'receipt' or empty($d.fiscal_job)}
         <details class="om-doc-edit"><summary><i class="bi bi-pencil"></i> Edytuj dokument</summary>
-          <form class="om-form om-doc-edit-form" method="post" action="?controller=orders&action=save">
-            <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_update"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
-            <label>Nabywca<textarea name="buyer" required>{$d.buyer|escape}</textarea></label>
-            <label>Dane dostawy<textarea name="recipient">{$d.recipient|default:""|escape}</textarea></label>
-            <label>Dodatkowa informacja<textarea name="additional_info" maxlength="2000" placeholder="Drukowana na dole faktury">{$d.additional_info|default:""|escape}</textarea></label>
-            <fieldset class="om-new-items"><legend>Pozycje</legend>
-              <div class="om-new-items-head"><span>Zmień pozycje dokumentu. Numer i seria pozostają bez zmian.</span><button class="om-btn om-small" type="button" data-doc-add-item><i class="bi bi-plus-lg"></i> Dodaj pozycję</button></div>
-              <div data-doc-items>
-              {foreach $d.items as $i=>$it}
-              <div class="om-doc-item-row">
-                <label>Nazwa<input name="items[{$i}][name]" value="{$it.name|escape}" required><input type="hidden" name="items[{$i}][sku]" value="{$it.sku|escape}"><input type="hidden" name="items[{$i}][ean]" value="{$it.ean|escape}"></label>
-                <label>Ilość<input type="number" min="0" step="1" name="items[{$i}][quantity]" value="{$it.quantity}" required data-doc-qty></label>
-                <label>Cena brutto<input inputmode="decimal" name="items[{$i}][price]" value="{$it.price}" required data-doc-price></label>
-                <label>VAT<select name="items[{$i}][vat]">{foreach ['23','8','7','5','0','zw','np'] as $v}<option value="{$v}" {if $it.vat eq $v}selected{/if}>{$v}{if $v ne 'zw' and $v ne 'np'}%{/if}</option>{/foreach}</select></label>
-                <strong data-doc-line-total>{$it.price} PLN</strong>
-                <button class="om-icon-btn" type="button" data-doc-remove-item aria-label="Usuń pozycję"><i class="bi bi-trash"></i></button>
-              </div>
-              {/foreach}
-              </div>
-            </fieldset>
-            <button class="om-btn om-primary om-small">Zapisz zmiany w dokumencie</button>
-          </form>
+          {include file='orders/document_edit_form.tpl' doc=$d editTab='documents' editOrderId=0 inDialog=false}
         </details>
         {if !$d.has_correction}<form method="post" action="?controller=orders&action=save" class="om-doc-delete" {if !$d.has_correction}data-double-confirm="Usunąć dokument {$d.number|escape}? Tej operacji nie można cofnąć.||Potwierdź jeszcze raz: dokument {$d.number|escape} zostanie trwale usunięty."{/if}>
           <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="document_delete"><input type="hidden" name="tab" value="documents"><input type="hidden" name="document_id" value="{$d.id}">
@@ -111,11 +90,19 @@
           {if $s.document_count}<small class="om-muted sc-docs-series-note">Wystawiono już dokumenty w tej serii. Jej rodzaj oraz wcześniejsze numery są zachowane.</small>{/if}
           <div class="sc-docs-series-footer"><span>Ustawienia dotyczą nowych dokumentów.</span>{if $canWrite}<button class="om-btn om-primary" type="submit"><i class="bi bi-check2"></i> Zapisz ustawienia serii</button>{/if}</div>
         </form>
-        {if $canWrite and !$s.document_count}
-        <form class="om-series-delete" method="post" action="?controller=orders&action=save" {if !$s.document_count}data-confirm-action="Usunąć serię „{$s.name|escape}”? Tej operacji nie można cofnąć."{/if}>
+        {if $canWrite}
+        <div class="om-series-delete sc-docs-series-actions">
+        <form method="post" action="?controller=orders&action=save">
+          <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_copy"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
+          <button class="om-btn om-small" type="submit"><i class="bi bi-copy"></i> Kopiuj serię</button>
+        </form>
+        {if !$s.document_count}
+        <form method="post" action="?controller=orders&action=save" data-confirm-action="Usunąć serię „{$s.name|escape}”? Tej operacji nie można cofnąć.">
           <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="series_delete"><input type="hidden" name="tab" value="documents"><input type="hidden" name="series_id" value="{$s.id}">
           <button class="om-btn om-small om-danger-outline" type="submit"><i class="bi bi-trash"></i> Usuń pustą serię</button>
         </form>
+        {/if}
+        </div>
         {/if}
       </div>
     </details>

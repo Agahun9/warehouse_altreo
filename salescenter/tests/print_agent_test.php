@@ -199,8 +199,11 @@ printCheck(strpos($html,'stanowisko wyłączone')!==false && strpos($html,'value
 // Only the exact pre-transaction VAT mismatch may be retried.
 $vatError='Stawka VAT C w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G.';
 printCheck(PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>$vatError,'fiscal_number'=>null]),'Legacy VAT mismatch is known to precede trinit');
+printCheck(PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>$vatError.' Drukarka: C=„8.00”, SalesCenter: C=5.','fiscal_number'=>null]),'VAT mismatch with diagnostic suffix can be retried');
 foreach (['printed','queued','processing','printer_offline'] as $status) { printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>$status,'status_message'=>$vatError]),'Retry rejected for status '.$status); }
 printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>'Połączenie zamknięte']), 'Unknown finalization result cannot be retried');
+printCheck(PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>'Drukarka Novitus nie jest gotowa (menu, komunikat lub raport w toku).','fiscal_number'=>null]),'Novitus not-ready error precedes the receipt and can be retried');
+printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>'Drukarka Novitus nie potwierdziła zakończenia paragonu. Sprawdź wydruk i raport urządzenia przed ponowieniem.']),'Unconfirmed Novitus receipt cannot be retried');
 printCheck(!PrintAgentRepository::fiscalRetryAllowed(['status'=>'error','status_message'=>$vatError,'fiscal_number'=>'123']), 'Known fiscal number blocks retry');
 $retryJob=$repository->nextFiscalJob((int)$station['id'],'sandbox');
 $repository->reportFiscal((int)$station['id'],$retryJob['id'],'error',$vatError,null);

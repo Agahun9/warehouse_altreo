@@ -7,24 +7,43 @@ namespace AltreoPrintAgent.Tests;
 
 public sealed class NovitusTests
 {
+    // Odpowiedzi jak z Novitus Point: <stawka> w „urzadzenie” to sumy sprzedaży, procenty są tylko w <stawki_ptu>.
     private const string DeviceInfo = "<pakiet><informacja akcja=\"urzadzenie\" typ=\"paragon\" ostatni_blad=\"0\" zafiskalizowana=\"tak\" otwarta_transakcja=\"nie\" numer_ostatniego_paragonu=\"41\">"
-        + "<stawka nazwa=\"A\">23.00</stawka><stawka nazwa=\"B\">8.00</stawka><stawka nazwa=\"C\">5.00</stawka><stawka nazwa=\"D\">0.00</stawka><stawka nazwa=\"E\">wolny</stawka>"
+        + "<stawka nazwa=\"A\">0.00</stawka><stawka nazwa=\"B\">0.00</stawka><stawka nazwa=\"C\">0.00</stawka><stawka nazwa=\"D\">0.00</stawka><stawka nazwa=\"E\">0.00</stawka>"
         + "</informacja></pakiet>";
+    private const string PtuRates = "<pakiet crc=\"99D7F44A\"><stawki_ptu akcja=\"odczytaj\">\n <stawka nazwa=\"A\">23.00%</stawka>\n <stawka nazwa=\"B\">8.00%</stawka>\n <stawka nazwa=\"C\">5.00%</stawka>\n <stawka nazwa=\"D\">0.00%</stawka>\n <stawka nazwa=\"E\">wolny</stawka>\n</stawki_ptu>\n</pakiet>";
     private static readonly Dictionary<string,string> Rates = new() { ["A"]="23",["B"]="8",["C"]="5",["D"]="0",["E"]="zw",["F"]="nieaktywna",["G"]="nieaktywna" };
 
     [Fact]
     public void VatRatesMapToLettersAndMissingLettersAreInactive()
     {
-        var rates = NovitusClient.ParseVatRates(DeviceInfo, Rates);
+        var rates = NovitusClient.ParseVatRates(PtuRates, Rates);
         Assert.Equal("A", rates["23"]); Assert.Equal("B", rates["8"]); Assert.Equal("C", rates["5"]);
         Assert.Equal("D", rates["0"]); Assert.Equal("E", rates["zw"]); Assert.False(rates.ContainsKey("7"));
     }
 
     [Fact]
+    public void SalesTotalsFromDeviceInfoAreNotTreatedAsVatRates()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => NovitusClient.ParseVatRates(DeviceInfo, Rates));
+        Assert.StartsWith("Stawka VAT A w drukarce różni się", exception.Message);
+    }
+
+    [Fact]
     public void VatMismatchUsesTheRetryableMessage()
     {
-        var exception = Assert.Throws<InvalidOperationException>(() => NovitusClient.ParseVatRates(DeviceInfo.Replace(">8.00<", ">7.00<"), Rates));
-        Assert.Equal("Stawka VAT B w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G.", exception.Message);
+        var exception = Assert.Throws<InvalidOperationException>(() => NovitusClient.ParseVatRates(PtuRates.Replace(">8.00%<", ">7.00%<"), Rates));
+        Assert.Equal("Stawka VAT B w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G. Drukarka: B=„7.00%”, SalesCenter: B=8.", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("<stawka nazwa=\"A\">23,00 %</stawka><stawka nazwa=\"B\">8%</stawka><stawka nazwa=\"C\">5.00</stawka><stawka nazwa=\"D\">0</stawka><stawka nazwa=\"E\">zw.</stawka><stawka nazwa=\"F\"></stawka><stawka nazwa=\"G\">-</stawka>")]
+    [InlineData("<stawka nazwa=\"A\" wartosc=\"23.00\"/><stawka nazwa=\"B\" wartosc=\"8.00\"/><stawka nazwa=\"C\" wartosc=\"5.00\"/><stawka nazwa=\"D\" wartosc=\"0.00\"/><stawka nazwa=\"E\" wartosc=\"zwolniona\"/>")]
+    [InlineData("<stawka typ=\"ptu\" nazwa=\"A\">23.00</stawka><stawka typ=\"ptu\" nazwa=\"B\">8.00</stawka><stawka typ=\"ptu\" nazwa=\"C\">5.00</stawka><stawka typ=\"ptu\" nazwa=\"D\">0.00</stawka><stawka typ=\"ptu\" nazwa=\"E\">wolna</stawka>")]
+    public void VatRateFormatVariantsAreAccepted(string rates)
+    {
+        var parsed = NovitusClient.ParseVatRates("<pakiet><informacja akcja=\"urzadzenie\">" + rates + "</informacja></pakiet>", Rates);
+        Assert.Equal("A", parsed["23"]); Assert.Equal("E", parsed["zw"]);
     }
 
     [Fact]
@@ -92,7 +111,7 @@ public sealed class NovitusTests
     [Fact]
     public async Task VatMismatchDoesNotOpenReceipt()
     {
-        var run = await RunAsync(Scenario.Success, DeviceInfo.Replace(">8.00<", ">7.00<"));
+        var run = await RunAsync(Scenario.Success, PtuRates.Replace(">8.00%<", ">7.00%<"));
         Assert.Equal(JobStatuses.Error, run.Result.Status);
         Assert.DoesNotContain(run.Packets, packet => packet.Contains("<paragon"));
     }
@@ -124,7 +143,7 @@ public sealed class NovitusTests
         new("test", "POS/1", environment, "novitus:loopback", "Emulator Novitus", "127.0.0.1", port, null, receipt, FiscalProtocols.Novitus);
 
     // Wyłącznie emulacja na loopbacku: bez prawdziwego urządzenia, bazy i sprzedaży.
-    private static async Task<Run> RunAsync(Scenario scenario, string deviceInfo = DeviceInfo, string environment = "production")
+    private static async Task<Run> RunAsync(Scenario scenario, string ptuRates = PtuRates, string environment = "production")
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var encoding = Encoding.GetEncoding(1250);
@@ -151,7 +170,8 @@ public sealed class NovitusTests
                     string? reply = null;
                     if (packet.Contains("<dle_pl")) reply = "<dle_pl online=\"tak\" brak_papieru=\"nie\" blad_urzadzenia=\"nie\" />";
                     else if (packet.Contains("<enq_pl")) reply = $"<enq_pl fiskalna=\"tak\" ostatni_rozkaz_ok=\"{(lastOk ? "tak" : "nie")}\" tryb_transakcji=\"{(open ? "tak" : "nie")}\" ostatnia_transakcja_ok=\"tak\" />";
-                    else if (packet.Contains("akcja=\"urzadzenie\"")) { await stream.WriteAsync(encoding.GetBytes(deviceInfo), timeout.Token); continue; }
+                    else if (packet.Contains("akcja=\"urzadzenie\"")) { await stream.WriteAsync(encoding.GetBytes(DeviceInfo), timeout.Token); continue; }
+                    else if (packet.Contains("<stawki_ptu akcja=\"odczytaj\"")) { await stream.WriteAsync(encoding.GetBytes(ptuRates), timeout.Token); continue; }
                     else if (packet.Contains("akcja=\"ostatnia_transakcja\"")) reply = $"<informacja akcja=\"ostatnia_transakcja\" typ=\"paragon\" stan=\"zamknij\" numer=\"{lastNumber}\" data=\"02-10-2026 09:{lastNumber:00}\" />";
                     else if (packet.Contains("<blad akcja=\"odczytaj\"")) reply = $"<blad akcja=\"odczytaj\" wartosc=\"{lastError}\" />";
                     else

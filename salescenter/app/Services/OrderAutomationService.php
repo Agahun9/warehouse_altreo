@@ -153,6 +153,7 @@ final class OrderAutomationService
             'email_address'=>['label'=>'Wyślij e-mail na adres','group'=>'Komunikacja','icon'=>'bi-envelope-at','params'=>array_merge([['key'=>'to','label'=>'Adres e-mail','type'=>'email','required'=>true,'max'=>200,'placeholder'=>'magazyn@firma.pl']],$mail)],
             'webhook'=>['label'=>'Wywołaj webhook (POST JSON)','group'=>'Komunikacja','icon'=>'bi-broadcast-pin','hint'=>'Wysyła dane zamówienia bez surowej odpowiedzi marketplace. Tylko publiczne adresy HTTPS. {id_order} w adresie zamienia się na ID zamówienia. Odpowiedź JSON {"notes":["…"]} zapisuje notatki w zamówieniu (ponowne wywołanie je zastępuje).','params'=>[['key'=>'url','label'=>'Adres HTTPS','type'=>'url','required'=>true,'max'=>500,'placeholder'=>'https://…']]],
             'accept_order'=>['label'=>'Zaakceptuj zamówienie (Empik / MediaMarkt)','group'=>'Marketplace','icon'=>'bi-check2-circle','hint'=>'Mirakl OR21 — tylko dla zamówień oczekujących na akceptację.','params'=>[]],
+            'allegro_refund_claim'=>['label'=>'Wystąp o zwrot prowizji (Allegro)','group'=>'Marketplace','icon'=>'bi-cash-stack','hint'=>'Wniosek dla każdej pozycji zamówienia Allegro. Pozycje z istniejącym wnioskiem są pomijane, inne kanały – pominięte. Allegro może odrzucić wniosek złożony zbyt wcześnie po zakupie; wtedy użyj wyzwalacza „Upływ czasu”.','params'=>[]],
             'run_rule'=>['label'=>'Uruchom inną automatyzację','group'=>'Sterowanie','icon'=>'bi-diagram-3','hint'=>'Warunki tamtej automatyzacji są sprawdzane.','params'=>[['key'=>'rule_id','label'=>'Automatyzacja','type'=>'select','options'=>'rules','required'=>true]]],
             'stop'=>['label'=>'Zatrzymaj kolejne automatyzacje','group'=>'Sterowanie','icon'=>'bi-sign-stop','hint'=>'Pozostałe reguły tego zdarzenia nie zostaną sprawdzone.','params'=>[]],
         ];
@@ -626,7 +627,7 @@ final class OrderAutomationService
         $delay=$rule['options']['delay']??null;
         $units=['minutes'=>'min','hours'=>'godz.','days'=>'dni'];
         $rule['delay_label']=is_array($delay)?'Po '.$delay['value'].' '.($units[$delay['unit']]??'').' od '.(self::DELAY_FROM[$delay['from']]??''):'';
-        $rule['has_costly_action']=(bool)array_intersect(array_column($rule['actions'],'type'),['create_shipment','email_customer','email_address','webhook','issue_receipt','issue_invoice','issue_preferred','publish_tracking','accept_order']);
+        $rule['has_costly_action']=(bool)array_intersect(array_column($rule['actions'],'type'),['create_shipment','email_customer','email_address','webhook','issue_receipt','issue_invoice','issue_preferred','publish_tracking','accept_order','allegro_refund_claim']);
         return $rule;
     }
 
@@ -1283,6 +1284,8 @@ final class OrderAutomationService
                 return $ok('Webhook odpowiedział HTTP '.$response['status'].', zapisano notatki: '.$added);
             case 'accept_order':
                 return $this->acceptOrder($order,$actor);
+            case 'allegro_refund_claim':
+                return (new OrderRefundClaimService($this->repo))->request($orderId,$actor);
             case 'run_rule':
                 $target=$this->rule((int)$params['rule_id']);
                 if (!$target || !$target['enabled']) { return $skip('Wskazana automatyzacja jest wstrzymana lub usunięta'); }

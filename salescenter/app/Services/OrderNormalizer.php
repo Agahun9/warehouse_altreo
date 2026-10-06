@@ -130,6 +130,8 @@ final class OrderNormalizer
             $paid = !$cashOnDelivery
                 && isset($raw['payment']['finishedAt'])
                 && $status === 'READY_FOR_PROCESSING';
+            // Opłacone zamówienie: status realizacji z panelu Allegro (Nowe, W realizacji, Wysłane…).
+            if ($status === 'READY_FOR_PROCESSING') { $status = (string) ($raw['fulfillment']['status'] ?? '') ?: 'NEW'; }
             $items = [];
             foreach ($raw['lineItems'] ?? [] as $item) {
                 $items[] = ['name' => $item['offer']['name'] ?? '', 'sku' => $item['offer']['external']['id'] ?? '', 'offer_id'=>(string)($item['offer']['id']??''), 'quantity' => (int) ($item['quantity'] ?? 1), 'unit_cents' => self::money($item['price']['amount'] ?? '0'), 'vat' => null, 'image_url'=>self::imageUrl($item)];
@@ -145,6 +147,9 @@ final class OrderNormalizer
             $invoice = $buyer['invoiceAddress'] ?? $address;
             $id = $raw['id'] ?? '';
             $status = $raw['status'] ?? 'unknown';
+            // Opłacone zamówienie: status realizacji u sprzedawcy (sellerStatus), ustawiany też przez SalesCenter.
+            $sellerStatus = trim((string) ($raw['sellerStatus'] ?? ''));
+            if ($status === 'purchased' && $sellerStatus !== '' && $sellerStatus !== 'unknown') { $status = $sellerStatus; }
             $total = (int) ($raw['totalPrice'] ?? 0);
             $currency = $raw['currency'] ?? 'PLN';
             $cashOnDelivery = self::cashOnDelivery($raw,(string)($raw['delivery']['name']??''));

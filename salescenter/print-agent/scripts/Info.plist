@@ -6,8 +6,8 @@
   <key>CFBundleIdentifier</key><string>pl.altreo.printagent</string>
   <key>CFBundleName</key><string>Altreo Print Agent</string>
   <key>CFBundleDisplayName</key><string>Altreo Print Agent</string>
-  <key>CFBundleVersion</key><string>1.2.1</string>
-  <key>CFBundleShortVersionString</key><string>1.2.1</string>
+  <key>CFBundleVersion</key><string>1.2.3</string>
+  <key>CFBundleShortVersionString</key><string>1.2.3</string>
   <key>NSLocalNetworkUsageDescription</key><string>Agent łączy się z drukarkami fiskalnymi Posnet i Novitus w sieci lokalnej, aby drukować paragony.</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>

@@ -215,7 +215,26 @@ final class OrderShipmentService
         $this->repo->event($orderId,'Utworzono przesyłkę przez '.$carrier['name'].'; status: '.$state,$actor);
         $this->repo->automationEvent($orderId,'shipment_created',['shipment_id'=>$id,'carrier_account_id'=>$carrierAccountId]);
         $this->publishToSource($id,$actor);
+        $this->quickRefresh($id,$actor);
         return $id;
+    }
+
+    /** Opóźnienia (s) prób dociągnięcia numeru zaraz po nadaniu; testy ustawiają []/[0]. */
+    public static $quickRefreshDelays=[3,4,5];
+    /** Łączny czas czekania na numery w jednym żądaniu – przy masowym nadawaniu resztę dociąga cron po minucie. */
+    private const QUICK_REFRESH_BUDGET=20;
+    private static $quickRefreshSpent=0;
+    /** Operator nadaje asynchronicznie (np. Wysyłam z Allegro) – kilka sekund po utworzeniu sprawdza, czy jest już numer. */
+    private function quickRefresh(int $shipmentId,string $actor): void
+    {
+        $db=$this->repo->db();
+        foreach (self::$quickRefreshDelays as $delay) {
+            if (strpos((string)$db->fetchColumn('SELECT tracking FROM om_shipments WHERE id=:id',['id'=>$shipmentId]),'PENDING:')!==0) { return; }
+            if ($db->pdo()->inTransaction() || self::$quickRefreshSpent+$delay>self::QUICK_REFRESH_BUDGET) { return; }
+            if ($delay>0) { sleep($delay); } self::$quickRefreshSpent+=$delay;
+            try { $this->refresh($shipmentId,$actor,true); }
+            catch (\Throwable $e) { OrderSyncError::log($e,['stage'=>'shipment_quick_refresh','shipment_id'=>$shipmentId]); return; }
+        }
     }
 
     public function valuation(int $orderId,int $carrierAccountId,array $input): array
@@ -232,8 +251,10 @@ final class OrderShipmentService
         return $provider->pickupSlots($carrier,$order,$input);
     }
 
-    /** Cron: po utworzeniu odświeża po 5/10/15/20 min, potem co 8 h (3× dziennie) aż do doręczenia/zwrotu, maks. 30 dni. */
-    private const AFTER_CREATE_MINUTES=[5,10,15,20];
+    /** Cron: po utworzeniu odświeża po 1/3/5/10/20 min, potem 3× dziennie o stałych godzinach aż do doręczenia/zwrotu, maks. 30 dni. */
+    private const AFTER_CREATE_MINUTES=[1,3,5,10,20];
+    /** Godziny (czas polski) odświeżania wszystkich aktywnych przesyłek. */
+    private const DAILY_REFRESH_HOURS=[8,13,18];
     public function refreshDue(int $limit=20,int $seconds=20): array
     {
         $db=$this->repo->db(); $started=microtime(true); $report=['refreshed'=>0,'errors'=>0];
@@ -259,8 +280,19 @@ final class OrderShipmentService
         $finished=self::isCancelled($state) || $state==='ERROR' || in_array(self::statusLabel($remote,$provider)[1],['delivered','returned','cancelled'],true);
         if ($finished || $provider==='' || $now-$created>30*86400) { return ['refresh_due_at'=>null,'refresh_step'=>$step]; }
         if ($step<count(self::AFTER_CREATE_MINUTES)) { $due=max($now+60,$created+self::AFTER_CREATE_MINUTES[$step]*60); }
-        else { $due=$now+(strpos((string)$shipment['tracking'],'PENDING:')===0?3600:8*3600); }
+        else { $due=strpos((string)$shipment['tracking'],'PENDING:')===0?$now+3600:self::nextDailySlot($now); }
         return ['refresh_due_at'=>gmdate('Y-m-d H:i:s',$due),'refresh_step'=>$step];
+    }
+    private static function nextDailySlot(int $now): int
+    {
+        $day=(new \DateTimeImmutable('@'.$now))->setTimezone(new \DateTimeZone('Europe/Warsaw'));
+        for ($offset=0;$offset<2;$offset++) {
+            foreach (self::DAILY_REFRESH_HOURS as $hour) {
+                $slot=$day->modify('+'.$offset.' day')->setTime($hour,0)->getTimestamp();
+                if ($slot>$now+60) { return $slot; }
+            }
+        }
+        return $now+8*3600;
     }
 
     public function refresh(int $shipmentId,string $actor,bool $quiet=false): void

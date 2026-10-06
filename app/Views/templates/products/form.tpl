@@ -1131,6 +1131,12 @@
                               <span class="small text-secondary">{$historyEntry.created_at|escape}</span>
                             </div>
                             <div class="small fw-semibold mb-1">{$historyEntry.actor_display|escape}</div>
+                            {if $historyEntry.salescenter_order|default:false}
+                              <div class="small mb-1">
+                                <a href="{$historyEntry.salescenter_order.url|escape}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Zamowienie SalesCenter #{$historyEntry.salescenter_order.id}</a>
+                                {if $historyEntry.salescenter_order.external_id}<span class="text-secondary ms-1">({$historyEntry.salescenter_order.external_id|escape})</span>{/if}
+                              </div>
+                            {/if}
                             <div class="small text-secondary mb-2">{$historyEntry.summary|default:'Zapisano zmiany.'|escape}</div>
                             {if $historyEntry.changes}
                               <div class="small">

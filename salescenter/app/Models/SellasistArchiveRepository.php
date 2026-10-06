@@ -19,7 +19,12 @@ final class SellasistArchiveRepository
         'correct' => 'Faktura korygująca',
         'receipt' => 'Paragon',
         'receipt_correct' => 'Korekta paragonu',
+        'proforma' => 'Proforma',
+        'bill' => 'Rachunek',
     ];
+
+    /** Dokumenty z modułu „Dokumenty operacyjne” (/operationdocuments) mają własne ID, więc zapisujemy je jako op_<rodzaj>. */
+    public const OPERATION_PREFIX = 'op_';
 
     public const PER_PAGE = 50;
 
@@ -53,10 +58,35 @@ final class SellasistArchiveRepository
             }
         }
         $this->backfillPickupTracking();
-        if (!$this->settingValue('sellasist_archive_receipts_v1')) {
-            $this->syncReceiptNumbers();
-            $this->saveSettingValue('sellasist_archive_receipts_v1', ['done' => gmdate('Y-m-d H:i:s')]);
+        if (!$this->settingValue('sellasist_archive_receipts_v2')) {
+            $this->restoreReceiptNumbers();
+            $this->saveSettingValue('sellasist_archive_receipts_v2', ['done' => gmdate('Y-m-d H:i:s')]);
         }
+    }
+
+    /** Rodzaj bez prefiksu modułu operacyjnego (op_receipt → receipt). */
+    public static function baseKind(string $kind): string
+    {
+        return strpos($kind, self::OPERATION_PREFIX) === 0 ? substr($kind, strlen(self::OPERATION_PREFIX)) : $kind;
+    }
+
+    /**
+     * Jednorazowo przywraca numery paragonów z zapisanych szczegółów. Wcześniejsza wersja nadpisywała je
+     * numerem dokumentu z zamówienia, co przy zamówieniach z paragonem z nowego modułu (PA/…) dawało cudzy numer.
+     */
+    private function restoreReceiptNumbers(): void
+    {
+        $lastId = 0;
+        do {
+            $rows = $this->db->fetchAll("SELECT id,number,detail_json FROM om_archive_documents WHERE id>:last AND kind='receipt' AND detail_state=1 ORDER BY id LIMIT 500", ['last' => $lastId]);
+            foreach ($rows as $r) {
+                $lastId = (int) $r['id'];
+                $detail = json_decode((string) $r['detail_json'], true);
+                if (!is_array($detail)) { continue; }
+                $row = self::documentRow('receipt', $detail);
+                if ($row['number'] !== '' && $row['number'] !== $r['number']) { $this->db->update('om_archive_documents', ['number' => $row['number'], 'search_text' => $row['search_text']], 'id=:id', ['id' => $r['id']]); }
+            }
+        } while (count($rows) === 500);
     }
 
     /** Jednorazowo uzupełnia nr nadania z pickup_code w już zaimportowanych zamówieniach (z zapisanych szczegółów). */
@@ -129,13 +159,16 @@ final class SellasistArchiveRepository
     public function upsertDocument(string $kind, array $document, bool $detail): void
     {
         $remoteId = (int) ($document['id'] ?? 0);
-        if ($remoteId < 1 || !isset(self::DOC_KINDS[$kind])) { return; }
+        if ($remoteId < 1 || !isset(self::DOC_KINDS[self::baseKind($kind)])) { return; }
         $now = gmdate('Y-m-d H:i:s');
-        $existing = $this->db->fetch('SELECT id,detail_state FROM om_archive_documents WHERE kind=:k AND remote_id=:r', ['k' => $kind, 'r' => $remoteId]);
+        // Dokument operacyjny identyfikuje samo ID – rodzaj może się doprecyzować po pobraniu szczegółów (np. korekta paragonu).
+        $existing = self::baseKind($kind) !== $kind
+            ? $this->db->fetch("SELECT id,detail_state FROM om_archive_documents WHERE kind LIKE 'op!_%' ESCAPE '!' AND remote_id=:r", ['r' => $remoteId])
+            : $this->db->fetch('SELECT id,detail_state FROM om_archive_documents WHERE kind=:k AND remote_id=:r', ['k' => $kind, 'r' => $remoteId]);
         if ($existing && !$detail && (int) $existing['detail_state'] === 1) { return; }
         $row = self::documentRow($kind, $document);
         $row['updated_at'] = $now;
-        if ($detail) { $row['detail_json'] = OrderRepository::json($document); $row['detail_state'] = 1; }
+        if ($detail) { $row['detail_json'] = OrderRepository::json($document); $row['detail_state'] = 1; $row['kind'] = $kind; }
         if ($existing) {
             $this->db->update('om_archive_documents', $row, 'id=:id', ['id' => $existing['id']]);
         } else {
@@ -143,20 +176,9 @@ final class SellasistArchiveRepository
         }
     }
 
-    /**
-     * Sellasist zwraca w paragonie własny numer (np. P21299/10/2025); właściwy numer paragonu (PA/946/08/2026)
-     * jest w document_number zamówienia. Pomijamy zamówienia z fakturą – tam document_number to numer faktury.
-     */
-    public function syncReceiptNumbers(): int
+    public function hasDocument(string $kind, int $remoteId): bool
     {
-        $rows = $this->db->fetchAll("SELECT d.id,d.search_text,o.document_number FROM om_archive_documents d JOIN om_archive_orders o ON o.sellasist_id=d.order_remote_id
-            WHERE d.kind='receipt' AND d.order_remote_id>0 AND o.document_number<>'' AND o.document_number<>d.number
-            AND NOT EXISTS (SELECT 1 FROM om_archive_documents i WHERE i.order_remote_id=d.order_remote_id AND i.kind IN ('invoice','correct'))");
-        foreach ($rows as $r) {
-            $number = self::cut((string) $r['document_number'], 190);
-            $this->db->update('om_archive_documents', ['number' => $number, 'search_text' => mb_substr($r['search_text'].' | '.mb_strtolower($number, 'UTF-8'), 0, 20000, 'UTF-8')], 'id=:id', ['id' => $r['id']]);
-        }
-        return count($rows);
+        return (bool) $this->db->fetchColumn('SELECT 1 FROM om_archive_documents WHERE kind=:k AND remote_id=:r', ['k' => $kind, 'r' => $remoteId]);
     }
 
     public function markDocumentDetail(string $kind, int $remoteId, int $state): void
@@ -261,6 +283,7 @@ final class SellasistArchiveRepository
 
     public static function documentRow(string $kind, array $d): array
     {
+        if (self::baseKind($kind) !== $kind) { return self::operationDocumentRow($d); }
         $buyer = is_array($d['buyer'] ?? null) ? $d['buyer'] : [];
         $number = self::str($d['number'] ?? '') ?: self::str($d['receipt_correct_number'] ?? '');
         $related = '';
@@ -289,6 +312,38 @@ final class SellasistArchiveRepository
         return $row;
     }
 
+    /** Dokument z /operationdocuments: nabywca w buyer_address, pozycje w products (price_gross = wartość pozycji). */
+    private static function operationDocumentRow(array $d): array
+    {
+        $buyer = is_array($d['buyer_address'] ?? null) ? $d['buyer_address'] : [];
+        $name = self::str($buyer['company_name'] ?? '') ?: trim(self::str($buyer['name'] ?? '').' '.self::str($buyer['surname'] ?? ''));
+        $nip = self::str($buyer['company_nip'] ?? '');
+        if (trim($nip, '0') === '') { $nip = ''; }
+        $related = self::str($d['original_document_number'] ?? '');
+        if ($related === '' && !empty($d['main_document_id'])) { $related = 'dok. id '.(int) $d['main_document_id']; }
+        $currency = strtoupper(self::str($d['currency'] ?? ''));
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) { $currency = 'PLN'; }
+        $total = $d['total'] ?? null;
+        if ($total === null && is_array($d['products'] ?? null)) {
+            $total = 0.0;
+            foreach ($d['products'] as $line) { if (is_array($line)) { $total += (float) ($line['price_gross'] ?? 0); } }
+        }
+        $row = [
+            'number' => self::cut(self::str($d['number'] ?? '') ?: self::str($d['custom_number'] ?? ''), 190),
+            'related_number' => self::cut($related, 190),
+            'issue_date' => self::date($d['issue_date'] ?? ''),
+            'order_remote_id' => (int) ($d['order_id'] ?? 0),
+            'buyer_name' => self::cut($name, 255),
+            'buyer_nip' => self::cut($nip, 40),
+            'total_cents' => self::cents($total ?? 0),
+            'currency' => $currency,
+        ];
+        $search = [$row['number'], self::str($d['custom_number'] ?? ''), $row['related_number'], (string) $row['order_remote_id'], $row['buyer_name'], $row['buyer_nip'], self::str($d['email'] ?? ''), self::str($buyer['city'] ?? ''), self::str($d['package_number'] ?? '')];
+        foreach ((array) ($d['products'] ?? []) as $line) { if (is_array($line)) { $search[] = self::str($line['name'] ?? ''); } }
+        $row['search_text'] = self::searchText($search);
+        return $row;
+    }
+
     // ---- odczyt dla widoku -----------------------------------------------------------------
 
     public function orders(array $filters, ?int $limit = null): array
@@ -310,7 +365,7 @@ final class SellasistArchiveRepository
         if ($rows) {
             $ids = array_map('intval', array_column($rows, 'sellasist_id'));
             $docs = [];
-            foreach ($this->db->fetchAll('SELECT id,kind,number,order_remote_id FROM om_archive_documents WHERE order_remote_id IN ('.implode(',', $ids).') ORDER BY issue_date,id') as $doc) {
+            foreach ($this->db->fetchAll("SELECT id,REPLACE(kind,'op_','') AS kind,number,order_remote_id FROM om_archive_documents WHERE order_remote_id IN (".implode(',', $ids).') ORDER BY issue_date,id') as $doc) {
                 $docs[(int) $doc['order_remote_id']][] = $doc;
             }
             foreach ($rows as &$row) { $row['documents'] = $docs[(int) $row['sellasist_id']] ?? []; }
@@ -354,7 +409,7 @@ final class SellasistArchiveRepository
         if (!$row) { return null; }
         $row['detail'] = $row['detail_json'] ? (json_decode((string) $row['detail_json'], true) ?: []) : [];
         unset($row['detail_json'], $row['search_text']);
-        $row['documents'] = $this->db->fetchAll('SELECT id,kind,number,related_number,issue_date,total_cents,currency FROM om_archive_documents WHERE order_remote_id=:o ORDER BY issue_date,id', ['o' => $row['sellasist_id']]);
+        $row['documents'] = $this->db->fetchAll("SELECT id,REPLACE(kind,'op_','') AS kind,number,related_number,issue_date,total_cents,currency FROM om_archive_documents WHERE order_remote_id=:o ORDER BY issue_date,id", ['o' => $row['sellasist_id']]);
         return $row;
     }
 
@@ -367,14 +422,14 @@ final class SellasistArchiveRepository
                 $where[] = "d.search_text LIKE :q$i ESCAPE '!'"; $params["q$i"] = '%'.self::like($term).'%';
             }
         }
-        if (isset(self::DOC_KINDS[(string) ($f['kind'] ?? '')])) { $where[] = 'd.kind=:kind'; $params['kind'] = (string) $f['kind']; }
+        if (isset(self::DOC_KINDS[(string) ($f['kind'] ?? '')])) { $where[] = 'd.kind IN (:kind,:opkind)'; $params['kind'] = (string) $f['kind']; $params['opkind'] = self::OPERATION_PREFIX.$f['kind']; }
         if (self::validDate((string) ($f['date_from'] ?? ''))) { $where[] = 'd.issue_date>=:df'; $params['df'] = $f['date_from']; }
         if (self::validDate((string) ($f['date_to'] ?? ''))) { $where[] = 'd.issue_date<=:dt'; $params['dt'] = $f['date_to'].' 23:59:59'; }
         if (($from = self::amount((string) ($f['amount_from'] ?? ''))) !== null) { $where[] = 'd.total_cents>=:af'; $params['af'] = $from; }
         if (($to = self::amount((string) ($f['amount_to'] ?? ''))) !== null) { $where[] = 'd.total_cents<=:at'; $params['at'] = $to; }
         $whereSql = $where ? 'WHERE '.implode(' AND ', $where) : '';
         $sort = ['oldest' => 'd.issue_date ASC, d.id ASC', 'amount_desc' => 'd.total_cents DESC', 'amount_asc' => 'd.total_cents ASC', 'number' => 'd.number ASC'][(string) ($f['sort'] ?? '')] ?? 'd.issue_date DESC, d.id DESC';
-        $select = "SELECT d.id,d.kind,d.remote_id,d.number,d.related_number,d.issue_date,d.order_remote_id,d.buyer_name,d.buyer_nip,d.total_cents,d.currency,d.detail_state,o.id AS archive_order_id FROM om_archive_documents d LEFT JOIN om_archive_orders o ON o.sellasist_id=d.order_remote_id AND d.order_remote_id>0 $whereSql ORDER BY $sort";
+        $select = "SELECT d.id,REPLACE(d.kind,'op_','') AS kind,d.remote_id,d.number,d.related_number,d.issue_date,d.order_remote_id,d.buyer_name,d.buyer_nip,d.total_cents,d.currency,d.detail_state,o.id AS archive_order_id FROM om_archive_documents d LEFT JOIN om_archive_orders o ON o.sellasist_id=d.order_remote_id AND d.order_remote_id>0 $whereSql ORDER BY $sort";
         if ($limit !== null) { return ['rows' => $this->db->fetchAll($select.' LIMIT '.max(1, $limit), $params)]; }
         $total = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM om_archive_documents d $whereSql", $params);
         $pages = max(1, (int) ceil($total / self::PER_PAGE));
@@ -395,12 +450,15 @@ final class SellasistArchiveRepository
     {
         $orders = $this->db->fetch('SELECT COUNT(*) total, SUM(CASE WHEN detail_state=1 THEN 1 ELSE 0 END) detailed, SUM(CASE WHEN detail_state=2 THEN 1 ELSE 0 END) failed, MIN(ordered_at) oldest, MAX(ordered_at) newest FROM om_archive_orders') ?: [];
         $docs = $this->db->fetch('SELECT COUNT(*) total, SUM(CASE WHEN detail_state=1 THEN 1 ELSE 0 END) detailed, SUM(CASE WHEN detail_state=2 THEN 1 ELSE 0 END) failed FROM om_archive_documents') ?: [];
-        $kinds = array_column($this->db->fetchAll('SELECT kind, COUNT(*) c FROM om_archive_documents GROUP BY kind'), 'c', 'kind');
+        $rawKinds = array_map('intval', array_column($this->db->fetchAll('SELECT kind, COUNT(*) c FROM om_archive_documents GROUP BY kind'), 'c', 'kind'));
+        $kinds = [];
+        foreach ($rawKinds as $kind => $count) { $base = self::baseKind((string) $kind); $kinds[$base] = ($kinds[$base] ?? 0) + $count; }
+        ksort($kinds);
         return [
             'orders' => (int) ($orders['total'] ?? 0), 'orders_detailed' => (int) ($orders['detailed'] ?? 0), 'orders_failed' => (int) ($orders['failed'] ?? 0),
             'oldest' => (string) ($orders['oldest'] ?? ''), 'newest' => (string) ($orders['newest'] ?? ''),
             'documents' => (int) ($docs['total'] ?? 0), 'documents_detailed' => (int) ($docs['detailed'] ?? 0), 'documents_failed' => (int) ($docs['failed'] ?? 0),
-            'kinds' => array_map('intval', $kinds),
+            'kinds' => $kinds, 'raw_kinds' => $rawKinds,
         ];
     }
 

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>{$appName|escape} | {$pageTitle|default:'Panel'|escape}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {include file='layout/theme.tpl'}
   <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/warehouse-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -365,7 +366,10 @@
           <li class="nav-item"><a class="nav-link" data-lte-toggle="sidebar" href="#" role="button"><i class="bi bi-list"></i></a></li>
           <li class="nav-item d-none d-md-block"><span class="nav-link sc-tenant-name"><i class="bi bi-building"></i> {$currentUser.tenant.name|escape}</span></li>
         </ul>
-        <ul class="navbar-nav ms-auto">
+        <ul class="navbar-nav ms-auto align-items-center">
+          <li class="nav-item">
+            <button type="button" class="sc-theme-toggle" data-sc-theme-toggle title="Przełącz tryb jasny / ciemny" aria-label="Przełącz tryb jasny / ciemny"><i class="bi bi-moon-stars sc-theme-icon-light"></i><i class="bi bi-sun sc-theme-icon-dark"></i></button>
+          </li>
           <li class="nav-item">
             <span class="nav-link text-secondary topbar-user-link">
               <span class="topbar-user-name">{$currentUser.name|default:$currentUser.email|escape}</span>
@@ -417,5 +421,6 @@
     </aside>
 {else}
 <body class="bg-body-tertiary sc-guest">
+  <button type="button" class="sc-theme-toggle sc-theme-toggle-floating" data-sc-theme-toggle title="Przełącz tryb jasny / ciemny" aria-label="Przełącz tryb jasny / ciemny"><i class="bi bi-moon-stars sc-theme-icon-light"></i><i class="bi bi-sun sc-theme-icon-dark"></i></button>
   <div class="sc-auth">
 {/if}

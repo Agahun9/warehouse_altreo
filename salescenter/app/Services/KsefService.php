@@ -356,6 +356,17 @@ final class KsefService
         return ['name'=>$name,'nip'=>$nip,'country'=>$country,'address'=>$address];
     }
 
+    /** Party from structured document fields (document edit form) — same shape as parseBuyer(), without guessing. */
+    public static function partyFromFields(array $fields): array
+    {
+        $value=static function (string $key) use ($fields): string { return trim(preg_replace('/\s+/u',' ',(string)($fields[$key]??''))??''); };
+        $person=trim($value('first_name').' '.$value('last_name'));
+        $nip=self::normalizeNip($value('nip'));
+        $country=strtoupper($value('country'))?:'PL';
+        $address=array_values(array_filter([trim($value('street').' '.$value('building')),trim($value('postal_code').' '.$value('city'))],'strlen'));
+        return ['name'=>$value('company')!==''?$value('company'):$person,'nip'=>self::validNip($nip)?$nip:null,'country'=>preg_match('/^[A-Z]{2}$/D',$country)?$country:'PL','address'=>$address];
+    }
+
     /** Delivery block of a document: name, address; "Dostawa:" / "Punkt odbioru:" lines are skipped. */
     public static function parseRecipient(string $recipient): array
     {
@@ -395,7 +406,7 @@ final class KsefService
         $seller=(array)($snapshot['seller']??[]);
         $sellerNip=self::normalizeNip((string)($seller['nip']??''));
         if (!self::validNip($sellerNip)) { throw new InvalidArgumentException('NIP sprzedawcy na dokumencie jest nieprawidłowy — popraw dane sprzedawcy.'); }
-        $buyer=self::parseBuyer((string)($snapshot['buyer']??''));
+        $buyer=is_array($snapshot['buyer_fields']??null)?self::partyFromFields($snapshot['buyer_fields']):self::parseBuyer((string)($snapshot['buyer']??''));
         if ($buyer['name']==='') { throw new InvalidArgumentException('Dokument nie ma nazwy nabywcy.'); }
         $items=(array)($snapshot['items']??[]);
         $before=$correction?(array)($snapshot['before']['items']??[]):[];
@@ -446,7 +457,7 @@ final class KsefService
         $add($podmiot2,'JST','2'); $add($podmiot2,'GV','2');
 
         // Odbiorca (Rola 2), gdy dane dostawy różnią się od nabywcy — jak w fakturach z innych systemów.
-        $recipient=self::parseRecipient((string)($snapshot['recipient']??''));
+        $recipient=is_array($snapshot['recipient_fields']??null)?self::partyFromFields($snapshot['recipient_fields']):self::parseRecipient((string)($snapshot['recipient']??''));
         if ($recipient['name']!=='' && $recipient['address'] && ($recipient['name']!==$buyer['name'] || $recipient['address']!==$buyer['address'])) {
             $podmiot3=$add($root,'Podmiot3');
             $ids=$add($podmiot3,'DaneIdentyfikacyjne'); $add($ids,'BrakID','1'); $add($ids,'Nazwa',$text($recipient['name'],512));

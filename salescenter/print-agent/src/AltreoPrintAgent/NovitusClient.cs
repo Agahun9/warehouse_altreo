@@ -102,7 +102,9 @@ public sealed partial class NovitusClient : IFiscalPrinterClient
             throw new NovitusException("Drukarka Novitus ma niezakończoną wcześniejszą transakcję. Wymaga sprawdzenia przed kolejnym paragonem.");
         if (device["zafiskalizowana"] == "nie")
             throw new NovitusException("Drukarka Novitus nie jest zafiskalizowana (tryb szkoleniowy). Ustaw w SalesCenter tryb SANDBOX albo zafiskalizuj urządzenie.");
-        var vatRates = ParseVatRates(device.Xml, job.Receipt.VatRates);
+        // <stawka> w odpowiedzi „informacja/urzadzenie” to sumy sprzedaży, nie procenty — tabelę PTU czytamy osobnym rozkazem.
+        var ptu = await QueryAsync(Packet(Element("stawki_ptu", ("akcja", "odczytaj"))), "stawki_ptu", cancellationToken);
+        var vatRates = ParseVatRates(ptu.Xml, job.Receipt.VatRates);
         var reference = ReceiptReference(job);
         if (reference.Length > 30)
             throw new InvalidOperationException("Numer dokumentu i zamówienia przekracza 30 znaków numeru systemowego paragonu.");
@@ -365,8 +367,18 @@ public sealed partial class NovitusClient : IFiscalPrinterClient
     internal static Dictionary<string, string> ParseVatRates(string response, IReadOnlyDictionary<string, string>? expected = null)
     {
         var letters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var raw = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match match in VatPattern().Matches(response))
-            letters[match.Groups[1].Value.ToUpperInvariant()] = NormalizeVat(match.Groups[2].Value);
+        {
+            var attributes = AttributePattern().Matches(match.Groups[1].Value).ToDictionary(attribute => attribute.Groups[1].Value, attribute => attribute.Groups[2].Value, StringComparer.OrdinalIgnoreCase);
+            if (!attributes.TryGetValue("nazwa", out var name) || !Regex.IsMatch(name.Trim(), "^[A-Ga-g]$")) continue;
+            // Wartość bywa treścią elementu albo atrybutem (zależnie od firmware).
+            var value = match.Groups[2].Success && match.Groups[2].Value.Trim().Length > 0 ? match.Groups[2].Value
+                : attributes.TryGetValue("wartosc", out var attributeValue) || attributes.TryGetValue("stawka", out attributeValue) ? attributeValue : "";
+            var letter = name.Trim().ToUpperInvariant();
+            raw[letter] = value.Trim();
+            letters[letter] = NormalizeVat(value);
+        }
         if (letters.Count == 0)
             throw new InvalidOperationException("Drukarka Novitus nie zwróciła stawek PTU.");
         if (expected is not null)
@@ -378,7 +390,7 @@ public sealed partial class NovitusClient : IFiscalPrinterClient
                 var key = letter.ToString();
                 var actual = letters.TryGetValue(key, out var value) ? value : "nieaktywna";
                 if (!expected.TryGetValue(key, out var rate) || NormalizeVat(rate) != actual)
-                    throw new InvalidOperationException($"Stawka VAT {key} w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G.");
+                    throw new InvalidOperationException($"Stawka VAT {key} w drukarce różni się od ustawień SalesCenter. Sprawdź stawki A–G. Drukarka: {key}=„{(raw.TryGetValue(key, out var read) ? read : "brak")}”, SalesCenter: {key}={rate ?? "brak"}.");
             }
         }
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -390,8 +402,10 @@ public sealed partial class NovitusClient : IFiscalPrinterClient
 
     internal static string NormalizeVat(string vat)
     {
-        var value = vat.Trim().TrimEnd('%').Trim().ToLowerInvariant();
-        return value is "wolny" or "zw" ? "zw" : PosnetClient.NormalizeVat(value);
+        var value = vat.Replace('\u00a0', ' ').Replace("%", "").Trim().TrimEnd('.').Trim().ToLowerInvariant();
+        if (value is "wolny" or "wolna" or "zwolniony" or "zwolniona" or "zw" or "sp. zw" or "sp.zw") return "zw";
+        if (value is "" or "-" or "brak" or "nieaktywny" or "nieaktywna" or "nieaktywne") return "nieaktywna";
+        return PosnetClient.NormalizeVat(value);
     }
 
     internal static string PaymentType(int type) => type switch
@@ -475,7 +489,7 @@ public sealed partial class NovitusClient : IFiscalPrinterClient
     [GeneratedRegex(@"([A-Za-z_][\w-]*)\s*=\s*[""“”]([^""“”]*)[""“”]")]
     private static partial Regex AttributePattern();
 
-    [GeneratedRegex(@"<stawka\s+nazwa\s*=\s*[""“”]([A-Ga-g])[""“”]\s*>([^<]*)</stawka>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<stawka\b([^>]*?)(?:/>|>([^<]*)</stawka>)", RegexOptions.IgnoreCase)]
     private static partial Regex VatPattern();
 
     [GeneratedRegex(@"\d+")]

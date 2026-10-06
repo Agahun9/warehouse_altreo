@@ -399,45 +399,30 @@ $addOrder('erli',$erliId,'ER-2',['buyer_note'=>'','raw'=>['id'=>'ER-2']]);
 $responses=[];
 $before=count($calls);
 $report=$center->sync(true,$erliId);
-check($report[0]['error']===null && $report[0]['threads']===2 && count($calls)===$before,'ERLI note and return built from imported orders without API calls');
-$erliNote=$repo->findByExternal($erliId,'note','order:ER-1');
+check($report[0]['error']===null && $report[0]['threads']===1 && count($calls)===$before,'ERLI return built from imported orders without API calls');
 $erliReturn=$repo->findByExternal($erliId,'return','order:ER-1');
-check($erliNote['status']==='new' && $repo->messages((int)$erliNote['id'])[0]['body']==='Proszę o fakturę na firmę' && $erliNote['customer_name']==='Jan Kabel','ERLI buyer note thread');
+check($repo->findByExternal($erliId,'note','order:ER-1')===null && $repo->findByExternal($erliId,'note','order:ER-2')===null,'Order notes are no longer imported');
 $returnBody=$repo->messages((int)$erliReturn['id'])[0]['body'];
 check($erliReturn['subject']==='Zwrot: Przedmiot uszkodzony (paczka cała)' && strpos($returnBody,'Adapter × 2')!==false && strpos($returnBody,'Komentarz kupującego: Adapter pęknięty')!==false && strpos($returnBody,str_repeat('1',26))!==false,'ERLI return with reason, items, comment and bank account');
-check($repo->findByExternal($erliId,'note','order:ER-2')===null,'Orders without note are skipped');
-check(!MessageCenter::canReply($erliReturn) && !MessageCenter::canReply($erliNote),'ERLI threads are read-only');
+check(!MessageCenter::canReply($erliReturn),'ERLI threads are read-only');
 rejects(function () use ($center,$erliReturn) { $center->reply((int)$erliReturn['id'],'x',[],'Ola'); },'ERLI return reply rejected','panelu ERLI');
 $center->sync(true,$erliId);
 check(count($repo->messages((int)$erliReturn['id']))===1,'Re-sync does not duplicate return messages');
 
 $wooId=$connections->create('woocommerce','WooCommerce · sklep',['shop_url'=>'https://sklep.example.invalid'],['consumer_key'=>'ck_1','consumer_secret'=>'cs_1']);
 $addOrder('woocommerce',$wooId,'501',['buyer_note'=>'Proszę zadzwonić przed dostawą','raw'=>['number'=>'501']],'Ewa');
-$center->sync(true,$wooId);
-$wooNote=$repo->findByExternal($wooId,'note','order:501');
-check($wooNote['subject']==='Uwaga do zamówienia 501' && MessageCenter::canReply($wooNote),'WooCommerce note is answerable');
-$responses=[['#POST https://sklep\.example\.invalid/wp-json/wc/v3/orders/501/notes#',201,['id'=>77]]];
-$center->reply((int)$wooNote['id'],'Zadzwonimy.',[],'Ola');
-check(json_decode($find('#/orders/501/notes#')['body'],true)==['note'=>'Zadzwonimy.','customer_note'=>true] && $repo->findThread((int)$wooNote['id'])['status']==='answered','WooCommerce reply is a customer note (e-mailed by the shop)');
-
 $addOrder('allegro',$allegroId,'cf-note',['buyer_note'=>'Paczkomat KRA01 proszę','raw'=>['buyer'=>['login'=>'marek']]],'Marek');
-$db->update('om_msg_threads',['status'=>'closed'],'1=1');
-$center->sync(true,$allegroId);
-$allegroNote=$repo->findByExternal($allegroId,'note','order:cf-note');
-$responses=[['#POST https://api\.allegro\.pl/messaging/messages#',201,['id'=>'NM1']]];
-$center->reply((int)$allegroNote['id'],'Wyślemy do KRA01.',[],'Ola');
-check(json_decode($find('#POST .*/messaging/messages#')['body'],true)==['recipient'=>['login'=>'marek'],'text'=>'Wyślemy do KRA01.','order'=>['id'=>'cf-note']],'Allegro note reply opens a message to the buyer about the order');
-
 $temuId=$connections->create('temu','Temu · sklep',[],['app_key'=>'k','app_secret'=>'s','access_token'=>'t']);
 $addOrder('temu',$temuId,'PO-9',['buyer_note'=>'Gift wrap','raw'=>[]]);
 $apiId=$connections->create('api','Sklep własny',[],[],'active',hash('sha256','tok'));
 $addOrder('api',$apiId,'W-1',['buyer_note'=>'Odbiór osobisty','raw'=>[]]);
 $center->sync(true);
-$temuNote=$repo->findByExternal($temuId,'note','order:PO-9');
-check($temuNote!==null && $repo->findByExternal($apiId,'note','order:W-1')!==null && !MessageCenter::canReply($temuNote),'Temu and own shop notes imported read-only');
-rejects(function () use ($center,$temuNote) { $center->reply((int)$temuNote['id'],'x',[],'Ola'); },'Temu reply rejected','nie udostępnia');
-$repo->saveSettings('temu',['enabled'=>'1','sync_notes'=>'0']);
-check($repo->platformSettings('temu')['sync_notes']===0 && !isset($repo->platformSettings('temu')['sync_messages_native']),'Notes can be switched off per channel');
+check($repo->findByExternal($wooId,'note','order:501')===null && $repo->findByExternal($allegroId,'note','order:cf-note')===null && $repo->findByExternal($temuId,'note','order:PO-9')===null && $repo->findByExternal($apiId,'note','order:W-1')===null,'No note threads for any channel');
+$repo->saveSettings('temu',['enabled'=>'1','sync_notes'=>'1']);
+check(!isset($repo->platformSettings('temu')['sync_notes']) && !isset(MessageRepository::KIND_LABELS['note']) && MessageRepository::KINDS['temu']===[],'Order notes setting and section removed');
+// Stare wątki uwag nie trafiają na listę ani do liczników.
+$legacyNote=$repo->ingest($temuId,'temu',['kind'=>'note','external_id'=>'order:OLD','needs_reply'=>true,'last_message_at'=>$iso(0),'messages'=>[['external_id'=>'n1','author_role'=>'customer','author_name'=>'X','body'=>'stara uwaga','created_at'=>$iso(0)]]]);
+check(!in_array('order:OLD',array_column($repo->listing(['status'=>'all'])['rows'],'external_id'),true) && !isset($repo->counters()['platforms']['temu']['kinds']['note']) && $repo->statusCounts(['status'=>'all','q'=>'stara uwaga'])['all']===0,'Legacy note threads hidden from inbox');
 
 // ---------------- PrestaShop: obsługa klienta (customer_threads / customer_messages)
 $psId=$connections->create('prestashop','PrestaShop · sklep',['shop_url'=>'https://presta.example.invalid'],['api_key'=>'WSKEY']);
@@ -469,8 +454,8 @@ $report=$center->sync(true,$psId);
 check(strpos((string)$report[0]['error'],'customer_threads')!==false,'PrestaShop permission hint');
 
 // Autoodpowiedzi pomijają wątki bez kanału odpowiedzi.
-$repo->saveSettings('erli',['enabled'=>'1','sync_notes'=>'1','sync_returns'=>'1','autoresponder'=>'1']);
-$anyRule=$repo->saveRule(0,['name'=>'Wszystko','enabled'=>'1','kinds'=>['note','return'],'trigger_name'=>'any_message','template'=>'x']);
+$repo->saveSettings('erli',['enabled'=>'1','sync_returns'=>'1','autoresponder'=>'1']);
+$anyRule=$repo->saveRule(0,['name'=>'Wszystko','enabled'=>'1','kinds'=>['return'],'trigger_name'=>'any_message','template'=>'x']);
 $db->update('om_msg_rules',['active_since'=>gmdate('Y-m-d H:i:s',time()-86400)],'id=:id',['id'=>$anyRule]);
 $db->update('om_msg_threads',['status'=>'waiting','needs_reply'=>1],'connection_id=:c',['c'=>$erliId]);
 check($center->autoRespond($center->account($erliId),$repo->platformSettings('erli'))===0,'Auto-replies skip read-only channels');
@@ -514,7 +499,7 @@ $smarty=App\Core\SmartyFactory::create();
 $accounts=$center->connectedAccounts();
 $settings=$repo->settings();
 $platforms=[];
-foreach (MessageRepository::PLATFORMS as $code=>$label) { $platforms[$code]=['label'=>$label,'kinds'=>MessageRepository::KINDS[$code],'accounts'=>array_values(array_filter($accounts,function ($a) use ($code) { return $a['platform']===$code; })),'settings'=>$settings[$code]]; }
+foreach (MessageRepository::PLATFORMS as $code=>$label) { if (!MessageRepository::KINDS[$code]) { continue; } $platforms[$code]=['label'=>$label,'kinds'=>MessageRepository::KINDS[$code],'accounts'=>array_values(array_filter($accounts,function ($a) use ($code) { return $a['platform']===$code; })),'settings'=>$settings[$code]]; }
 $base=['canWrite'=>true,'csrf'=>'x','flashSuccess'=>null,'flashError'=>null,'filters'=>['platform'=>'','kind'=>'','status'=>'open','connection'=>0,'q'=>'','page'=>1],'filterQuery'=>'','backQuery'=>'tab=inbox','counters'=>$repo->counters(),'platforms'=>$platforms,'accounts'=>$accounts,
     'statuses'=>$repo->statuses(),'statusCounts'=>$repo->statusCounts(['status'=>'all']),'kindLabels'=>MessageRepository::KIND_LABELS,'platformLabels'=>MessageRepository::PLATFORMS,'rules'=>$repo->rules(),'editRule'=>null,'runLog'=>$repo->runLog(),'triggers'=>MessageRepository::TRIGGERS,'afterStatuses'=>MessageRepository::AFTER_STATUSES,'placeholders'=>MessageCenter::PLACEHOLDERS,
     'replyTemplatesJson'=>'[]','threadJson'=>'{}','syncStates'=>array_map(function () { return ['last'=>'','error'=>'Błąd <testowy>']; },array_column($accounts,null,'id')),'thread'=>null,'messages'=>[],'threadView'=>[]];
@@ -560,8 +545,8 @@ check(strpos($html,'Log Morele')!==false && strpos($html,'value="log_clear"')!==
 $smarty->assign(array_merge($base,['tab'=>'settings','listing'=>$listing]));
 $html=$smarty->fetch('messages/index.tpl');
 check(strpos($html,'Statusy wiadomości')!==false && strpos($html,'value="status_save"')!==false && strpos($html,'name="new_label"')!==false,'Settings let you edit and add message statuses');
-check(strpos($html,'Dyskusje i reklamacje')!==false && strpos($html,'Incydenty')!==false && strpos($html,'Błąd &lt;testowy&gt;')!==false && substr_count($html,'name="operation" value="settings"')===count(MessageRepository::PLATFORMS) && strpos($html,'name="sync_returns"')!==false && strpos($html,'name="employee_id"')!==false,'Settings view renders one form per marketplace');
-check(substr_count($html,'name="operation" value="backfill"')===count($accounts) && strpos($html,'Pobierz starsze')!==false && strpos($html,'ms-account-actions')!==false,'Settings view offers a backfill button for every connected account');
+check(strpos($html,'Dyskusje i reklamacje')!==false && strpos($html,'Incydenty')!==false && strpos($html,'Błąd &lt;testowy&gt;')!==false && substr_count($html,'name="operation" value="settings"')===count($platforms) && strpos($html,'name="sync_notes"')===false && strpos($html,'name="sync_returns"')!==false && strpos($html,'name="employee_id"')!==false,'Settings view renders one form per marketplace');
+check(substr_count($html,'name="operation" value="backfill"')===count(array_merge([],...array_column($platforms,'accounts'))) && strpos($html,'Pobierz starsze')!==false && strpos($html,'ms-account-actions')!==false,'Settings view offers a backfill button for every connected account');
 
 Http::$transport=null;
 MoreleLog::clear();

@@ -157,6 +157,7 @@ final class ArchiveController extends Controller
         $document = $this->service()->repo()->document((int) $this->input('id', 0));
         if (!$document) { http_response_code(404); exit('Nie znaleziono dokumentu.'); }
         $detail = $document['detail'];
+        if (SellasistArchiveRepository::baseKind((string) $document['kind']) !== $document['kind']) { $detail = self::operationDetail($detail); }
         $lines = []; $vat = []; $sum = ['net' => 0.0, 'gross' => 0.0];
         foreach ((array) ($detail['lines'] ?? []) as $line) {
             if (!is_array($line)) { continue; }
@@ -173,11 +174,42 @@ final class ArchiveController extends Controller
         $smarty = SmartyFactory::create();
         $smarty->assign([
             'document' => $document, 'detail' => array_filter($detail, 'is_scalar'), 'lines' => $lines, 'vatSummary' => array_values($vat), 'sum' => $sum,
-            'kindLabel' => SellasistArchiveRepository::DOC_KINDS[$document['kind']] ?? $document['kind'],
+            'kindLabel' => SellasistArchiveRepository::DOC_KINDS[SellasistArchiveRepository::baseKind((string) $document['kind'])] ?? $document['kind'],
             'seller' => is_array($detail['seller'] ?? null) ? array_filter($detail['seller'], 'is_scalar') : [], 'buyer' => is_array($detail['buyer'] ?? null) ? array_filter($detail['buyer'], 'is_scalar') : [],
             'raw' => json_encode($detail, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
         $smarty->display('archive/document.tpl');
+    }
+
+    /** Dokument operacyjny → układ starych dokumentów (lines z cenami jednostkowymi, seller, buyer) dla wydruku. */
+    private static function operationDetail(array $d): array
+    {
+        $text = static function ($value): string { return is_scalar($value) ? trim((string) $value) : ''; };
+        $address = static function (array $a) use ($text): array {
+            $street = trim($text($a['street'] ?? '').' '.$text($a['home_number'] ?? '').($text($a['flat_number'] ?? '') !== '' ? '/'.$text($a['flat_number']) : ''));
+            $nip = $text($a['company_nip'] ?? ($a['nip'] ?? ''));
+            return array_filter([
+                'name' => $text($a['company_name'] ?? '') ?: ($text($a['name'] ?? '').' '.$text($a['surname'] ?? '')),
+                'address' => $street, 'postcode' => $text($a['postcode'] ?? ''), 'city' => $text($a['city'] ?? ''),
+                'nip' => trim($nip, '0') === '' ? '' : $nip, 'phone' => $text($a['phone'] ?? ''),
+            ], static function ($v) { return trim($v) !== ''; });
+        };
+        $lines = [];
+        foreach ((array) ($d['products'] ?? []) as $p) {
+            if (!is_array($p)) { continue; }
+            $qty = (float) ($p['quantity'] ?? 0);
+            // price_gross/price_net to wartość pozycji; ceny jednostkowe w *_unit.
+            $gross = isset($p['price_gross_unit']) ? (float) $p['price_gross_unit'] : ($qty ? (float) ($p['price_gross'] ?? 0) / $qty : 0.0);
+            $net = isset($p['price_net_unit']) ? (float) $p['price_net_unit'] : (isset($p['price_net']) && $qty ? (float) $p['price_net'] / $qty : null);
+            $lines[] = ['name' => $text($p['name'] ?? ''), 'quantity' => $qty, 'price_gross' => $gross, 'price_net' => $net, 'vat' => $p['vat'] ?? '', 'discount' => $p['discount'] ?? ''];
+        }
+        $buyer = $address(is_array($d['buyer_address'] ?? null) ? $d['buyer_address'] : []);
+        if ($text($d['email'] ?? '') !== '') { $buyer['email'] = $text($d['email']); }
+        $d['lines'] = $lines;
+        $d['buyer'] = $buyer;
+        $d['seller'] = $address(is_array($d['seller_data'] ?? null) ? $d['seller_data'] + ['company_name' => $d['seller_data']['name'] ?? '', 'company_nip' => $d['seller_data']['nip'] ?? ''] : []);
+        unset($d['products'], $d['buyer_address'], $d['seller_data']);
+        return $d;
     }
 
     /** Eksport wyników filtrowania do CSV (Excel, średnik, UTF-8 z BOM). */

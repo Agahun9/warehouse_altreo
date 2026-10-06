@@ -18,8 +18,9 @@
     </div>
   {else}
     <input type="hidden" name="numbering_mode" value="custom">
-    <input type="hidden" name="pattern" value="{$numberingPattern|default:''|escape}">
-    <div class="sc-docs-number-preview"><span>Obecny format tej serii</span><code>{$numberingPattern|default:''|escape}</code></div>
-    <p class="om-muted">Format istniejącej serii jest zachowany. Kolejny numer ustawisz w polu powyżej.</p>
+    <div class="om-series-settings">
+      <label>Wzór numeru<input name="pattern" maxlength="100" value="{$numberingPattern|default:''|escape}" placeholder="np. P/{ldelim}YYYY{rdelim}/{ldelim}MM{rdelim}/{ldelim}N{rdelim}" required pattern=".*\{ldelim}N\{rdelim}.*" title="Wzór musi zawierać {ldelim}N{rdelim}" {if !$canWrite}disabled{/if}><small class="om-muted">Wymagane {ldelim}N{rdelim} — numer kolejny. Dostępne także {ldelim}YYYY{rdelim} — rok i {ldelim}MM{rdelim} — miesiąc.</small></label>
+    </div>
+    <p class="om-muted">Zmiana wzoru dotyczy nowych dokumentów; wystawione dokumenty zachowują swoje numery. Kolejny numer ustawisz w polu powyżej.</p>
   {/if}
 </div>

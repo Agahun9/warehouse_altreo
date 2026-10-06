@@ -101,6 +101,12 @@ final class ErliService extends MarketplaceIntegration
         if (!empty($response[0]['error'])) { throw new RuntimeException('ERLI odrzuciło numer przesyłki.'); }
     }
 
+    /** Status zamówienia w systemie sprzedawcy (sellerStatus): PATCH /orders/{id}/status. */
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        $this->api($account, 'PATCH', '/orders/'.rawurlencode($orderId).'/status', ['status' => $status]);
+    }
+
     private function api(array $account, string $method, string $path, ?array $body = null): array
     {
         $key = trim((string) ($account['api_key'] ?? ''));

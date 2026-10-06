@@ -37,6 +37,8 @@ final class OrdersController extends Controller
         return [
             'buyer'=>(string)($snap['buyer']??''),
             'recipient'=>(string)($snap['recipient']??''),
+            'buyer_fields'=>OrderDocumentService::partyFields($snap,'buyer'),
+            'recipient_fields'=>OrderDocumentService::partyFields($snap,'recipient'),
             'additional_info'=>(string)($snap['additional_info']??''),
             'items'=>array_map(static function ($it) {
                 return ['name'=>(string)($it['name']??''),'sku'=>(string)($it['sku']??''),'ean'=>(string)($it['ean']??''),'quantity'=>(int)($it['quantity']??0),'vat'=>(string)($it['vat']??'23'),'price'=>number_format(((int)($it['unit_cents']??0))/100,2,'.','')];
@@ -266,7 +268,7 @@ final class OrdersController extends Controller
             'listing'=>$repo->listing($filters),'filters'=>$filters,'listQuery'=>$listQuery,'activeFilterCount'=>$activeFilterCount,'dashboard'=>$dashboard,'statusGroups'=>$statusGroups,
             'accounts'=>$repo->accounts(),'statuses'=>$repo->statuses(),'detail'=>$detail,'events'=>$events,'orderMessages'=>$orderMessages,'orderLayout'=>$detail?$this->savedOrderLayout($repo,(int)($user['id']??0)):[],'orderDocs'=>$orderDocs,'issuedDocuments'=>$issuedDocuments,'orderShipments'=>$orderShipments,'autoRefreshShipmentId'=>(int)$this->input('auto_refresh_shipment',0),'autoRefreshAttempt'=>max(1,(int)$this->input('auto_attempt',1)),
             'paymentMethods'=>$repo->paymentMethods(),'paymentSources'=>$repo->paymentSources(),
-            'mappings'=>$this->db()->fetchAll('SELECT m.*,a.name account_name,a.platform,s.name status_name FROM om_mappings m JOIN om_accounts a ON a.id=m.account_id JOIN om_statuses s ON s.id=m.status_id ORDER BY a.platform,a.name,m.remote_status'),
+            'statusMappings'=>$tab==='statuses'?$this->statusMappingView($repo):[],
             'rules'=>$tab==='rules'?$repo->rules():[],'automation'=>$automationView,'manualRules'=>$automation->manualRules(),
             'orderAutomation'=>$detail?['rules'=>$automation->explain((int)$detail['id']),'runs'=>$automation->log(12,(int)$detail['id'])]:['rules'=>[],'runs'=>[]],
             'series'=>$series,
@@ -279,6 +281,16 @@ final class OrdersController extends Controller
             'printStations'=>$printStations,'activeLabelPrinterCount'=>$activeLabelPrinterCount,'activeFiscalPrinterCount'=>$activeFiscalPrinterCount,'printAgentVersion'=>PrintAgentRepository::AGENT_VERSION,'printAgentReleased'=>PrintAgentRepository::AGENT_RELEASED,'printJobs'=>$printAgents->jobs(),'printFiscalPrinters'=>$printAgents->fiscalPrinters(),'printFiscalJobs'=>$printAgents->fiscalJobs(),'printAgentApiUrl'=>$this->printAgentApiBase(),
             'documentKey'=>bin2hex(random_bytes(24)),
         ]);
+    }
+    /** PrestaShop: stany sklepu do mapowania odświeżane co 6 h (błąd sklepu nie blokuje strony). */
+    private function statusMappingView(OrderRepository $repo): array
+    {
+        $cached=$repo->setting('remote_states_prestashop');
+        if ((int)($cached['at']??0)<time()-6*3600 && $this->db()->fetchColumn('SELECT id FROM om_accounts WHERE platform=:p',['p'=>'prestashop'])) {
+            try { (new \App\Services\OrderMarketplaceStatusService($repo))->refreshPrestaShopStates(); }
+            catch (\Throwable $error) { \App\Services\OrderSyncError::log($error,['stage'=>'prestashop_states']); }
+        }
+        return $repo->statusMappingView();
     }
     private function renderOrders(array $data): void
     {
@@ -496,17 +508,22 @@ final class OrdersController extends Controller
                     $repo->reorderStatuses(is_array($layout)?$layout:[]);
                     $successMessage='Zapisano kolejność grup i statusów.';
                     break;
-                case 'mapping':
-                    $status=(int)$_POST['status_id']; $repo->requireStatus($status);
-                    $account=(int)$_POST['account_id'];
-                    if (!$db->fetchColumn('SELECT id FROM om_accounts WHERE id=:id',['id'=>$account])) { throw new InvalidArgumentException('Nieznane konto.'); }
-                    $remote=$this->required('remote_status',100);
-                    $db->transaction(function () use ($db,$account,$remote,$status) {
-                        $db->delete('om_mappings','account_id=:a AND remote_status=:s',['a'=>$account,'s'=>$remote]);
-                        $db->insert('om_mappings',['account_id'=>$account,'remote_status'=>$remote,'status_id'=>$status]);
-                    });
+                case 'refresh_states':
+                    $successMessage='Pobrano stany zamówień ze sklepu PrestaShop: '.(new \App\Services\OrderMarketplaceStatusService($repo))->refreshPrestaShopStates().'.';
+                    $redirectQuery='#om-map-prestashop';
                     break;
-                case 'unmap': $db->delete('om_mappings','id=:id',['id'=>(int)$_POST['mapping_id']]); break;
+                case 'mapping':
+                    $platform=preg_replace('/[^a-z0-9_]/','',(string)($_POST['platform']??''));
+                    $map=[];
+                    foreach ((array)($_POST['map']??[]) as $code=>$statusId) { $map[(string)$code]=(int)$statusId; }
+                    $customCode=trim((string)($_POST['custom_code']??''));
+                    if ($customCode!=='' && (int)($_POST['custom_status_id']??0)>0) { $map[$customCode]=(int)$_POST['custom_status_id']; }
+                    $push=[];
+                    foreach ((array)($_POST['push']??[]) as $statusId=>$code) { $push[(int)$statusId]=(string)$code; }
+                    $saved=$repo->saveStatusMappings($platform,$map,$push);
+                    $successMessage='Zapisano mapowanie statusów ('.$saved.' przypisanych). Dotyczy wszystkich kont tej platformy.';
+                    $redirectQuery='#om-map-'.$platform;
+                    break;
                 case 'payment_method':
                     $repo->savePaymentMethod((int)($_POST['payment_method_id']??0),$this->required('name',100),!empty($_POST['is_cod']),(int)($_POST['position']??0));
                     $successMessage='Zapisano własną metodę płatności.';
@@ -591,6 +608,12 @@ final class OrdersController extends Controller
                     $copyId=$repo->automation()->duplicateRule((int)($_POST['rule_id']??0));
                     $successMessage='Utworzono wstrzymaną kopię automatyzacji. Sprawdź ją i włącz.';
                     $redirectQuery='&rule='.$copyId.'#oa-editor';
+                    break;
+                case 'rule_bulk_duplicate':
+                    $ruleIds=array_values(array_unique(array_filter(array_map('intval',(array)($_POST['rule_ids']??[])))));
+                    if (!$ruleIds) { throw new InvalidArgumentException('Zaznacz automatyzacje do skopiowania.'); }
+                    foreach ($ruleIds as $ruleId) { $repo->automation()->duplicateRule($ruleId); }
+                    $successMessage=count($ruleIds)===1?'Utworzono wstrzymaną kopię automatyzacji. Sprawdź ją i włącz.':'Utworzono wstrzymane kopie automatyzacji: '.count($ruleIds).'. Sprawdź je i włącz.';
                     break;
                 case 'rule_delete':
                     $repo->automation()->deleteRule((int)($_POST['rule_id']??0));
@@ -689,6 +712,15 @@ final class OrdersController extends Controller
                     $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'numbering_period'=>$period,'document_settings_json'=>OrderRepository::json($this->seriesDocumentSettings($kind))],'id=:id',['id'=>$seriesId]);
                     $successMessage='Zapisano serię numeracji.';
                     break;
+                case 'series_copy':
+                    $source=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>(int)($_POST['series_id']??0)]);
+                    if (!$source) { throw new InvalidArgumentException('Nie znaleziono serii.'); }
+                    $copyNumbering=json_decode((string)($source['numbering_json']??''),true);
+                    $copyName=mb_substr((string)$source['name'],0,92).' (kopia)';
+                    $copyId=$db->insert('om_series',['name'=>$copyName,'kind'=>$source['kind'],'pattern'=>$source['pattern'],'next_number'=>is_array($copyNumbering)&&(int)($copyNumbering['start']??0)>0?(int)$copyNumbering['start']:1,'fiscal_printer_id'=>$source['fiscal_printer_id'],'numbering_json'=>$source['numbering_json'],'document_settings_json'=>$source['document_settings_json']]);
+                    $successMessage='Skopiowano serię jako „'.$copyName.'”. Licznik kopii zaczyna się od początku.';
+                    $redirectQuery='#om-series-'.(int)$copyId;
+                    break;
                 case 'series_delete':
                     $seriesId=(int)($_POST['series_id']??0);
                     $existingSeries=$db->fetch('SELECT * FROM om_series WHERE id=:id',['id'=>$seriesId]);
@@ -728,20 +760,49 @@ final class OrdersController extends Controller
                         $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                         if ($fiscalLock=$printAgents->receiptLockReason((int)$document['order_id'])) { throw new InvalidArgumentException($fiscalLock); }
                     }
-                    $buyer=trim((string)($_POST['buyer']??''));
+                    $parties=[];
+                    if (is_array($_POST['buyer_f']??null)) {
+                        // Formularz z osobnymi polami: blok tekstowy dokumentu powstaje z pól, a pola zostają w dokumencie (KSeF czyta je bez zgadywania).
+                        $parties['buyer_fields']=OrderDocumentService::partyInput($_POST['buyer_f'],false,'Nabywca');
+                        $parties['recipient_fields']=OrderDocumentService::partyInput(is_array($_POST['recipient_f']??null)?$_POST['recipient_f']:[],true,'Odbiorca');
+                        if (!empty($_POST['recipient_same'])) { $parties['recipient_fields']=array_intersect_key($parties['buyer_fields'],$parties['recipient_fields'])+$parties['recipient_fields']; }
+                        $buyerFields=$parties['buyer_fields'];
+                        if (trim($buyerFields['company'].$buyerFields['first_name'].$buyerFields['last_name'])==='') { throw new InvalidArgumentException('Nabywca: podaj nazwę firmy albo imię i nazwisko.'); }
+                        if (in_array($document['kind'],['invoice','invoice_correction'],true) && $buyerFields['nip']!=='' && $buyerFields['company']==='') { throw new InvalidArgumentException('Nabywca z NIP: podaj nazwę firmy (dla JDG zwykle imię i nazwisko z nazwą działalności).'); }
+                        $buyer=OrderDocumentService::partyText($parties['buyer_fields'],false);
+                        $recipient=OrderDocumentService::partyText($parties['recipient_fields'],true);
+                    } else {
+                        $buyer=trim((string)($_POST['buyer']??''));
+                        $recipient=trim((string)($_POST['recipient']??''));
+                    }
                     if ($buyer==='') { throw new InvalidArgumentException('Uzupełnij dane nabywcy.'); }
                     $calculated=OrderDocumentService::calculate($_POST['items']??[]);
                     $old=json_decode($document['snapshot_json'],true,512,JSON_THROW_ON_ERROR);
-                    $recipient=trim((string)($_POST['recipient']??''));
                     $additionalInfo=trim((string)($_POST['additional_info']??''));
                     if (mb_strlen($buyer)>2000 || mb_strlen($recipient)>2000) { throw new InvalidArgumentException('Dane nabywcy lub dostawy są za długie.'); }
                     if (mb_strlen($additionalInfo)>2000) { throw new InvalidArgumentException('Dodatkowa informacja jest za długa (maks. 2000 znaków).'); }
-                    $snapshot=array_replace($old,$calculated,['buyer'=>$buyer,'recipient'=>$recipient,'additional_info'=>$additionalInfo]);
+                    $snapshot=array_replace($old,$calculated,['buyer'=>$buyer,'recipient'=>$recipient,'additional_info'=>$additionalInfo],$parties);
+                    // Stare pola strukturalne nie mogą przetrwać edycji samego tekstu — KSeF wziąłby nieaktualne dane.
+                    if (!$parties) { unset($snapshot['buyer_fields'],$snapshot['recipient_fields']); }
+                    if ($document['kind']==='receipt') {
+                        $receiptNip=OrderDocumentService::receiptBuyerNip($buyer);
+                        OrderDocumentService::assertReceiptNipLimit($receiptNip,(int)$calculated['gross_cents'],(string)($old['currency']??'PLN'));
+                        if ($receiptNip!==null) { $snapshot['buyer_nip']=$receiptNip; } else { unset($snapshot['buyer_nip']); }
+                    }
                     if (isset($old['before'])) { $snapshot['before']=$old['before']; $snapshot['difference_cents']=$snapshot['gross_cents']-(int)$old['before']['gross_cents']; $snapshot['difference_net_cents']=$snapshot['net_cents']-(int)$old['before']['net_cents']; $snapshot['difference_tax_cents']=$snapshot['tax_cents']-(int)$old['before']['tax_cents']; $snapshot['parent_number']=$old['parent_number']; }
                     $snapshot['edited_at']=gmdate('Y-m-d H:i:s');
                     $db->update('om_documents',['snapshot_json'=>OrderRepository::json($snapshot)],'id=:id',['id'=>$documentId]);
                     $repo->event((int)$document['order_id'],'Zaktualizowano dokument '.$document['number'].' (edycja nabywcy, dostawy lub pozycji).',$actor);
                     $successMessage='Zaktualizowano dokument '.$document['number'].'.';
+                    if (($_POST['after_save']??'')==='ksef' && in_array($document['kind'],['invoice','invoice_correction'],true)) {
+                        try { $submission=$this->ksef($repo)->send($documentId,$actor); }
+                        catch (\Throwable $e) {
+                            $reason=$e instanceof InvalidArgumentException?$e->getMessage():mb_substr(trim($e->getMessage()),0,300,'UTF-8').' [ID: '.\App\Services\OrderSyncError::log($e,['stage'=>'ksef','order_id'=>(int)$document['order_id']])['reference'].']';
+                            throw new InvalidArgumentException('Zapisano zmiany w dokumencie '.$document['number'].', ale wysyłka do KSeF nie powiodła się: '.$reason);
+                        }
+                        $successMessage.=' '.KsefService::describe($submission).(!empty($submission['upo_error'])?' Nie pobrano UPO: '.$submission['upo_error']:'');
+                        if ($submission['state']==='rejected') { throw new InvalidArgumentException('Zapisano zmiany w dokumencie '.$document['number'].'. '.KsefService::describe($submission)); }
+                    }
                     break;
                 case 'document_delete':
                     $documentId=(int)($_POST['document_id']??0);
@@ -854,6 +915,9 @@ final class OrdersController extends Controller
                     break;
                 case 'publish_shipment':
                     $successMessage=(new OrderMarketplaceShipmentService($repo))->publishShipment((int)($_POST['shipment_id']??0),(string)($_POST['source_carrier']??''),(string)($_POST['source_carrier_other']??''),$actor);
+                    break;
+                case 'allegro_refund_claim':
+                    $successMessage=(new \App\Services\OrderRefundClaimService($repo))->request($id,$actor)['message'].'.';
                     break;
                 case 'cancel_shipment':
                     (new OrderShipmentService($repo))->cancel((int)($_POST['shipment_id']??0),$actor);
@@ -1037,6 +1101,9 @@ final class OrdersController extends Controller
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'source_shipment','order_id'=>$id]);
                 $reason=mb_substr(trim((string)$e->getMessage()),0,300,'UTF-8');
                 $safeMessage='Nie udało się przekazać numeru przesyłki do źródła. '.$reason.' [ID: '.$diagnostic['reference'].']';
+            } elseif ($op==='allegro_refund_claim' && !$e instanceof InvalidArgumentException) {
+                $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'refund_claim','order_id'=>$id]);
+                $safeMessage=mb_substr(trim((string)$e->getMessage()),0,600,'UTF-8').' [ID: '.$diagnostic['reference'].']';
             } elseif (in_array($op,['ksef_test','ksef_send','ksef_refresh'],true) && !$e instanceof InvalidArgumentException) {
                 $diagnostic=\App\Services\OrderSyncError::log($e,['stage'=>'ksef','order_id'=>$id]);
                 $safeMessage='Operacja KSeF nie powiodła się: '.mb_substr(trim($e->getMessage()),0,300,'UTF-8').' [ID: '.$diagnostic['reference'].']';
@@ -1483,6 +1550,22 @@ final class OrdersController extends Controller
             header('Content-Type: '.$label['mime']); header('Content-Disposition: inline; filename="'.$label['name'].'"'); header('Cache-Control: no-store, private');
             echo $label['bytes'];
         } catch (\Throwable $e) { http_response_code(409); echo htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8'); }
+    }
+    /** Dane firmy po NIP (GUS REGON + Biała lista MF) dla formularza nabywcy. */
+    public function companylookup(): void
+    {
+        try {
+            if (!$this->apiUser(true)) { return; }
+            // Limit chroni dzienne limity zapytań do rejestrów (Biała lista MF liczy zapytania na IP serwera).
+            $hits=array_values(array_filter((array)($_SESSION['company_lookup_hits']??[]),static function ($time) { return (int)$time>time()-60; }));
+            if (count($hits)>=15) { $this->releaseSessionLock(); $this->jsonResponse(['error'=>'Za dużo wyszukiwań w ciągu minuty. Spróbuj za chwilę.','code'=>'RATE_LIMIT'],429); return; }
+            $hits[]=time(); $_SESSION['company_lookup_hits']=$hits;
+            $this->releaseSessionLock();
+            $app=Config::get('app');
+            $registry=new \App\Services\CompanyRegistryService((string)($app['gus_api_key']??''));
+            $this->jsonResponse(['ok'=>true,'company'=>$registry->lookup((string)$this->input('nip',''))]);
+        } catch (InvalidArgumentException $e) { $this->jsonResponse(['error'=>$e->getMessage(),'code'=>'NOT_FOUND'],422); }
+        catch (\Throwable $e) { $this->apiFailure($e); }
     }
     /** Dokument operatora inny niż etykieta, np. protokół odbioru ERLI. */
     public function shipmentdocument(): void

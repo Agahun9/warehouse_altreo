@@ -94,6 +94,11 @@ final class WooCommerceService extends MarketplaceIntegration
         return $this->api($account, 'POST', 'orders/'.$orderId.'/notes', [], ['note' => $note, 'customer_note' => $forCustomer]);
     }
 
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        $this->api($account, 'PUT', 'orders/'.(int) $orderId, [], ['status' => $status]);
+    }
+
     private function api(array $account, string $method, string $path, array $query = [], ?array $body = null, ?array &$responseHeaders = null): array
     {
         $key = trim((string) ($account['consumer_key'] ?? '')); $secret = trim((string) ($account['consumer_secret'] ?? ''));

@@ -25,22 +25,23 @@ final class MessageRepository
 
     /**
      * Rodzaje wątków każdego kanału (kolejność = kolejność sekcji w menu).
-     * note – uwaga kupującego do zamówienia (z importu zamówień), return – zwrot zgłoszony w marketplace.
+     * return – zwrot zgłoszony w marketplace. Uwagi do zamówień (kind 'note') nie są już synchronizowane ani pokazywane.
+     * Kanał bez rodzajów nie pojawia się w menu i ustawieniach wiadomości.
      */
     public const KINDS = [
-        'allegro' => ['message', 'dispute', 'claim', 'note'],
-        'empik' => ['message', 'incident', 'note'],
-        'mediamarkt' => ['message', 'incident', 'note'],
-        'erli' => ['note', 'return'],
-        'morele' => ['message', 'note'],
-        'temu' => ['note'],
+        'allegro' => ['message', 'dispute', 'claim'],
+        'empik' => ['message', 'incident'],
+        'mediamarkt' => ['message', 'incident'],
+        'erli' => ['return'],
+        'morele' => ['message'],
+        'temu' => [],
         'prestashop' => ['message'],
-        'woocommerce' => ['note'],
-        'altreo' => ['note'],
-        'api' => ['note'],
+        'woocommerce' => [],
+        'altreo' => [],
+        'api' => [],
     ];
 
-    public const KIND_LABELS = ['message' => 'Wiadomości', 'dispute' => 'Dyskusje', 'claim' => 'Reklamacje', 'incident' => 'Incydenty', 'return' => 'Zwroty', 'note' => 'Uwagi do zamówień'];
+    public const KIND_LABELS = ['message' => 'Wiadomości', 'dispute' => 'Dyskusje', 'claim' => 'Reklamacje', 'incident' => 'Incydenty', 'return' => 'Zwroty'];
 
     /** Kanały z natywnym API wiadomości (pozostałe mają tylko wątki z danych zamówień). */
     public const NATIVE = ['allegro', 'empik', 'mediamarkt', 'morele', 'prestashop'];
@@ -150,7 +151,6 @@ final class MessageRepository
             'signature' => mb_substr(trim((string) ($input['signature'] ?? '')), 0, 500, 'UTF-8'),
             'hours' => ['days' => $days, 'from' => $time('from', '08:00'), 'to' => $time('to', '16:00')],
         ];
-        if ($platform !== 'prestashop') { $settings['sync_notes'] = $flag('sync_notes', 1); }
         if ($platform === 'erli') { $settings['sync_returns'] = $flag('sync_returns', 1); }
         if ($platform === 'prestashop') { $settings['employee_id'] = max(1, min(99999, (int) ($input['employee_id'] ?? 1))); }
         // Tymczasowy log diagnostyczny centrum komunikacji Morele – domyślnie włączony, bo API nie ma specyfikacji pól.
@@ -395,7 +395,7 @@ final class MessageRepository
     /** Wątki czekające na sprzedawcę – kandydaci dla autoodpowiedzi. */
     public function awaitingThreads(int $connectionId): array
     {
-        return array_map([self::class, 'hydrate'], $this->db->fetchAll("SELECT * FROM om_msg_threads WHERE connection_id=:c AND needs_reply=1 AND remote_closed=0 AND status IN ('new','waiting') ORDER BY last_message_at", ['c' => $connectionId]));
+        return array_map([self::class, 'hydrate'], $this->db->fetchAll("SELECT * FROM om_msg_threads WHERE connection_id=:c AND needs_reply=1 AND remote_closed=0 AND status IN ('new','waiting') AND kind<>'note' ORDER BY last_message_at", ['c' => $connectionId]));
     }
 
     private function localOrderId(string $platform, int $connectionId, string $externalId): ?int
@@ -429,7 +429,7 @@ final class MessageRepository
             $where[] = '(connection_id=:lc AND customer_login IN ('.implode(',', $in).'))';
             $params['lc'] = $connectionId;
         }
-        $threads = array_map([self::class, 'hydrate'], $this->db->fetchAll('SELECT * FROM om_msg_threads WHERE '.implode(' OR ', $where).' ORDER BY last_message_at DESC,id DESC LIMIT 50', $params));
+        $threads = array_map([self::class, 'hydrate'], $this->db->fetchAll("SELECT * FROM om_msg_threads WHERE kind<>'note' AND (".implode(' OR ', $where).') ORDER BY last_message_at DESC,id DESC LIMIT 50', $params));
         foreach ($threads as &$thread) {
             $thread['messages'] = $this->messages((int) $thread['id']);
             $thread['for_order'] = (int) ($thread['order_id'] ?? 0) === $orderId || ($orderExternalId !== '' && (string) $thread['order_external_id'] === $orderExternalId);
@@ -448,7 +448,7 @@ final class MessageRepository
             $result['platforms'][$platform] = ['open' => 0, 'total' => 0, 'kinds' => array_fill_keys($kinds, ['open' => 0, 'new' => 0, 'total' => 0])];
         }
         $open = self::inList($this->openStatuses());
-        $rows = $this->db->fetchAll("SELECT platform,kind,SUM(CASE WHEN status IN ($open) THEN 1 ELSE 0 END) open_count,SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) new_count,COUNT(*) total FROM om_msg_threads GROUP BY platform,kind");
+        $rows = $this->db->fetchAll("SELECT platform,kind,SUM(CASE WHEN status IN ($open) THEN 1 ELSE 0 END) open_count,SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) new_count,COUNT(*) total FROM om_msg_threads WHERE kind<>'note' GROUP BY platform,kind");
         foreach ($rows as $row) {
             $platform = (string) $row['platform'];
             $result['platforms'][$platform]['kinds'][$row['kind']] = ['open' => (int) $row['open_count'], 'new' => (int) $row['new_count'], 'total' => (int) $row['total']];
@@ -457,15 +457,15 @@ final class MessageRepository
             $result['all']['open'] += (int) $row['open_count'];
             $result['all']['total'] += (int) $row['total'];
         }
-        $result['statuses'] = array_map('intval', array_column($this->db->fetchAll('SELECT status,COUNT(*) c FROM om_msg_threads GROUP BY status'), 'c', 'status'));
-        $result['overdue'] = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads WHERE remote_closed=0 AND due_at IS NOT NULL AND due_at<=:d", ['d' => gmdate('Y-m-d H:i:s', time() + 2 * 86400)]);
+        $result['statuses'] = array_map('intval', array_column($this->db->fetchAll("SELECT status,COUNT(*) c FROM om_msg_threads WHERE kind<>'note' GROUP BY status"), 'c', 'status'));
+        $result['overdue'] = (int) $this->db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads WHERE kind<>'note' AND remote_closed=0 AND due_at IS NOT NULL AND due_at<=:d", ['d' => gmdate('Y-m-d H:i:s', time() + 2 * 86400)]);
         return $result;
     }
 
     public static function openCount(Database $db): int
     {
         $open = (new self($db))->openStatuses();
-        return (int) $db->fetchColumn('SELECT COUNT(*) FROM om_msg_threads WHERE status IN ('.self::inList($open).')');
+        return (int) $db->fetchColumn("SELECT COUNT(*) FROM om_msg_threads WHERE kind<>'note' AND status IN (".self::inList($open).')');
     }
 
     /**
@@ -572,7 +572,7 @@ final class MessageRepository
      */
     private function listFilters(array $filters, bool $withStatus = true): array
     {
-        $where = ['1=1'];
+        $where = ["t.kind<>'note'"];
         $params = [];
         $platform = (string) ($filters['platform'] ?? '');
         if (isset(self::PLATFORMS[$platform])) { $where[] = 't.platform=:p'; $params['p'] = $platform; }

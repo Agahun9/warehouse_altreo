@@ -358,6 +358,7 @@ class SellasistService
 
         $order = array(
             'id' => $orderId,
+            'external_id' => trim((string) ($salescenterOrder['external_id'] ?? '')),
             'carts' => $items,
             'total' => (float) ($salescenterOrder['total'] ?? 0),
             'payment' => array('currency' => (string) ($salescenterOrder['currency'] ?? 'PLN')),
@@ -375,14 +376,25 @@ class SellasistService
         );
 
         $last = $this->database->fetch(
-            'SELECT operation FROM ' . SellasistOrderSyncRepository::TABLE
+            'SELECT operation, payload_json FROM ' . SellasistOrderSyncRepository::TABLE
             . ' WHERE order_id = :order_id AND operation IN (\'salescenter_subtract_stock\', \'salescenter_add_stock\')'
             . ' ORDER BY updated_at DESC, id DESC LIMIT 1',
             array('order_id' => $orderId)
         );
         $lastOperation = is_array($last) ? (string) ($last['operation'] ?? '') : '';
-        if (($mode === 'subtract' && $lastOperation === 'salescenter_subtract_stock')
-            || ($mode === 'add' && $lastOperation !== 'salescenter_subtract_stock')) {
+        // Odjecie, ktore nie zmienilo stanu zadnej pozycji (np. nie znaleziono SKU), mozna powtorzyc.
+        $lastSubtracted = false;
+        if ($lastOperation === 'salescenter_subtract_stock') {
+            $lastPayload = json_decode((string) ($last['payload_json'] ?? ''), true);
+            foreach ((is_array($lastPayload) && isset($lastPayload['deductions']) && is_array($lastPayload['deductions']) ? $lastPayload['deductions'] : array()) as $row) {
+                if (is_array($row) && ($row['status'] ?? '') === 'ok') {
+                    $lastSubtracted = true;
+                    break;
+                }
+            }
+        }
+        if (($mode === 'subtract' && $lastSubtracted)
+            || ($mode === 'add' && !$lastSubtracted)) {
             $result['skipped'] = true;
             $result['message'] = $mode === 'subtract'
                 ? 'Stan dla tego zamowienia byl juz odjety.'
@@ -579,7 +591,13 @@ class SellasistService
                 continue;
             }
 
-            $resolved = $this->resolveProductBySignature($signature);
+            // SKU marketplace moze zawierac wariant po "_"; naklejke dopasowujemy do SKU magazynowego.
+            $lookupSignature = $signature;
+            $underscorePosition = strpos($lookupSignature, '_');
+            if ($underscorePosition !== false && $underscorePosition > 0) {
+                $lookupSignature = substr($lookupSignature, 0, $underscorePosition);
+            }
+            $resolved = $this->resolveProductBySignature($lookupSignature);
             $mainProduct = isset($resolved['main']) && is_array($resolved['main']) ? $resolved['main'] : null;
             $glassProduct = isset($resolved['glass']) && is_array($resolved['glass']) ? $resolved['glass'] : null;
             $fallbackProduct = $this->fallbackProduct($item);
@@ -735,7 +753,12 @@ class SellasistService
                 return $product;
             }
 
-            return $this->findByOldSku($signature);
+            $product = $this->findByOldSku($signature);
+            if ($product) {
+                return $product;
+            }
+
+            return $this->findByPatternlessSku($signature);
         }
 
         $product = $this->findByOldSku($signature);
@@ -743,7 +766,23 @@ class SellasistService
             return $product;
         }
 
-        return $this->products->findBySku($signature);
+        $product = $this->products->findBySku($signature);
+        if ($product) {
+            return $product;
+        }
+
+        return $this->findByPatternlessSku($signature);
+    }
+
+    /** SKU z numerem wzoru po "_" (np. TSHRTM-000002_TB400B) -> produkt magazynowy TSHRTM-000002. */
+    private function findByPatternlessSku(string $signature)
+    {
+        $position = strpos($signature, '_');
+        if ($position === false || $position === 0) {
+            return false;
+        }
+
+        return $this->findWarehouseProductBySignature(substr($signature, 0, $position));
     }
 
     private function findByOldSku(string $value)
@@ -968,6 +1007,7 @@ class SellasistService
                             'label' => $source,
                             'before' => 'brak',
                             'after' => 'Zamowienie #' . (int) ($order['id'] ?? 0) . ', sygnatura ' . $signature,
+                            'external_id' => (string) ($order['external_id'] ?? ''),
                         ),
                     ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ));

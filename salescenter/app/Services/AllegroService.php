@@ -172,6 +172,24 @@ final class AllegroService extends MarketplaceIntegration
         $this->api($account, 'POST', '/order/checkout-forms/'.rawurlencode($orderId).'/shipments', [], $payload);
     }
 
+    /** Status realizacji w panelu sprzedawcy (PUT /order/checkout-forms/{id}/fulfillment). */
+    public function setOrderStatus(array $account, string $orderId, string $status, array $raw = []): void
+    {
+        $this->api($account, 'PUT', '/order/checkout-forms/'.rawurlencode($orderId).'/fulfillment', [], ['status' => $status]);
+    }
+
+    /** Wnioski o zwrot prowizji (rabat transakcyjny) dla oferty. */
+    public function refundClaims(array $account, string $offerId): array
+    {
+        $response = $this->api($account, 'GET', '/order/refund-claims', ['lineItem.offer.id' => $offerId, 'limit' => 100]);
+        return array_values(array_filter((array) ($response['refundClaims'] ?? []), 'is_array'));
+    }
+
+    public function createRefundClaim(array $account, string $lineItemId, int $quantity): array
+    {
+        return $this->api($account, 'POST', '/order/refund-claims', [], ['lineItem' => ['id' => $lineItemId], 'quantity' => max(1, $quantity)]);
+    }
+
     public function shipmentLabel(array $account, string $shipmentId, string $pageSize = 'A6'): string
     {
         $config = self::config();

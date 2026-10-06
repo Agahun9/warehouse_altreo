@@ -18,6 +18,10 @@ return array(
     'mail_from' => 'no-reply@twojadomena.pl',
     'mail_from_name' => 'SalesCenter',
     'mail_log_dir' => BASE_PATH . '/app/Storage/mail',
+    // Klucz API GUS (BIR 1.1, REGON) do przycisku „Pobierz z GUS” w danych nabywcy — bezpłatny, wniosek:
+    // https://api.stat.gov.pl/Home/RegonApi. Bez klucza dane pobiera Biała lista VAT (MF): tylko podatnicy VAT,
+    // adres jednym ciągiem i bez imienia/nazwiska. Klucz testowy GUS: abcde12345abcde12345 (dane fikcyjne).
+    'gus_api_key' => '',
     // Integracje. Allegro: operator SalesCenter rejestruje RAZ aplikację na https://apps.developer.allegro.pl
     // (typ: aplikacja ma dostęp do przeglądarki, redirect URI: <adres SalesCenter>/allegro-callback.php).
     // Potem każda firma łączy konto samym logowaniem do Allegro.

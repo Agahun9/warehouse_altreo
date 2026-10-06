@@ -1,4 +1,4 @@
-{assign var=kindIcons value=['message'=>'bi-chat-dots','dispute'=>'bi-people','claim'=>'bi-shield-exclamation','incident'=>'bi-exclamation-triangle','return'=>'bi-arrow-return-left','note'=>'bi-sticky']}
+{assign var=kindIcons value=['message'=>'bi-chat-dots','dispute'=>'bi-people','claim'=>'bi-shield-exclamation','incident'=>'bi-exclamation-triangle','return'=>'bi-arrow-return-left']}
 <div class="ms-workspace{if $thread} has-thread{/if}">
   <aside class="ms-sections" aria-label="Sekcje wiadomości">
     <a class="ms-section-all{if $filters.platform eq '' and $filters.kind eq ''} active{/if}" href="index.php?controller=messages{if $filters.status ne 'open'}&status={$filters.status|escape:'url'}{/if}">
@@ -23,7 +23,7 @@
       {/if}
     {/foreach}
     {if !$anyPlatform}
-      <div class="ms-section-empty"><i class="bi bi-plug"></i><p>Podłącz kanał sprzedaży w <a href="orders.php?tab=accounts">Konta i import</a> – wiadomości, uwagi do zamówień i zwroty pojawią się tutaj automatycznie.</p></div>
+      <div class="ms-section-empty"><i class="bi bi-plug"></i><p>Podłącz kanał sprzedaży w <a href="orders.php?tab=accounts">Konta i import</a> – wiadomości i zwroty pojawią się tutaj automatycznie.</p></div>
     {/if}
     <div class="ms-queue">
       <span><b>{$counters.statuses.new|default:0}</b>nowe</span>

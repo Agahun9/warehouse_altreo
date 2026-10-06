@@ -92,6 +92,124 @@ final class OrderDocumentService
         if ($method!=='') { $lines[]='Dostawa: '.$method; }
         return implode("\n",array_filter($lines,'strlen'));
     }
+    /** Structured buyer/recipient fields of the document edit form => max length. */
+    public const PARTY_FIELDS=['company'=>255,'first_name'=>100,'last_name'=>150,'nip'=>30,'street'=>150,'building'=>30,'postal_code'=>12,'city'=>100,'country'=>2,'phone'=>40,'pickup'=>255,'delivery'=>255];
+
+    /** Trimmed, length-checked party fields from form input. Unknown keys are ignored. */
+    public static function partyInput(array $input,bool $recipient,string $label): array
+    {
+        $fields=[];
+        foreach (self::PARTY_FIELDS as $key=>$max) {
+            if (!$recipient && in_array($key,['phone','pickup','delivery'],true)) { continue; }
+            if ($recipient && $key==='nip') { continue; }
+            $value=trim(preg_replace('/\s+/u',' ',(string)($input[$key]??''))??'');
+            if (mb_strlen($value)>$max) { throw new InvalidArgumentException($label.': pole „'.$key.'” jest za długie (maks. '.$max.' znaków).'); }
+            $fields[$key]=$value;
+        }
+        $fields['country']=strtoupper($fields['country']!==''?$fields['country']:'PL');
+        if (!preg_match('/^[A-Z]{2}$/D',$fields['country'])) { throw new InvalidArgumentException($label.': kraj podaj jako 2-literowy kod, np. PL.'); }
+        if ($fields['country']==='PL' && $fields['postal_code']!=='') {
+            $digits=preg_replace('/\D/','',$fields['postal_code'])??'';
+            if (strlen($digits)!==5) { throw new InvalidArgumentException($label.': kod pocztowy musi mieć format 00-000.'); }
+            $fields['postal_code']=substr($digits,0,2).'-'.substr($digits,2);
+        }
+        if (!$recipient && $fields['nip']!=='') {
+            $nip=KsefService::normalizeNip($fields['nip']);
+            if ($fields['country']==='PL' || preg_match('/^\s*PL/i',$fields['nip'])) {
+                if (!KsefService::validNip($nip)) { throw new InvalidArgumentException('Nabywca: NIP '.$fields['nip'].' jest nieprawidłowy (błędna suma kontrolna).'); }
+                $fields['nip']=$nip;
+            }
+        }
+        return $fields;
+    }
+
+    /** Document text block (first line = name) built from structured fields. Format matches KsefService::parseBuyer(). */
+    public static function partyText(array $fields,bool $recipient): string
+    {
+        $company=trim((string)($fields['company']??''));
+        $person=trim(trim((string)($fields['first_name']??'')).' '.trim((string)($fields['last_name']??'')));
+        $nip=trim((string)($fields['nip']??''));
+        $lines=[$company!==''?$company:$person];
+        // Z NIP-em osoba kontaktowa nie trafia do bloku — parser KSeF uznałby ją za linię adresu.
+        if ($company!=='' && $person!=='' && $nip==='' && mb_stripos($company,$person)===false) { $lines[]=$person; }
+        if (!$recipient && $nip!=='') { $lines[]='NIP: '.$nip; }
+        $lines=array_merge($lines,self::addressBlock($fields));
+        if ($recipient) {
+            if (trim((string)($fields['phone']??''))!=='') { $lines[]='Tel: '.trim((string)$fields['phone']); }
+            if (trim((string)($fields['pickup']??''))!=='') { $lines[]='Punkt odbioru: '.trim((string)$fields['pickup']); }
+            if (trim((string)($fields['delivery']??''))!=='') { $lines[]='Dostawa: '.trim((string)$fields['delivery']); }
+        }
+        return implode("\n",array_filter(array_map('trim',$lines),'strlen'));
+    }
+
+    /** Best-effort structured fields read from a legacy text block (documents issued before structured editing). */
+    public static function partyFromText(string $text,bool $recipient): array
+    {
+        $fields=array_fill_keys(array_keys(self::PARTY_FIELDS),''); $fields['country']='PL';
+        $lines=[];
+        foreach (preg_split('/\R/u',$text)?:[] as $line) {
+            $line=trim(preg_replace('/\s+/u',' ',$line)??'');
+            if ($line==='') { continue; }
+            if (preg_match('/^Dostawa\s*:\s*(.*)$/iu',$line,$m)) { $fields['delivery']=$m[1]; continue; }
+            if (preg_match('/^Punkt odbioru\s*:\s*(.*)$/iu',$line,$m)) { $fields['pickup']=$m[1]; continue; }
+            if (preg_match('/^Tel(?:efon)?\.?\s*:\s*(.*)$/iu',$line,$m)) { $fields['phone']=$m[1]; continue; }
+            if (preg_match('/^E-?mail\s*:/iu',$line)) { continue; }
+            if ($fields['nip']==='' && preg_match('/^(?:NIP|VAT(?: ?ID)?|Tax ?ID)\s*:?\s*(.+)$/iu',$line,$m)) { $fields['nip']=KsefService::validNip(KsefService::normalizeNip($m[1]))?KsefService::normalizeNip($m[1]):trim($m[1]); continue; }
+            if (preg_match('/^[A-Z]{2}$/D',$line)) { $fields['country']=$line; continue; }
+            $lines[]=$line;
+        }
+        // Kod i miasto: „00-000 Miasto”, kod i miasto w osobnych liniach albo „Ulica 1, 00-000 Miasto”.
+        $streetIndex=null;
+        foreach ($lines as $index=>$line) {
+            if ($index===0) { continue; }
+            if (preg_match('/^(\d{2}-\d{3})\s+(.+)$/u',$line,$m)) { $fields['postal_code']=$m[1]; $fields['city']=$m[2]; array_splice($lines,$index,1); $streetIndex=$index-1; break; }
+            if (preg_match('/^\d{2}-\d{3}$/D',$line) && isset($lines[$index+1])) { $fields['postal_code']=$line; $fields['city']=$lines[$index+1]; array_splice($lines,$index,2); $streetIndex=$index-1; break; }
+            if (preg_match('/^(.+?),\s*(\d{2}-\d{3})\s+(.+)$/u',$line,$m)) { $lines[$index]=$m[1]; $fields['postal_code']=$m[2]; $fields['city']=$m[3]; $streetIndex=$index; break; }
+        }
+        if ($streetIndex===null && $fields['postal_code']==='' && count($lines)>1) { $streetIndex=count($lines)-1; }
+        if ($streetIndex!==null && $streetIndex>=1 && isset($lines[$streetIndex])) {
+            [$fields['street'],$fields['building']]=self::splitStreet($lines[$streetIndex]);
+            array_splice($lines,$streetIndex);
+        }
+        $first=(string)($lines[0]??''); $second=(string)($lines[1]??'');
+        $companyLike=static function (string $name): bool { return (bool)preg_match('/(sp\.|spółka|s\.a\.|s\.c\.|z o\.o|firma|p\.h\.u|f\.h\.u|zakład|przedsiębiorstwo|\bltd\b|\bgmbh\b|\binc\b)/iu',$name); };
+        if ($second!=='') {
+            [$company,$person]=$companyLike($second) && !$companyLike($first)?[$second,$first]:[$first,$second];
+            $fields['company']=$company; [$fields['first_name'],$fields['last_name']]=self::splitPerson($person);
+        } elseif ($fields['nip']!=='' || $companyLike($first) || count(preg_split('/\s+/u',$first)?:[])>3) {
+            $fields['company']=$first;
+        } else {
+            [$fields['first_name'],$fields['last_name']]=self::splitPerson($first);
+        }
+        if ($recipient) { unset($fields['nip']); } else { unset($fields['phone'],$fields['pickup'],$fields['delivery']); }
+        return $fields;
+    }
+
+    /** Stored structured fields of a document party, or fields read from its legacy text. */
+    public static function partyFields(array $snapshot,string $party): array
+    {
+        $recipient=$party==='recipient';
+        $stored=$snapshot[$party.'_fields']??null;
+        $base=array_fill_keys(array_keys(self::PARTY_FIELDS),''); $base['country']='PL';
+        if (is_array($stored)) { return array_map('strval',array_intersect_key($stored+$base,$base)); }
+        return self::partyFromText((string)($snapshot[$party]??''),$recipient)+$base;
+    }
+
+    /** [street, building] — „Słoneczna 32/4” => [„Słoneczna”, „32/4”]. */
+    public static function splitStreet(string $line): array
+    {
+        $line=trim($line);
+        if (preg_match('/^(.*?\D)\s+(\d+[A-Za-z]?(?:\s*[\/\\\\]\s*\d+[A-Za-z]?)?(?:\s*(?:m\.?|lok\.?)\s*\d+[A-Za-z]?)?)$/u',$line,$m)) { return [trim($m[1]),preg_replace('/\s+/','',$m[2])??$m[2]]; }
+        return [$line,''];
+    }
+
+    /** [first name, last name] split on the first space. */
+    public static function splitPerson(string $name): array
+    {
+        $parts=preg_split('/\s+/u',trim($name),2)?:[];
+        return [(string)($parts[0]??''),(string)($parts[1]??'')];
+    }
+
     private static function addressBlock(array $address): array
     {
         $street=trim(trim((string)($address['street']??'')).' '.trim((string)($address['building']??'')));

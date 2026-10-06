@@ -138,7 +138,9 @@ class SalescenterController extends Controller
         $skus = array();
         foreach ((isset($order['items']) && is_array($order['items']) ? $order['items'] : array()) as $item) {
             if (is_array($item) && trim((string) ($item['sku'] ?? '')) !== '') {
-                $skus[] = trim((string) $item['sku']);
+                $sku = trim((string) $item['sku']);
+                // Samo ID komputera (np. "600") -> SKU magazynowe "ALTREO_600".
+                $skus[] = ctype_digit($sku) ? 'ALTREO_' . $sku : $sku;
             }
         }
         if ($skus === array()) {

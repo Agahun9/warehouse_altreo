@@ -11,7 +11,7 @@ use RuntimeException;
 /**
  * Import archiwum z Sellasist (https://{konto}.sellasist.pl/api/v1, nagłówek apiKey) w małych porcjach.
  *
- * Kolejność: listy (zamówienia, faktury, korekty, paragony, korekty paragonów – od najstarszych,
+ * Kolejność: listy (zamówienia, faktury, korekty, paragony, korekty paragonów, dokumenty operacyjne – od najstarszych,
  * offset rosnąco po ID), potem szczegóły każdego zamówienia i dokumentu. Każde wywołanie run() ma limit czasu,
  * zapisuje kursory w om_settings i kończy się bez utraty postępu – kolejne uruchomienie (cron co minutę
  * albo przycisk „Pobieraj teraz”) kontynuuje. Po pobraniu wszystkiego listy są co 15 min sprawdzane
@@ -25,8 +25,13 @@ final class SellasistArchiveService
         'correct' => ['/corrects', 'Faktury korygujące'],
         'receipt' => ['/receipts', 'Paragony'],
         'receipt_correct' => ['/receiptcorrects', 'Korekty paragonów'],
+        // Moduł „Dokumenty operacyjne” (od ~11.2025 tu powstają faktury i paragony, np. PA/…); dokumenty magazynowe są pomijane.
+        'op_sale' => ['/operationdocuments', 'Dokumenty operacyjne'],
+        'op_correct' => ['/operationdocuments', 'Korekty (dok. operacyjne)'],
     ];
+    private const LIST_FILTERS = ['op_sale' => ['type' => 'sale'], 'op_correct' => ['type' => 'correct']];
     private const DETAIL_PATHS = ['invoice' => '/invoices/', 'correct' => '/corrects/', 'receipt' => '/receipts/', 'receipt_correct' => '/receiptcorrects/'];
+    private const OPERATION_DETAIL_PATH = '/operationdocuments/';
     private const PAGE = 100;
     private const RECHECK_SECONDS = 900;
     private const LOCK = 'sellasist_archive';
@@ -131,7 +136,6 @@ final class SellasistArchiveService
                     $this->listPhase($host, $apiKey, $phase, $path, $state, $report, $deadline, $manual);
                 }
                 $this->detailPhase($host, $apiKey, $state, $report, $deadline);
-                $this->repo->syncReceiptNumbers();
             } catch (ArchiveStopException $stop) {
                 $state['last_error'] = $stop->getMessage();
                 $state['backoff_until'] = time() + $stop->backoff;
@@ -159,8 +163,9 @@ final class SellasistArchiveService
         if ($ph['done'] && time() - (int) $ph['checked_at'] < ($manual ? 120 : self::RECHECK_SECONDS)) { return; }
         while (microtime(true) < $deadline) {
             // Rosnąco po ID: nowe rekordy dochodzą na końcu, więc offset pozostaje stabilny między porcjami.
-            $query = ['limit' => self::PAGE, 'offset' => (int) $ph['cursor'], 'sort' => 'asc'];
-            [$status, $body] = $this->call($host, $apiKey, $path, $query);
+            $query = ['limit' => self::PAGE, 'offset' => (int) $ph['cursor'], 'sort' => 'asc'] + (self::LIST_FILTERS[$phase] ?? []);
+            // Moduł operacyjny jest w BETA – brak uprawnień klucza (403) nie może blokować reszty archiwum.
+            [$status, $body] = $this->call($host, $apiKey, $path, $query, isset(self::LIST_FILTERS[$phase]));
             if ($status === 404) { $body = []; }
             elseif ($status < 200 || $status >= 300) {
                 // Moduł niedostępny na koncie (np. brak paragonów) – etap jest pomijany i sprawdzany ponownie co 15 min.
@@ -175,6 +180,7 @@ final class SellasistArchiveService
             $this->repo->db()->transaction(function () use ($rows, $phase) {
                 foreach ($rows as $row) {
                     if ($phase === 'orders') { $this->repo->upsertOrder($row, false); }
+                    elseif (isset(self::LIST_FILTERS[$phase])) { $kind = self::operationKind($phase, $row); if ($kind !== '') { $this->repo->upsertDocument($kind, $row, false); } }
                     else { $this->repo->upsertDocument($phase, $row, false); }
                 }
             });
@@ -204,19 +210,41 @@ final class SellasistArchiveService
             foreach ($docs as $doc) {
                 if (microtime(true) >= $deadline) { return; }
                 $kind = (string) $doc['kind']; $id = (int) $doc['remote_id'];
-                [$status, $body] = $this->call($host, $apiKey, self::DETAIL_PATHS[$kind].$id, []);
+                $operation = SellasistArchiveRepository::baseKind($kind) !== $kind;
+                [$status, $body] = $this->call($host, $apiKey, ($operation ? self::OPERATION_DETAIL_PATH : self::DETAIL_PATHS[$kind]).$id, [], $operation);
                 if ($status >= 200 && $status < 300 && is_array($body) && $body) {
                     $body = isset($body[0]) && is_array($body[0]) ? $body[0] : $body;
                     if (empty($body['id'])) { $body['id'] = $id; }
+                    if ($operation) {
+                        $actual = self::operationKind(strpos($kind, 'correct') !== false ? 'op_correct' : 'op_sale', $body) ?: $kind;
+                        if ($actual === 'op_correct' && !empty($body['main_document_id']) && $this->repo->hasDocument('op_receipt', (int) $body['main_document_id'])) { $actual = 'op_receipt_correct'; }
+                        $kind = $actual;
+                    }
                     $this->repo->upsertDocument($kind, $body, true); $report['details']++;
-                } else { $this->repo->markDocumentDetail($kind, $id, 2); $report['errors'][] = SellasistArchiveRepository::DOC_KINDS[$kind].' '.$id.': HTTP '.$status; }
+                } else { $this->repo->markDocumentDetail($kind, $id, 2); $report['errors'][] = SellasistArchiveRepository::DOC_KINDS[SellasistArchiveRepository::baseKind($kind)].' '.$id.': HTTP '.$status; }
             }
             $report['errors'] = array_slice($report['errors'], -20);
         }
     }
 
-    /** Zapytanie z obsługą limitów: 429 i 5xx wstrzymują import na chwilę, 401/403 na dłużej. */
-    private function call(string $host, string $apiKey, string $path, array $query): array
+    /**
+     * Rodzaj dokumentu operacyjnego z pól type/subtype (API podaje je różnie: type=sale + subtype=receipt albo odwrotnie).
+     * Pusty wynik = dokument magazynowy (WZ, PZ, MM, rezerwacja) – pomijany.
+     */
+    private static function operationKind(string $phase, array $row): string
+    {
+        $text = '';
+        foreach (['type', 'subtype'] as $field) { if (is_scalar($row[$field] ?? null)) { $text .= ' '.strtolower((string) $row[$field]); } }
+        if (preg_match('/reservation|release|admission|\bmov\b|stock/', $text)) { return ''; }
+        if ($phase === 'op_correct' || strpos($text, 'correct') !== false) { return 'op_correct'; }
+        foreach (['receipt' => 'op_receipt', 'proforma' => 'op_proforma', 'bill' => 'op_bill', 'invoice' => 'op_invoice'] as $needle => $kind) {
+            if (strpos($text, $needle) !== false) { return $kind; }
+        }
+        return 'op_invoice';
+    }
+
+    /** Zapytanie z obsługą limitów: 429 i 5xx wstrzymują import na chwilę, 401/403 na dłużej ($optional: 403 zwracany jako wynik). */
+    private function call(string $host, string $apiKey, string $path, array $query, bool $optional = false): array
     {
         if ($this->requests > 0 && self::$pauseMicro > 0) { usleep(self::$pauseMicro); }
         $this->requests++;
@@ -227,6 +255,7 @@ final class SellasistArchiveService
         }
         [$status, $body] = $result;
         if ($status === 429) { throw new ArchiveStopException('Sellasist: przekroczono limit zapytań – import wznowi się za minutę.', 60); }
+        if ($status === 403 && $optional) { return $result; }
         if ($status === 401 || $status === 403) { throw new ArchiveStopException('Sellasist odrzucił klucz API (HTTP '.$status.'). Zaktualizuj klucz w ustawieniach archiwum.', 900); }
         if ($status >= 500) { throw new ArchiveStopException('Sellasist chwilowo nie odpowiada (HTTP '.$status.') – ponowienie za 2 min.', 120); }
         return $result;
@@ -275,8 +304,14 @@ final class SellasistArchiveService
         $phases = [];
         foreach (self::LIST_PHASES as $phase => [, $label]) {
             $ph = ($state['phases'][$phase] ?? []) + ['done' => false, 'count' => 0, 'error' => '', 'checked_at' => 0];
-            $phases[] = ['key' => $phase, 'label' => $label, 'done' => (bool) $ph['done'], 'count' => (int) $ph['count'], 'error' => (string) $ph['error'],
-                'stored' => $phase === 'orders' ? $stats['orders'] : (int) ($stats['kinds'][$phase] ?? 0)];
+            if ($phase === 'orders') { $stored = $stats['orders']; }
+            elseif (isset(self::LIST_FILTERS[$phase])) {
+                $stored = 0;
+                foreach ($stats['raw_kinds'] as $kind => $count) {
+                    if (SellasistArchiveRepository::baseKind((string) $kind) !== $kind && (strpos((string) $kind, 'correct') !== false) === ($phase === 'op_correct')) { $stored += $count; }
+                }
+            } else { $stored = (int) ($stats['raw_kinds'][$phase] ?? 0); }
+            $phases[] = ['key' => $phase, 'label' => $label, 'done' => (bool) $ph['done'], 'count' => (int) $ph['count'], 'error' => (string) $ph['error'], 'stored' => $stored];
         }
         $detailTotal = $stats['orders'] + $stats['documents'];
         $detailDone = $stats['orders_detailed'] + $stats['orders_failed'] + $stats['documents_detailed'] + $stats['documents_failed'];
