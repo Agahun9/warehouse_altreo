@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="dist/css/orders-cod.css?v=20260909-4">
 <link rel="stylesheet" href="dist/css/orders-automation.css?v=20261006-1">
 <link rel="stylesheet" href="dist/css/orders-ksef.css?v=20260917-2">
-<link rel="stylesheet" href="dist/css/orders-doc-edit.css?v=20261005-1">
+<link rel="stylesheet" href="dist/css/orders-doc-edit.css?v=20261006-1">
 <main class="app-main om {if $detail}om-order-view{/if}">
 {if !isset($shippingDefaults)}{assign var=shippingDefaults value=['default_carrier_account_id'=>0,'default_package'=>'auto','service'=>'auto','apaczka_service_id'=>0,'pickup_type'=>'SELF','presets'=>['small'=>['name'=>'Mała','length'=>23,'width'=>16,'height'=>10,'weight'=>0.5],'medium'=>['name'=>'Średnia','length'=>30,'width'=>20,'height'=>15,'weight'=>1],'large'=>['name'=>'Duża','length'=>40,'width'=>30,'height'=>20,'weight'=>2]],'sender'=>['name'=>'','email'=>'','phone'=>'','street'=>'','building'=>'','postal_code'=>'','city'=>'']]}{/if}
 {if !isset($shipmentSuggestion)}{assign var=shipmentSuggestion value=['carrier_account_id'=>0,'reason'=>'Wybierz aktywne konto nadawcze','preset'=>'','package'=>['length'=>30,'width'=>20,'height'=>15,'weight'=>1],'service'=>'inpost_locker_standard']}{/if}
@@ -165,7 +165,7 @@
   {/if}
 </div>
 <div id="om-config" data-csrf="{$csrf|escape}" data-write="{if $canWrite}1{else}0{/if}" hidden></div>
-<script src="dist/js/orders.js?v=20261005-2" defer></script>
+<script src="dist/js/orders.js?v=20261006-2" defer></script>
 <script src="dist/js/orders-doc-edit.js?v=20261005-1" defer></script>
 <script src="dist/js/orders-automation.js?v=20261006-1" defer></script>
 {if $tab eq 'list' or $tab eq 'templates'}<link rel="stylesheet" href="dist/css/orders-print-templates.css?v=20261001-2"><script src="dist/js/orders-print-templates.js?v=20261001-2" defer></script>{/if}

@@ -632,6 +632,54 @@
         field.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });
+    const setOrderField = (name, value) => {
+      const field = form.querySelector(`[name="${name}"]`);
+      if (!field || field.value === value) return false;
+      field.value = value;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+    form.querySelector('[data-copy-billing-to-delivery]')?.addEventListener('click', () => {
+      const billing = name => form.querySelector(`[name="invoice_${name}"]`)?.value.trim() || '';
+      const name = billing('name') || billing('company');
+      if (!name && !billing('street') && !billing('city')) return;
+      setOrderField('shipping_name', name);
+      ['street', 'building', 'postal_code', 'city', 'country'].forEach(key => setOrderField(`shipping_${key}`, billing(key)));
+    });
+    const lookupInvoice = form.querySelector('[data-lookup-invoice]');
+    const lookupResult = form.querySelector('[data-lookup-invoice-result]');
+    lookupInvoice?.addEventListener('click', async () => {
+      const raw = form.querySelector('[name="invoice_nip"]')?.value || '';
+      const nip = raw.trim().replace(/^PL/i, '').replace(/\D/g, '');
+      if (!/^\d{10}$/.test(nip)) { lookupResult.textContent = 'Podaj 10 cyfr NIP.'; lookupResult.classList.add('is-error'); return; }
+      lookupInvoice.disabled = true;
+      lookupResult.classList.remove('is-error');
+      lookupResult.textContent = 'Sprawdzam rejestry…';
+      try {
+        const response = await fetch(`index.php?controller=orders&action=companylookup&nip=${encodeURIComponent(nip)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.company) throw new Error(data.error || `Błąd HTTP ${response.status}`);
+        const company = data.company;
+        let changed = 0;
+        const mapped = { street: 'street', building: 'building', postal_code: 'postal_code', city: 'city', country: 'country' };
+        Object.entries(mapped).forEach(([target, source]) => {
+          const value = String(company[source] || '').trim();
+          if (value && setOrderField(`invoice_${target}`, value)) changed++;
+        });
+        const person = [company.first_name, company.last_name].filter(Boolean).join(' ').trim();
+        if (!form.querySelector('[name="invoice_company"]')?.value.trim() && company.company && setOrderField('invoice_company', String(company.company).trim())) changed++;
+        if (!form.querySelector('[name="invoice_name"]')?.value.trim() && person && setOrderField('invoice_name', person)) changed++;
+        if (setOrderField('invoice_nip', nip)) changed++;
+        const source = (company.sources || []).join(' + ') || 'rejestr';
+        lookupResult.textContent = `${changed ? `Uzupełniono ${changed} ${changed === 1 ? 'pole' : changed < 5 ? 'pola' : 'pól'}.` : 'Dane bez zmian.'} Źródło: ${source}.`;
+      } catch (error) {
+        lookupResult.textContent = error.message || 'Nie udało się pobrać danych.';
+        lookupResult.classList.add('is-error');
+      } finally {
+        lookupInvoice.disabled = false;
+      }
+    });
 
     const productsTable = form.querySelector('[data-products-table]');
     // Nazwa produktu zawija się i rośnie w dół, żeby zawsze była widoczna w całości (bez nowych linii).
