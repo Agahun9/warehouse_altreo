@@ -96,6 +96,11 @@ final class ApiController extends Controller
                 if (!is_array($input['items'] ?? null) || !$input['items']) { throw new InvalidArgumentException('Pole „items” musi zawierać co najmniej jedną pozycję.'); }
                 $order = OrderNormalizer::normalize('api', $input, 0, time() + 86400);
                 if ($order === null) { throw new InvalidArgumentException('Data „created_at” nie może być z przyszłości.'); }
+                // Aktualizacja bez pola „status” nie cofa znanego statusu sklepu do domyślnego „new”.
+                if (trim((string) ($input['status'] ?? '')) === '') {
+                    $known = (string) $this->db()->fetchColumn('SELECT remote_status FROM om_orders WHERE account_id=:a AND external_id=:e', ['a' => $accountId, 'e' => $order['external_id']]);
+                    if ($known !== '') { $order['remote_status'] = $known; }
+                }
                 $created = $repo->import($accountId, $order);
                 $repo->flushAutomations();
                 $localId = (int) $this->db()->fetchColumn('SELECT id FROM om_orders WHERE account_id=:a AND external_id=:e', ['a' => $accountId, 'e' => $order['external_id']]);

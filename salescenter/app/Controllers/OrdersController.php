@@ -62,6 +62,41 @@ final class OrdersController extends Controller
         if (!hash_equals($this->token(),(string)($_POST['csrf']??''))) { http_response_code(403); exit('Sesja formularza wygasła. Odśwież stronę.'); }
         return $user;
     }
+    public function search(): void
+    {
+        $this->requireModule('orders');
+        $q=mb_substr(trim((string)$this->input('q','')),0,200,'UTF-8');
+        $statusId=0;
+        $repo=$this->repository();
+        if (preg_match('/^#\s*(\d{1,10})$/',$q,$idMatch)) {
+            try { $repo->order((int)$idMatch[1]); $this->redirect('./orders.php?controller=orders&tab=list&id='.(int)$idMatch[1]); }
+            catch (\InvalidArgumentException $e) { $this->setFlash('error','Nie znaleziono zamówienia #'.(int)$idMatch[1].'.'); $this->redirect('./orders.php?controller=orders&tab=list'); }
+        }
+        if (preg_match('/(?:^|\s)status:(?:"([^"]+)"|(\S+))/iu',$q,$matches,PREG_OFFSET_CAPTURE)) {
+            $name=trim(($matches[1][0]??'')!==''?$matches[1][0]:$matches[2][0]);
+            $key=static function (string $value): string {
+                return strtr(mb_strtolower(trim($value),'UTF-8'),['ą'=>'a','ć'=>'c','ę'=>'e','ł'=>'l','ń'=>'n','ó'=>'o','ś'=>'s','ź'=>'z','ż'=>'z']);
+            };
+            if (!in_array($key($name),['wszystkie','all'],true)) {
+                foreach ($repo->statuses() as $status) {
+                    if ($key((string)$status['name'])===$key($name)) { $statusId=(int)$status['id']; break; }
+                }
+                if (!$statusId) {
+                    $this->setFlash('error','Nie znaleziono statusu „'.$name.'”. Użyj nazwy statusu, np. status:Wysłane.');
+                    $this->redirect('./orders.php?controller=orders&tab=list&q='.rawurlencode($q));
+                }
+            }
+            $q=trim(substr_replace($q,'',(int)$matches[0][1],strlen($matches[0][0])));
+        }
+        if ($q!=='') {
+            $orderId=$repo->orderIdByDocumentNumber($q,$statusId);
+            if ($orderId!==null) { $this->redirect('./orders.php?controller=orders&tab=list&id='.$orderId); }
+        }
+        $query=['controller'=>'orders','tab'=>'list'];
+        if ($q!=='') { $query['q']=$q; }
+        if ($statusId>0) { $query['status_id']=$statusId; }
+        $this->redirect('./orders.php?'.http_build_query($query));
+    }
     public function index(): void
     {
         $user=$this->requireModule('orders'); $csrf=$this->token(); $repo=$this->repository();
@@ -113,6 +148,8 @@ final class OrdersController extends Controller
             }
             $orderMessages=$this->orderMessages($detail);
             $events=$this->db()->fetchAll('SELECT * FROM om_events WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$detail['id']]);
+            foreach ($events as &$event) { $event['changes']=json_decode((string)($event['changes_json']??''),true)?:[]; }
+            unset($event);
             $orderDocs=$this->db()->fetchAll('SELECT id,number,kind,created_at FROM om_documents WHERE order_id=:id ORDER BY id DESC',['id'=>$detail['id']]);
             foreach ($orderDocs as $orderDocument) {
                 $kind=(string)$orderDocument['kind'];
@@ -539,8 +576,12 @@ final class OrdersController extends Controller
                 case 'order':
                     $db->transaction(function () use ($repo,$db,$id,$actor) {
                         $repo->changeStatus($id,(int)$_POST['status_id'],$actor);
-                        $db->update('om_orders',['tags'=>substr((string)($_POST['tags']??''),0,1000)],'id=:id',['id'=>$id]);
-                        $repo->event($id,'Zapisano tagi.',$actor);
+                        $oldTags=(string)$db->fetchColumn('SELECT tags FROM om_orders WHERE id=:id',['id'=>$id]);
+                        $newTags=substr((string)($_POST['tags']??''),0,1000);
+                        if ($oldTags!==$newTags) {
+                            $db->update('om_orders',['tags'=>$newTags],'id=:id',['id'=>$id]);
+                            $repo->event($id,'Zmieniono tagi.',$actor,[['Tagi',$oldTags,$newTags]]);
+                        }
                     });
                     break;
                 case 'order_details':

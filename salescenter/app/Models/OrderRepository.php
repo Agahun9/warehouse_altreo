@@ -78,6 +78,7 @@ final class OrderRepository
             'om_orders'=>['status_changed_at'=>'VARCHAR(30) NULL','starred'=>'INTEGER NOT NULL DEFAULT 0'],
             'om_rules'=>['triggers_json'=>'TEXT NULL','options_json'=>'TEXT NULL','position'=>'INTEGER NOT NULL DEFAULT 0','updated_at'=>'VARCHAR(30) NULL','group_id'=>'BIGINT NULL'],
             'om_rule_runs'=>['trigger_name'=>'VARCHAR(30) NULL','result'=>'VARCHAR(20) NULL','message'=>'TEXT NULL'],
+            'om_events'=>['changes_json'=>'TEXT NULL'],
         ] as $table=>$columns) {
             $existing=$sqlite ? array_column($this->db->fetchAll("PRAGMA table_info($table)"),'name') : array_column($this->db->fetchAll("SHOW COLUMNS FROM $table"),'Field');
             foreach ($columns as $column=>$definition) {
@@ -241,6 +242,13 @@ final class OrderRepository
         $this->db->update('om_accounts',['name'=>$name],'platform=:p AND source_id=:s',['p'=>$platform,'s'=>$sourceId]);
     }
     public function statuses(): array { return $this->db->fetchAll('SELECT * FROM om_statuses ORDER BY position,id'); }
+    public function orderIdByDocumentNumber(string $number,int $statusId=0): ?int
+    {
+        $where='LOWER(d.number)=LOWER(:number)'; $params=['number'=>$number];
+        if ($statusId>0) { $where.=' AND o.status_id=:status_id'; $params['status_id']=$statusId; }
+        $id=$this->db->fetchColumn('SELECT d.order_id FROM om_documents d JOIN om_orders o ON o.id=d.order_id WHERE '.$where.' LIMIT 1',$params);
+        return $id===false?null:(int)$id;
+    }
     /** @param array<int,array{name:string,ids:int[]}> $layout groups in display order; positions are renumbered so group order follows status order. */
     public function reorderStatuses(array $layout): void
     {
@@ -600,6 +608,7 @@ final class OrderRepository
             $stored=$this->db->fetch('SELECT * FROM om_orders WHERE id=:id'.$this->rowLock(),['id'=>$id]);
             if (!$stored) { throw new InvalidArgumentException('Nie znaleziono zamówienia.'); }
             $details=json_decode((string)$stored['details_json'],true,512,JSON_THROW_ON_ERROR);
+            $before=self::historySnapshot($this->order($id));
             $text=static function (array $source,string $key,int $limit): string { return mb_substr(trim((string)($source[$key]??'')),0,$limit); };
             $buyerName=$text($input,'buyer_name',255);
             $email=$text($input,'email',255);
@@ -652,7 +661,8 @@ final class OrderRepository
             $details['address']=$address; $details['invoice_address']=$invoice;
             $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
             $this->db->update('om_orders',$orderOverride+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
-            $this->event($id,'Zmieniono dane klienta, płatności, dostawy, faktury lub pozycji zamówienia.',$actor);
+            $changes=self::historyChanges($before,self::historySnapshot($this->order($id)));
+            if ($changes) { $this->event($id,'Zmieniono dane zamówienia ('.count($changes).' '.(count($changes)===1?'pole':'pól').').',$actor,$changes); }
             $this->automationEvent($id,'details_changed');
             if ((int)$stored['paid']!==$orderOverride['paid']) { $this->automationEvent($id,$orderOverride['paid']?'paid':'unpaid',['payment_source'=>'user']); }
         });
@@ -670,6 +680,7 @@ final class OrderRepository
             $manual=is_array($details['_manual']??null)?$details['_manual']:[];
             $manualOrder=is_array($manual['order']??null)?$manual['order']:[];
             $manualDetails=is_array($manual['details']??null)?$manual['details']:[];
+            $before=self::historySnapshot($this->order($id));
             $changedOrder=[]; $changed=false;
             foreach ($orderFields as $field=>$value) {
                 if (!in_array($field,['paid','buyer_name','email','phone','total_cents','currency'],true) || (string)$stored[$field]===(string)$value) { continue; }
@@ -682,7 +693,7 @@ final class OrderRepository
             if (!$changed) { return false; }
             $details['_manual']=['order'=>$manualOrder,'details'=>$manualDetails,'updated_at'=>gmdate('Y-m-d H:i:s'),'actor'=>$actor];
             $this->db->update('om_orders',$changedOrder+['details_json'=>self::json($details),'updated_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
-            $this->event($id,$message,$actor);
+            $this->event($id,$message,$actor,self::historyChanges($before,self::historySnapshot($this->order($id))));
             if (isset($changedOrder['paid'])) { $this->automationEvent($id,$changedOrder['paid']?'paid':'unpaid',['payment_source'=>'automation']); }
             return true;
         });
@@ -1067,9 +1078,56 @@ final class OrderRepository
         unset($item);
         return $current;
     }
-    public function event(int $id,string $message,string $actor): void
+    /** $changes: [[etykieta, było, jest], …] – zapisywane tylko zmienione pola, żeby historia nie puchła. */
+    public function event(int $id,string $message,string $actor,array $changes=[]): void
     {
-        $this->db->insert('om_events',['order_id'=>$id,'message'=>$message,'actor'=>$actor,'created_at'=>gmdate('Y-m-d H:i:s')]);
+        $row=['order_id'=>$id,'message'=>$message,'actor'=>$actor,'created_at'=>gmdate('Y-m-d H:i:s')];
+        if ($changes) { $row['changes_json']=self::json(array_slice(array_values($changes),0,150)); }
+        $this->db->insert('om_events',$row);
+    }
+    /** Editable order fields exactly as the detail form shows them, so before/after diffs match what the operator saw. */
+    private static function historySnapshot(array $order): array
+    {
+        $d=$order['details']; $ship=$order['shipping_address']; $inv=$d['invoice_form'];
+        $money=static function ($cents): string { return number_format((int)$cents/100,2,',',''); };
+        $yes=static function ($flag): string { return $flag?'tak':'nie'; };
+        $fields=[
+            'Kupujący'=>$order['buyer_name'],'E-mail kupującego'=>$order['email'],'Telefon kupującego'=>$order['phone'],
+            'Wartość zamówienia'=>$money($order['total_cents']),'Waluta'=>$order['currency'],'Opłacone'=>$yes((int)$order['paid']),
+            'Metoda płatności'=>$d['payment_method'],'Zapłacono'=>$money($d['amount_paid_cents']),'Pobranie'=>$yes($d['cash_on_delivery']),
+            'Metoda dostawy'=>$d['delivery']??'','Punkt odbioru'=>$d['pickup']??'','Koszt dostawy'=>$money($d['shipping_cents']??0),
+            'Dokument sprzedaży'=>$d['document_preference']==='invoice'?'faktura':'paragon','Uwagi kupującego'=>$d['buyer_note']??'',
+            'Odbiorca – imię i nazwisko'=>$ship['name'],'Odbiorca – e-mail'=>$ship['email'],'Odbiorca – telefon'=>$ship['phone'],
+            'Odbiorca – ulica'=>$ship['street'],'Odbiorca – nr budynku'=>$ship['building'],'Odbiorca – kod pocztowy'=>$ship['postal_code'],
+            'Odbiorca – miasto'=>$ship['city'],'Odbiorca – kraj'=>$ship['country'],
+            'Nabywca – imię i nazwisko'=>$inv['name'],'Nabywca – firma'=>$inv['company'],'Nabywca – NIP'=>$inv['nip'],
+            'Nabywca – ulica'=>$inv['street'],'Nabywca – nr budynku'=>$inv['building'],'Nabywca – kod pocztowy'=>$inv['postal_code'],
+            'Nabywca – miasto'=>$inv['city'],'Nabywca – kraj'=>$inv['country'],
+        ];
+        $items=[];
+        foreach (array_values((array)($d['items']??[])) as $item) {
+            if (!is_array($item)) { continue; }
+            $items[]=['nazwa'=>(string)($item['name']??''),'SKU'=>(string)($item['sku']??''),'ilość'=>(string)(int)($item['quantity']??0),'cena'=>$money($item['unit_cents']??0),'VAT'=>(string)($item['vat']??'')];
+        }
+        return ['fields'=>array_map('strval',$fields),'items'=>$items];
+    }
+    private static function historyChanges(array $before,array $after): array
+    {
+        $short=static function (string $value): string { $value=trim($value); return mb_strlen($value,'UTF-8')>150?mb_substr($value,0,150,'UTF-8').'…':$value; };
+        $changes=[];
+        foreach ($after['fields'] as $label=>$value) {
+            $old=$before['fields'][$label]??'';
+            if ($old!==$value) { $changes[]=[$label,$short($old),$short($value)]; }
+        }
+        $summary=static function (array $item): string { return $item['nazwa'].' × '.$item['ilość']; };
+        for ($i=0,$count=max(count($before['items']),count($after['items'])); $i<$count; $i++) {
+            $old=$before['items'][$i]??null; $new=$after['items'][$i]??null; $label='Pozycja '.($i+1);
+            if ($old===null || $new===null) { $changes[]=[$label,$old?$short($summary($old)):'',$new?$short($summary($new)):'']; continue; }
+            foreach ($new as $field=>$value) {
+                if (($old[$field]??'')!==$value) { $changes[]=[$label.' – '.$field,$short($old[$field]??''),$short($value)]; }
+            }
+        }
+        return $changes;
     }
     public function setStarred(int $id,bool $starred): void
     {
@@ -1237,7 +1295,8 @@ final class OrderRepository
         $old = $this->order($id);
         if ((int)$old['status_id'] === $status) { return; }
         $this->db->update('om_orders',['status_id'=>$status,'status_manual'=>1,'status_changed_at'=>gmdate('Y-m-d H:i:s')],'id=:id',['id'=>$id]);
-        $this->event($id,'Status wewnętrzny: '.$old['status_name'].' → #'.$status,$actor);
+        $newName=(string)$this->db->fetchColumn('SELECT name FROM om_statuses WHERE id=:id',['id'=>$status]);
+        $this->event($id,'Status wewnętrzny: '.$old['status_name'].' → '.($newName!==''?$newName:'#'.$status),$actor);
         if ($rules) { $this->automationEvent($id,'status',['previous_status_id'=>(int)$old['status_id'],'status_source'=>strpos($actor,'automat')===0?'automation':'user']); }
         if ($this->db->fetchColumn('SELECT p.id FROM om_status_push p JOIN om_accounts a ON a.platform=p.platform WHERE a.id=:a AND p.status_id=:s',['a'=>(int)$old['account_id'],'s'=>$status])) {
             $this->pendingStatusPush[$id]=$actor;

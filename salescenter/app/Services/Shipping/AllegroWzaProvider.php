@@ -177,6 +177,14 @@ final class AllegroWzaProvider extends ShippingProvider
             $street=trim(trim((string)($input['receiver_street']??'')).' '.trim((string)($input['receiver_building']??'')));
             if ($street!=='') { $receiver['street']=$street; }
         }
+        // Miejscowość bez ulic: Allegro proponuje samo „105” i odrzuca je („Numer budynku jest wymagany”).
+        if (!preg_match('/\p{L}/u',(string)($receiver['street']??''))) {
+            $street=trim((string)($address['street']??'')); $building=trim((string)($address['building']??''));
+            $candidate=trim($street.($building!==''&&mb_strpos($street,$building,0,'UTF-8')===false?' '.$building:''));
+            $number=trim((string)($receiver['street']??'')) ?: $building;
+            if (!preg_match('/\p{L}/u',$candidate)) { $candidate=trim(trim((string)($receiver['city']??$address['city']??'')).' '.($number!==''?$number:$candidate)); }
+            if (preg_match('/\p{L}/u',$candidate) && preg_match('/\d/',$candidate)) { $receiver['street']=$candidate; }
+        }
         return $receiver;
     }
     private function account(array $carrier): array { return $this->sourceAccount('allegro',(int)($carrier['public']['order_account_id']??0)); }

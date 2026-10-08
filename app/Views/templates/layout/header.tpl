@@ -5,7 +5,8 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>{$appName|escape} | {$pageTitle|default:'Dashboard'|escape}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/warehouse-icon.svg">
+  <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/magazyn-icon.svg?v=1">
+  <link rel="apple-touch-icon" href="{$assetBase}/assets/img/magazyn-icon-180.png?v=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">

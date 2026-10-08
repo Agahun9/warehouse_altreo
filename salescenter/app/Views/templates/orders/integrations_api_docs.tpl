@@ -17,7 +17,7 @@
   -d '{
   "id": "10025",
   "created_at": "2026-09-17T10:15:00Z",
-  "status": "nowe",
+  "status": "W realizacji",
   "currency": "PLN",
   "total": "141.97",
   "paid": true,
@@ -36,5 +36,6 @@
 }'{/literal}</pre>
     <p><strong>Odpowiedź:</strong> <code>{literal}{"results":[{"id":"10025","local_id":57,"created":true}]}{/literal}</code> · błędy walidacji: HTTP 422 z polem <code>error</code>.</p>
     <p>Pola opcjonalne: <code>total</code> (gdy brak – suma pozycji i dostawy), <code>status</code>, <code>paid</code>, <code>vat</code> (23, 8, 5, 0, zw, np), <code>image_url</code>, <code>invoice</code>.</p>
+    <p><code>status</code> to status zamówienia w Twoim sklepie (dowolny tekst, np. „W realizacji”) – wysyłaj go przy każdej zmianie. W SalesCenter przypiszesz go do statusu wewnętrznego w Zamówienia → Statusy. Brak pola przy aktualizacji zostawia poprzedni status; nowe zamówienie bez statusu dostaje <code>new</code>.</p>
   </div>
 </details>

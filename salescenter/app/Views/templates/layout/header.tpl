@@ -5,7 +5,8 @@
   <title>{$appName|escape} | {$pageTitle|default:'Panel'|escape}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {include file='layout/theme.tpl'}
-  <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/warehouse-icon.svg">
+  <link rel="icon" type="image/svg+xml" href="{$assetBase}/assets/img/salescenter-icon.svg?v=1">
+  <link rel="apple-touch-icon" href="{$assetBase}/assets/img/salescenter-icon-180.png?v=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
@@ -226,6 +227,25 @@
       flex: 0 0 auto;
     }
 
+    .sc-order-search {
+      display: flex;
+      align-items: center;
+      width: clamp(220px, 28vw, 390px);
+      height: 34px;
+      margin-right: 10px;
+      border: 1px solid var(--bs-border-color);
+      border-radius: 9px;
+      background: var(--bs-body-bg);
+      overflow: hidden;
+    }
+
+    .sc-order-search:focus-within { border-color: #6b6be6; box-shadow: 0 0 0 2px rgba(99, 102, 241, .15); }
+    .sc-order-search > i { margin-left: 10px; color: var(--bs-secondary-color); }
+    .sc-order-search input { flex: 1; min-width: 0; height: 100%; padding: 0 8px; border: 0; outline: 0; background: transparent; color: var(--bs-body-color); font-size: 12px; }
+    .sc-order-search input::placeholder { color: var(--bs-secondary-color); }
+    .sc-order-search button { align-self: stretch; padding: 0 11px; border: 0; border-left: 1px solid var(--bs-border-color); background: transparent; color: var(--bs-body-color); font-size: 12px; font-weight: 600; }
+    .sc-order-search button:hover { background: var(--bs-tertiary-bg); }
+
     .topbar-user-link {
       display: flex;
       align-items: center;
@@ -254,9 +274,17 @@
     }
 
     @media (max-width: 767.98px) {
+      .sc-order-search { width: clamp(135px, 38vw, 230px); margin-right: 5px; }
+      .sc-order-search button { padding: 0 8px; font-size: 0; }
+      .sc-order-search button i { font-size: 13px; }
       .topbar-user-link {
         max-width: 110px;
       }
+    }
+
+    @media (max-width: 575.98px) {
+      .sc-order-search { width: min(45vw, 210px); }
+      .topbar-user-link { display: none; }
     }
 
     .sidebar-menu .taskboard-submenu .nav-link {
@@ -367,6 +395,13 @@
           <li class="nav-item d-none d-md-block"><span class="nav-link sc-tenant-name"><i class="bi bi-building"></i> {$currentUser.tenant.name|escape}</span></li>
         </ul>
         <ul class="navbar-nav ms-auto align-items-center">
+          <li class="nav-item">
+            <form class="sc-order-search" method="get" action="orders.php" role="search" title="Szukaj we wszystkich statusach. Aby zawęzić, wpisz np. status:Wysłane monika.">
+              <input type="hidden" name="controller" value="orders"><input type="hidden" name="action" value="search">
+              <i class="bi bi-search" aria-hidden="true"></i><input name="q" type="search" value="{$filters.q|default:''|escape}" maxlength="200" placeholder="#nr, klient, dokument, status:Wysłane" aria-label="Szukaj zamówień; status:Wysłane zawęża wyniki" required>
+              <button type="submit" aria-label="Szukaj zamówień"><i class="bi bi-arrow-right"></i> Szukaj</button>
+            </form>
+          </li>
           <li class="nav-item">
             <button type="button" class="sc-theme-toggle" data-sc-theme-toggle title="Przełącz tryb jasny / ciemny" aria-label="Przełącz tryb jasny / ciemny"><i class="bi bi-moon-stars sc-theme-icon-light"></i><i class="bi bi-sun sc-theme-icon-dark"></i></button>
           </li>

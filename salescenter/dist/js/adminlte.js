@@ -820,7 +820,7 @@
         initKeyboardNavigation() {
             document.addEventListener('keydown', (event) => {
                 const target = event.target;
-                if (target.closest('.nav, .navbar-nav, .dropdown-menu')) {
+                if (target.closest('.nav, .navbar-nav, .dropdown-menu') && !target.matches('input, textarea, select, [contenteditable]')) {
                     this.handleMenuNavigation(event);
                 }
                 if ((event.key === 'Enter' || event.key === ' ') && target.hasAttribute('role') && target.getAttribute('role') === 'button' && !target.matches('button, input[type="button"], input[type="submit"]')) {
