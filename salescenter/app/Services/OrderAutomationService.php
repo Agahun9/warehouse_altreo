@@ -1272,7 +1272,10 @@ final class OrderAutomationService
                 if ($to==='' || !filter_var($to,FILTER_VALIDATE_EMAIL)) { return $skip('Brak poprawnego adresu e-mail'); }
                 $subject=trim(preg_replace('/[\r\n]+/',' ',$this->render((string)$params['subject'],$ctx))??'');
                 $body=$this->render((string)$params['body'],$ctx);
-                if (!(new MailService())->send($to,$subject,nl2br(htmlspecialchars($body,ENT_QUOTES,'UTF-8')),$body)) { throw new RuntimeException('Serwer poczty nie przyjął wiadomości; zapisano ją w logu poczty.'); }
+                $emailId=$this->repo->beginOrderEmail($orderId,$to,$subject,$body,$actor,'automation');
+                $sent=(new MailService())->send($to,$subject,nl2br(htmlspecialchars($body,ENT_QUOTES,'UTF-8')),$body);
+                $this->repo->finishOrderEmail($emailId,$sent);
+                if (!$sent) { throw new RuntimeException('Serwer poczty nie przyjął wiadomości; zapisano ją w logu poczty.'); }
                 $this->repo->event($orderId,'Wysłano e-mail „'.$subject.'” na adres '.$to.'.',$actor);
                 return $ok('Wysłano e-mail na '.$to);
             case 'webhook':

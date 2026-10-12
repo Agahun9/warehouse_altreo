@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services\Shipping;
 
 use App\Services\OrderNormalizer;
+use App\Services\OrderShipmentService;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -168,7 +169,7 @@ final class ApaczkaProvider extends ShippingProvider
             $toPoint=isset($service['door_to_point'])&&$service['door_to_point']!==''?(self::flag($service,'door_to_point')||self::flag($service,'point_to_point')):(bool)preg_match(self::POINT_PATTERN,(string)($service['name']??''));
             if ($toPoint) { $data['address']['receiver']['foreign_address_id']=mb_substr($pickup,0,100,'UTF-8'); }
         }
-        $this->applyCod($data,$input,(string)$order['currency']);
+        $this->applyCod($data,$input,(string)$order['currency'],(int)$order['account_id']);
         return $data;
     }
     /** Wpis usługi z listy kont (z flagami nadania); stary cache bez flag jest odświeżany raz. */
@@ -234,12 +235,12 @@ final class ApaczkaProvider extends ShippingProvider
         }
         return array_values($own?:$other);
     }
-    private function applyCod(array &$orderData,array $input,string $currency): void
+    private function applyCod(array &$orderData,array $input,string $currency,int $sourceAccountId): void
     {
         if (empty($input['cash_on_delivery'])) { return; }
         $amount=OrderNormalizer::money((string)($input['cod_amount']??'0'));
         if ($amount<1) { throw new InvalidArgumentException('Kwota pobrania musi być większa od zera.'); }
-        $bankAccount=preg_replace('/\s+/','',trim((string)($this->defaults()['cod_bank_account']??'')))??'';
+        $bankAccount=preg_replace('/\s+/','',trim(OrderShipmentService::codBankAccount($this->repo,$sourceAccountId,(string)($input['cod_bank_id']??''))))??'';
         if ($currency==='PLN' && strncasecmp($bankAccount,'PL',2)===0) { $bankAccount=substr($bankAccount,2); }
         if ($currency==='PLN' && !preg_match('/^\d{26}$/D',$bankAccount)) { throw new InvalidArgumentException('Uzupełnij poprawny numer konta pobrania w zakładce Przesyłki i presety.'); }
         $orderData['cod']=['amount'=>$amount,'currency'=>$currency,'bankaccount'=>$bankAccount];

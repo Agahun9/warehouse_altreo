@@ -51,6 +51,9 @@ class Application
             case 'archive':
                 $controller = new \App\Controllers\ArchiveController();
                 break;
+            case 'stats':
+                $controller = new \App\Controllers\StatsController();
+                break;
             default:
                 http_response_code(404);
                 echo 'Kontroler nie istnieje.';

@@ -34,6 +34,7 @@ final class OrderRepository
             'om_status_mappings' => "id $id, platform VARCHAR(20) NOT NULL, remote_status VARCHAR(100) NOT NULL, status_id BIGINT NOT NULL, UNIQUE(platform, remote_status)",
             'om_status_push' => "id $id, platform VARCHAR(20) NOT NULL, status_id BIGINT NOT NULL, remote_status VARCHAR(100) NOT NULL, UNIQUE(platform, status_id)",
             'om_events' => "id $id, order_id BIGINT NOT NULL, actor VARCHAR(150) NOT NULL, message TEXT NOT NULL, created_at VARCHAR(30) NOT NULL",
+            'om_order_emails' => "id $id, order_id BIGINT NOT NULL, recipient VARCHAR(255) NOT NULL, subject VARCHAR(255) NOT NULL, body TEXT NOT NULL, actor VARCHAR(150) NOT NULL, source VARCHAR(20) NOT NULL, status VARCHAR(20) NOT NULL, created_at VARCHAR(30) NOT NULL",
             'om_order_notes' => "id $id, order_id BIGINT NOT NULL, body TEXT NOT NULL, author VARCHAR(150) NOT NULL DEFAULT '', source VARCHAR(40) NOT NULL DEFAULT 'user', created_at VARCHAR(30) NOT NULL, updated_at VARCHAR(30) NOT NULL",
             'om_rule_groups' => "id $id, name VARCHAR(100) NOT NULL, position INTEGER NOT NULL DEFAULT 0, created_at VARCHAR(30) NULL",
             'om_rules' => "id $id, name VARCHAR(150) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, trigger_name VARCHAR(30) NOT NULL, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL",
@@ -99,6 +100,7 @@ final class OrderRepository
         foreach ([
             'om_orders' => ['om_order_date'=>'ordered_at,id','om_order_status'=>'status_id,ordered_at','om_order_account'=>'account_id,ordered_at'],
             'om_events' => ['om_event_order'=>'order_id,id'],
+            'om_order_emails' => ['om_order_email_order'=>'order_id,id'],
             'om_order_notes' => ['om_order_note_order'=>'order_id,id'],
             'om_documents' => ['om_document_order'=>'order_id,id','om_document_parent'=>'parent_id,id'],
             'om_shipments' => ['om_shipment_order'=>'order_id,id','om_shipment_refresh'=>'refresh_due_at'],
@@ -922,8 +924,10 @@ final class OrderRepository
         }
         $where = implode(' AND ',$where);
         $count = (int)$this->db->fetchColumn("SELECT COUNT(*) FROM om_orders o JOIN om_accounts a ON a.id=o.account_id WHERE $where",$params);
-        $page = max(1,min((int)($filters['page']??1),max(1,(int)ceil($count/50))));
-        $offset = ($page-1)*50;
+        $perPage=(int)($filters['per_page']??50);
+        if (!in_array($perPage,[50,100,150,200,500,1000,2000],true)) { $perPage=50; }
+        $page = max(1,min((int)($filters['page']??1),max(1,(int)ceil($count/$perPage))));
+        $offset = ($page-1)*$perPage;
         $orders=[
             'newest'=>'o.ordered_at DESC,o.id DESC',
             'oldest'=>'o.ordered_at ASC,o.id ASC',
@@ -932,7 +936,7 @@ final class OrderRepository
             'buyer'=>'o.buyer_name ASC,o.id DESC',
         ];
         $orderBy=$orders[(string)($filters['sort']??'newest')]??$orders['newest'];
-        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.status_changed_at,o.starred,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT 50 OFFSET $offset",$params);
+        $rows = $this->db->fetchAll("SELECT o.id,o.external_id,o.buyer_name,o.email,o.phone,o.total_cents,o.currency,o.paid,o.ordered_at,o.status_changed_at,o.starred,o.remote_status,o.tags,o.note,o.status_id,o.details_json,a.platform,a.source_id account_source_id,a.name account_name,s.name status_name,s.color FROM om_orders o JOIN om_accounts a ON a.id=o.account_id JOIN om_statuses s ON s.id=o.status_id WHERE $where ORDER BY $orderBy LIMIT $perPage OFFSET $offset",$params);
         $skus=[];$allegroOfferIds=[];$erliExternalIds=[];$empikShopSkus=[];$empikProductSkus=[];$empikProductIds=[];$sourceAccounts=[];
         foreach ($rows as &$row) {
             try { $details=json_decode((string)$row['details_json'],true,512,JSON_THROW_ON_ERROR); }
@@ -1051,7 +1055,7 @@ final class OrderRepository
             unset($item);
         }
         unset($row);
-        return ['rows'=>$rows,'total'=>$count,'page'=>$page,'pages'=>max(1,(int)ceil($count/50))];
+        return ['rows'=>$rows,'total'=>$count,'page'=>$page,'pages'=>max(1,(int)ceil($count/$perPage)),'per_page'=>$perPage];
     }
     private static function preserveItemImages(array $current,array $previous): array
     {
@@ -1084,6 +1088,18 @@ final class OrderRepository
         $row=['order_id'=>$id,'message'=>$message,'actor'=>$actor,'created_at'=>gmdate('Y-m-d H:i:s')];
         if ($changes) { $row['changes_json']=self::json(array_slice(array_values($changes),0,150)); }
         $this->db->insert('om_events',$row);
+    }
+    public function orderEmails(int $orderId): array
+    {
+        return $this->db->fetchAll('SELECT * FROM om_order_emails WHERE order_id=:id ORDER BY id DESC LIMIT 100',['id'=>$orderId]);
+    }
+    public function beginOrderEmail(int $orderId,string $to,string $subject,string $body,string $actor,string $source): int
+    {
+        return (int)$this->db->insert('om_order_emails',['order_id'=>$orderId,'recipient'=>$to,'subject'=>$subject,'body'=>$body,'actor'=>$actor,'source'=>$source,'status'=>'pending','created_at'=>gmdate('Y-m-d H:i:s')]);
+    }
+    public function finishOrderEmail(int $emailId,bool $sent): void
+    {
+        $this->db->update('om_order_emails',['status'=>$sent?'sent':'failed'],'id=:id',['id'=>$emailId]);
     }
     /** Editable order fields exactly as the detail form shows them, so before/after diffs match what the operator saw. */
     private static function historySnapshot(array $order): array
@@ -1285,6 +1301,7 @@ final class OrderRepository
             $this->db->delete('om_shipments','order_id=:id',['id'=>$id]);
             $this->db->delete('om_rule_runs','order_id=:id',['id'=>$id]);
             $this->db->delete('om_events','order_id=:id',['id'=>$id]);
+            $this->db->delete('om_order_emails','order_id=:id',['id'=>$id]);
             $this->db->delete('om_order_notes','order_id=:id',['id'=>$id]);
             $this->db->delete('om_orders','id=:id',['id'=>$id]);
         });

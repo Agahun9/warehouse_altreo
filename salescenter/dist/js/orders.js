@@ -821,6 +821,8 @@
     const serviceStatus = form.querySelector('[data-shipping-service-status]');
     const codToggle = form.querySelector('[data-cod-toggle]');
     const codAmount = form.querySelector('[data-cod-amount]');
+    const codBankField = form.querySelector('[data-cod-bank-field]');
+    const codBankSelect = form.querySelector('[data-cod-bank-select]');
     const shippingPrice = form.querySelector('[data-shipping-price]');
     const orderId = form.querySelector('input[name="order_id"]')?.value || '';
     const serviceCache = new Map();
@@ -929,12 +931,19 @@
       const provider = carrier?.selectedOptions[0]?.dataset.provider || '';
       form.dataset.provider = provider;
       form.dataset.valuation = '';
+      updateCodBank();
       pickupSupported = false; loadPickup();
       if (shippingPrice) shippingPrice.textContent = provider ? 'Pobieram usługi operatora…' : 'Wybierz konto i usługę';
     };
     const updateCod = () => {
       if (codAmount) { codAmount.disabled = !codToggle?.checked; codAmount.required = !!codToggle?.checked; }
+      updateCodBank();
       scheduleValuation();
+    };
+    const updateCodBank = () => {
+      const visible = form.dataset.provider === 'apaczka' && !!codToggle?.checked;
+      if (codBankField) codBankField.hidden = !visible;
+      if (codBankSelect) codBankSelect.disabled = !visible;
     };
     const scheduleValuation = () => {
       clearTimeout(valuationTimer);
@@ -971,6 +980,7 @@
     pickupMode?.addEventListener('change', () => { if (pickupSlot) pickupSlot.dataset.service = service?.value || ''; loadPickup(); });
     codToggle?.addEventListener('change', updateCod);
     codAmount?.addEventListener('input', scheduleValuation);
+    codBankSelect?.addEventListener('change', scheduleValuation);
     Object.values(fields).forEach(field => field.addEventListener('input', scheduleValuation));
     form.querySelectorAll('[name="receiver_postal_code"],[name="receiver_city"],[name="receiver_country"],[name="receiver_street"],[name="receiver_building"]').forEach(field => field.addEventListener('input', scheduleValuation));
     updateProvider();
@@ -984,7 +994,7 @@
     const root = document.querySelector('[data-order-layout]');
     const toggle = root?.querySelector('[data-layout-toggle]');
     if (!root || !toggle) return;
-    const MAIN = ['om-notes', 'om-inline-data', 'om-messages', 'om-shipping', 'om-documents', 'om-payment-info', 'om-automation', 'om-history', 'om-raw-debug'];
+    const MAIN = ['om-notes', 'om-inline-data', 'om-communication-shipping', 'om-documents', 'om-payment-info', 'om-automation', 'om-history', 'om-raw-debug'];
     const grid = root.querySelector('#om-data-grid');
     const groups = {
       main: { container: root, items: () => [...root.children].filter(el => MAIN.includes(el.id)), key: el => el.id },

@@ -153,6 +153,17 @@ i klucz API (Sellasist → Integracje → Klucze API; zapisywany zaszyfrowany).
   jest generowany z danych dokumentu.
 - Test: `php tests/archive_test.php`.
 
+## Statystyki sprzedaży (menu **Sprzedaż → Statystyki**)
+
+- Kod: `StatsController`, `OrderStatsRepository`, `templates/stats/index.tpl`, `dist/js/stats.js`, `dist/css/stats.css`.
+  Moduł tylko czyta `om_orders` – nie ma własnych tabel ani zapisu. Dostęp jak do centrum zamówień (także „tylko podgląd”).
+- Sztuki i produkty pochodzą z pozycji w `details_json`; dni, tygodnie i godziny są liczone w czasie polskim.
+- Do sprzedaży domyślnie nie wchodzą statusy z „anul”, „zwrot” lub „odrzuc” w nazwie – zmienia to filtr **Statusy**.
+- Zamówienia i sztuki obejmują wszystkie waluty, kwoty tylko walutę wybraną w filtrze (domyślnie najczęstszą).
+- Porównanie dotyczy bezpośrednio poprzedzającego okresu tej samej długości (dla zakresów do 366 dni).
+- Raport liczy się na żywo; bardzo duży zakres, który nie mieści się w 20 s, prosi o zawężenie dat lub kont.
+- Test: `php tests/stats_test.php`.
+
 ## Agent druku
 
 - Paczki do pobrania: `downloads/PrintAgent-Windows-x64.zip`, `downloads/PrintAgent-macOS-AppleSilicon.zip`
@@ -178,6 +189,7 @@ php tests/tenant_test.php
 php tests/integrations_test.php
 php tests/shipping_test.php
 php tests/messages_test.php
+php tests/stats_test.php
 ```
 
 Szczegóły funkcji centrum zamówień: `docs/orders.md` (dokumentacja z aplikacji magazynowej).

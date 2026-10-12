@@ -49,6 +49,18 @@
 
         <div class="sc-conn-settings">
           <div class="sc-settings-grid">
+            {if $acc}
+            <section class="sc-card">
+              <h4><i class="bi bi-bank"></i> Rachunek dla pobrań</h4>
+              <p>Przy nadaniu pobrania Apaczka użyje rachunku wybranego dla tego konta importu.</p>
+              {if $canWrite}<form method="post" action="index.php?controller=orders&action=save" class="sc-fields">
+                <input type="hidden" name="csrf" value="{$csrf|escape}"><input type="hidden" name="operation" value="cod_bank_assignment"><input type="hidden" name="tab" value="accounts"><input type="hidden" name="account_id" value="{$acc.id}">
+                <label>Rachunek<select name="cod_bank_id"><option value="">Domyślny rachunek{if $shippingDefaults.cod_bank_account|default:'' neq ''} · …{$shippingDefaults.cod_bank_account|substr:-4|escape}{else} (nie ustawiono){/if}</option>{foreach $codBankSettings.accounts as $bankId=>$bank}<option value="{$bankId|escape}" {if ($codBankSettings.assignments[$acc.id]|default:'') eq $bankId}selected{/if}>{$bank.name|escape} · …{$bank.number|substr:-4|escape}</option>{/foreach}</select></label>
+                <button class="sc-btn">Zapisz rachunek</button>
+              </form>{else}<p>{if isset($codBankSettings.accounts[$codBankSettings.assignments[$acc.id]|default:''])}{$codBankSettings.accounts[$codBankSettings.assignments[$acc.id]].name|escape}{else}Domyślny rachunek{/if}</p>{/if}
+              <p><a href="?controller=orders&tab=shipments#om-cod-bank-accounts">Zarządzaj rachunkami →</a></p>
+            </section>
+            {/if}
             {if $c.platform neq 'api' && $acc}
             <section class="sc-card">
               <h4><i class="bi bi-clock-history"></i> Pobierz starsze zamówienia</h4>

@@ -83,6 +83,9 @@ final class AllegroWzaProvider extends ShippingProvider
             if ($credentialsId!=='') { $shipmentInput['credentialsId']=$credentialsId; } else { unset($shipmentInput['credentialsId']); }
         }
         $shipmentInput['receiver']=$this->editedReceiver(is_array($shipmentInput['receiver']??null)?$shipmentInput['receiver']:[],$order,$input);
+        if (is_array($shipmentInput['sender']??null) && isset($shipmentInput['sender']['company'])) {
+            $shipmentInput['sender']['company']=$this->senderCompany((string)$shipmentInput['sender']['company']);
+        }
         $referenceNumber=(string)($order['external_id']??'');
         if (mb_strlen($referenceNumber,'UTF-8')>35) { $referenceNumber='CRM-'.(int)$order['id']; }
         $shipmentInput['referenceNumber']=$referenceNumber;
@@ -188,6 +191,12 @@ final class AllegroWzaProvider extends ShippingProvider
         return $receiver;
     }
     private function account(array $carrier): array { return $this->sourceAccount('allegro',(int)($carrier['public']['order_account_id']??0)); }
+    private function senderCompany(string $company): string
+    {
+        if (mb_strlen($company,'UTF-8')<=30) { return $company; }
+        $company=preg_replace('/\s+SPÓŁKA\s+Z\s+OGRANICZONĄ\s+ODPOWIEDZIALNOŚCIĄ$/iu',' sp. z o.o.',$company);
+        return mb_substr($company,0,30,'UTF-8');
+    }
     private function latestTracking(array $response,string $waybill): array
     {
         $statuses=[];

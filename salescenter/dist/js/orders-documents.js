@@ -21,10 +21,11 @@
       const series = document.getElementById(location.hash.slice(1));
       if (series) { series.open = true; series.scrollIntoView({ block: 'start' }); }
     } else if (location.hash === '#sc-docs-series') activate('series');
+    else if (location.hash === '#sc-docs-nip') activate('nip');
     else if (location.hash === '#sc-docs-history') activate('history');
   };
   let initial = 'history';
-  try { if (sessionStorage.getItem(storageKey) === 'series') initial = 'series'; } catch (_) {}
+  try { if (['series', 'nip'].includes(sessionStorage.getItem(storageKey))) initial = sessionStorage.getItem(storageKey); } catch (_) {}
   activate(initial, false);
   openHash();
   window.addEventListener('hashchange', openHash);
@@ -74,6 +75,22 @@
     if (empty) empty.hidden = count > 0 || rows.length === 0;
   };
   search?.addEventListener('input', filterRows);
+  const nipSearch = root.querySelector('[data-nip-search]');
+  const nipRows = [...root.querySelectorAll('[data-nip-row]')];
+  const nipResult = root.querySelector('[data-nip-result]');
+  const nipEmpty = root.querySelector('[data-nip-no-match]');
+  nipSearch?.addEventListener('input', () => {
+    const query = normalize(nipSearch.value).trim();
+    const digits = query.replace(/\D/g, '');
+    let count = 0;
+    nipRows.forEach(row => {
+      const value = normalize(row.dataset.nipText);
+      row.hidden = !value.includes(query) && !(digits && row.dataset.nipText.replace(/\D/g, '').includes(digits));
+      if (!row.hidden) count++;
+    });
+    if (nipResult) nipResult.textContent = count + ' / ' + nipRows.length;
+    if (nipEmpty) nipEmpty.hidden = count > 0 || nipRows.length === 0;
+  });
   filters.forEach(button => button.addEventListener('click', () => {
     kind = button.dataset.docsKind;
     filters.forEach(item => { item.classList.toggle('is-active', item === button); item.setAttribute('aria-pressed', String(item === button)); });

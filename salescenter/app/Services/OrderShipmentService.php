@@ -33,6 +33,31 @@ final class OrderShipmentService
         if ($merged['default_package']!=='auto' && !isset($merged['presets'][$merged['default_package']])) { $merged['default_package']='auto'; }
         return $merged;
     }
+    /** Rachunki pobrań i przypisania do kont, z których pochodzą zamówienia. */
+    public static function codBankSettings(OrderRepository $repo): array
+    {
+        $settings=$repo->setting('cod_bank_accounts');
+        return ['accounts'=>(array)($settings['accounts']??[]),'assignments'=>(array)($settings['assignments']??[])];
+    }
+    public static function codBankAccount(OrderRepository $repo,int $sourceAccountId,?string $choice=null): string
+    {
+        $settings=self::codBankSettings($repo);
+        if ($choice!==null && $choice!=='') {
+            if ($choice==='default') { return (string)(self::defaults($repo)['cod_bank_account']??''); }
+            if (!isset($settings['accounts'][$choice])) { throw new InvalidArgumentException('Wybrany rachunek pobrań nie istnieje. Odśwież formularz przesyłki.'); }
+            return (string)$settings['accounts'][$choice]['number'];
+        }
+        $key=(string)($settings['assignments'][(string)$sourceAccountId]??'');
+        if ($key!=='' && isset($settings['accounts'][$key])) { return (string)$settings['accounts'][$key]['number']; }
+        return (string)(self::defaults($repo)['cod_bank_account']??'');
+    }
+    public static function normalizeCodBankAccount(string $value): string
+    {
+        $number=preg_replace('/\s+/','',trim($value))??'';
+        if (strncasecmp($number,'PL',2)===0) { $number=substr($number,2); }
+        if (!preg_match('/^\d{26}$/D',$number)) { throw new InvalidArgumentException('Numer konta pobrania musi zawierać 26 cyfr (prefiks PL możesz pominąć).'); }
+        return $number;
+    }
     /** Gabaryty paczek: klucz => name, length, width, height, weight. Zapisana lista zastępuje wbudowane Mała/Średnia/Duża. */
     public static function presets(array $stored): array
     {

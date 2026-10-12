@@ -14,10 +14,10 @@
   <link rel="stylesheet" href="{$assetBase}/css/adminlte.css">
   <link rel="stylesheet" href="{$assetBase}/css/liquid-glass.css?v=20260630-7">
   {if $currentController eq 'orders' or $currentController eq 'index' or $currentController eq 'messages'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20261006-1">
+    <link rel="stylesheet" href="{$assetBase}/css/orders.css?v=20261012-cod-select">
   {/if}
   {if $currentController eq 'orders' and ($tab|default:'') eq 'documents'}
-    <link rel="stylesheet" href="{$assetBase}/css/orders-documents.css?v=20261001-1">
+    <link rel="stylesheet" href="{$assetBase}/css/orders-documents.css?v=20261008-2">
   {/if}
   {if $currentController eq 'messages'}
     <link rel="stylesheet" href="{$assetBase}/css/messages.css?v=20260918-1">
@@ -433,6 +433,7 @@
             <li class="nav-item"><a href="orders.php?tab=new" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'new'} active{/if}" title="Nowe zamówienie"><i class="nav-icon bi bi-plus-circle"></i><p>Nowe zamówienie</p></a></li>
             <li class="nav-item"><a href="{$baseUrl}?controller=messages" class="nav-link{if $currentController eq 'messages'} active{/if}" title="Wiadomości{if $messagesOpenCount|default:0 > 0} ({$messagesOpenCount} do obsługi){/if}"><i class="nav-icon bi bi-chat-left-text"></i><p>Wiadomości</p>{if $messagesOpenCount|default:0 > 0}<span class="sc-nav-badge">{if $messagesOpenCount > 99}99+{else}{$messagesOpenCount}{/if}</span>{/if}</a></li>
             <li class="nav-item"><a href="orders.php?tab=documents" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'documents'} active{/if}" title="Dokumenty"><i class="nav-icon bi bi-file-earmark-text"></i><p>Dokumenty</p></a></li>
+            <li class="nav-item"><a href="{$baseUrl}?controller=stats" class="nav-link{if $currentController eq 'stats'} active{/if}" title="Statystyki sprzedaży"><i class="nav-icon bi bi-bar-chart-line"></i><p>Statystyki</p></a></li>
             <li class="nav-item"><a href="{$baseUrl}?controller=archive" class="nav-link{if $currentController eq 'archive'} active{/if}" title="Archiwum Sellasist"><i class="nav-icon bi bi-archive"></i><p>Archiwum</p></a></li>
             <li class="nav-header sc-nav-header">Konfiguracja</li>
             <li class="nav-item"><a href="orders.php?tab=accounts" class="nav-link{if ($currentController eq 'orders' or $currentController eq 'index') and ($tab|default:'') eq 'accounts'} active{/if}" title="Konta i import"><i class="nav-icon bi bi-plug"></i><p>Konta i import</p></a></li>

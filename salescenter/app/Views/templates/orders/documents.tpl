@@ -1,4 +1,5 @@
 {assign var=documentKindLabels value=['invoice'=>'Faktura','receipt'=>'Paragon','invoice_correction'=>'Korekta faktury','receipt_correction'=>'Korekta paragonu']}
+{assign var=nipReceiptRows value=$nipReceipts|default:[]}
 <div class="sc-docs" data-documents-panel>
   <header class="sc-docs-heading"><div><span class="sc-docs-kicker"><i class="bi bi-file-earmark-text"></i> DOKUMENTY SPRZEDAŻY</span><h2>Dokumenty pod kontrolą</h2><p>Historia sprzedaży, numeracja i dane firmy w jednym panelu.</p></div>{if $canWrite}<button class="om-btn om-primary" type="button" data-docs-add-series><i class="bi bi-plus-lg"></i> Nowa seria</button>{/if}</header>
   <div class="sc-docs-overview" aria-label="Podsumowanie dokumentów">
@@ -6,12 +7,12 @@
     <article class="sc-docs-metric"><span class="sc-docs-metric-icon"><i class="bi bi-collection"></i></span><div><strong>{$series|count}</strong><span>Serie dokumentów</span><small>Oddzielne formaty i liczniki</small></div></article>
     <article class="sc-docs-metric"><span class="sc-docs-metric-icon"><i class="bi bi-printer"></i></span><div><strong>{$activeFiscalPrinterCount}</strong><span>Aktywne drukarki paragonów</span><small>Urządzenia przypisywane do serii</small></div></article>
   </div>
-  <nav class="sc-docs-tabs" role="tablist" aria-label="Panel dokumentów"><a href="#sc-docs-history" id="sc-docs-history-tab" class="is-active" role="tab" aria-controls="sc-docs-history" aria-selected="true" data-docs-tab="history"><i class="bi bi-journal-text"></i> Wystawione dokumenty <b>{$documents|count}</b></a><a href="#sc-docs-series" id="sc-docs-series-tab" role="tab" aria-controls="sc-docs-series" aria-selected="false" data-docs-tab="series"><i class="bi bi-sliders"></i> Serie i ustawienia <b>{$series|count}</b></a></nav>
+  <nav class="sc-docs-tabs" role="tablist" aria-label="Panel dokumentów"><a href="#sc-docs-history" id="sc-docs-history-tab" class="is-active" role="tab" aria-controls="sc-docs-history" aria-selected="true" data-docs-tab="history"><i class="bi bi-journal-text"></i> Wystawione dokumenty <b>{$documents|count}</b></a><a href="#sc-docs-nip" id="sc-docs-nip-tab" role="tab" aria-controls="sc-docs-nip" aria-selected="false" data-docs-tab="nip"><i class="bi bi-receipt"></i> Paragony z NIP <b>{$nipReceiptRows|count}</b></a><a href="#sc-docs-series" id="sc-docs-series-tab" role="tab" aria-controls="sc-docs-series" aria-selected="false" data-docs-tab="series"><i class="bi bi-sliders"></i> Serie i ustawienia <b>{$series|count}</b></a></nav>
   <div id="sc-docs-history" class="sc-docs-panel" role="tabpanel" aria-labelledby="sc-docs-history-tab" data-docs-panel="history">
 <section class="om-panel">
   <div class="sc-docs-panel-head">
-    <div><h3>Wystawione dokumenty</h3><p>Ostatnie 100 dokumentów. Rozwiń wiersz, aby zobaczyć szczegóły i dostępne czynności.</p></div>
-    <form method="get" class="om-doc-filter" data-series-filter-form><input type="hidden" name="controller" value="orders"><input type="hidden" name="tab" value="documents"><label>Seria<select name="series_id"><option value="0">Wszystkie serie</option>{foreach $series as $s}<option value="{$s.id}" {if $documentSeriesFilter eq $s.id}selected{/if}>{$s.name|escape}</option>{/foreach}</select></label><button class="om-btn om-small" type="submit">Filtruj</button></form>
+    <div><h3>Wystawione dokumenty</h3><p>{if $documentNipFilter|default:''}Paragony z podanym NIP nabywcy (maksymalnie 100 wyników).{else}Ostatnie 100 dokumentów. Rozwiń wiersz, aby zobaczyć szczegóły i dostępne czynności.{/if}</p></div>
+    <form method="get" class="om-doc-filter" data-series-filter-form><input type="hidden" name="controller" value="orders"><input type="hidden" name="tab" value="documents"><label>Seria<select name="series_id"><option value="0">Wszystkie serie</option>{foreach $series as $s}<option value="{$s.id}" {if $documentSeriesFilter eq $s.id}selected{/if}>{$s.name|escape}</option>{/foreach}</select></label><label>NIP z paragonu<input name="document_nip" value="{$documentNipFilter|default:''|escape}" inputmode="numeric" maxlength="40" placeholder="10 cyfr NIP" aria-label="NIP nabywcy na paragonie"></label><button class="om-btn om-small" type="submit">Szukaj</button>{if $documentNipFilter|default:''}<a class="om-btn om-small" href="?controller=orders&tab=documents{if $documentSeriesFilter}&series_id={$documentSeriesFilter}{/if}">Wyczyść NIP</a>{/if}</form>
   </div>
   <div class="sc-docs-toolbar">
     <label class="sc-docs-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Numer dokumentu, seria lub zamówienie…" aria-label="Szukaj w widocznych dokumentach" data-docs-search></label>
@@ -26,7 +27,7 @@
           {if $d.kind eq 'receipt' and !empty($d.fiscal_job)}<span class="sc-docs-state {if $d.fiscal_job.status eq 'printed'}is-success{elseif $d.fiscal_job.status eq 'error' or $d.fiscal_job.status eq 'printer_offline'}is-error{/if}">{if $d.fiscal_job.printer_protocol|default:'' eq 'novitus'}Novitus{else}Posnet{/if} · {if $d.fiscal_job.status eq 'printed'}wydrukowano{elseif $d.fiscal_job.status eq 'queued'}w kolejce{elseif $d.fiscal_job.status eq 'processing'}drukowanie{else}błąd druku{/if}</span>{/if}
           {assign var=documentSubmission value=$ksefSubmissions[$d.id]|default:null}{if $documentSubmission and $documentSubmission.state eq 'accepted'}<span class="sc-docs-state is-success">KSeF · przyjęto</span>{/if}
         </span></span>
-        <span class="om-doc-summary-meta"><span><a href="?controller=orders&id={$d.order_id}">Zamówienie #{$d.order_id}</a> · {$d.series_name|default:'—'|escape}</span><time>{$d.created_at|pl_time|escape}</time></span>
+        <span class="om-doc-summary-meta"><span><a href="?controller=orders&id={$d.order_id}">Zamówienie #{$d.order_id}</a> · {$d.series_name|default:'—'|escape}{if $d.buyer_nip|default:''} · NIP {$d.buyer_nip|escape}{/if}</span><time>{$d.created_at|pl_time|escape}</time></span>
         <span class="sc-docs-doc-amount">{($d.gross_cents/100)|string_format:'%.2f'} <small>{$d.currency|escape}</small></span>
         <span class="sc-docs-doc-actions"><a class="sc-docs-preview" href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener" aria-label="Podgląd dokumentu {$d.number|escape} w nowej karcie" title="Podgląd A4"><i class="bi bi-file-earmark-text"></i></a><i class="bi bi-chevron-down oc-chevron"></i></span>
       </summary>
@@ -62,10 +63,27 @@
         {/if}
       </div>
     </details>
-  {foreachelse}<div class="om-empty"><i class="bi bi-file-earmark-text"></i><h3>Brak dokumentów w tym widoku</h3><p>{if $documentSeriesFilter}Wybierz „Wszystkie serie”, aby zobaczyć pozostałe dokumenty.{else}Dokument wystawisz w szczegółach zamówienia.{/if}</p></div>{/foreach}
+  {foreachelse}<div class="om-empty"><i class="bi bi-file-earmark-text"></i><h3>Brak dokumentów w tym widoku</h3><p>{if $documentNipFilter|default:''}Podaj pełny, 10-cyfrowy NIP nabywcy i sprawdź wybraną serię.{elseif $documentSeriesFilter}Wybierz „Wszystkie serie”, aby zobaczyć pozostałe dokumenty.{else}Dokument wystawisz w szczegółach zamówienia.{/if}</p></div>{/foreach}
     <div class="sc-docs-no-match" data-docs-no-match hidden><i class="bi bi-search"></i>Brak dokumentów pasujących do wybranych filtrów.</div>
   </div>
 </section>
+  </div>
+  <div id="sc-docs-nip" class="sc-docs-panel" role="tabpanel" aria-labelledby="sc-docs-nip-tab" data-docs-panel="nip" hidden>
+    <section class="om-panel">
+      <div class="sc-docs-panel-head"><div><h3>Paragony z NIP</h3><p>Wszystkie zapisane paragony z NIP nabywcy, od najnowszego.</p></div><label class="sc-docs-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="NIP, numer paragonu lub zamówienia…" aria-label="Szukaj w paragonach z NIP" data-nip-search></label></div>
+      <div class="sc-docs-nip-list">
+        {foreach $nipReceiptRows as $d}
+          <div class="sc-docs-nip-row" data-nip-row data-nip-text="{$d.buyer_nip|escape} {$d.number|escape} {$d.order_id} {$d.series_name|default:''|escape}">
+            <div><strong>{$d.number|escape}</strong><small>{$d.series_name|default:'—'|escape} · {$d.created_at|pl_time|escape}</small></div>
+            <div><span>NIP nabywcy</span><strong>{$d.buyer_nip|escape}</strong></div>
+            <div><span>Kwota</span><strong>{($d.gross_cents/100)|string_format:'%.2f'} {$d.currency|escape}</strong></div>
+            <div class="sc-docs-nip-links"><a href="?controller=orders&id={$d.order_id}">Zamówienie #{$d.order_id}</a><a href="?controller=orders&action=printdocument&id={$d.id}" target="_blank" rel="noopener">Podgląd A4 ↗</a></div>
+          </div>
+        {foreachelse}<div class="om-empty"><i class="bi bi-receipt"></i><h3>Brak paragonów z NIP</h3><p>Gdy wystawisz paragon z NIP nabywcy, pojawi się tutaj.</p></div>{/foreach}
+        <div class="om-empty" data-nip-no-match hidden><i class="bi bi-search"></i><h3>Brak pasujących paragonów</h3></div>
+      </div>
+      {if $nipReceiptRows|count}<p class="sc-docs-nip-count" data-nip-result aria-live="polite">{$nipReceiptRows|count} / {$nipReceiptRows|count}</p>{/if}
+    </section>
   </div>
   <div id="sc-docs-series" class="sc-docs-panel" role="tabpanel" aria-labelledby="sc-docs-series-tab" data-docs-panel="series">
 <section class="om-panel om-pad om-docs-series-panel">
@@ -124,4 +142,4 @@
 </section>
   </div>
 </div>
-<script src="dist/js/orders-documents.js?v=20261001-1" defer></script>
+<script src="dist/js/orders-documents.js?v=20261008-1" defer></script>

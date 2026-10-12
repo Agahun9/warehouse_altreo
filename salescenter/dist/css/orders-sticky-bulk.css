@@ -1,0 +1,3 @@
+.app-main.om-list-page{overflow:visible!important}
+.om-list-page .om-order-list{overflow:visible}
+.om-list-page .om-bulk{position:sticky;top:0;z-index:20;background:#fff;box-shadow:0 5px 14px rgba(24,34,58,.12)}
