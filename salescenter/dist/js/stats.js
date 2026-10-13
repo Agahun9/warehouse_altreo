@@ -16,10 +16,14 @@
     orders: { label: 'Zamówienia', unit: 'zam.' },
     revenue: { label: 'Przychód', unit: '' }
   };
-  var GROUP_LABELS = { day: 'dziennie', week: 'tygodniowo', month: 'miesięcznie' };
-  var PRESETS = ['today', 'yesterday', '7d', '30d', '90d', 'month', 'prev_month', 'year'];
+  var METRIC_ICONS = { units: 'bi-box-seam', orders: 'bi-receipt', revenue: 'bi-cash-coin' };
+  var GROUP_TITLES = { day: 'dzień po dniu', week: 'tydzień po tygodniu', month: 'miesiąc po miesiącu' };
+  var PRESET_LABELS = { today: 'Dziś', yesterday: 'Wczoraj', '7d': 'Ostatnie 7 dni', '30d': 'Ostatnie 30 dni', '90d': 'Ostatnie 90 dni', month: 'Ten miesiąc', prev_month: 'Poprzedni miesiąc', year: 'Ten rok' };
+  var PRESETS = Object.keys(PRESET_LABELS);
+  var TABS = ['overview', 'accounts', 'products', 'orders'];
+  var MENUS = ['range', 'accounts', 'statuses', 'more'];
   var SLOT_COUNT = 7;
-  var ACCOUNT_BAR_LIMIT = 10;
+  var TOP_LIMIT = 5;
   var PRODUCT_STEP = 15;
 
   var intFormat = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0, useGrouping: 'always' });
@@ -32,7 +36,7 @@
   var body = root.querySelector('[data-st-body]');
   var errorBox = root.querySelector('[data-st-error]');
   var tip = root.querySelector('[data-st-tip]');
-  var state = { preset: '30d', from: '', to: '', accounts: [], statuses: null, paid: '', currency: '', group: 'auto', metric: 'units' };
+  var state = { preset: '30d', from: '', to: '', accounts: [], statuses: null, paid: '', currency: '', group: 'auto', metric: 'units', tab: 'overview', split: false };
   var report = null;
   var requestId = 0;
   var loadTimer = null;
@@ -246,7 +250,7 @@
 
   function loadState() {
     var params = new URLSearchParams(window.location.search), source = {}, stored = null;
-    var keys = ['preset', 'from', 'to', 'accounts', 'statuses', 'paid', 'currency', 'group', 'metric'];
+    var keys = ['preset', 'from', 'to', 'accounts', 'statuses', 'paid', 'currency', 'group', 'metric', 'tab', 'split'];
     var fromUrl = keys.some(function (key) { return params.has(key); });
     if (fromUrl) { keys.forEach(function (key) { if (params.has(key)) { source[key] = params.get(key); } }); }
     else { try { stored = parseJson(window.localStorage.getItem(storeKey), null); } catch (e) { stored = null; } source = stored || {}; delete source.from; delete source.to; }
@@ -263,6 +267,8 @@
     state.currency = /^[A-Z]{3}$/.test(source.currency || '') ? source.currency : '';
     state.group = ['day', 'week', 'month'].indexOf(source.group) !== -1 ? source.group : 'auto';
     state.metric = METRICS[source.metric] ? source.metric : 'units';
+    state.tab = TABS.indexOf(source.tab) !== -1 ? source.tab : 'overview';
+    state.split = source.split === '1' || source.split === true;
     applyPreset();
   }
 
@@ -273,7 +279,7 @@
   }
 
   function saveState() {
-    var params = new URLSearchParams(), saved = { preset: state.preset === 'custom' ? '30d' : state.preset, accounts: state.accounts, statuses: state.statuses, paid: state.paid, group: state.group, metric: state.metric, currency: state.currency };
+    var params = new URLSearchParams(), saved = { preset: state.preset === 'custom' ? '30d' : state.preset, accounts: state.accounts, statuses: state.statuses, paid: state.paid, group: state.group, metric: state.metric, currency: state.currency, split: state.split };
     params.set('controller', 'stats');
     if (state.preset === 'custom') { params.set('from', state.from); params.set('to', state.to); }
     else { params.set('preset', state.preset); }
@@ -283,6 +289,8 @@
     if (state.currency) { params.set('currency', state.currency); }
     if (state.group !== 'auto') { params.set('group', state.group); }
     if (state.metric !== 'units') { params.set('metric', state.metric); }
+    if (state.tab !== 'overview') { params.set('tab', state.tab); }
+    if (state.split) { params.set('split', '1'); }
     try { window.history.replaceState(null, '', window.location.pathname + '?' + params.toString().replace(/%2C/g, ',')); } catch (e) { /* np. podgląd z pliku */ }
     try { window.localStorage.setItem(storeKey, JSON.stringify(saved)); } catch (e) { /* tryb prywatny */ }
   }
@@ -304,17 +312,25 @@
     Array.prototype.forEach.call(container.querySelectorAll('button[data-value]'), function (button) {
       var active = button.getAttribute('data-value') === value;
       button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.setAttribute(button.getAttribute('role') === 'tab' ? 'aria-selected' : 'aria-pressed', active ? 'true' : 'false');
     });
   }
 
   function syncControls() {
     setActive(q('[data-st-presets]'), state.preset);
-    setActive(q('[data-st-group]'), state.group);
+    setActive(q('[data-st-group]'), report ? report.filters.group : state.group);
     setActive(q('[data-st-metric]'), state.metric);
+    setActive(q('[data-st-tabs]'), state.tab);
     q('[data-st-from]').value = state.from;
     q('[data-st-to]').value = state.to;
     q('[data-st-paid]').value = state.paid;
+    q('[data-st-split]').checked = state.split;
+    Array.prototype.forEach.call(root.querySelectorAll('[data-st-panel]'), function (panel) { panel.hidden = panel.getAttribute('data-st-panel') !== state.tab; });
+
+    var range = menuParts('range'), more = menuParts('more');
+    range.label.textContent = state.preset === 'custom' ? rangeLabel(state.from, state.to) : PRESET_LABELS[state.preset];
+    more.label.textContent = state.paid === '1' ? 'Tylko opłacone' : state.paid === '0' ? 'Tylko nieopłacone' : 'Więcej';
+    more.button.classList.toggle('is-filtered', state.paid !== '');
     syncMenu('accounts');
     syncMenu('statuses');
   }
@@ -356,7 +372,6 @@
 
     ['accounts', 'statuses'].forEach(function (kind) {
       var parts = menuParts(kind);
-      parts.button.addEventListener('click', function () { toggleMenu(kind, parts.panel.hidden); });
       parts.panel.addEventListener('change', function () { readMenu(kind); });
       parts.panel.addEventListener('click', function (event) {
         var action = event.target.closest ? event.target.closest('[data-st-menu-action]') : null;
@@ -368,11 +383,15 @@
         readMenu(kind);
       });
     });
+    MENUS.forEach(function (kind) {
+      var parts = menuParts(kind);
+      parts.button.addEventListener('click', function () { toggleMenu(kind, parts.panel.hidden); });
+    });
     document.addEventListener('click', function (event) {
-      ['accounts', 'statuses'].forEach(function (kind) { if (!menuParts(kind).menu.contains(event.target)) { toggleMenu(kind, false); } });
+      MENUS.forEach(function (kind) { if (!menuParts(kind).menu.contains(event.target)) { toggleMenu(kind, false); } });
     });
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') { toggleMenu('accounts', false); toggleMenu('statuses', false); }
+      if (event.key === 'Escape') { MENUS.forEach(function (kind) { toggleMenu(kind, false); }); }
     });
   }
 
@@ -380,7 +399,7 @@
     var parts = menuParts(kind);
     parts.panel.hidden = !open;
     parts.button.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) { toggleMenu(kind === 'accounts' ? 'statuses' : 'accounts', false); }
+    if (open) { MENUS.forEach(function (other) { if (other !== kind) { toggleMenu(other, false); } }); }
   }
 
   function checkedIds(panel) {
@@ -426,7 +445,7 @@
       var button = event.target.closest('button[data-value]');
       if (!button) { return; }
       state.preset = button.getAttribute('data-value');
-      applyPreset(); syncControls(); scheduleLoad(0);
+      applyPreset(); syncControls(); toggleMenu('range', false); scheduleLoad(0);
     });
     ['from', 'to'].forEach(function (name) {
       q('[data-st-' + name + ']').addEventListener('change', function (event) {
@@ -436,22 +455,33 @@
         syncControls(); scheduleLoad(0);
       });
     });
-    q('[data-st-paid]').addEventListener('change', function (event) { state.paid = event.target.value; scheduleLoad(0); });
+    q('[data-st-paid]').addEventListener('change', function (event) { state.paid = event.target.value; syncControls(); scheduleLoad(0); });
     q('[data-st-currency]').addEventListener('change', function (event) { state.currency = event.target.value; scheduleLoad(0); });
     q('[data-st-group]').addEventListener('click', function (event) {
       var button = event.target.closest('button[data-value]');
       if (!button) { return; }
-      state.group = button.getAttribute('data-value'); syncControls(); scheduleLoad(0);
+      state.group = button.getAttribute('data-value'); scheduleLoad(0);
     });
     q('[data-st-metric]').addEventListener('click', function (event) {
       var button = event.target.closest('button[data-value]');
       if (button) { setMetric(button.getAttribute('data-value')); }
     });
+    q('[data-st-tabs]').addEventListener('click', function (event) {
+      var button = event.target.closest('button[data-value]');
+      if (button) { setTab(button.getAttribute('data-value')); }
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-st-goto]'), function (button) {
+      button.addEventListener('click', function () { setTab(button.getAttribute('data-st-goto')); window.scrollTo(0, 0); });
+    });
+    q('[data-st-split]').addEventListener('change', function (event) {
+      state.split = event.target.checked; saveState();
+      if (report) { renderTimeline(); }
+    });
     q('[data-st-refresh]').addEventListener('click', function () { scheduleLoad(0); });
     q('[data-st-toggle-table]').addEventListener('click', function (event) {
       var table = q('[data-st-timeline-table]');
       table.hidden = !table.hidden;
-      event.currentTarget.textContent = table.hidden ? 'Pokaż tabelę' : 'Ukryj tabelę';
+      event.currentTarget.querySelector('span').textContent = table.hidden ? 'Pokaż tabelę' : 'Ukryj tabelę';
     });
     q('[data-st-product-search]').addEventListener('input', function (event) {
       productQuery = event.target.value.trim().toLowerCase(); productLimit = PRODUCT_STEP;
@@ -461,6 +491,12 @@
     Array.prototype.forEach.call(root.querySelectorAll('[data-st-csv]'), function (button) {
       button.addEventListener('click', function () { if (report) { exportCsv(button.getAttribute('data-st-csv')); } });
     });
+  }
+
+  function setTab(tab) {
+    if (TABS.indexOf(tab) === -1) { return; }
+    state.tab = tab;
+    hideTip(); syncControls(); saveState();
   }
 
   function setMetric(metric) {
@@ -521,10 +557,9 @@
     ids.forEach(function (id, index) { colorOf[id] = 'var(--st-s' + (index + 1) + ')'; });
   }
 
-  function accountColor(id) { return colorOf[id] || 'var(--st-other)'; }
-
   function timelineSeries(metric) {
     var list = [], other = null;
+    if (!state.split) { return [{ id: 0, name: METRICS[metric].label, color: 'var(--st-s1)', values: bucketTotals(metric) }]; }
     report.accounts.forEach(function (account) {
       var values = (report.series[account.id] || {})[metric];
       if (!values || !sum(values)) { return; }
@@ -549,11 +584,13 @@
 
   function renderAll() {
     assignColors();
+    syncControls();
     renderHeader();
     renderKpis();
+    renderFacts();
     renderInsights();
     renderTimeline();
-    renderAccountBars();
+    renderTopLists();
     renderHeatmap();
     renderAccountsTable();
     renderStatuses();
@@ -564,58 +601,72 @@
   function renderHeader() {
     var period = report.period, previous = report.previous_period;
     var text = rangeLabel(period.from, period.to) + ' · ' + period.days + ' ' + plural(period.days, 'dzień', 'dni', 'dni');
-    text += previous ? ' · porównanie z okresem ' + rangeLabel(previous.from, previous.to) : ' · bez porównania (zakres dłuższy niż rok)';
+    text += previous ? ' · porównanie z ' + rangeLabel(previous.from, previous.to) : ' · bez porównania (zakres dłuższy niż rok)';
     q('[data-st-period]').textContent = text;
-    q('[data-st-updated]').textContent = 'Stan na ' + String(report.generated_at || '').slice(11, 16) + ' · czas polski';
+    q('[data-st-refresh]').title = 'Odśwież dane · stan na ' + String(report.generated_at || '').slice(11, 16);
 
     var select = q('[data-st-currency]');
     clear(select);
     report.currencies.forEach(function (currency) {
-      var option = el('option', { value: currency.code }, 'Kwoty w ' + currency.code + ' (' + intFormat.format(currency.orders) + ' zam.)');
+      var option = el('option', { value: currency.code }, currency.code + ' (' + intFormat.format(currency.orders) + ' zam.)');
       option.selected = currency.code === report.currency;
       select.appendChild(option);
     });
-    select.hidden = report.currencies.length < 2;
+    q('[data-st-currency-field]').hidden = report.currencies.length < 2;
   }
 
   function sparkline(values) {
-    if (values.length < 3) { return null; }
-    var width = 84, height = 26, max = Math.max(maxOf(values), 1), path = '';
+    if (values.length < 3 || !maxOf(values)) { return null; }
+    var width = 300, height = 44, max = maxOf(values), line = '';
     values.forEach(function (value, index) {
-      path += (index ? 'L' : 'M') + (index / (values.length - 1) * width).toFixed(1) + ',' + (height - 2 - value / max * (height - 4)).toFixed(1);
+      line += (index ? 'L' : 'M') + (index / (values.length - 1) * width).toFixed(1) + ',' + (height - 3 - value / max * (height - 10)).toFixed(1);
     });
-    var node = svg('svg', { class: 'st-kpi-spark', viewBox: '0 0 ' + width + ' ' + height, 'aria-hidden': 'true' });
-    node.appendChild(svg('path', { d: path }));
+    var node = svg('svg', { class: 'st-spark', viewBox: '0 0 ' + width + ' ' + height, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    node.appendChild(svg('path', { class: 'st-spark-area', d: line + 'L' + width + ',' + height + 'L0,' + height + 'Z' }));
+    node.appendChild(svg('path', { class: 'st-spark-line', d: line }));
     return node;
   }
 
   function renderKpis() {
-    var host = clear(q('[data-st-kpis]'));
-    var totals = report.totals, before = report.previous_totals, excluded = report.excluded, excludedBefore = report.previous_excluded;
-    var all = totals.orders + excluded.orders, allBefore = before ? before.orders + excludedBefore.orders : 0;
+    var host = clear(q('[data-st-kpis]')), totals = report.totals, before = report.previous_totals;
     var others = report.currencies.filter(function (currency) { return currency.code !== report.currency; }).map(function (currency) {
       return money(currency.revenue_cents, currency.code);
     });
-    var tiles = [
-      { metric: 'units', label: 'Sprzedane sztuki', value: intFormat.format(totals.units), unit: 'szt.', current: totals.units, previous: before && before.units, spark: bucketTotals('units') },
-      { metric: 'orders', label: 'Zamówienia', value: intFormat.format(totals.orders), current: totals.orders, previous: before && before.orders, spark: bucketTotals('orders') },
-      { metric: 'revenue', label: 'Przychód brutto', value: twoFormat.format(totals.revenue_cents / 100), unit: report.currency, current: totals.revenue_cents, previous: before && before.revenue_cents, spark: bucketTotals('revenue'), note: 'z dostawą' + (others.length ? ' · oraz ' + others.join(', ') : '') },
+    [
+      { metric: 'units', label: 'Sprzedane sztuki', value: intFormat.format(totals.units), unit: 'szt.' },
+      { metric: 'orders', label: 'Zamówienia', value: intFormat.format(totals.orders), unit: '' },
+      { metric: 'revenue', label: 'Przychód brutto z dostawą', value: twoFormat.format(totals.revenue_cents / 100), unit: report.currency, extra: others.length ? 'oraz ' + others.join(', ') : '' }
+    ].forEach(function (tile) {
+      var current = rowValue(totals, tile.metric), active = tile.metric === state.metric;
+      var note = before ? 'poprzednio ' + formatMetric(rowValue(before, tile.metric), tile.metric) : 'bez porównania';
+      var node = el('button', { type: 'button', class: 'st-hero-card' + (active ? ' is-active' : ''), 'aria-pressed': String(active), title: 'Pokaż wykresy dla miary: ' + METRICS[tile.metric].label }, [
+        el('span', { class: 'st-hero-label' }, [el('i', { class: 'bi ' + METRIC_ICONS[tile.metric], 'aria-hidden': 'true' }), tile.label]),
+        el('span', { class: 'st-hero-value' }, [tile.value, tile.unit ? el('small', null, ' ' + tile.unit) : null]),
+        el('span', { class: 'st-hero-foot' }, [before ? deltaChip(current, rowValue(before, tile.metric)) : null, el('span', null, note + (tile.extra ? ' · ' + tile.extra : ''))]),
+        sparkline(bucketTotals(tile.metric))
+      ]);
+      node.addEventListener('click', function () { setMetric(tile.metric); });
+      host.appendChild(node);
+    });
+  }
+
+  function renderFacts() {
+    var host = clear(q('[data-st-facts]')), totals = report.totals, before = report.previous_totals, excluded = report.excluded, excludedBefore = report.previous_excluded;
+    var all = totals.orders + excluded.orders, allBefore = before ? before.orders + excludedBefore.orders : 0;
+    var skipped = report.statuses.filter(function (status) { return !status.included && status.orders > 0; }).map(function (status) { return status.name; });
+    [
       { label: 'Średnia wartość zamówienia', value: totals.orders_cur ? twoFormat.format(totals.revenue_cents / totals.orders_cur / 100) : '—', unit: totals.orders_cur ? report.currency : '', current: totals.orders_cur ? totals.revenue_cents / totals.orders_cur : 0, previous: before && (before.orders_cur ? before.revenue_cents / before.orders_cur : 0) },
       { label: 'Sztuk na zamówienie', value: totals.orders ? twoFormat.format(totals.units / totals.orders) : '—', current: totals.orders ? totals.units / totals.orders : 0, previous: before && (before.orders ? before.units / before.orders : 0) },
-      { label: 'Poza sprzedażą', value: all ? percent(excluded.orders / all) : '—', current: all ? excluded.orders / all : 0, previous: before && (allBefore ? excludedBefore.orders / allBefore : 0), points: true, inverse: true, note: intFormat.format(excluded.orders) + ' zam. w pominiętych statusach' }
-    ];
-    tiles.forEach(function (tile) {
-      var node = el(tile.metric ? 'button' : 'div', { class: 'st-kpi' + (tile.metric === state.metric ? ' is-active' : ''), type: tile.metric ? 'button' : null, 'aria-pressed': tile.metric ? String(tile.metric === state.metric) : null, title: tile.metric ? 'Pokaż wykresy dla miary: ' + METRICS[tile.metric].label : null }, [
-        el('span', { class: 'st-kpi-label' }, tile.label),
-        el('span', { class: 'st-kpi-value' }, [tile.value, tile.unit ? el('small', null, ' ' + tile.unit) : null]),
-        el('span', { class: 'st-kpi-foot' }, [
-          deltaChip(tile.current, tile.previous === null || tile.previous === undefined ? null : tile.previous, { points: tile.points, inverse: tile.inverse }),
-          tile.spark ? sparkline(tile.spark) : null
+      { label: 'Zamówienia poza sprzedażą', value: all ? percent(excluded.orders / all) : '—', current: all ? excluded.orders / all : 0, previous: before && (allBefore ? excludedBefore.orders / allBefore : 0), points: true, inverse: true, note: excluded.orders ? intFormat.format(excluded.orders) + ' zam. · ' + skipped.slice(0, 3).join(', ') : '' }
+    ].forEach(function (fact) {
+      host.appendChild(el('div', { class: 'st-fact' }, [
+        el('div', { class: 'st-fact-text' }, [
+          el('span', { class: 'st-fact-label' }, fact.label),
+          el('span', { class: 'st-fact-value' }, [fact.value, fact.unit ? el('small', null, ' ' + fact.unit) : null]),
+          fact.note ? el('span', { class: 'st-fact-note', title: fact.note }, fact.note) : null
         ]),
-        tile.note ? el('span', { class: 'st-kpi-note' }, tile.note) : null
-      ]);
-      if (tile.metric) { node.addEventListener('click', function () { setMetric(tile.metric); }); }
-      host.appendChild(node);
+        deltaChip(fact.current, fact.previous === null || fact.previous === undefined ? null : fact.previous, { points: fact.points, inverse: fact.inverse })
+      ]));
     });
   }
 
@@ -625,26 +676,23 @@
     var current = rowValue(totals, metric), previous = before ? rowValue(before, metric) : null;
     var label = METRICS[metric].label;
     if (!totals.orders) {
-      out.push({ icon: 'bi-inbox', parts: ['W tym okresie nie ma zamówień w wybranych kontach i statusach. Zmień zakres dat albo filtry.'] });
-      if (report.excluded.orders) { out.push({ icon: 'bi-slash-circle', parts: [{ b: intFormat.format(report.excluded.orders) + ' zam.' }, ' ma status pominięty w sprzedaży — włącz go w filtrze „Statusy”, żeby je zobaczyć.'] }); }
+      out.push({ icon: 'bi-inbox', title: 'Brak zamówień w tym okresie', detail: 'Zmień zakres dat albo filtry kont i statusów.' });
+      if (report.excluded.orders) { out.push({ icon: 'bi-slash-circle', title: intFormat.format(report.excluded.orders) + ' zam. ma status pominięty w sprzedaży', detail: 'Włącz go w filtrze statusów, żeby je policzyć.' }); }
       return out;
     }
 
     if (previous !== null && previous > 0) {
-      var change = (current - previous) / previous, up = change >= 0;
-      out.push({ icon: up ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow', tone: Math.abs(change) < 0.0005 ? '' : up ? 'good' : 'bad', parts: [
-        { b: label + ': ' + signed(change * 100, oneFormat.format) + '%' }, ' względem poprzedniego okresu (' + formatMetric(previous, metric) + ' → ' + formatMetric(current, metric) + ').'
-      ] });
+      var change = (current - previous) / previous, flat = Math.abs(change) < 0.0005;
+      out.push({ icon: change >= 0 ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow', tone: flat ? '' : change > 0 ? 'good' : 'bad',
+        title: flat ? label + ' bez zmian' : label + (change > 0 ? ' w górę o ' : ' w dół o ') + oneFormat.format(Math.abs(change) * 100) + '%',
+        detail: formatMetric(previous, metric) + ' → ' + formatMetric(current, metric) + ' względem poprzedniego okresu' });
     } else if (previous === 0) {
-      out.push({ icon: 'bi-graph-up-arrow', tone: 'good', parts: ['W poprzednim okresie nie było sprzedaży — teraz ', { b: formatMetric(current, metric) }, '.'] });
+      out.push({ icon: 'bi-graph-up-arrow', tone: 'good', title: 'Sprzedaż ruszyła: ' + formatMetric(current, metric), detail: 'W poprzednim okresie nie było sprzedaży.' });
     }
 
     var accounts = report.accounts.filter(function (account) { return rowValue(account, metric) > 0; }).sort(function (a, b) { return rowValue(b, metric) - rowValue(a, metric); });
-    if (accounts.length && current > 0) {
-      var leader = accounts[0];
-      out.push({ icon: 'bi-trophy', parts: accounts.length === 1
-        ? ['Całą sprzedaż okresu zrealizowało konto ', { b: accountName(leader) }, '.']
-        : ['Najwięcej sprzedaje konto ', { b: accountName(leader) }, ': ' + formatMetric(rowValue(leader, metric), metric) + ', czyli ', { b: percent(rowValue(leader, metric) / current) }, ' całości.'] });
+    if (accounts.length > 1 && current > 0) {
+      out.push({ icon: 'bi-trophy', title: 'Lider: ' + accountName(accounts[0]), detail: formatMetric(rowValue(accounts[0], metric), metric) + ' · ' + percent(rowValue(accounts[0], metric) / current) + ' całej sprzedaży' });
     }
 
     if (before && report.accounts.length > 1) {
@@ -654,19 +702,15 @@
         if (diff > 0 && (!best || diff > best.diff)) { best = { account: account, diff: diff }; }
         if (diff < 0 && (!worst || diff < worst.diff)) { worst = { account: account, diff: diff }; }
       });
-      if (best || worst) {
-        var parts = [];
-        if (best) { parts.push('Największy wzrost: ', { b: accountName(best.account) }, ' (+' + formatMetric(best.diff, metric) + '). '); }
-        if (worst) { parts.push('Największy spadek: ', { b: accountName(worst.account) }, ' (−' + formatMetric(-worst.diff, metric) + ').'); }
-        out.push({ icon: 'bi-arrow-left-right', parts: parts });
-      }
+      if (best) { out.push({ icon: 'bi-arrow-up-right', tone: 'good', title: 'Największy wzrost: ' + accountName(best.account), detail: '+' + formatMetric(best.diff, metric) + ' względem poprzedniego okresu' }); }
+      if (worst) { out.push({ icon: 'bi-arrow-down-right', tone: 'bad', title: 'Największy spadek: ' + accountName(worst.account), detail: '−' + formatMetric(-worst.diff, metric) + ' względem poprzedniego okresu' }); }
     }
 
     var series = bucketTotals(metric), group = report.filters.group;
     if (series.length >= 3 && current > 0) {
       var peak = series.indexOf(maxOf(series));
-      var noun = { day: 'Najlepszy dzień', week: 'Najlepszy tydzień', month: 'Najlepszy miesiąc' }[group];
-      out.push({ icon: 'bi-calendar-check', parts: [noun + ': ', { b: bucketTitle(report.buckets[peak], group) }, ' — ' + formatMetric(series[peak], metric) + ', przy średniej ', { b: metric === 'revenue' ? money(Math.round(current / report.period.days)) : oneFormat.format(current / report.period.days) + ' ' + METRICS[metric].unit }, ' dziennie.'] });
+      var average = metric === 'revenue' ? money(Math.round(current / report.period.days)) : oneFormat.format(current / report.period.days) + ' ' + METRICS[metric].unit;
+      out.push({ icon: 'bi-calendar-check', title: { day: 'Najlepszy dzień: ', week: 'Najlepszy tydzień: ', month: 'Najlepszy miesiąc: ' }[group] + bucketTitle(report.buckets[peak], group), detail: formatMetric(series[peak], metric) + ' · średnio ' + average + ' dziennie' });
     }
 
     var heat = report.heatmap.orders, dayTotals = heat.map(sum), hourTotals = [], hour;
@@ -677,35 +721,30 @@
         value = hourTotals[start] + hourTotals[start + 1] + hourTotals[start + 2];
         if (value > windowSum) { windowSum = value; windowStart = start; }
       }
-      out.push({ icon: 'bi-clock-history', parts: ['Klienci zamawiają najczęściej ', { b: DAYS_IN[topDay] }, ' (' + percent(dayTotals[topDay] / totals.orders) + ' zamówień), a w ciągu doby między ', { b: windowStart + ':00 a ' + (windowStart + 3) + ':00' }, ' (' + percent(windowSum / totals.orders) + ').'] });
+      out.push({ icon: 'bi-clock-history', title: 'Klienci kupują głównie ' + DAYS_IN[topDay] + ' i w godz. ' + windowStart + ':00–' + (windowStart + 3) + ':00', detail: percent(dayTotals[topDay] / totals.orders) + ' zamówień w tym dniu tygodnia · ' + percent(windowSum / totals.orders) + ' w tych godzinach' });
     }
 
     if (report.products.length && totals.units > 0) {
-      var top = report.products[0], name = top.name.length > 70 ? top.name.slice(0, 69) + '…' : top.name;
-      var parts2 = ['Najlepiej sprzedający się produkt: ', { b: name }, ' — ' + intFormat.format(top.units) + ' szt. (' + percent(top.units / totals.units) + ' sztuk).'];
-      if (report.products_count > 5) {
-        parts2.push(' Pięć najlepszych produktów daje ', { b: percent(sum(report.products.slice(0, 5).map(function (product) { return product.units; })) / totals.units) }, ' sprzedanych sztuk.');
-      }
-      out.push({ icon: 'bi-box-seam', parts: parts2 });
+      var top = report.products[0];
+      out.push({ icon: 'bi-star', title: 'Hit: ' + (top.name.length > 64 ? top.name.slice(0, 63) + '…' : top.name), detail: intFormat.format(top.units) + ' szt. (' + percent(top.units / totals.units) + ')' + (report.products_count > 5 ? ' · pięć najlepszych produktów to ' + percent(sum(report.products.slice(0, 5).map(function (product) { return product.units; })) / totals.units) + ' sztuk' : '') });
     }
 
     var excluded = report.excluded;
     if (excluded.orders > 0) {
       var all = totals.orders + excluded.orders, share = excluded.orders / all;
       var names = report.statuses.filter(function (status) { return !status.included && status.orders > 0; }).map(function (status) { return status.name; });
-      var parts3 = [{ b: percent(share) }, ' zamówień (' + intFormat.format(excluded.orders) + ' z ' + intFormat.format(all) + ') ma status pominięty w sprzedaży: ' + names.slice(0, 4).join(', ') + (names.length > 4 ? '…' : '') + '.'];
-      var worstAccount = null;
+      var detail = intFormat.format(excluded.orders) + ' z ' + intFormat.format(all) + ' zam. · ' + names.slice(0, 3).join(', '), worstAccount = null;
       report.accounts.forEach(function (account) {
         var count = account.orders + account.excluded_orders, rate = count ? account.excluded_orders / count : 0;
         if (count >= 10 && rate > share * 1.5 && (!worstAccount || rate > worstAccount.rate)) { worstAccount = { account: account, rate: rate }; }
       });
-      if (worstAccount) { parts3.push(' Najwyższy odsetek: ', { b: accountName(worstAccount.account) }, ' (' + percent(worstAccount.rate) + ').'); }
-      out.push({ icon: 'bi-slash-circle', tone: share >= 0.1 ? 'bad' : '', parts: parts3 });
+      if (worstAccount) { detail += ' · najwięcej: ' + accountName(worstAccount.account) + ' (' + percent(worstAccount.rate) + ')'; }
+      out.push({ icon: 'bi-slash-circle', tone: share >= 0.1 ? 'bad' : '', title: percent(share) + ' zamówień poza sprzedażą', detail: detail });
     }
 
     var unpaid = report.payment.filter(function (row) { return row.key === 'unpaid'; })[0];
     if (unpaid && unpaid.orders > 0 && state.paid === '') {
-      out.push({ icon: 'bi-hourglass-split', parts: [{ b: intFormat.format(unpaid.orders) + ' zam.' }, ' (' + percent(unpaid.orders / totals.orders) + ') czeka na płatność — nieopłacone i bez pobrania.'] });
+      out.push({ icon: 'bi-hourglass-split', title: intFormat.format(unpaid.orders) + ' zam. czeka na płatność', detail: percent(unpaid.orders / totals.orders) + ' zamówień · nieopłacone i bez pobrania' });
     }
     return out;
   }
@@ -713,9 +752,10 @@
   function renderInsights() {
     var host = clear(q('[data-st-insights]'));
     buildInsights().forEach(function (insight) {
-      var text = el('span');
-      insight.parts.forEach(function (part) { text.appendChild(typeof part === 'string' ? document.createTextNode(part) : el('b', null, part.b)); });
-      host.appendChild(el('li', { class: insight.tone ? 'is-' + insight.tone : null }, [el('i', { class: 'bi ' + insight.icon, 'aria-hidden': 'true' }), text]));
+      host.appendChild(el('li', { class: insight.tone ? 'is-' + insight.tone : null }, [
+        el('i', { class: 'bi ' + insight.icon, 'aria-hidden': 'true' }),
+        el('div', null, [el('b', null, insight.title), el('span', null, insight.detail)])
+      ]));
     });
   }
 
@@ -734,13 +774,14 @@
     var metric = state.metric, buckets = report.buckets, group = report.filters.group;
     var series = timelineSeries(metric), totals = bucketTotals(metric);
     var previous = report.previous_series ? report.previous_series[metric].slice(0, buckets.length) : null;
-    q('[data-st-timeline-sub]').textContent = METRICS[metric].label + ' według kont, ' + GROUP_LABELS[group] + (metric === 'revenue' ? ' · kwoty w ' + report.currency : '') + (previous ? ' · szara linia: poprzedni okres' : '');
+    q('[data-st-timeline-title]').textContent = METRICS[metric].label + ' ' + GROUP_TITLES[group];
+    q('[data-st-timeline-sub]').textContent = (metric === 'revenue' ? 'Kwoty w ' + report.currency + '. ' : '') + (state.split ? 'Kolory oznaczają konta.' : 'Suma wszystkich wybranych kont.');
     clear(host);
     renderTimelineTable(series, totals, previous);
     if (!sum(totals) && !(previous && sum(previous))) { host.appendChild(empty('Brak sprzedaży w tym okresie.')); return; }
 
     if (series.length > 1 || previous) {
-      series.forEach(function (item) { legend.appendChild(el('span', null, [swatch(item.color), item.name])); });
+      series.forEach(function (item) { legend.appendChild(el('span', null, [swatch(item.color), series.length === 1 ? 'Ten okres' : item.name])); });
       if (previous) { legend.appendChild(el('span', null, [swatch('var(--st-prev)', true), 'Poprzedni okres (' + rangeLabel(report.previous_period.from, report.previous_period.to) + ')'])); }
     }
 
@@ -829,21 +870,34 @@
 
   function renderTimelineTable(series, totals, previous) {
     var host = clear(q('[data-st-timeline-table]')), metric = state.metric, group = report.filters.group;
-    var table = el('table', { class: 'st-table' });
-    var head = el('tr', null, [el('th', null, 'Okres')]);
+    var table = el('table', { class: 'st-table' }), single = series.length === 1;
+    var head = el('tr', null, [el('th', { class: 'is-left' }, 'Okres')]);
     series.forEach(function (item) { head.appendChild(el('th', null, item.name)); });
-    head.appendChild(el('th', null, 'Razem'));
+    if (!single) { head.appendChild(el('th', null, 'Razem')); }
     if (previous) { head.appendChild(el('th', null, 'Poprzedni okres')); }
     var tbody = el('tbody');
     report.buckets.forEach(function (bucket, index) {
-      var row = el('tr', null, [el('td', null, bucketTitle(bucket, group))]);
+      var row = el('tr', null, [el('td', { class: 'is-left' }, bucketTitle(bucket, group))]);
       series.forEach(function (item) { row.appendChild(el('td', null, formatMetric(item.values[index], metric))); });
-      row.appendChild(el('td', null, el('b', null, formatMetric(totals[index], metric))));
+      if (!single) { row.appendChild(el('td', null, el('b', null, formatMetric(totals[index], metric)))); }
       if (previous) { row.appendChild(el('td', null, previous[index] === undefined ? '—' : formatMetric(previous[index], metric))); }
       tbody.appendChild(row);
     });
     append(table, [el('thead', null, head), tbody]);
     host.appendChild(table);
+  }
+
+  /** Przegląd: po pięć najlepszych kont i produktów dla wybranej miary. */
+  function renderTopLists() {
+    var metric = state.metric, byValue = function (a, b) { return rowValue(b, metric) - rowValue(a, metric); };
+    var accounts = report.accounts.filter(function (account) { return rowValue(account, metric) > 0; }).sort(byValue);
+    barList(q('[data-st-top-accounts]'), accounts.slice(0, TOP_LIMIT), {
+      total: sum(accounts.map(function (account) { return rowValue(account, metric); })),
+      extra: function (account) { return account.platform_label ? el('small', null, account.platform_label) : null; },
+      delta: function (account) { return account.previous ? deltaChip(rowValue(account, metric), rowValue(account.previous, metric)) : null; }
+    });
+    var products = report.products.filter(function (product) { return rowValue(product, metric) > 0; }).sort(byValue);
+    barList(q('[data-st-top-products]'), products.slice(0, TOP_LIMIT), { total: metric === 'orders' ? undefined : rowValue(report.totals, metric), share: metric !== 'orders' });
   }
 
   /** Lista poziomych słupków: nazwa, słupek, wartość wybranej miary i udział w sumie listy. */
@@ -865,30 +919,15 @@
       host.appendChild(el('div', { class: 'st-bar-row' + (config.muted && config.muted(row) ? ' is-muted' : '') }, [
         name,
         el('div', { class: 'st-bar-track' }, fill),
-        el('div', { class: 'st-bar-value' }, [el('b', null, formatMetric(value, metric)), el('small', null, total > 0 ? percent(value / total) : '—'), config.delta ? config.delta(row) : null])
+        el('div', { class: 'st-bar-value' }, [el('b', null, formatMetric(value, metric)), config.share === false ? null : el('small', null, total > 0 ? percent(value / total) : '—'), config.delta ? config.delta(row) : null])
       ]));
     });
-  }
-
-  function renderAccountBars() {
-    var metric = state.metric, host = q('[data-st-accounts-bars]');
-    var rows = report.accounts.filter(function (account) { return rowValue(account, metric) > 0; }).sort(function (a, b) { return rowValue(b, metric) - rowValue(a, metric); });
-    var total = sum(rows.map(function (row) { return rowValue(row, metric); }));
-    q('[data-st-accounts-sub]').textContent = METRICS[metric].label + ' i udział konta w sprzedaży' + (report.previous_period ? ' · zmiana względem poprzedniego okresu' : '');
-    barList(host, rows.slice(0, ACCOUNT_BAR_LIMIT).map(function (account) { return { name: account.name, account: account, units: account.units, orders: account.orders, revenue_cents: account.revenue_cents }; }), {
-      total: total,
-      mark: function (row) { return swatch(accountColor(row.account.id)); },
-      extra: function (row) { return row.account.platform_label ? el('small', null, row.account.platform_label) : null; },
-      color: function (row) { return accountColor(row.account.id); },
-      delta: function (row) { return row.account.previous ? deltaChip(rowValue(row.account, metric), rowValue(row.account.previous, metric)) : null; }
-    });
-    if (rows.length > ACCOUNT_BAR_LIMIT) { host.appendChild(el('p', { class: 'st-note' }, 'Pokazano ' + ACCOUNT_BAR_LIMIT + ' z ' + rows.length + ' kont — wszystkie są w tabeli poniżej.')); }
   }
 
   function renderHeatmap() {
     var host = clear(q('[data-st-heatmap]')), metric = state.metric, grid = report.heatmap[metric];
     var max = maxOf(grid.map(maxOf)), peakDay = 0, peakHour = 0;
-    q('[data-st-heatmap-sub]').textContent = METRICS[metric].label + ' według dnia tygodnia i godziny złożenia zamówienia (czas polski)';
+    q('[data-st-heatmap-sub]').textContent = METRICS[metric].label + ' według dnia tygodnia i godziny złożenia zamówienia, czas polski.';
     if (max <= 0) { host.appendChild(empty('Brak danych w tym okresie.')); return; }
     var wrap = el('div', { class: 'st-heat' }), hour;
     wrap.appendChild(el('div'));
@@ -962,9 +1001,16 @@
 
   function accountColumns() {
     var metric = state.metric, totals = report.totals, total = rowValue(totals, metric), hasPrevious = !!report.previous_totals;
+    var top = maxOf(report.accounts.map(function (account) { return rowValue(account, metric); }));
     var excludedShare = function (account) { var count = account.orders + account.excluded_orders; return count ? account.excluded_orders / count : 0; };
     var columns = [
-      { key: 'name', label: 'Konto', left: true, value: function (a) { return accountName(a); }, cell: function (a) { return el('div', { class: 'st-cell-name' }, [swatch(accountColor(a.id)), el('div', null, [a.name, el('small', null, a.platform_label || '—')])]); }, foot: function () { return 'Razem'; } },
+      { key: 'name', label: 'Konto', left: true, value: function (a) { return accountName(a); }, cell: function (a) { return el('div', { class: 'st-cell-name' }, [a.name, el('small', null, a.platform_label || '—')]); }, foot: function () { return 'Razem'; } },
+      { key: 'value', label: 'Udział: ' + METRICS[metric].label.toLowerCase(), left: true, value: function (a) { return rowValue(a, metric); }, cell: function (a) {
+        var fill = el('span', { class: 'st-bar-fill' });
+        fill.style.width = (top > 0 ? rowValue(a, metric) / top * 100 : 0).toFixed(2) + '%';
+        if (rowValue(a, metric) <= 0) { fill.style.display = 'none'; }
+        return el('div', { class: 'st-share' }, [el('div', { class: 'st-bar-track' }, fill), el('span', null, total > 0 ? percent(rowValue(a, metric) / total) : '—')]);
+      } },
       { key: 'units', label: 'Sztuki', value: function (a) { return a.units; }, cell: function (a) { return intFormat.format(a.units); }, foot: function () { return intFormat.format(totals.units); } },
       { key: 'orders', label: 'Zamówienia', value: function (a) { return a.orders; }, cell: function (a) { return intFormat.format(a.orders); }, foot: function () { return intFormat.format(totals.orders); } },
       { key: 'revenue', label: 'Przychód', value: function (a) { return a.revenue_cents; }, cell: function (a) {
@@ -973,11 +1019,10 @@
         return codes.map(function (code, index) { return index ? el('small', null, money(a.revenue[code], code)) : money(a.revenue[code], code); });
       }, foot: function () { return report.currencies.length ? report.currencies.map(function (c, index) { return index ? el('small', null, money(c.revenue_cents, c.code)) : money(c.revenue_cents, c.code); }) : '—'; } },
       { key: 'average', label: 'Śr. wartość zam.', value: function (a) { return a.orders_cur ? a.revenue_cents / a.orders_cur : 0; }, cell: function (a) { return a.orders_cur ? money(a.revenue_cents / a.orders_cur) : '—'; }, foot: function () { return totals.orders_cur ? money(totals.revenue_cents / totals.orders_cur) : '—'; } },
-      { key: 'basket', label: 'Szt. / zam.', value: function (a) { return a.orders ? a.units / a.orders : 0; }, cell: function (a) { return a.orders ? twoFormat.format(a.units / a.orders) : '—'; }, foot: function () { return totals.orders ? twoFormat.format(totals.units / totals.orders) : '—'; } },
-      { key: 'value', label: 'Udział: ' + METRICS[metric].label.toLowerCase(), value: function (a) { return rowValue(a, metric); }, cell: function (a) { return total > 0 ? percent(rowValue(a, metric) / total) : '—'; }, foot: function () { return total > 0 ? '100,0%' : '—'; } }
+      { key: 'basket', label: 'Szt. / zam.', value: function (a) { return a.orders ? a.units / a.orders : 0; }, cell: function (a) { return a.orders ? twoFormat.format(a.units / a.orders) : '—'; }, foot: function () { return totals.orders ? twoFormat.format(totals.units / totals.orders) : '—'; } }
     ];
     if (hasPrevious) {
-      columns.push({ key: 'change', label: 'Zmiana: ' + METRICS[metric].label.toLowerCase(), value: function (a) { return rowValue(a, metric) - rowValue(a.previous || {}, metric); }, cell: function (a) {
+      columns.push({ key: 'change', label: 'Zmiana', value: function (a) { return rowValue(a, metric) - rowValue(a.previous || {}, metric); }, cell: function (a) {
         var diff = rowValue(a, metric) - rowValue(a.previous || {}, metric);
         return [deltaChip(rowValue(a, metric), rowValue(a.previous || {}, metric)), el('small', null, signed(diff, function (v) { return formatMetric(v, metric); }))];
       }, foot: function () { return deltaChip(total, rowValue(report.previous_totals, metric)); } });
@@ -991,6 +1036,7 @@
 
   function renderAccountsTable() {
     var host = q('[data-st-accounts-table]');
+    q('[data-st-accounts-sub]').textContent = 'Udział i zmiana dotyczą miary: ' + METRICS[state.metric].label.toLowerCase() + '. Kliknij nagłówek kolumny, żeby posortować.';
     if (!report.accounts.length) { clear(host).appendChild(empty('Brak zamówień w tym okresie.')); return; }
     sortableTable(host, accountColumns(), report.accounts, accountSort, renderAccountsTable, true);
   }
@@ -1005,7 +1051,6 @@
   }
 
   function renderMinis() {
-    q('[data-st-minis-sub]').textContent = METRICS[state.metric].label + ' w zamówieniach liczonych do sprzedaży; lista statusów obejmuje także statusy pominięte';
     ['platforms', 'payment', 'delivery', 'basket'].forEach(function (key) {
       var rows = report[key] || [];
       if (key === 'payment') { rows = rows.filter(function (row) { return row.orders > 0; }); }
@@ -1063,9 +1108,9 @@
     } else {
       var series = timelineSeries(metric), sums = bucketTotals(metric), previous = report.previous_series ? report.previous_series[metric] : null;
       var scale = metric === 'revenue' ? 100 : 1;
-      header = ['Od', 'Do'].concat(series.map(function (item) { return item.name; }), ['Razem']).concat(previous ? ['Poprzedni okres'] : []);
+      header = ['Od', 'Do'].concat(series.map(function (item) { return item.name; }), series.length > 1 ? ['Razem'] : []).concat(previous ? ['Poprzedni okres'] : []);
       report.buckets.forEach(function (bucket, index) {
-        rows.push([bucket.from, bucket.to].concat(series.map(function (item) { return item.values[index] / scale; }), [sums[index] / scale]).concat(previous ? [previous[index] === undefined ? '' : previous[index] / scale] : []));
+        rows.push([bucket.from, bucket.to].concat(series.map(function (item) { return item.values[index] / scale; }), series.length > 1 ? [sums[index] / scale] : []).concat(previous ? [previous[index] === undefined ? '' : previous[index] / scale] : []));
       });
       kind = 'czas_' + metric;
     }

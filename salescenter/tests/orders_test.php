@@ -332,6 +332,12 @@ check($seriesSnapshot['seller']['name']==='Firma dla serii' && $seriesSnapshot['
 check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===5,'Monthly counter advances after reset');
 $standard['request_key']=str_repeat('f',40);$nextStandard=$docService->issue(1,$standard,'test');
 check(strpos((string)$db->fetchColumn('SELECT number FROM om_documents WHERE id=:id',['id'=>$nextStandard]),'TEST/005/')===0,'Monthly counter does not reset again in same period');
+$docService->delete($nextStandard);
+check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===5,'Deleting latest invoice restores its number');
+$standard['request_key']=str_repeat('1',40);$reissued=$docService->issue(1,$standard,'test');
+check(strpos((string)$db->fetchColumn('SELECT number FROM om_documents WHERE id=:id',['id'=>$reissued]),'TEST/005/')===0,'Next invoice reuses deleted latest number');
+$docService->delete($standardId);
+check((int)$db->fetchColumn('SELECT next_number FROM om_series WHERE id=:id',['id'=>$numberingId])===6,'Deleting earlier invoice keeps counter above existing number');
 $parentCorrection=$db->fetch('SELECT * FROM om_documents WHERE id=2');$parentCorrection['snapshot']=json_decode($parentCorrection['snapshot_json'],true);$parentCorrection['source_revision_id']=2;$parentCorrection['source_revision_number']=$parentCorrection['number'];
 $smarty->assign(['parent'=>$parentCorrection,'series'=>[['id'=>2,'name'=>'Korekty']],'csrf'=>'test','requestKey'=>str_repeat('7',48),'correctionKind'=>'invoice_correction','today'=>'2026-09-16']);
 $correctionForm=$smarty->fetch('orders/correct.tpl');

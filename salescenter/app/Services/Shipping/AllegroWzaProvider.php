@@ -164,20 +164,25 @@ final class AllegroWzaProvider extends ShippingProvider
     {
         if (!$this->supportsOrder($order,$carrier['public'])) { throw new InvalidArgumentException('Wysyłam z Allegro wymaga zamówienia z tego samego konta Allegro.'); }
     }
-    /** Odbiorca z propozycji Allegro; pola poprawione ręcznie w formularzu (inne niż adres zamówienia) mają pierwszeństwo. */
+    /** Odbiorca z propozycji Allegro; pola poprawione ręcznie – w formularzu nadania (inne niż adres zamówienia) albo w danych zamówienia (inne niż oryginał z Allegro) – mają pierwszeństwo. */
     private function editedReceiver(array $receiver,array $order,array $input): array
     {
         $address=is_array($order['shipping_address']??null)?$order['shipping_address']:[];
-        $edited=static function (string $field) use ($address,$input): ?string {
+        // Propozycja Allegro zawsze zawiera oryginalny adres, więc poprawka zapisana w zamówieniu bez tego porównania by przepadła.
+        $original=$this->originalAddress($order);
+        $differs=static function (string $value,string $field) use ($original): bool {
+            return trim((string)($original[$field]??''))!=='' && preg_replace('/\s+/u',' ',$value)!==preg_replace('/\s+/u',' ',trim($original[$field]));
+        };
+        $edited=static function (string $field) use ($address,$input,$differs): ?string {
             if (!array_key_exists('receiver_'.$field,$input)) { return null; }
             $value=trim((string)$input['receiver_'.$field]);
-            return $value!==trim((string)($address[$field]??''))?$value:null;
+            return $value!==trim((string)($address[$field]??'')) || $differs($value,$field)?$value:null;
         };
         foreach (['name'=>'name','email'=>'email','phone'=>'phone','postal_code'=>'postalCode','city'=>'city','country'=>'countryCode'] as $field=>$key) {
             $value=$edited($field); if ($value!==null && $value!=='') { $receiver[$key]=$value; }
         }
-        if ($edited('street')!==null || $edited('building')!==null) {
-            $street=trim(trim((string)($input['receiver_street']??'')).' '.trim((string)($input['receiver_building']??'')));
+        $street=trim(trim((string)($input['receiver_street']??'')).' '.trim((string)($input['receiver_building']??'')));
+        if ($edited('street')!==null || $edited('building')!==null || $differs($street,'street_line')) {
             if ($street!=='') { $receiver['street']=$street; }
         }
         // Miejscowość bez ulic: Allegro proponuje samo „105” i odrzuca je („Numer budynku jest wymagany”).
@@ -189,6 +194,14 @@ final class AllegroWzaProvider extends ShippingProvider
             if (preg_match('/\p{L}/u',$candidate) && preg_match('/\d/',$candidate)) { $receiver['street']=$candidate; }
         }
         return $receiver;
+    }
+    /** Oryginalny adres dostawy z Allegro – tylko gdy operator zapisał własny adres w zamówieniu; ulica jako jedna linia, bo zamówienie dzieli ją na ulicę i numer. */
+    private function originalAddress(array $order): array
+    {
+        $details=is_array($order['details']??null)?$order['details']:[];
+        $raw=$details['raw']['delivery']['address']??null;
+        if (!is_array($details['_manual']['details']['address']??null) || !is_array($raw)) { return []; }
+        return ['name'=>trim((string)($raw['firstName']??'').' '.(string)($raw['lastName']??'')),'phone'=>(string)($raw['phoneNumber']??''),'postal_code'=>(string)($raw['zipCode']??''),'city'=>(string)($raw['city']??''),'country'=>(string)($raw['countryCode']??''),'street_line'=>(string)($raw['street']??'')];
     }
     private function account(array $carrier): array { return $this->sourceAccount('allegro',(int)($carrier['public']['order_account_id']??0)); }
     private function senderCompany(string $company): string

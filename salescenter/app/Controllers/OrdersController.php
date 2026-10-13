@@ -818,7 +818,8 @@ final class OrdersController extends Controller
                     $next=(int)($_POST['next_number']??0);
                     if ($next<1 || $next>100000000) { throw new InvalidArgumentException('Następny numer musi być dodatni.'); }
                     $used=(bool)$db->fetchColumn('SELECT id FROM om_documents WHERE series_id=:id LIMIT 1',['id'=>$seriesId]);
-                    if ($used && ($kind!==$existing['kind'] || $next<(int)$existing['next_number'])) { throw new InvalidArgumentException('Dla używanej serii nie można zmienić typu ani cofnąć licznika.'); }
+                    $restoreDeleted=$next===(int)$existing['next_number']-1 && OrderDocumentService::deletedNumberAvailable($db,$existing,$next);
+                    if ($used && ($kind!==$existing['kind'] || ($next<(int)$existing['next_number'] && !$restoreDeleted))) { throw new InvalidArgumentException('Dla używanej serii nie można zmienić typu ani cofnąć licznika, chyba że ostatni dokument o tym numerze został usunięty.'); }
                     $period=$numbering && $used ? (new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw')))->format($numbering['format']==='MONTHLY'?'Y-m':'Y') : null;
                     $db->update('om_series',['name'=>$this->required('name',100),'kind'=>$kind,'pattern'=>$pattern,'next_number'=>$next,'fiscal_printer_id'=>$this->seriesPrinterId($db,$kind),'numbering_json'=>$numbering?OrderRepository::json($numbering):null,'numbering_period'=>$period,'document_settings_json'=>OrderRepository::json($this->seriesDocumentSettings($kind))],'id=:id',['id'=>$seriesId]);
                     $successMessage='Zapisano serię numeracji.';
@@ -925,7 +926,7 @@ final class OrdersController extends Controller
                         $printAgents=new PrintAgentRepository($db); $printAgents->ensureSchema();
                         if ($fiscalLock=$printAgents->receiptLockReason((int)$document['order_id'])) { throw new InvalidArgumentException($fiscalLock); }
                     }
-                    $db->delete('om_documents','id=:id',['id'=>$documentId]);
+                    (new OrderDocumentService($repo))->delete($documentId);
                     $repo->event((int)$document['order_id'],'Usunięto dokument '.$document['number'].'.',$actor);
                     $successMessage='Usunięto dokument '.$document['number'].'.';
                     break;

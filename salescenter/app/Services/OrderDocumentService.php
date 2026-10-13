@@ -238,6 +238,45 @@ final class OrderDocumentService
         }
         return ['items'=>$result,'net_cents'=>$net,'tax_cents'=>$tax,'gross_cents'=>$gross];
     }
+    public function delete(int $documentId): array
+    {
+        $db=$this->repo->db();
+        $original=$db->fetch('SELECT series_id FROM om_documents WHERE id=:id',['id'=>$documentId]);
+        if (!$original) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
+        return $db->transaction(function () use ($db,$documentId,$original) {
+            $lock=$db->pdo()->getAttribute(\PDO::ATTR_DRIVER_NAME)==='sqlite'?'':' FOR UPDATE';
+            $series=$db->fetch('SELECT * FROM om_series WHERE id=:id'.$lock,['id'=>$original['series_id']]);
+            $document=$db->fetch('SELECT * FROM om_documents WHERE id=:id'.$lock,['id'=>$documentId]);
+            if (!$series || !$document || (int)$document['series_id']!==(int)$series['id']) { throw new InvalidArgumentException('Nie znaleziono dokumentu.'); }
+            if ($db->fetchColumn('SELECT id FROM om_documents WHERE parent_id=:id LIMIT 1',['id'=>$documentId])) { throw new InvalidArgumentException('Nie można usunąć dokumentu, do którego wystawiono korektę. Usuń najpierw korektę.'); }
+
+            $counter=(int)$series['next_number']-1;
+            $snapshot=json_decode((string)$document['snapshot_json'],true)?:[];
+            $date=\DateTimeImmutable::createFromFormat('!Y-m-d',(string)($snapshot['issue_date']??''),new \DateTimeZone('Europe/Warsaw'));
+            $numbering=json_decode((string)($series['numbering_json']??''),true)?:[];
+            $period=$date ? $date->format(($numbering['format']??'')==='MONTHLY'?'Y-m':'Y') : '';
+            $digits=$numbering?str_pad((string)$counter,(int)($numbering['length']??0),'0',STR_PAD_LEFT):(string)$counter;
+            $expected=$date?strtr($series['pattern'],['{N}'=>$digits,'{YYYY}'=>$date->format('Y'),'{MM}'=>$date->format('m')]):'';
+            $rewind=$counter>0 && $expected===$document['number']
+                && (empty($numbering['reset']) || (string)$series['numbering_period']===$period);
+
+            $db->delete('om_documents','id=:id',['id'=>$documentId]);
+            if ($rewind) { $db->update('om_series',['next_number'=>$counter],'id=:id',['id'=>$series['id']]); }
+            return $document;
+        });
+    }
+    public static function deletedNumberAvailable(Database $db,array $series,int $number): bool
+    {
+        if ($number<1 || !in_array($series['kind'],['invoice','invoice_correction'],true)) { return false; }
+        $now=new \DateTimeImmutable('now',new \DateTimeZone('Europe/Warsaw'));
+        $numbering=json_decode((string)($series['numbering_json']??''),true)?:[];
+        $period=$now->format(($numbering['format']??'')==='MONTHLY'?'Y-m':'Y');
+        if (!empty($numbering['reset']) && (string)$series['numbering_period']!==$period) { return false; }
+        $digits=$numbering?str_pad((string)$number,(int)($numbering['length']??0),'0',STR_PAD_LEFT):(string)$number;
+        $value=strtr($series['pattern'],['{N}'=>$digits,'{YYYY}'=>$now->format('Y'),'{MM}'=>$now->format('m')]);
+        return !$db->fetchColumn('SELECT id FROM om_documents WHERE number=:number LIMIT 1',['number'=>$value])
+            && (bool)$db->fetchColumn('SELECT id FROM om_events WHERE message=:message LIMIT 1',['message'=>'Usunięto dokument '.$value.'.']);
+    }
     public function issue(int $orderId,array $input,string $actor,int $fiscalPrinterId=0): int
     {
         $db=$this->repo->db();
